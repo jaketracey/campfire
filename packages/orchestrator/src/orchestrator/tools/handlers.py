@@ -10,6 +10,12 @@ import structlog
 from orchestrator.config import Settings
 from orchestrator.events.emitter import EventEmitter
 from orchestrator.models.events import EventType, ToolEvent
+from orchestrator.models.gifts import (
+    EmotionalReactionType,
+    Gift,
+    GiftDirection,
+    GiftType,
+)
 from orchestrator.models.memory import (
     KnowledgeGraphNode,
     KnowledgeGraphNodeType,
@@ -746,3 +752,319 @@ class VaultProjectionHandler(ToolHandler):
         # In production, this would call the vault service API
         from uuid import uuid4
         return uuid4()
+
+
+class GiftGenerateHandler(ToolHandler):
+    """Handler for generating gifts for the user."""
+
+    def __init__(
+        self,
+        settings: Settings,
+        event_emitter: EventEmitter,
+        http_client: httpx.AsyncClient,
+    ):
+        self.settings = settings
+        self.event_emitter = event_emitter
+        self.http_client = http_client
+
+    @property
+    def name(self) -> str:
+        return "gift_generate"
+
+    async def execute(self, tool_call: ToolCall) -> ToolResult:
+        """Execute gift generation."""
+        start_time = time.time()
+
+        try:
+            gift_type_str = tool_call.arguments.get("gift_type", "virtual_object")
+            context = tool_call.arguments.get("context", "")
+            emotional_intent = tool_call.arguments.get("emotional_intent", "")
+
+            # Validate gift type
+            try:
+                gift_type = GiftType(gift_type_str)
+            except ValueError:
+                gift_type = GiftType.CUSTOM
+
+            # Call gateway internal API to generate gift
+            gift_data = await self._generate_gift(
+                user_id=tool_call.user_id,
+                companion_id=tool_call.companion_id,
+                session_id=tool_call.session_id,
+                turn_id=tool_call.turn_id,
+                gift_type=gift_type,
+                context=context,
+                emotional_intent=emotional_intent,
+            )
+
+            duration_ms = (time.time() - start_time) * 1000
+
+            # Emit event
+            await self.event_emitter.emit(
+                ToolEvent(
+                    type=EventType.TOOL_COMPLETED,
+                    session_id=tool_call.session_id,
+                    user_id=tool_call.user_id,
+                    companion_id=tool_call.companion_id,
+                    tool_name=self.name,
+                    tool_call_id=tool_call.id,
+                    input_params=tool_call.arguments,
+                    output={
+                        "gift_id": str(gift_data.get("id", "")),
+                        "title": gift_data.get("title", ""),
+                        "gift_type": gift_type.value,
+                    },
+                    duration_ms=duration_ms,
+                )
+            )
+
+            # Format output for the model
+            output = (
+                f"Gift created: \"{gift_data.get('title', 'A special gift')}\"\n"
+                f"Description: {gift_data.get('description', '')}\n"
+                f"Emotional meaning: {gift_data.get('emotional_meaning', '')}"
+            )
+
+            if gift_data.get("visual_url"):
+                output += f"\nVisual: {gift_data['visual_url']}"
+
+            return ToolResult(
+                tool_call_id=tool_call.id,
+                name=self.name,
+                success=True,
+                output=output,
+                duration_ms=duration_ms,
+                cost_usd=0.05,
+                metadata={
+                    "gift_id": str(gift_data.get("id", "")),
+                    "gift_type": gift_type.value,
+                    "visual_url": gift_data.get("visual_url"),
+                },
+            )
+
+        except Exception as e:
+            logger.exception("gift_generate_failed", error=str(e))
+            duration_ms = (time.time() - start_time) * 1000
+
+            return ToolResult(
+                tool_call_id=tool_call.id,
+                name=self.name,
+                success=False,
+                error=str(e),
+                duration_ms=duration_ms,
+            )
+
+    async def _generate_gift(
+        self,
+        user_id: UUID,
+        companion_id: UUID,
+        session_id: UUID,
+        turn_id: UUID,
+        gift_type: GiftType,
+        context: str,
+        emotional_intent: str,
+    ) -> dict[str, Any]:
+        """Generate gift via gateway internal API."""
+        try:
+            response = await self.http_client.post(
+                f"{self.settings.gateway_internal_url}/api/v1/gifts/internal/generate",
+                json={
+                    "userId": str(user_id),
+                    "companionId": str(companion_id),
+                    "sessionId": str(session_id),
+                    "turnId": str(turn_id),
+                    "giftType": gift_type.value,
+                    "context": context,
+                    "emotionalIntent": emotional_intent,
+                    "direction": GiftDirection.FROM_COMPANION.value,
+                },
+                headers={
+                    "X-Internal-Service-Key": self.settings.internal_service_key,
+                    "Content-Type": "application/json",
+                },
+            )
+            response.raise_for_status()
+
+            result = response.json()
+            gift_data = result.get("data", {})
+
+            logger.info(
+                "gift_generated",
+                gift_id=gift_data.get("id"),
+                gift_type=gift_type.value,
+                user_id=str(user_id),
+                companion_id=str(companion_id),
+            )
+
+            return gift_data
+
+        except Exception as e:
+            logger.error("gift_generation_api_failed", error=str(e))
+            # Return a fallback gift structure
+            return {
+                "id": str(uuid4()),
+                "title": "A thoughtful gift",
+                "description": f"A {gift_type.value} created with {emotional_intent}",
+                "emotional_meaning": emotional_intent,
+                "gift_type": gift_type.value,
+            }
+
+
+class GiftAcknowledgeHandler(ToolHandler):
+    """Handler for acknowledging gifts from users."""
+
+    def __init__(
+        self,
+        settings: Settings,
+        event_emitter: EventEmitter,
+        http_client: httpx.AsyncClient,
+    ):
+        self.settings = settings
+        self.event_emitter = event_emitter
+        self.http_client = http_client
+
+    @property
+    def name(self) -> str:
+        return "gift_acknowledge"
+
+    async def execute(self, tool_call: ToolCall) -> ToolResult:
+        """Execute gift acknowledgment."""
+        start_time = time.time()
+
+        try:
+            gift_description = tool_call.arguments.get("gift_description", "")
+            emotional_reaction_str = tool_call.arguments.get(
+                "emotional_reaction", "grateful"
+            )
+            emotional_intensity = tool_call.arguments.get("emotional_intensity", 0.7)
+
+            # Validate emotional reaction
+            try:
+                emotional_reaction = EmotionalReactionType(emotional_reaction_str)
+            except ValueError:
+                emotional_reaction = EmotionalReactionType.GRATEFUL
+
+            # Clamp emotional intensity
+            emotional_intensity = max(0.0, min(1.0, float(emotional_intensity)))
+
+            # Store the received gift and acknowledgment
+            gift_data = await self._acknowledge_gift(
+                user_id=tool_call.user_id,
+                companion_id=tool_call.companion_id,
+                session_id=tool_call.session_id,
+                turn_id=tool_call.turn_id,
+                gift_description=gift_description,
+                emotional_reaction=emotional_reaction,
+                emotional_intensity=emotional_intensity,
+            )
+
+            duration_ms = (time.time() - start_time) * 1000
+
+            # Emit event
+            await self.event_emitter.emit(
+                ToolEvent(
+                    type=EventType.TOOL_COMPLETED,
+                    session_id=tool_call.session_id,
+                    user_id=tool_call.user_id,
+                    companion_id=tool_call.companion_id,
+                    tool_name=self.name,
+                    tool_call_id=tool_call.id,
+                    input_params=tool_call.arguments,
+                    output={
+                        "gift_id": str(gift_data.get("id", "")),
+                        "emotional_reaction": emotional_reaction.value,
+                        "emotional_intensity": emotional_intensity,
+                    },
+                    duration_ms=duration_ms,
+                )
+            )
+
+            # Format output for the model
+            intensity_word = (
+                "deeply" if emotional_intensity > 0.8
+                else "very" if emotional_intensity > 0.5
+                else "somewhat"
+            )
+            output = (
+                f"Gift acknowledged with {intensity_word} {emotional_reaction.value} feelings.\n"
+                f"The gift has been treasured and stored in our shared memories."
+            )
+
+            return ToolResult(
+                tool_call_id=tool_call.id,
+                name=self.name,
+                success=True,
+                output=output,
+                duration_ms=duration_ms,
+                metadata={
+                    "gift_id": str(gift_data.get("id", "")),
+                    "emotional_reaction": emotional_reaction.value,
+                    "emotional_intensity": emotional_intensity,
+                },
+            )
+
+        except Exception as e:
+            logger.exception("gift_acknowledge_failed", error=str(e))
+            duration_ms = (time.time() - start_time) * 1000
+
+            return ToolResult(
+                tool_call_id=tool_call.id,
+                name=self.name,
+                success=False,
+                error=str(e),
+                duration_ms=duration_ms,
+            )
+
+    async def _acknowledge_gift(
+        self,
+        user_id: UUID,
+        companion_id: UUID,
+        session_id: UUID,
+        turn_id: UUID,
+        gift_description: str,
+        emotional_reaction: EmotionalReactionType,
+        emotional_intensity: float,
+    ) -> dict[str, Any]:
+        """Store gift acknowledgment via gateway internal API."""
+        try:
+            response = await self.http_client.post(
+                f"{self.settings.gateway_internal_url}/api/v1/gifts/internal/acknowledge",
+                json={
+                    "userId": str(user_id),
+                    "companionId": str(companion_id),
+                    "sessionId": str(session_id),
+                    "turnId": str(turn_id),
+                    "giftDescription": gift_description,
+                    "emotionalReaction": emotional_reaction.value,
+                    "emotionalIntensity": emotional_intensity,
+                    "direction": GiftDirection.FROM_USER.value,
+                },
+                headers={
+                    "X-Internal-Service-Key": self.settings.internal_service_key,
+                    "Content-Type": "application/json",
+                },
+            )
+            response.raise_for_status()
+
+            result = response.json()
+            gift_data = result.get("data", {})
+
+            logger.info(
+                "gift_acknowledged",
+                gift_id=gift_data.get("id"),
+                emotional_reaction=emotional_reaction.value,
+                user_id=str(user_id),
+                companion_id=str(companion_id),
+            )
+
+            return gift_data
+
+        except Exception as e:
+            logger.error("gift_acknowledgment_api_failed", error=str(e))
+            # Return a fallback structure
+            return {
+                "id": str(uuid4()),
+                "description": gift_description,
+                "emotional_reaction": emotional_reaction.value,
+                "emotional_intensity": emotional_intensity,
+            }

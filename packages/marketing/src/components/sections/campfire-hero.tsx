@@ -16,8 +16,9 @@ export function CampfireHero() {
     const containerRef = useRef<HTMLDivElement>(null);
     const fireRef = useRef<HTMLDivElement>(null);
     const sparksRef = useRef<HTMLDivElement>(null);
+    const textContainerRef = useRef<HTMLDivElement>(null);
 
-    // Dynamic Avatar Logic
+    // Dynamic Avatar Logic (Preserved)
     const AVATAR_COUNT = 12;
     const [indices, setIndices] = useState<number[]>([]);
 
@@ -29,7 +30,6 @@ export function CampfireHero() {
     ];
 
     useEffect(() => {
-        // Initial random set on mount
         const initial = [0, 1, 2, 3];
         setIndices(initial);
 
@@ -52,7 +52,7 @@ export function CampfireHero() {
 
     useLayoutEffect(() => {
         const ctx = gsap.context(() => {
-            // Fire pulsing animation (idle)
+            // --- Original Background Animations (Preserved) ---
             gsap.to('.fire-glow', {
                 scale: 1.1,
                 opacity: 0.8,
@@ -62,19 +62,14 @@ export function CampfireHero() {
                 ease: 'sine.inOut',
             });
 
-            // Sparks floating up (idle)
             gsap.to('.spark', {
                 y: -100,
                 opacity: 0,
                 duration: 'random(2, 4)',
-                stagger: {
-                    amount: 2,
-                    repeat: -1,
-                },
+                stagger: { amount: 2, repeat: -1 },
                 ease: 'power1.out',
             });
 
-            // Floating Avatars (idle 3D)
             gsap.to('.floating-avatar', {
                 y: 'random(-60, 60)',
                 x: 'random(-40, 40)',
@@ -86,12 +81,101 @@ export function CampfireHero() {
                 repeat: -1,
                 yoyo: true,
                 ease: 'sine.inOut',
-                stagger: {
-                    amount: 2,
-                }
+                stagger: { amount: 2 }
             });
 
-            // ScrollTrigger effects
+            // --- Main Text Animation Entrance ---
+            const chars = gsap.utils.toArray('.hero-char');
+            // Random start positions in 3D space
+            gsap.set(chars, {
+                opacity: 0,
+                z: () => gsap.utils.random(-1000, -200),
+                y: () => gsap.utils.random(-100, 100),
+                x: () => gsap.utils.random(-100, 100),
+                rotationX: () => gsap.utils.random(-90, 90),
+                rotationY: () => gsap.utils.random(-90, 90),
+                rotationZ: () => gsap.utils.random(-20, 20),
+                filter: 'blur(10px)',
+            });
+
+            gsap.to(chars, {
+                duration: 2.5,
+                opacity: 1,
+                x: 0,
+                y: 0,
+                z: 0,
+                rotationX: 0,
+                rotationY: 0,
+                rotationZ: 0,
+                filter: 'blur(0px)',
+                ease: 'elastic.out(1, 0.75)',
+                stagger: {
+                    amount: 1, // Total drag time
+                    from: 'random', // Random order of appearance
+                },
+                delay: 0.5,
+            });
+
+            // --- Continuous "Ember" wave effect ---
+            // A subtle glow that travels across the text
+            const emberTl = gsap.timeline({ repeat: -1, repeatDelay: 3 });
+            emberTl.to(chars, {
+                color: '#ffcc00',
+                textShadow: '0 0 20px #ffcc00, 0 0 40px #ff4d00',
+                scale: 1.1,
+                y: -5,
+                duration: 0.2,
+                stagger: {
+                    each: 0.05,
+                    from: "start",
+                    yoyo: true,
+                    repeat: 1,
+                },
+                ease: "power2.inOut"
+            });
+
+            // --- Mouse Move / Interactive Magnetic Effect ---
+            const handleMouseMove = (e: MouseEvent) => {
+                const mouseX = e.clientX;
+                const mouseY = e.clientY;
+
+                chars.forEach((char: any) => {
+                    const rect = char.getBoundingClientRect();
+                    const charCenterX = rect.left + rect.width / 2;
+                    const charCenterY = rect.top + rect.height / 2;
+
+                    const distOp = Math.sqrt(
+                        Math.pow(mouseX - charCenterX, 2) +
+                        Math.pow(mouseY - charCenterY, 2)
+                    );
+
+                    const maxDist = 200; // range of effect
+
+                    if (distOp < maxDist) {
+                        const force = (maxDist - distOp) / maxDist; // 0 to 1
+                        const moveX = (mouseX - charCenterX) * force * 0.3;
+                        const moveY = (mouseY - charCenterY) * force * 0.3;
+
+                        gsap.to(char, {
+                            x: -moveX, // repel
+                            y: -moveY,
+                            duration: 0.5,
+                            ease: 'power2.out'
+                        });
+                    } else {
+                        gsap.to(char, {
+                            x: 0,
+                            y: 0,
+                            duration: 0.5,
+                            ease: 'power2.out'
+                        });
+                    }
+                });
+            };
+
+            window.addEventListener('mousemove', handleMouseMove);
+
+            // ScrollTrigger effects (Preserved)
             const tl = gsap.timeline({
                 scrollTrigger: {
                     trigger: containerRef.current,
@@ -101,23 +185,33 @@ export function CampfireHero() {
                 },
             });
 
-            // Fire expands and intensifies on scroll
-            tl.to(fireRef.current, {
-                scale: 1.5,
-                y: 100,
-                opacity: 0.5,
-            }, 0);
+            tl.to(fireRef.current, { scale: 1.5, y: 100, opacity: 0.5 }, 0);
+            tl.to(sparksRef.current, { y: -200, scale: 1.2 }, 0);
 
-            // Sparks spread out more on scroll
-            tl.to(sparksRef.current, {
-                y: -200,
-                scale: 1.2,
-            }, 0);
+            // Cleanup listener
+            return () => {
+                window.removeEventListener('mousemove', handleMouseMove);
+            }
 
         }, containerRef);
 
         return () => ctx.revert();
     }, []);
+
+    const splitText = (text: string, isFire = false) => {
+        return text.split('').map((char, i) => (
+            <span
+                key={i}
+                className={`hero-char inline-block relative ${char === ' ' ? 'w-4 md:w-6' : ''}`}
+                style={{
+                    perspective: '1000px',
+                    transformStyle: 'preserve-3d'
+                }}
+            >
+                {char === ' ' ? '\u00A0' : char}
+            </span>
+        ));
+    };
 
     return (
         <div
@@ -191,64 +285,36 @@ export function CampfireHero() {
                 </motion.div>
 
                 {/* Heading */}
-                <motion.h1
-                    className="text-4xl md:text-6xl lg:text-7xl font-bold tracking-tighter text-white max-w-4xl mx-auto"
-                    initial="hidden"
-                    animate="visible"
+                <div
+                    ref={textContainerRef}
+                    className="text-4xl md:text-6xl lg:text-7xl font-bold tracking-tighter text-white max-w-4xl mx-auto cursor-default"
                     aria-label="Gather 'Round the Digital Fire"
-                    variants={{
-                        visible: {
-                            transition: {
-                                staggerChildren: 0.05,
-                                delayChildren: 0.2
-                            }
-                        }
-                    }}
+                    style={{ perspective: '2000px', transformStyle: 'preserve-3d' }}
                 >
-                    <span className="block mb-2">
-                        {Array.from("Gather 'Round the").map((char, index) => (
-                            <motion.span
-                                key={index}
-                                className="inline-block"
-                                variants={{
-                                    hidden: { opacity: 0, y: 20, filter: 'blur(10px)' },
-                                    visible: {
-                                        opacity: 1,
-                                        y: 0,
-                                        filter: 'blur(0px)',
-                                        transition: { duration: 0.4, ease: "easeOut" }
-                                    }
-                                }}
-                            >
-                                {char === " " ? "\u00A0" : char}
-                            </motion.span>
-                        ))}
-                    </span>
-                    <span className="block relative">
-                        {Array.from("Digital Fire").map((char, index) => (
-                            <motion.span
-                                key={index}
-                                className="inline-block"
+                    <div className="block mb-2">
+                        {splitText("Gather 'Round the")}
+                    </div>
+                    <div className="block relative">
+                        {/* We manually apply the orange color class to 'Digital Fire' parts if we want, but GSAP handles it too. 
+                            Let's keep the split logic simple as above, but maybe apply a specific class for the fire part?
+                            Actually, the 'Digital Fire' specific orange styling was in react before. 
+                            Let's re-incorporate that effectively. 
+                        */}
+                        {"Digital Fire".split('').map((char, i) => (
+                            <span
+                                key={i}
+                                className={`hero-char inline-block relative ${char === ' ' ? 'w-4 md:w-6' : ''} ${i >= 8 ? 'text-orange-500' : ''}`}
                                 style={{
-                                    color: index >= 8 ? '#f97316' : undefined,
-                                    textShadow: index >= 8 ? '0 0 25px rgba(249,115,22,0.6)' : undefined
-                                }}
-                                variants={{
-                                    hidden: { opacity: 0, scale: 0.8, y: 20, filter: 'blur(10px)' },
-                                    visible: {
-                                        opacity: 1,
-                                        scale: 1,
-                                        y: 0,
-                                        filter: 'blur(0px)',
-                                        transition: { duration: 0.5, ease: "backOut" }
-                                    }
+                                    perspective: '1000px',
+                                    transformStyle: 'preserve-3d',
+                                    textShadow: i >= 8 ? '0 0 25px rgba(249,115,22,0.6)' : undefined
                                 }}
                             >
-                                {char === " " ? "\u00A0" : char}
-                            </motion.span>
+                                {char === ' ' ? '\u00A0' : char}
+                            </span>
                         ))}
-                    </span>
-                </motion.h1>
+                    </div>
+                </div>
 
                 {/* Description */}
                 <motion.p

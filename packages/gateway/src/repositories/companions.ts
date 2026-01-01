@@ -61,7 +61,7 @@ export class CompanionsRepository {
 
     const result = await db`
       SELECT
-        id, user_id, name, spec, spec_version, status,
+        id, user_id, name, spec, spec_version, status, is_public,
         active_avatar_id, created_at, updated_at
       FROM companions
       WHERE id = ${id}
@@ -75,7 +75,7 @@ export class CompanionsRepository {
 
     const result = await db`
       SELECT
-        c.id, c.user_id, c.name, c.spec, c.spec_version, c.status,
+        c.id, c.user_id, c.name, c.spec, c.spec_version, c.status, c.is_public,
         c.active_avatar_id, c.created_at, c.updated_at,
         a.id as avatar_id, a.asset_url, a.asset_type, a.is_active,
         a.is_identity_anchor, a.metadata as avatar_metadata,
@@ -107,7 +107,7 @@ export class CompanionsRepository {
 
     const result = await db`
       SELECT
-        id, user_id, name, spec, spec_version, status,
+        id, user_id, name, spec, spec_version, status, is_public,
         active_avatar_id, created_at, updated_at
       FROM companions
       WHERE user_id = ${userId} AND LOWER(name) = LOWER(${name})
@@ -116,22 +116,54 @@ export class CompanionsRepository {
     return result[0] ? this.mapCompanion(result[0]) : null;
   }
 
+  /**
+   * Find a public companion by ID with avatar (no auth required)
+   */
+  async findPublicById(id: string, tx?: TransactionContext): Promise<CompanionWithAvatar | null> {
+    const db = this.getSql(tx);
+
+    const result = await db`
+      SELECT
+        c.id, c.user_id, c.name, c.spec, c.spec_version, c.status, c.is_public,
+        c.active_avatar_id, c.created_at, c.updated_at,
+        a.id as avatar_id, a.asset_url, a.asset_type, a.is_active,
+        a.is_identity_anchor, a.metadata as avatar_metadata,
+        a.generation_params, a.source_event_id as avatar_source_event_id,
+        a.created_at as avatar_created_at
+      FROM companions c
+      LEFT JOIN companion_avatars a ON c.active_avatar_id = a.id
+      WHERE c.id = ${id} AND c.is_public = TRUE AND c.status = 'active'
+    `;
+
+    if (!result[0]) {
+      return null;
+    }
+
+    const companion = this.mapCompanion(result[0]);
+    const activeAvatar = result[0]['avatar_id']
+      ? this.mapAvatarFromJoin(result[0])
+      : null;
+
+    return { ...companion, activeAvatar };
+  }
+
   async create(data: CompanionInsert, tx?: TransactionContext): Promise<Companion> {
     const db = this.getSql(tx);
 
     try {
       const result = await db`
         INSERT INTO companions (
-          user_id, name, spec, spec_version, status
+          user_id, name, spec, spec_version, status, is_public
         ) VALUES (
           ${data.user_id},
           ${data.name},
           ${JSON.stringify(data.spec)},
           ${data.spec_version ?? 1},
-          ${data.status ?? 'draft'}
+          ${data.status ?? 'draft'},
+          ${data.is_public ?? false}
         )
         RETURNING
-          id, user_id, name, spec, spec_version, status,
+          id, user_id, name, spec, spec_version, status, is_public,
           active_avatar_id, created_at, updated_at
       `;
 
@@ -155,10 +187,11 @@ export class CompanionsRepository {
       SET
         name = COALESCE(${data.name ?? null}, name),
         spec = COALESCE(${data.spec ? JSON.stringify(data.spec) : null}, spec),
-        status = COALESCE(${data.status ?? null}, status)
+        status = COALESCE(${data.status ?? null}, status),
+        is_public = COALESCE(${data.is_public ?? null}, is_public)
       WHERE id = ${id}
       RETURNING
-        id, user_id, name, spec, spec_version, status,
+        id, user_id, name, spec, spec_version, status, is_public,
         active_avatar_id, created_at, updated_at
     `;
 
@@ -184,7 +217,7 @@ export class CompanionsRepository {
       SET spec = ${JSON.stringify(spec)}
       WHERE id = ${id}
       RETURNING
-        id, user_id, name, spec, spec_version, status,
+        id, user_id, name, spec, spec_version, status, is_public,
         active_avatar_id, created_at, updated_at
     `;
 
@@ -254,7 +287,7 @@ export class CompanionsRepository {
 
     const result = await db`
       SELECT
-        id, user_id, name, spec, spec_version, status,
+        id, user_id, name, spec, spec_version, status, is_public,
         active_avatar_id, created_at, updated_at
       FROM companions
       ${whereClause}
@@ -479,6 +512,7 @@ export class CompanionsRepository {
       spec: row['spec'] as CompanionSpec,
       spec_version: row['spec_version'] as number,
       status: row['status'] as CompanionStatus,
+      is_public: row['is_public'] as boolean,
       created_at: row['created_at'] as Date,
       updated_at: row['updated_at'] as Date,
     };

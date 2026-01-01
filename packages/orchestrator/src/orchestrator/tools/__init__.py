@@ -2,20 +2,24 @@
 
 from orchestrator.tools.router import ToolRouter
 from orchestrator.tools.handlers import (
-    MemoryReadHandler,
-    MemoryWriteHandler,
-    KGProposeHandler,
+    GiftAcknowledgeHandler,
+    GiftGenerateHandler,
     ImageAnalysisHandler,
     ImageGenerationHandler,
+    KGProposeHandler,
+    MemoryReadHandler,
+    MemoryWriteHandler,
     VaultProjectionHandler,
 )
 
 __all__ = [
     "ToolRouter",
-    "MemoryReadHandler",
-    "MemoryWriteHandler",
-    "KGProposeHandler",
+    "GiftAcknowledgeHandler",
+    "GiftGenerateHandler",
     "ImageAnalysisHandler",
     "ImageGenerationHandler",
+    "KGProposeHandler",
+    "MemoryReadHandler",
+    "MemoryWriteHandler",
     "VaultProjectionHandler",
 ]

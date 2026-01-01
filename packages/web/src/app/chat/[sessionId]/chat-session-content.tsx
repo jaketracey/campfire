@@ -5,12 +5,13 @@ import { useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card } from '@/components/ui/card';
-import { X, Send, Mic, MicOff, Bug, Images, Flame, Sparkles } from 'lucide-react';
+import { X, Send, Mic, MicOff, Bug, Images, Flame, Sparkles, Gift } from 'lucide-react';
 import Link from 'next/link';
 import { getSessionTurns, getSession, getCompanion, type Companion } from '@/lib/api';
 import { CampfireWebSocket, connectWebSocket } from '@/lib/ws';
 import { CompanionAvatar, CompanionGallery, PersonalityModal } from '@/components/companion';
 import { DebugPanel } from '@/components/debug-panel';
+import { GiftsPanel } from '@/components/gifts';
 import { useRequireAuth } from '@/hooks/use-auth';
 import { useAuthStore } from '@/stores/auth-store';
 import { buildPromptFromCompanion, type EmotionalState } from '@/lib/api/imagegen';
@@ -71,6 +72,7 @@ export function ChatSessionContent({ sessionId }: ChatSessionContentProps) {
   const [showDebugPanel, setShowDebugPanel] = useState(false);
   const [showGallery, setShowGallery] = useState(false);
   const [showPersonality, setShowPersonality] = useState(false);
+  const [showGiftsPanel, setShowGiftsPanel] = useState(false);
   const [debugRefreshTrigger, setDebugRefreshTrigger] = useState(0);
   const [companion, setCompanion] = useState<Companion | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -360,6 +362,14 @@ export function ChatSessionContent({ sessionId }: ChatSessionContentProps) {
               <Images className="h-4 w-4" />
             </Button>
             <Button
+              variant={showGiftsPanel ? 'secondary' : 'ghost'}
+              size="icon"
+              onClick={() => setShowGiftsPanel(!showGiftsPanel)}
+              title="Send Gifts"
+            >
+              <Gift className="h-4 w-4" />
+            </Button>
+            <Button
               variant={showDebugPanel ? 'secondary' : 'ghost'}
               size="icon"
               onClick={() => setShowDebugPanel(!showDebugPanel)}
@@ -481,6 +491,20 @@ export function ChatSessionContent({ sessionId }: ChatSessionContentProps) {
           }
         }}
       />
+
+      {/* Gifts Panel */}
+      {companion && (
+        <GiftsPanel
+          sessionId={sessionId}
+          companionId={companion.id}
+          isOpen={showGiftsPanel}
+          onClose={() => setShowGiftsPanel(false)}
+          onGiftSent={(gift) => {
+            // Could trigger animation or chat notification
+            console.log('Gift sent:', gift.name);
+          }}
+        />
+      )}
     </div>
   );
 }

@@ -5,8 +5,21 @@
 
 import { getAccessToken } from '@/stores/auth-store';
 
-// Use env var if set, otherwise empty for relative URLs (nginx proxies /api/v1 to gateway)
-const API_BASE_URL = process.env.NEXT_PUBLIC_GATEWAY_URL || '';
+// API base URL - on localhost go direct to gateway, otherwise use relative (nginx proxies)
+function getApiBaseUrl(): string {
+  if (process.env.NEXT_PUBLIC_GATEWAY_URL) {
+    return process.env.NEXT_PUBLIC_GATEWAY_URL;
+  }
+  // Client-side: check if we're on localhost
+  if (typeof window !== 'undefined') {
+    const { hostname } = window.location;
+    if (hostname === 'localhost' || hostname === '127.0.0.1') {
+      return 'http://localhost:3002';
+    }
+  }
+  // Server-side or external: use relative URLs (nginx proxies)
+  return '';
+}
 
 export class ApiError extends Error {
   constructor(
@@ -74,7 +87,7 @@ export async function apiClient<T>(
   const { params, ...fetchOptions } = options;
 
   // Build URL with query params
-  let url = `${API_BASE_URL}/api/v1${endpoint}`;
+  let url = `${getApiBaseUrl()}/api/v1${endpoint}`;
   if (params) {
     const searchParams = new URLSearchParams();
     for (const [key, value] of Object.entries(params)) {

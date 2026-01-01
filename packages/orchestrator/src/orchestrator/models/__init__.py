@@ -17,6 +17,18 @@ from orchestrator.models.events import (
     SafetyEvent,
     ToolEvent,
 )
+from orchestrator.models.gifts import (
+    EmotionalReactionType,
+    Gift,
+    GiftAcknowledgmentRequest,
+    GiftAcknowledgmentResult,
+    GiftDirection,
+    GiftGenerationRequest,
+    GiftGenerationResult,
+    GiftMemory,
+    GiftRecallContext,
+    GiftType,
+)
 from orchestrator.models.memory import (
     KnowledgeGraphNode,
     KnowledgeGraphRelation,
@@ -47,6 +59,17 @@ __all__ = [
     "EventType",
     "SafetyEvent",
     "ToolEvent",
+    # Gifts
+    "EmotionalReactionType",
+    "Gift",
+    "GiftAcknowledgmentRequest",
+    "GiftAcknowledgmentResult",
+    "GiftDirection",
+    "GiftGenerationRequest",
+    "GiftGenerationResult",
+    "GiftMemory",
+    "GiftRecallContext",
+    "GiftType",
     # Memory
     "KnowledgeGraphNode",
     "KnowledgeGraphRelation",

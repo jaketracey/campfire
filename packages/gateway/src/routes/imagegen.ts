@@ -871,6 +871,239 @@ export async function imagegenRoutes(app: FastifyInstance): Promise<void> {
     }
   );
 
+  // Generate anchor images with SSE streaming (for real-time progress)
+  // This is the preferred endpoint for onboarding as it streams each image as it's generated
+  app.get<{ Querystring: { companionId: string; appearance: string; style: string; personality?: string } }>(
+    '/generate-anchors-stream',
+    {
+      preHandler: requireAuth,
+      schema: {
+        querystring: {
+          type: 'object',
+          required: ['companionId', 'appearance', 'style'],
+          properties: {
+            companionId: { type: 'string' },
+            appearance: { type: 'string' },  // JSON stringified
+            style: { type: 'string' },
+            personality: { type: 'string' },  // JSON stringified, optional
+          },
+        },
+      },
+    },
+    async (request: FastifyRequest<{ Querystring: { companionId: string; appearance: string; style: string; personality?: string } }>, reply: FastifyReply) => {
+      const userId = request.user!.userId;
+      const { companionId } = request.query;
+      const style = request.query.style as 'realistic' | 'stylized' | 'abstract' | 'minimal' | 'anime';
+
+      // Parse JSON from query params
+      let appearance: { ethnicity: string; bodyType: string; hairColor: string; breastSize?: number };
+      let personality: { warmth?: number; playfulness?: number; directness?: number; curiosity?: number; empathy?: number; assertiveness?: number } | undefined;
+
+      try {
+        appearance = JSON.parse(request.query.appearance);
+        if (request.query.personality) {
+          personality = JSON.parse(request.query.personality);
+        }
+      } catch (e) {
+        return reply.status(400).send({ error: 'Invalid JSON in query params' });
+      }
+
+      logger.info({ userId, companionId, appearance, style }, 'Starting SSE anchor image generation');
+
+      const companionRepo = getCompanionsRepository();
+
+      // Verify companion exists and belongs to user
+      const companion = await companionRepo.findById(companionId);
+      if (!companion) {
+        return reply.status(404).send({ error: 'Companion not found' });
+      }
+      if (companion.user_id !== userId) {
+        return reply.status(403).send({ error: 'Not authorized to modify this companion' });
+      }
+
+      // Set up SSE headers
+      reply.raw.writeHead(200, {
+        'Content-Type': 'text/event-stream',
+        'Cache-Control': 'no-cache',
+        'Connection': 'keep-alive',
+        'Access-Control-Allow-Origin': '*',
+      });
+
+      const sendSSE = (event: string, data: unknown) => {
+        reply.raw.write(`event: ${event}\n`);
+        reply.raw.write(`data: ${JSON.stringify(data)}\n\n`);
+      };
+
+      // Build base prompt from appearance
+      const basePromptParts: string[] = ['Beautiful woman'];
+
+      const ethnicityMap: Record<string, string> = {
+        'east-asian': 'East Asian features',
+        'south-asian': 'South Asian features',
+        'black': 'Black/African features',
+        'caucasian': 'Caucasian features',
+        'latina': 'Latina features',
+        'middle-eastern': 'Middle Eastern features',
+        'mixed': 'mixed ethnicity',
+      };
+      const ethnicityDesc = appearance.ethnicity ? ethnicityMap[appearance.ethnicity] : undefined;
+      if (ethnicityDesc) {
+        basePromptParts.push(ethnicityDesc);
+      }
+
+      const bodyTypeMap: Record<string, string> = {
+        'slim': 'slim figure',
+        'athletic': 'athletic build',
+        'curvy': 'curvy figure',
+        'plus-size': 'plus-size figure',
+      };
+      const bodyTypeDesc = appearance.bodyType ? bodyTypeMap[appearance.bodyType] : undefined;
+      if (bodyTypeDesc) {
+        basePromptParts.push(bodyTypeDesc);
+      }
+
+      const hairColorMap: Record<string, string> = {
+        'black': 'black hair',
+        'brown': 'brown hair',
+        'blonde': 'blonde hair',
+        'red': 'red hair',
+        'fantasy': 'vibrant fantasy-colored hair',
+      };
+      const hairColorDesc = appearance.hairColor ? hairColorMap[appearance.hairColor] : undefined;
+      if (hairColorDesc) {
+        basePromptParts.push(hairColorDesc);
+      }
+
+      const basePrompt = basePromptParts.join(', ');
+      const anchorStates = ['neutral', 'happy', 'thoughtful'] as const;
+      const generatedAnchors: AnchorImage[] = [];
+      let primaryAnchorId: string | null = null;
+      let primaryAnchorUrl: string | null = null;
+
+      // Send initial progress
+      sendSSE('progress', { phase: 'starting', total: anchorStates.length, completed: 0 });
+
+      try {
+        for (let i = 0; i < anchorStates.length; i++) {
+          const emotionalState: string = anchorStates[i]!;  // We know it exists because we check length
+          const isPrimary = i === 0;
+
+          sendSSE('progress', {
+            phase: 'generating',
+            emotionalState,
+            index: i,
+            total: anchorStates.length,
+            completed: i,
+          });
+
+          logger.info({ companionId, emotionalState, isPrimary, index: i }, 'Generating anchor image (SSE)');
+
+          const fullPrompt = buildPrompt({
+            prompt: basePrompt,
+            emotionalState,
+            personality,
+            style,
+          });
+
+          const { imageBuffer, latencyMs, provider } = await generateWithOrchestrator(
+            fullPrompt,
+            emotionalState,
+            style,
+            512,
+            768,
+            isPrimary ? undefined : primaryAnchorUrl || undefined,
+            isPrimary ? undefined : 0.85
+          );
+
+          const cacheKey = `anchor-${emotionalState}-${Date.now()}`;
+          const s3Key = `companions/${userId}/anchors/${companionId}/${cacheKey}.png`;
+
+          await s3Client.send(
+            new PutObjectCommand({
+              Bucket: S3_MEDIA_BUCKET,
+              Key: s3Key,
+              Body: imageBuffer,
+              ContentType: 'image/png',
+              CacheControl: 'max-age=31536000',
+            })
+          );
+
+          const s3Url = await getSignedUrl(
+            s3Client,
+            new GetObjectCommand({ Bucket: S3_MEDIA_BUCKET, Key: s3Key }),
+            { expiresIn: 604800 }
+          );
+
+          const avatar = await companionRepo.createAvatar({
+            companion_id: companionId,
+            asset_url: s3Url,
+            asset_type: 'identity_anchor',
+            is_active: isPrimary,
+            is_identity_anchor: true,
+            metadata: {
+              emotionalState: emotionalState as string,
+              style,
+              appearance,
+              s3Key,
+              s3Bucket: S3_MEDIA_BUCKET,
+            },
+            generation_params: {
+              prompt: fullPrompt,
+              width: 512,
+              height: 768,
+              provider,
+              latencyMs,
+              referenceStrength: isPrimary ? null : 0.85,
+            },
+          });
+
+          if (isPrimary) {
+            primaryAnchorId = avatar.id;
+            primaryAnchorUrl = s3Url;
+            await companionRepo.setActiveAvatar(companionId, avatar.id);
+          }
+
+          const anchor: AnchorImage = {
+            id: avatar.id,
+            url: s3Url,
+            emotionalState: emotionalState as string,
+            isIdentityAnchor: true,
+          };
+          generatedAnchors.push(anchor);
+
+          // Send the generated anchor immediately
+          sendSSE('anchor', anchor);
+
+          logger.info({
+            companionId,
+            avatarId: avatar.id,
+            emotionalState,
+            latencyMs,
+            provider,
+          }, 'Anchor image generated and streamed');
+        }
+
+        // Send completion
+        sendSSE('complete', {
+          companionId,
+          anchors: generatedAnchors,
+          primaryAnchorId: primaryAnchorId!,
+        });
+
+        logger.info({ companionId, anchorCount: generatedAnchors.length, primaryAnchorId }, 'SSE anchor generation complete');
+
+      } catch (error) {
+        logger.error({ error, companionId }, 'SSE anchor image generation failed');
+        sendSSE('error', {
+          message: error instanceof Error ? error.message : 'Unknown error',
+          partialAnchors: generatedAnchors,
+        });
+      }
+
+      reply.raw.end();
+    }
+  );
+
   // Clear cache (admin only in production)
   app.delete('/cache', async (_request, reply) => {
     imageCache.clear();

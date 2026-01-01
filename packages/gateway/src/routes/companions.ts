@@ -5,12 +5,17 @@
 
 import type { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
 import { z } from 'zod';
+import { nanoid } from 'nanoid';
 import { requireAuth } from '../middleware/auth.js';
 import { getCompanionsRepository } from '../repositories/companions.js';
 import { getSessionsRepository } from '../repositories/sessions.js';
+import { getKnowledgeGraphRepository } from '../repositories/knowledge-graph.js';
 import { db } from '../db/index.js';
 import { logger } from '../observability/logger.js';
 import type { CompanionSpec } from '../db/types.js';
+
+// Orchestrator configuration
+const ORCHESTRATOR_URL = process.env['ORCHESTRATOR_URL'] || 'http://localhost:8000';
 
 // Appearance schema for validation
 const AppearanceSchema = z.object({
@@ -153,6 +158,7 @@ function mapCompanionResponse(companion: {
   spec: CompanionSpec | null;
   spec_version: number;
   status: string;
+  is_public: boolean;
   created_at: Date;
   updated_at: Date;
 }) {
@@ -164,7 +170,7 @@ function mapCompanionResponse(companion: {
     personality: JSON.stringify(spec.personality || {}),
     voiceId: spec.voice?.voice_id || null,
     avatarUrl: null,
-    isPublic: false, // Not stored in spec yet
+    isPublic: companion.is_public,
     isActive: companion.status === 'active',
     status: companion.status,
     createdAt: companion.created_at,
@@ -236,6 +242,46 @@ async function getLatestImagesForCompanions(
  */
 export async function companionsRoutes(app: FastifyInstance): Promise<void> {
   const companionRepo = getCompanionsRepository();
+
+  /**
+   * GET /companions/public/:companionId - Get public companion (no auth required)
+   * Returns sanitized companion data for the share page
+   */
+  app.get('/public/:companionId', async (request: FastifyRequest, reply: FastifyReply) => {
+    const { companionId } = request.params as { companionId: string };
+
+    const companion = await companionRepo.findPublicById(companionId);
+    if (!companion) {
+      return reply.status(404).send({
+        error: 'Not Found',
+        message: 'Companion not found or not public',
+      });
+    }
+
+    // Return sanitized public data (exclude user_id, private settings)
+    const spec = companion.spec || {};
+    return reply.send({
+      id: companion.id,
+      name: companion.name,
+      spec: {
+        identity: {
+          name: spec.identity?.name || companion.name,
+          pronouns: spec.identity?.pronouns || 'they/them',
+        },
+        personality: {
+          archetype: spec.personality?.archetype || 'companion',
+          secondary_archetype: spec.personality?.secondary_archetype,
+          traits: spec.personality?.traits || {},
+        },
+        visual_style: spec.visual_style ? {
+          style_type: spec.visual_style.style_type,
+          appearance: spec.visual_style.appearance,
+        } : undefined,
+      },
+      avatarUrl: companion.activeAvatar?.asset_url || null,
+      createdAt: companion.created_at,
+    });
+  });
 
   /**
    * GET /companions - List companions
@@ -312,6 +358,7 @@ export async function companionsRoutes(app: FastifyInstance): Promise<void> {
       name: input.name,
       spec,
       status: 'active', // Auto-activate for now
+      is_public: input.isPublic,
     });
 
     logger.info({ companionId: companion.id, userId: request.user!.userId }, 'Companion created');
@@ -377,10 +424,11 @@ export async function companionsRoutes(app: FastifyInstance): Promise<void> {
 
     const input = parseResult.data;
 
-    // Update name and status through repository
+    // Update name, status, and isPublic through repository
     const companion = await companionRepo.update(companionId, {
       name: input.name,
       status: input.status as 'draft' | 'active' | 'archived' | undefined,
+      is_public: input.isPublic,
     });
 
     // Track if spec needs updating
@@ -478,5 +526,237 @@ export async function companionsRoutes(app: FastifyInstance): Promise<void> {
     );
 
     return reply.status(201).send(mapCompanionResponse(cloned));
+  });
+
+  /**
+   * POST /companions/:companionId/generate-backstory - Generate backstory for companion
+   * Generates a rich backstory using LLM and saves it to the knowledge graph
+   */
+  app.post('/:companionId/generate-backstory', { preHandler: requireAuth }, async (request: FastifyRequest, reply: FastifyReply) => {
+    const { companionId } = request.params as { companionId: string };
+    const userId = request.user!.userId;
+
+    // Parse request body for onboarding data
+    const bodySchema = z.object({
+      archetype: z.string(),
+      secondaryArchetype: z.string().optional(),
+      archetypeDescription: z.string().optional(),
+      personality: z.object({
+        warmth: z.number(),
+        energy: z.number(),
+        playfulness: z.number(),
+        formality: z.number(),
+        assertiveness: z.number(),
+        curiosity: z.number(),
+        empathy: z.number(),
+        spontaneity: z.number(),
+        optimism: z.number(),
+        directness: z.number(),
+      }),
+      tenets: z.array(z.object({
+        category: z.string(),
+        priority: z.string(),
+        rule: z.string(),
+        isNegation: z.boolean(),
+      })).optional(),
+      userBackstoryHint: z.string().optional(),
+    });
+
+    const parseResult = bodySchema.safeParse(request.body);
+    if (!parseResult.success) {
+      return reply.status(400).send({
+        error: 'Validation Error',
+        message: 'Invalid request body',
+        details: parseResult.error.issues,
+      });
+    }
+
+    const input = parseResult.data;
+
+    // Verify companion exists and belongs to user
+    const companion = await companionRepo.findById(companionId);
+    if (!companion) {
+      return reply.status(404).send({
+        error: 'Not Found',
+        message: 'Companion not found',
+      });
+    }
+
+    if (companion.user_id !== userId) {
+      return reply.status(403).send({
+        error: 'Forbidden',
+        message: 'You can only generate backstory for your own companions',
+      });
+    }
+
+    logger.info({ companionId, userId, archetype: input.archetype }, 'Generating backstory for companion');
+
+    try {
+      // Call orchestrator to generate backstory
+      const orchestratorResponse = await fetch(`${ORCHESTRATOR_URL}/backstory/generate`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          companion_name: companion.name,
+          pronouns: companion.spec?.identity?.pronouns || 'they/them',
+          archetype: input.archetype,
+          secondary_archetype: input.secondaryArchetype,
+          archetype_description: input.archetypeDescription,
+          personality: input.personality,
+          tenets: input.tenets?.map(t => ({
+            category: t.category,
+            priority: t.priority,
+            rule: t.rule,
+            is_negation: t.isNegation,
+          })) || [],
+          user_backstory_hint: input.userBackstoryHint,
+        }),
+      });
+
+      if (!orchestratorResponse.ok) {
+        const errorText = await orchestratorResponse.text();
+        logger.error({ status: orchestratorResponse.status, error: errorText }, 'Orchestrator backstory generation failed');
+        throw new Error(`Orchestrator error: ${orchestratorResponse.status}`);
+      }
+
+      const backstoryResult = await orchestratorResponse.json() as {
+        backstory: string;
+        motivations: string[];
+        key_memories: string[];
+        personality_quirks: string[];
+        latency_ms: number;
+      };
+
+      logger.info({ companionId, latencyMs: backstoryResult.latency_ms }, 'Backstory generated successfully');
+
+      // Save to knowledge graph
+      const kgRepo = getKnowledgeGraphRepository();
+
+      // Create the main companion self-entity if it doesn't exist
+      let selfEntity = await kgRepo.findEntityByCanonicalName(userId, companionId, companion.name.toLowerCase());
+      if (!selfEntity) {
+        selfEntity = await kgRepo.createEntity({
+          user_id: userId,
+          companion_id: companionId,
+          name: companion.name,
+          entity_type: 'person',
+          canonical_name: companion.name.toLowerCase(),
+          metadata: {
+            is_self: true,
+            pronouns: companion.spec?.identity?.pronouns,
+          },
+        });
+      }
+
+      // Create backstory entity
+      const backstoryEntity = await kgRepo.createEntity({
+        user_id: userId,
+        companion_id: companionId,
+        name: 'My Backstory',
+        entity_type: 'concept',
+        metadata: {
+          backstory: backstoryResult.backstory,
+          generated_at: new Date().toISOString(),
+        },
+      });
+
+      // Create motivation entities and relationships
+      for (const motivation of backstoryResult.motivations) {
+        const motivationEntity = await kgRepo.createEntity({
+          user_id: userId,
+          companion_id: companionId,
+          name: motivation,
+          entity_type: 'concept',
+          metadata: { type: 'motivation' },
+        });
+
+        await kgRepo.upsertEdge({
+          user_id: userId,
+          companion_id: companionId,
+          source_entity_id: selfEntity.id,
+          target_entity_id: motivationEntity.id,
+          relation_type: 'wants',
+          confidence: 0.95,
+        });
+      }
+
+      // Create key memory entities and relationships
+      for (const memory of backstoryResult.key_memories) {
+        const memoryEntity = await kgRepo.createEntity({
+          user_id: userId,
+          companion_id: companionId,
+          name: memory,
+          entity_type: 'event',
+          metadata: { type: 'formative_memory' },
+        });
+
+        await kgRepo.upsertEdge({
+          user_id: userId,
+          companion_id: companionId,
+          source_entity_id: selfEntity.id,
+          target_entity_id: memoryEntity.id,
+          relation_type: 'experienced',
+          confidence: 0.95,
+        });
+      }
+
+      // Create personality quirk entities and relationships
+      for (const quirk of backstoryResult.personality_quirks) {
+        const quirkEntity = await kgRepo.createEntity({
+          user_id: userId,
+          companion_id: companionId,
+          name: quirk,
+          entity_type: 'concept',
+          metadata: { type: 'personality_quirk' },
+        });
+
+        await kgRepo.upsertEdge({
+          user_id: userId,
+          companion_id: companionId,
+          source_entity_id: selfEntity.id,
+          target_entity_id: quirkEntity.id,
+          relation_type: 'has',
+          confidence: 0.95,
+        });
+      }
+
+      // Link self to backstory
+      await kgRepo.upsertEdge({
+        user_id: userId,
+        companion_id: companionId,
+        source_entity_id: selfEntity.id,
+        target_entity_id: backstoryEntity.id,
+        relation_type: 'has',
+        confidence: 1.0,
+      });
+
+      logger.info(
+        {
+          companionId,
+          userId,
+          motivationsCount: backstoryResult.motivations.length,
+          memoriesCount: backstoryResult.key_memories.length,
+          quirksCount: backstoryResult.personality_quirks.length,
+        },
+        'Backstory saved to knowledge graph'
+      );
+
+      return reply.send({
+        success: true,
+        data: {
+          backstory: backstoryResult.backstory,
+          motivations: backstoryResult.motivations,
+          keyMemories: backstoryResult.key_memories,
+          personalityQuirks: backstoryResult.personality_quirks,
+          latencyMs: backstoryResult.latency_ms,
+        },
+      });
+    } catch (error) {
+      logger.error({ error, companionId }, 'Failed to generate backstory');
+      return reply.status(500).send({
+        error: 'Backstory generation failed',
+        message: error instanceof Error ? error.message : 'Unknown error',
+      });
+    }
   });
 }

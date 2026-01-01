@@ -51,3 +51,6 @@ export * from './deploy.js';
 
 // Email events
 export * from './email.js';
+
+// Gift events
+export * from './gift.js';

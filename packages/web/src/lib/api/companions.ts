@@ -47,9 +47,11 @@ export interface CompanionSpec {
     name?: string;
     pronouns?: string;
     backstory?: string;
+    address_style?: string;
   };
   personality?: {
     archetype?: string;
+    secondary_archetype?: string;
     traits?: Record<string, number>;
   };
   voice?: {
@@ -60,6 +62,14 @@ export interface CompanionSpec {
   boundaries?: {
     content_rating?: string;
     relationship_pacing?: string;
+    topics_avoid?: string[];
+    safe_topics?: string[];
+    emotional_depth?: 'surface' | 'moderate' | 'deep';
+  };
+  memory_consent?: {
+    allow_long_term?: boolean;
+    allow_kg_extraction?: boolean;
+    retention_days?: number;
   };
 }
 
@@ -185,4 +195,53 @@ export function updateCompanionPersonality(
       },
     },
   });
+}
+
+// Backstory generation types
+export interface GenerateBackstoryRequest {
+  archetype: string;
+  secondaryArchetype?: string;
+  archetypeDescription?: string;
+  personality: {
+    warmth: number;
+    energy: number;
+    playfulness: number;
+    formality: number;
+    assertiveness: number;
+    curiosity: number;
+    empathy: number;
+    spontaneity: number;
+    optimism: number;
+    directness: number;
+  };
+  tenets?: Array<{
+    category: string;
+    priority: string;
+    rule: string;
+    isNegation: boolean;
+  }>;
+  userBackstoryHint?: string;
+}
+
+export interface GenerateBackstoryResult {
+  backstory: string;
+  motivations: string[];
+  keyMemories: string[];
+  personalityQuirks: string[];
+  latencyMs: number;
+}
+
+/**
+ * Generate a backstory for a companion using LLM
+ * The backstory is automatically saved to the knowledge graph
+ */
+export async function generateBackstory(
+  companionId: string,
+  request: GenerateBackstoryRequest
+): Promise<GenerateBackstoryResult> {
+  const response = await post<{ success: boolean; data: GenerateBackstoryResult }>(
+    `/companions/${companionId}/generate-backstory`,
+    request
+  );
+  return response.data;
 }

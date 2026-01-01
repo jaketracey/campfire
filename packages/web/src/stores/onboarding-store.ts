@@ -174,8 +174,18 @@ export const useOnboardingStore = create<OnboardingState>()(
       boundaries: initialBoundaries,
 
       setStep: (step) => set({ currentStep: step }),
-      nextStep: () => set((state) => ({ currentStep: Math.min(state.currentStep + 1, 9) })),
-      prevStep: () => set((state) => ({ currentStep: Math.max(state.currentStep - 1, 1) })),
+      nextStep: () => {
+        if (typeof window !== 'undefined') {
+          window.scrollTo({ top: 0, behavior: 'smooth' });
+        }
+        set((state) => ({ currentStep: Math.min(state.currentStep + 1, 9) }));
+      },
+      prevStep: () => {
+        if (typeof window !== 'undefined') {
+          window.scrollTo({ top: 0, behavior: 'smooth' });
+        }
+        set((state) => ({ currentStep: Math.max(state.currentStep - 1, 1) }));
+      },
 
       setArchetype: (archetype) => set({ archetype }),
       setSecondaryArchetype: (archetype) => set({ secondaryArchetype: archetype }),

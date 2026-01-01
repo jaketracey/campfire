@@ -13,6 +13,8 @@ from orchestrator.models.events import EventType, ToolEvent
 from orchestrator.models.tools import ToolCall, ToolResult
 from orchestrator.tools.base import ToolHandler
 from orchestrator.tools.handlers import (
+    GiftAcknowledgeHandler,
+    GiftGenerateHandler,
     ImageAnalysisHandler,
     ImageGenerationHandler,
     KGProposeHandler,
@@ -58,6 +60,12 @@ class ToolRouter:
                 self.settings, self.event_emitter, self.http_client
             ),
             VaultProjectionHandler(
+                self.settings, self.event_emitter, self.http_client
+            ),
+            GiftGenerateHandler(
+                self.settings, self.event_emitter, self.http_client
+            ),
+            GiftAcknowledgeHandler(
                 self.settings, self.event_emitter, self.http_client
             ),
         ]

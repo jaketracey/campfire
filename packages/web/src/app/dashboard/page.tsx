@@ -15,7 +15,8 @@ import {
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
 import { motion } from 'framer-motion';
-import { LogOut, MessageCircle, Plus, RotateCcw, Sparkles, Trash2, ArrowRight, Copy, Check, Users, Link as LinkIcon, Settings } from 'lucide-react';
+import { LogOut, MessageCircle, Plus, RotateCcw, Sparkles, Trash2, ArrowRight, Copy, Check, Users, Link as LinkIcon, Settings, Share2 } from 'lucide-react';
+import { ShareCompanionDialog } from '@/components/companion/share-companion-dialog';
 import { useAuth } from '@/hooks/use-auth';
 import { listCompanions, listSessions, deleteCompanion, getInviteCode } from '@/lib/api';
 import type { Companion as APICompanion, Session as APISession, InviteCodeData } from '@/lib/api';
@@ -28,6 +29,7 @@ interface Companion {
   archetype: string;
   avatarUrl: string | null;
   createdAt: string;
+  isPublic: boolean;
   latestSessionId: string | null;
   latestConversationImageUrl: string | null;
 }
@@ -91,6 +93,7 @@ export default function DashboardPage() {
         archetype: c.description || 'Custom',
         avatarUrl: c.avatarUrl,
         createdAt: c.createdAt,
+        isPublic: c.isPublic,
         latestSessionId: c.latestSessionId || null,
         latestConversationImageUrl: c.latestConversationImageUrl || null,
       }));
@@ -340,6 +343,18 @@ export default function DashboardPage() {
                                 Start Journey
                               </Button>
                             )}
+                            <ShareCompanionDialog
+                              companionId={companion.id}
+                              companionName={companion.name}
+                              isPublic={companion.isPublic}
+                              onShareStatusChange={(isPublic) => {
+                                setCompanions((prev) =>
+                                  prev.map((c) =>
+                                    c.id === companion.id ? { ...c, isPublic } : c
+                                  )
+                                );
+                              }}
+                            />
                             <Button
                               className="aspect-square h-12 md:h-14 rounded-xl bg-white/[0.02] border border-white/5 hover:bg-red-500/10 hover:border-red-500/20 hover:text-red-500 text-gray-500 transition-all"
                               onClick={() => setCompanionToDelete(companion)}

@@ -1,15 +1,15 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useOnboardingStore, type TenetCategory } from '@/stores/onboarding-store';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
-import { Loader2, Sparkles, Star, ImageIcon, CheckCircle2 } from 'lucide-react';
+import { Loader2, Sparkles, Star, ImageIcon, CheckCircle2, BookOpen } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { useToast } from '@/hooks/use-toast';
-import { createCompanion, createSession, generateAnchorImages, type AnchorImage } from '@/lib/api';
+import { createCompanion, createSession, streamAnchorImages, generateBackstory, type AnchorImage, type GenerateBackstoryResult } from '@/lib/api';
 import { cn } from '@/lib/utils';
 import Image from 'next/image';
 
@@ -23,7 +23,7 @@ const TENET_CATEGORY_META: Record<TenetCategory, { label: string; color: string 
   autonomy: { label: 'Autonomy', color: 'amber' },
 };
 
-type CreationPhase = 'idle' | 'creating' | 'generating-anchors' | 'creating-session' | 'complete';
+type CreationPhase = 'idle' | 'creating' | 'generating-identity' | 'creating-session' | 'complete';
 
 export function Step9Review() {
   const router = useRouter();
@@ -32,14 +32,54 @@ export function Step9Review() {
   const [phase, setPhase] = useState<CreationPhase>('idle');
   const [generatedAnchors, setGeneratedAnchors] = useState<AnchorImage[]>([]);
   const [currentAnchorIndex, setCurrentAnchorIndex] = useState(0);
+  const [backstoryGenerated, setBackstoryGenerated] = useState(false);
+  const [imagesGenerated, setImagesGenerated] = useState(false);
+  const [displayedAnchorUrl, setDisplayedAnchorUrl] = useState<string | null>(null);
+  const [isImageFading, setIsImageFading] = useState(false);
 
   const coreTenets = state.tenets.filter((t) => t.priority === 'core');
   const isCreating = phase !== 'idle';
+
+  // Cycle through anchors with fade effect
+  useEffect(() => {
+    if (generatedAnchors.length === 0) {
+      setDisplayedAnchorUrl(null);
+      return;
+    }
+
+    // If first anchor just arrived, show it immediately
+    if (generatedAnchors.length === 1 && !displayedAnchorUrl) {
+      setDisplayedAnchorUrl(generatedAnchors[0].url);
+      return;
+    }
+
+    // Cycle through anchors every 3 seconds when we have multiple
+    if (generatedAnchors.length > 1) {
+      const interval = setInterval(() => {
+        setIsImageFading(true);
+        setTimeout(() => {
+          setCurrentAnchorIndex((prev) => (prev + 1) % generatedAnchors.length);
+          setIsImageFading(false);
+        }, 300); // Fade out duration
+      }, 3000);
+
+      return () => clearInterval(interval);
+    }
+  }, [generatedAnchors.length, displayedAnchorUrl]);
+
+  // Update displayed anchor when index changes
+  useEffect(() => {
+    if (generatedAnchors[currentAnchorIndex]) {
+      setDisplayedAnchorUrl(generatedAnchors[currentAnchorIndex].url);
+    }
+  }, [currentAnchorIndex, generatedAnchors]);
 
   const handleCreate = async () => {
     setPhase('creating');
     setGeneratedAnchors([]);
     setCurrentAnchorIndex(0);
+    setBackstoryGenerated(false);
+    setImagesGenerated(false);
 
     try {
       // Build personality description from archetype and sliders
@@ -59,48 +99,146 @@ export function Step9Review() {
         .filter(Boolean)
         .join('\n');
 
-      // Create companion via API
+      // Create companion via API with full spec including visual_style
       const companion = await createCompanion({
         name: state.name,
         description: state.archetype?.description,
         personality: personalityDescription,
         voiceId: state.voice?.id,
         isPublic: false,
+        spec: {
+          identity: {
+            name: state.name,
+            pronouns: state.identity.pronouns,
+          },
+          personality: {
+            archetype: state.archetype?.id || 'companion',
+            secondary_archetype: state.secondaryArchetype?.id,
+            traits: {
+              warmth: state.personality.warmth,
+              energy: state.personality.energy,
+              playfulness: state.personality.playfulness,
+              formality: state.personality.formality,
+              assertiveness: state.personality.assertiveness,
+              curiosity: state.personality.curiosity,
+              empathy: state.personality.empathy,
+              spontaneity: state.personality.spontaneity,
+              optimism: state.personality.optimism,
+              directness: state.personality.directness,
+            },
+          },
+          voice: {
+            provider: 'elevenlabs',
+            voice_id: state.voice?.id || 'default',
+          },
+          visual_style: {
+            style_type: state.visualStyle.avatarStyle,
+            appearance: {
+              ethnicity: state.visualStyle.appearance.ethnicity,
+              bodyType: state.visualStyle.appearance.bodyType,
+              hairColor: state.visualStyle.appearance.hairColor,
+              breastSize: state.visualStyle.appearance.breastSize,
+            },
+          },
+          boundaries: {
+            relationship_pacing: 'moderate',
+            content_rating: 'R',
+            emotional_depth: state.boundaries.emotionalDepth,
+            topics_avoid: state.boundaries.avoidTopics,
+            safe_topics: state.boundaries.safeTopics,
+          },
+        },
       });
 
       console.log('Companion created:', companion);
 
-      // Generate anchor images for character consistency
-      setPhase('generating-anchors');
+      // Generate identity: images (with SSE streaming) AND backstory in parallel
+      setPhase('generating-identity');
 
-      try {
-        const anchorsResult = await generateAnchorImages({
-          companionId: companion.id,
-          appearance: {
-            ethnicity: state.visualStyle.appearance.ethnicity,
-            bodyType: state.visualStyle.appearance.bodyType,
-            hairColor: state.visualStyle.appearance.hairColor,
-            breastSize: state.visualStyle.appearance.breastSize,
+      // Start streaming anchor images (will update state as each arrives)
+      const anchorStreamPromise = new Promise<void>((resolve, reject) => {
+        streamAnchorImages(
+          {
+            companionId: companion.id,
+            appearance: {
+              ethnicity: state.visualStyle.appearance.ethnicity,
+              bodyType: state.visualStyle.appearance.bodyType,
+              hairColor: state.visualStyle.appearance.hairColor,
+              breastSize: state.visualStyle.appearance.breastSize,
+            },
+            style: state.visualStyle.avatarStyle,
+            personality: {
+              warmth: state.personality.warmth,
+              playfulness: state.personality.playfulness,
+              directness: state.personality.directness,
+              curiosity: state.personality.curiosity,
+              empathy: state.personality.empathy,
+              assertiveness: state.personality.assertiveness,
+            },
           },
-          style: state.visualStyle.avatarStyle,
-          personality: {
-            warmth: state.personality.warmth,
-            playfulness: state.personality.playfulness,
-            directness: state.personality.directness,
-            curiosity: state.personality.curiosity,
-            empathy: state.personality.empathy,
-            assertiveness: state.personality.assertiveness,
-          },
-        });
+          {
+            onProgress: (data) => {
+              console.log('Anchor progress:', data);
+            },
+            onAnchor: (anchor) => {
+              console.log('Anchor received:', anchor);
+              setGeneratedAnchors((prev) => [...prev, anchor]);
+            },
+            onComplete: (result) => {
+              console.log('Anchor generation complete:', result);
+              setImagesGenerated(true);
+              resolve();
+            },
+            onError: (error) => {
+              console.error('Anchor generation error:', error);
+              // Still resolve - we might have partial anchors
+              if (error.partialAnchors && error.partialAnchors.length > 0) {
+                setImagesGenerated(true);
+              }
+              reject(new Error(error.message));
+            },
+          }
+        );
+      });
 
-        console.log('Anchor images generated:', anchorsResult);
-        setGeneratedAnchors(anchorsResult.anchors);
-      } catch (anchorError) {
-        // Log but don't fail - anchor generation is not critical
-        console.warn('Anchor generation failed, continuing without anchors:', anchorError);
+      // Run anchor streaming and backstory generation in parallel
+      const [anchorsResult, backstoryResult] = await Promise.allSettled([
+        anchorStreamPromise,
+        // Generate backstory and save to knowledge graph
+        generateBackstory(companion.id, {
+          archetype: state.archetype?.id || 'companion',
+          secondaryArchetype: state.secondaryArchetype?.id,
+          archetypeDescription: state.archetype?.description,
+          personality: state.personality,
+          tenets: state.tenets.map((t) => ({
+            category: t.category,
+            priority: t.priority,
+            rule: t.rule,
+            isNegation: t.isNegation,
+          })),
+          userBackstoryHint: state.identity.backstory || undefined,
+        }).then((result) => {
+          console.log('Backstory generated:', result);
+          setBackstoryGenerated(true);
+          return result;
+        }),
+      ]);
+
+      // Handle any failures gracefully
+      if (anchorsResult.status === 'rejected') {
+        console.warn('Anchor generation failed:', anchorsResult.reason);
         toast({
           title: 'Note',
           description: 'Could not generate anchor images. Your companion will still work normally.',
+          variant: 'default',
+        });
+      }
+
+      if (backstoryResult.status === 'rejected') {
+        console.warn('Backstory generation failed:', backstoryResult.reason);
+        toast({
+          title: 'Note',
+          description: 'Could not generate backstory. Your companion will still work normally.',
           variant: 'default',
         });
       }
@@ -164,8 +302,42 @@ export function Step9Review() {
         <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-vibes-neon via-vibes-hot to-vibes-cyan" />
         <CardContent className="p-8 space-y-8">
           <div className="flex items-center gap-6">
-            <div className="h-20 w-20 rounded-3xl bg-vibes-neon/10 flex items-center justify-center text-4xl border border-vibes-neon/20 shadow-[0_0_20px_rgba(168,85,247,0.2)]">
-              {state.archetype?.icon}
+            {/* Avatar/Icon with live preview when anchors arrive */}
+            <div
+              className={cn(
+                'relative overflow-hidden transition-all duration-500 ease-out',
+                displayedAnchorUrl
+                  ? 'h-32 w-24 rounded-2xl'  // Larger when showing generated images
+                  : 'h-20 w-20 rounded-3xl'   // Square when showing icon
+              )}
+            >
+              {displayedAnchorUrl ? (
+                <>
+                  {/* Glow effect */}
+                  <div className="absolute inset-0 bg-gradient-to-br from-vibes-neon/20 via-transparent to-vibes-hot/20 z-10 pointer-events-none" />
+                  {/* Image with fade transition */}
+                  <Image
+                    src={displayedAnchorUrl}
+                    alt={`${state.name} preview`}
+                    fill
+                    className={cn(
+                      'object-cover transition-all duration-300',
+                      isImageFading ? 'opacity-0 scale-105' : 'opacity-100 scale-100'
+                    )}
+                    priority
+                  />
+                  {/* Border overlay */}
+                  <div className="absolute inset-0 border-2 border-vibes-neon/40 rounded-2xl shadow-[0_0_30px_rgba(168,85,247,0.4)] z-20" />
+                </>
+              ) : (
+                <div className="h-full w-full bg-vibes-neon/10 flex items-center justify-center text-4xl border border-vibes-neon/20 shadow-[0_0_20px_rgba(168,85,247,0.2)] rounded-3xl">
+                  {phase === 'generating-identity' ? (
+                    <Loader2 className="h-8 w-8 text-vibes-neon animate-spin" />
+                  ) : (
+                    state.archetype?.icon
+                  )}
+                </div>
+              )}
             </div>
             <div>
               <h3 className="text-3xl font-bold font-display text-white">{state.name}</h3>
@@ -246,67 +418,107 @@ export function Step9Review() {
         </CardContent>
       </Card>
 
-      {/* Anchor Generation Progress */}
-      {phase === 'generating-anchors' && (
+      {/* Identity Generation Progress */}
+      {phase === 'generating-identity' && (
         <Card className="bg-white/[0.02] backdrop-blur-3xl border-white/10 overflow-hidden">
-          <CardContent className="p-6 space-y-4">
+          <CardContent className="p-6 space-y-6">
             <div className="flex items-center gap-3">
               <div className="relative">
-                <ImageIcon className="h-6 w-6 text-vibes-neon animate-pulse" />
+                <Sparkles className="h-6 w-6 text-vibes-neon animate-pulse" />
               </div>
               <div>
                 <h4 className="text-lg font-bold text-white">Creating {state.name}&apos;s Identity</h4>
                 <p className="text-sm text-gray-400">
-                  Generating unique images to establish visual consistency...
+                  Generating unique visuals and backstory...
                 </p>
               </div>
             </div>
 
-            {/* Progress indicator */}
-            <div className="flex gap-2">
-              {['neutral', 'happy', 'thoughtful'].map((emotionalState, index) => {
-                const isComplete = generatedAnchors.some((a) => a.emotionalState === emotionalState);
-                const isCurrent = index === generatedAnchors.length;
+            {/* Two parallel progress sections */}
+            <div className="grid grid-cols-2 gap-6">
+              {/* Images progress */}
+              <div className="space-y-3">
+                <div className="flex items-center gap-2">
+                  {imagesGenerated ? (
+                    <CheckCircle2 className="h-4 w-4 text-vibes-neon" />
+                  ) : (
+                    <ImageIcon className="h-4 w-4 text-vibes-neon animate-pulse" />
+                  )}
+                  <span className="text-sm font-medium text-gray-300">Visual Identity</span>
+                </div>
 
-                return (
+                {/* Progress indicator */}
+                <div className="flex gap-1.5">
+                  {['neutral', 'happy', 'thoughtful'].map((emotionalState, index) => {
+                    const isComplete = generatedAnchors.some((a) => a.emotionalState === emotionalState);
+                    const isCurrent = index === generatedAnchors.length && !imagesGenerated;
+
+                    return (
+                      <div
+                        key={emotionalState}
+                        className={cn(
+                          'flex-1 h-1.5 rounded-full transition-all duration-500',
+                          isComplete
+                            ? 'bg-vibes-neon'
+                            : isCurrent
+                              ? 'bg-vibes-neon/50 animate-pulse'
+                              : 'bg-white/10'
+                        )}
+                      />
+                    );
+                  })}
+                </div>
+
+                {/* Generated anchors preview */}
+                {generatedAnchors.length > 0 && (
+                  <div className="flex gap-2 justify-center pt-1">
+                    {generatedAnchors.map((anchor) => (
+                      <div
+                        key={anchor.id}
+                        className="relative w-12 h-18 rounded-md overflow-hidden border border-vibes-neon/30 shadow-[0_0_8px_rgba(168,85,247,0.2)]"
+                      >
+                        <Image
+                          src={anchor.url}
+                          alt={`${state.name} - ${anchor.emotionalState}`}
+                          fill
+                          className="object-cover"
+                        />
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {/* Backstory progress */}
+              <div className="space-y-3">
+                <div className="flex items-center gap-2">
+                  {backstoryGenerated ? (
+                    <CheckCircle2 className="h-4 w-4 text-vibes-cyan" />
+                  ) : (
+                    <BookOpen className="h-4 w-4 text-vibes-cyan animate-pulse" />
+                  )}
+                  <span className="text-sm font-medium text-gray-300">Backstory & Memories</span>
+                </div>
+
+                {/* Single progress bar for backstory */}
+                <div className="h-1.5 rounded-full bg-white/10 overflow-hidden">
                   <div
-                    key={emotionalState}
                     className={cn(
-                      'flex-1 h-2 rounded-full transition-all duration-500',
-                      isComplete
-                        ? 'bg-vibes-neon'
-                        : isCurrent
-                          ? 'bg-vibes-neon/50 animate-pulse'
-                          : 'bg-white/10'
+                      'h-full rounded-full transition-all duration-1000',
+                      backstoryGenerated
+                        ? 'w-full bg-vibes-cyan'
+                        : 'w-2/3 bg-vibes-cyan/50 animate-pulse'
                     )}
                   />
-                );
-              })}
-            </div>
+                </div>
 
-            {/* Generated anchors preview */}
-            {generatedAnchors.length > 0 && (
-              <div className="flex gap-3 justify-center pt-2">
-                {generatedAnchors.map((anchor) => (
-                  <div
-                    key={anchor.id}
-                    className="relative w-16 h-24 rounded-lg overflow-hidden border border-vibes-neon/30 shadow-[0_0_10px_rgba(168,85,247,0.2)]"
-                  >
-                    <Image
-                      src={anchor.url}
-                      alt={`${state.name} - ${anchor.emotionalState}`}
-                      fill
-                      className="object-cover"
-                    />
-                    <div className="absolute bottom-0 left-0 right-0 bg-black/60 py-0.5 px-1">
-                      <p className="text-[8px] text-center text-gray-300 capitalize">
-                        {anchor.emotionalState}
-                      </p>
-                    </div>
-                  </div>
-                ))}
+                {backstoryGenerated && (
+                  <p className="text-xs text-gray-500 pt-1">
+                    Motivations, memories, and personality saved ✓
+                  </p>
+                )}
               </div>
-            )}
+            </div>
           </CardContent>
         </Card>
       )}
@@ -328,10 +540,10 @@ export function Step9Review() {
               <Loader2 className="mr-3 h-8 w-8 animate-spin" />
               Creating {state.name}...
             </>
-          ) : phase === 'generating-anchors' ? (
+          ) : phase === 'generating-identity' ? (
             <>
               <Loader2 className="mr-3 h-8 w-8 animate-spin" />
-              Generating Images...
+              Building Identity...
             </>
           ) : phase === 'creating-session' ? (
             <>

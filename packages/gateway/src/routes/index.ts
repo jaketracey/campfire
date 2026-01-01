@@ -14,6 +14,7 @@ import { memoriesRoutes } from './memories.js';
 import { knowledgeGraphRoutes } from './knowledge-graph.js';
 import { eventsRoutes } from './events.js';
 import { billingRoutes } from './billing.js';
+import { giftsRoutes } from './gifts.js';
 import { emailWebhookRoutes } from './email-webhooks.js';
 import { imagegenRoutes } from './imagegen.js';
 import { debugRoutes } from './debug.js';
@@ -55,6 +56,9 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
 
       // Billing routes
       await api.register(billingRoutes, { prefix: '/billing' });
+
+      // Gifts routes
+      await api.register(giftsRoutes, { prefix: '/gifts' });
 
       // Image generation routes
       await api.register(imagegenRoutes, { prefix: '/imagegen' });

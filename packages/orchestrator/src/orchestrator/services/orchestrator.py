@@ -18,6 +18,7 @@ from orchestrator.models.conversation import (
     SituationalTenetMatch,
 )
 from orchestrator.models.events import BaseEvent, EventType, ProviderEvent
+from orchestrator.models.gifts import GiftMemory, GiftRecallContext
 from orchestrator.models.memory import LongTermMemory
 from orchestrator.models.tools import TOOL_REGISTRY, ToolCall, ToolResult
 from orchestrator.prompts.manager import PromptManager
@@ -28,6 +29,7 @@ from orchestrator.providers.ollama import OllamaProvider
 from orchestrator.queue import JobQueue
 from orchestrator.safety.gate import SafetyGate
 from orchestrator.services.context_builder import ContextBuilder
+from orchestrator.services.gift_recall import GiftRecallService
 from orchestrator.services.tenet_retriever import TenetRetriever
 from orchestrator.services.turn_manager import TurnManager
 from orchestrator.tools.router import ToolRouter
@@ -49,6 +51,7 @@ class ConversationOrchestrator:
         primary_provider: LLMProvider | None = None,
         fallback_provider: LLMProvider | None = None,
         tenet_retriever: TenetRetriever | None = None,
+        gift_recall_service: GiftRecallService | None = None,
     ):
         self.settings = settings
         self.event_emitter = event_emitter
@@ -77,6 +80,7 @@ class ConversationOrchestrator:
         )
         self.turn_manager = TurnManager(event_emitter)
         self.tenet_retriever = tenet_retriever or TenetRetriever(settings)
+        self.gift_recall_service = gift_recall_service or GiftRecallService(settings)
 
     async def process_message(
         self,
@@ -148,6 +152,63 @@ class ConversationOrchestrator:
                         companion_id=str(companion_spec.id),
                     )
 
+            # Fetch gift memories for context
+            gift_memories: list[GiftMemory] = []
+            pending_gift_recall: GiftRecallContext | None = None
+
+            try:
+                # Get gift memories for context building
+                gift_memories = await self.gift_recall_service.get_gift_memories(
+                    user_id=user_id,
+                    companion_id=companion_spec.id,
+                    limit=5,
+                )
+
+                if gift_memories:
+                    logger.debug(
+                        "gift_memories_retrieved",
+                        user_id=str(user_id),
+                        companion_id=str(companion_spec.id),
+                        count=len(gift_memories),
+                    )
+
+                # Check for surprise gift recall trigger
+                current_turn = len(recent_turns) + 1 if recent_turns else 1
+                current_context = user_message
+
+                # Add recent conversation for context
+                if recent_turns:
+                    recent_messages = [
+                        t.user_message.content
+                        for t in recent_turns[-3:]
+                        if t.user_message
+                    ]
+                    current_context = " ".join(recent_messages + [user_message])
+
+                pending_gift_recall = await self.gift_recall_service.should_trigger_recall(
+                    session_id=session_id,
+                    user_id=user_id,
+                    companion_id=companion_spec.id,
+                    current_turn=current_turn,
+                    current_context=current_context,
+                )
+
+                if pending_gift_recall:
+                    logger.info(
+                        "gift_recall_triggered",
+                        session_id=str(session_id),
+                        gift_id=str(pending_gift_recall.gift_id),
+                        trigger=pending_gift_recall.trigger,
+                    )
+
+            except Exception as e:
+                logger.warning(
+                    "gift_context_retrieval_failed",
+                    error=str(e),
+                    user_id=str(user_id),
+                    companion_id=str(companion_spec.id),
+                )
+
             # Build context with situational tenets
             context = self.context_builder.build_context(
                 session_id=session_id,
@@ -163,10 +224,12 @@ class ConversationOrchestrator:
                 policy_version=self.safety_gate.policy_version,
             )
 
-            # Build messages
+            # Build messages with gift context
             messages = self.context_builder.build_messages(
                 context=context,
                 current_user_message=user_message,
+                gift_memories=gift_memories,
+                pending_gift_recall=pending_gift_recall,
             )
 
             # Get available tools
@@ -225,6 +288,16 @@ class ConversationOrchestrator:
                     assistant_response=response.content,
                 )
             )
+
+            # Record gift recall if one was triggered
+            if pending_gift_recall:
+                asyncio.create_task(
+                    self.gift_recall_service.record_recall(
+                        gift_id=pending_gift_recall.gift_id,
+                        session_id=session_id,
+                        trigger=pending_gift_recall.trigger,
+                    )
+                )
 
             return turn
 

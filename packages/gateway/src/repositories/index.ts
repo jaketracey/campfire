@@ -136,6 +136,22 @@ export type {
   RelationshipSummary,
 } from './knowledge-graph.js';
 
+// Gifts repository
+export {
+  GiftsRepository,
+  getGiftsRepository,
+} from './gifts.js';
+export type {
+  TokenBalanceWithStats,
+  GiftWithDetails,
+  GiftMemoryWithGift,
+  CreditTokensResult,
+  DeductTokensResult,
+  TokenTransactionListFilters,
+  GiftListFilters,
+  GiftMemorySearchResult,
+} from './gifts.js';
+
 /**
  * Initialize all repositories
  * Call this at application startup to ensure singleton instances are created
@@ -149,6 +165,7 @@ export function initializeRepositories(): void {
   getBillingRepository();
   getVaultRepository();
   getKnowledgeGraphRepository();
+  getGiftsRepository();
 }
 
 /**
@@ -165,5 +182,6 @@ export function getRepositories() {
     billing: getBillingRepository(),
     vault: getVaultRepository(),
     knowledgeGraph: getKnowledgeGraphRepository(),
+    gifts: getGiftsRepository(),
   };
 }

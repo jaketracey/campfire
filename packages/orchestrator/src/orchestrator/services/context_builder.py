@@ -16,6 +16,7 @@ from orchestrator.models.conversation import (
     SessionSummary,
     SituationalTenetMatch,
 )
+from orchestrator.models.gifts import GiftMemory, GiftRecallContext
 from orchestrator.models.memory import LongTermMemory, MemoryQuery
 from orchestrator.prompts.manager import PromptManager
 
@@ -76,6 +77,8 @@ class ContextBuilder:
         long_term_memories: list[LongTermMemory] | None = None,
         safety_constraints: list[str] | None = None,
         situational_tenets: list[SituationalTenetMatch] | None = None,
+        gift_memories: list[GiftMemory] | None = None,
+        pending_gift_recall: GiftRecallContext | None = None,
         prompt_version: str = "1.0.0",
     ) -> str:
         """Build the system prompt from companion spec and context."""
@@ -116,6 +119,16 @@ class ContextBuilder:
             memory_context = self._format_memories(long_term_memories)
             full_prompt += f"\n\n{memory_context}"
 
+        # Add gift memories if available
+        if gift_memories:
+            gift_context = self._format_gift_context(gift_memories)
+            full_prompt += f"\n\n{gift_context}"
+
+        # Add pending gift recall suggestion if triggered
+        if pending_gift_recall:
+            recall_context = self._format_pending_gift_recall(pending_gift_recall)
+            full_prompt += f"\n\n{recall_context}"
+
         # Add safety constraints
         if safety_constraints:
             safety_section = self._format_safety_constraints(safety_constraints)
@@ -127,6 +140,8 @@ class ContextBuilder:
         self,
         context: ConversationContext,
         current_user_message: str,
+        gift_memories: list[GiftMemory] | None = None,
+        pending_gift_recall: GiftRecallContext | None = None,
     ) -> list[dict[str, Any]]:
         """Build the message list for the model API call."""
         messages: list[dict[str, Any]] = []
@@ -138,6 +153,8 @@ class ContextBuilder:
             long_term_memories=context.long_term_memories,
             safety_constraints=context.safety_constraints,
             situational_tenets=context.situational_tenets,
+            gift_memories=gift_memories,
+            pending_gift_recall=pending_gift_recall,
             prompt_version=context.prompt_version,
         )
         messages.append({"role": "system", "content": system_prompt})
@@ -281,6 +298,68 @@ class ContextBuilder:
                 lines.append(f"- {tenet.rule}")
 
         lines.append("</situational_guidance>")
+
+        return "\n".join(lines)
+
+    def _format_gift_context(self, gift_memories: list[GiftMemory]) -> str:
+        """Format gift memories for the system prompt.
+
+        Gift memories represent special moments in the relationship and should
+        be presented in a way that encourages natural recall and emotional connection.
+        """
+        if not gift_memories:
+            return ""
+
+        lines = ["<gift_memories>"]
+        lines.append("Special gifts in your relationship:")
+        lines.append("")
+
+        for gift in gift_memories[:5]:  # Limit to 5 most significant gifts
+            direction = (
+                "You gave"
+                if gift.direction == "from_companion"
+                else "They gave you"
+            )
+            lines.append(
+                f"- {direction}: \"{gift.title}\" - {gift.emotional_meaning}"
+            )
+
+        lines.append("")
+        lines.append(
+            "These gifts represent meaningful moments. "
+            "You may naturally recall them when contextually appropriate."
+        )
+        lines.append("</gift_memories>")
+
+        return "\n".join(lines)
+
+    def _format_pending_gift_recall(
+        self,
+        recall_context: GiftRecallContext,
+    ) -> str:
+        """Format a pending gift recall suggestion.
+
+        When the system determines it's time to recall a past gift,
+        this provides the companion with context and guidance.
+        """
+        lines = ["<gift_recall_suggestion>"]
+        lines.append("Consider naturally mentioning this past gift if it fits the conversation:")
+        lines.append("")
+        lines.append(f"- Gift: \"{recall_context.title}\"")
+        lines.append(f"- Given: {recall_context.date}")
+        lines.append(f"- Meaning: {recall_context.emotional_meaning}")
+        lines.append(f"- Trigger: {recall_context.trigger}")
+
+        if recall_context.suggested_mention:
+            lines.append("")
+            lines.append(f"Suggested approach: {recall_context.suggested_mention}")
+
+        lines.append("")
+        lines.append(
+            "Only mention this if it feels natural. "
+            "Don't force it if it doesn't fit the conversation flow."
+        )
+        lines.append("</gift_recall_suggestion>")
 
         return "\n".join(lines)
 

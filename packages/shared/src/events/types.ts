@@ -101,6 +101,17 @@ export const EventTypes = {
   EMAIL_CLICKED: 'email.clicked',
   EMAIL_UNSUBSCRIBED: 'email.unsubscribed',
   EMAIL_PREFERENCES_UPDATED: 'email.preferences.updated',
+
+  // Gift events
+  GIFT_GENERATED: 'gift.generated',
+  GIFT_RECEIVED: 'gift.received',
+  GIFT_ACKNOWLEDGED: 'gift.acknowledged',
+  GIFT_MEMORY_RECALLED: 'gift.memory.recalled',
+
+  // Token events
+  TOKENS_PURCHASED: 'tokens.purchased',
+  TOKENS_BONUS_GRANTED: 'tokens.bonus_granted',
+  TOKENS_SPENT: 'tokens.spent',
 } as const;
 
 export type EventType = typeof EventTypes[keyof typeof EventTypes];
@@ -137,6 +148,8 @@ export const EventCategories = {
     'email.unsubscribed',
     'email.preferences.updated',
   ],
+  GIFT: ['gift.generated', 'gift.received', 'gift.acknowledged', 'gift.memory.recalled'],
+  TOKENS: ['tokens.purchased', 'tokens.bonus_granted', 'tokens.spent'],
 } as const;
 
 export type EventCategory = keyof typeof EventCategories;

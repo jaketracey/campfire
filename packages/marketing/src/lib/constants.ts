@@ -3,12 +3,42 @@ function getAppUrl(): string {
   return process.env.NEXT_PUBLIC_APP_URL || '';
 }
 
+// S3 CDN URL for companion images
+const MEDIA_CDN_URL = process.env.NEXT_PUBLIC_MEDIA_CDN_URL || 'https://campfire-dev-media.s3.us-east-1.amazonaws.com';
+
+// Companion OG images for social sharing - featuring diverse companions
+export const companionOgImages = [
+  `${MEDIA_CDN_URL}/companions/variations/east-asian-slim-fantasy.png`,
+  `${MEDIA_CDN_URL}/companions/variations/black-athletic-red.png`,
+  `${MEDIA_CDN_URL}/companions/variations/caucasian-curvy-blonde.png`,
+  `${MEDIA_CDN_URL}/companions/variations/latina-slim-brown.png`,
+  `${MEDIA_CDN_URL}/companions/variations/south-asian-athletic-fantasy.png`,
+  `${MEDIA_CDN_URL}/companions/variations/mixed-curvy-black.png`,
+  `${MEDIA_CDN_URL}/companions/variations/middle-eastern-slim-brown.png`,
+  `${MEDIA_CDN_URL}/companions/variations/east-asian-athletic-blonde.png`,
+];
+
+// Get a random companion OG image (deterministic based on page path for consistency)
+export function getCompanionOgImage(seed?: string): string {
+  if (!seed) {
+    return companionOgImages[Math.floor(Math.random() * companionOgImages.length)];
+  }
+  // Deterministic hash based on seed string
+  let hash = 0;
+  for (let i = 0; i < seed.length; i++) {
+    hash = ((hash << 5) - hash) + seed.charCodeAt(i);
+    hash = hash & hash;
+  }
+  return companionOgImages[Math.abs(hash) % companionOgImages.length];
+}
+
 export const siteConfig = {
   name: 'Campfire',
   description: 'Your voice-first AI companion. Design your perfect companion, talk naturally, and build a relationship that remembers.',
   url: process.env.NEXT_PUBLIC_SITE_URL || 'https://campfire.dev',
   get appUrl() { return getAppUrl(); },
   ogImage: '/og-image.png',
+  mediaCdnUrl: MEDIA_CDN_URL,
   links: {
     twitter: 'https://twitter.com/campfireai',
     github: 'https://github.com/campfire',

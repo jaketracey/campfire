@@ -311,3 +311,128 @@ export async function generateAnchorImages(
 ): Promise<GenerateAnchorsResult> {
   return post<GenerateAnchorsResult>('/imagegen/generate-anchors', request);
 }
+
+/**
+ * SSE streaming version of anchor image generation
+ * Streams each anchor image as it's generated for real-time progress updates
+ */
+export interface AnchorStreamCallbacks {
+  onProgress?: (data: { phase: string; emotionalState?: string; index?: number; total: number; completed: number }) => void;
+  onAnchor?: (anchor: AnchorImage) => void;
+  onComplete?: (result: GenerateAnchorsResult) => void;
+  onError?: (error: { message: string; partialAnchors?: AnchorImage[] }) => void;
+}
+
+export function streamAnchorImages(
+  request: GenerateAnchorsRequest,
+  callbacks: AnchorStreamCallbacks
+): () => void {
+  // Get the access token
+  const token = typeof window !== 'undefined'
+    ? localStorage.getItem('campfire_access_token')
+    : null;
+
+  if (!token) {
+    callbacks.onError?.({ message: 'Not authenticated' });
+    return () => {};
+  }
+
+  // Build SSE URL with query params
+  const baseUrl = typeof window !== 'undefined' && (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')
+    ? 'http://localhost:3002'
+    : '';
+
+  const params = new URLSearchParams({
+    companionId: request.companionId,
+    appearance: JSON.stringify(request.appearance),
+    style: request.style,
+  });
+
+  if (request.personality) {
+    params.set('personality', JSON.stringify(request.personality));
+  }
+
+  const url = `${baseUrl}/api/v1/imagegen/generate-anchors-stream?${params.toString()}`;
+
+  // Create EventSource with auth header via fetch
+  let aborted = false;
+
+  const connectSSE = async () => {
+    try {
+      const response = await fetch(url, {
+        method: 'GET',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Accept': 'text/event-stream',
+        },
+      });
+
+      if (!response.ok) {
+        throw new Error(`SSE connection failed: ${response.status}`);
+      }
+
+      const reader = response.body?.getReader();
+      if (!reader) {
+        throw new Error('No response body');
+      }
+
+      const decoder = new TextDecoder();
+      let buffer = '';
+
+      while (!aborted) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split('\n');
+        buffer = lines.pop() || '';
+
+        let currentEvent = '';
+        let currentData = '';
+
+        for (const line of lines) {
+          if (line.startsWith('event: ')) {
+            currentEvent = line.slice(7);
+          } else if (line.startsWith('data: ')) {
+            currentData = line.slice(6);
+
+            try {
+              const data = JSON.parse(currentData);
+
+              switch (currentEvent) {
+                case 'progress':
+                  callbacks.onProgress?.(data);
+                  break;
+                case 'anchor':
+                  callbacks.onAnchor?.(data);
+                  break;
+                case 'complete':
+                  callbacks.onComplete?.(data);
+                  break;
+                case 'error':
+                  callbacks.onError?.(data);
+                  break;
+              }
+            } catch (e) {
+              console.error('Failed to parse SSE data:', currentData);
+            }
+
+            currentEvent = '';
+            currentData = '';
+          }
+        }
+      }
+    } catch (error) {
+      if (!aborted) {
+        callbacks.onError?.({ message: error instanceof Error ? error.message : 'Unknown error' });
+      }
+    }
+  };
+
+  connectSSE();
+
+  // Return cleanup function
+  return () => {
+    aborted = true;
+  };
+}

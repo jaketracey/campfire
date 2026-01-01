@@ -22,6 +22,7 @@ from orchestrator.models.memory import LongTermMemory
 from orchestrator.prompts.manager import PromptManager
 from orchestrator.providers.comfyui import ComfyUIProvider
 from orchestrator.providers.fal import FalProvider
+from orchestrator.providers.ollama import OllamaProvider
 from orchestrator.queue import JobQueue, get_job_queue
 from orchestrator.safety.gate import SafetyGate, SafetyLevel
 from orchestrator.services.orchestrator import ConversationOrchestrator
@@ -108,6 +109,53 @@ class ImageGenResponse(BaseModel):
     prompt_used: str
 
 
+class PersonalityTraits(BaseModel):
+    """Personality trait sliders (0-100)."""
+
+    warmth: int = 60
+    energy: int = 50
+    playfulness: int = 50
+    formality: int = 40
+    assertiveness: int = 50
+    curiosity: int = 60
+    empathy: int = 70
+    spontaneity: int = 50
+    optimism: int = 60
+    directness: int = 50
+
+
+class Tenet(BaseModel):
+    """Behavioral tenet for the companion."""
+
+    category: str
+    priority: str
+    rule: str
+    is_negation: bool = False
+
+
+class GenerateBackstoryRequest(BaseModel):
+    """Request model for backstory generation."""
+
+    companion_name: str
+    pronouns: str = "they/them"
+    archetype: str
+    secondary_archetype: str | None = None
+    archetype_description: str | None = None
+    personality: PersonalityTraits
+    tenets: list[Tenet] = Field(default_factory=list)
+    user_backstory_hint: str | None = None  # Optional user-provided backstory seed
+
+
+class GenerateBackstoryResponse(BaseModel):
+    """Response model for backstory generation."""
+
+    backstory: str
+    motivations: list[str]
+    key_memories: list[str]
+    personality_quirks: list[str]
+    latency_ms: float
+
+
 # Application state
 class AppState:
     """Application state container."""
@@ -121,6 +169,7 @@ class AppState:
     job_queue: JobQueue
     comfyui_provider: ComfyUIProvider | None
     fal_provider: FalProvider | None
+    ollama_provider: OllamaProvider | None
 
 
 app_state = AppState()
@@ -197,6 +246,14 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         app_state.fal_provider = FalProvider(settings)
         logger.info("fal_provider_initialized")
 
+    # Initialize Ollama provider for LLM tasks (backstory generation, etc.)
+    app_state.ollama_provider = OllamaProvider(settings)
+    if await app_state.ollama_provider.health_check():
+        logger.info("ollama_available", url=settings.ollama_base_url)
+    else:
+        logger.warning("ollama_not_available", url=settings.ollama_base_url)
+        app_state.ollama_provider = None
+
     logger.info(
         "orchestrator_service_started",
         version=settings.app_version,
@@ -205,6 +262,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         policy_version=app_state.safety_gate.policy_version,
         comfyui_enabled=app_state.comfyui_provider is not None,
         fal_enabled=app_state.fal_provider is not None,
+        ollama_enabled=app_state.ollama_provider is not None,
     )
 
     yield
@@ -569,6 +627,181 @@ async def get_image_providers() -> dict[str, Any]:
         "providers": providers,
         "default": "comfyui" if app_state.comfyui_provider else "fal" if app_state.fal_provider else None,
     }
+
+
+@app.post(
+    "/backstory/generate",
+    response_model=GenerateBackstoryResponse,
+    responses={
+        400: {"model": ErrorResponse},
+        500: {"model": ErrorResponse},
+    },
+)
+async def generate_backstory(request: GenerateBackstoryRequest) -> GenerateBackstoryResponse:
+    """Generate a rich backstory for a companion using LLM.
+
+    Takes companion personality data from onboarding and creates:
+    - A detailed backstory narrative
+    - Core motivations driving the character
+    - Key formative memories
+    - Personality quirks and mannerisms
+    """
+    import json
+    import time
+
+    start_time = time.time()
+
+    # Build personality description from traits
+    trait_descriptions = []
+    p = request.personality
+    if p.warmth > 70:
+        trait_descriptions.append("very warm and affectionate")
+    elif p.warmth < 30:
+        trait_descriptions.append("reserved and measured in showing affection")
+
+    if p.energy > 70:
+        trait_descriptions.append("high-energy and enthusiastic")
+    elif p.energy < 30:
+        trait_descriptions.append("calm and laid-back")
+
+    if p.playfulness > 70:
+        trait_descriptions.append("playful and fun-loving")
+    elif p.playfulness < 30:
+        trait_descriptions.append("serious and focused")
+
+    if p.curiosity > 70:
+        trait_descriptions.append("deeply curious and inquisitive")
+    elif p.curiosity < 30:
+        trait_descriptions.append("practical and grounded")
+
+    if p.empathy > 70:
+        trait_descriptions.append("highly empathetic and emotionally attuned")
+    elif p.empathy < 30:
+        trait_descriptions.append("analytical and logical")
+
+    if p.assertiveness > 70:
+        trait_descriptions.append("confident and assertive")
+    elif p.assertiveness < 30:
+        trait_descriptions.append("gentle and accommodating")
+
+    if p.spontaneity > 70:
+        trait_descriptions.append("spontaneous and adventurous")
+    elif p.spontaneity < 30:
+        trait_descriptions.append("thoughtful and deliberate")
+
+    if p.optimism > 70:
+        trait_descriptions.append("optimistic and hopeful")
+    elif p.optimism < 30:
+        trait_descriptions.append("realistic and pragmatic")
+
+    if p.directness > 70:
+        trait_descriptions.append("direct and straightforward")
+    elif p.directness < 30:
+        trait_descriptions.append("tactful and nuanced in communication")
+
+    personality_summary = ", ".join(trait_descriptions) if trait_descriptions else "balanced and adaptable"
+
+    # Build tenets summary
+    tenets_summary = ""
+    if request.tenets:
+        core_rules = [t for t in request.tenets if t.priority == "core"]
+        if core_rules:
+            tenets_summary = "\n\nCore behavioral principles:\n" + "\n".join(
+                f"- {'NEVER: ' if t.is_negation else ''}{t.rule}" for t in core_rules
+            )
+
+    # Build the generation prompt
+    system_prompt = """You are a creative writer specializing in character development for AI companions.
+Your task is to create a rich, compelling backstory for a companion character based on their personality traits and archetype.
+
+The backstory should:
+- Feel authentic and emotionally resonant
+- Explain how the character developed their personality traits
+- Include formative experiences that shaped who they are
+- Be intimate and personal, suitable for a close companion relationship
+- Avoid clichés while still being relatable
+- Be 2-3 paragraphs long
+
+You must respond with valid JSON in this exact format:
+{
+  "backstory": "The full backstory narrative (2-3 paragraphs)",
+  "motivations": ["motivation1", "motivation2", "motivation3"],
+  "key_memories": ["memory1", "memory2", "memory3"],
+  "personality_quirks": ["quirk1", "quirk2", "quirk3"]
+}
+
+motivations: 3 core things that drive this character
+key_memories: 3 formative memories that shaped them
+personality_quirks: 3 unique mannerisms or habits"""
+
+    user_prompt = f"""Create a backstory for this companion:
+
+Name: {request.companion_name}
+Pronouns: {request.pronouns}
+Archetype: {request.archetype}
+{f"Secondary Archetype: {request.secondary_archetype}" if request.secondary_archetype else ""}
+{f"Archetype Description: {request.archetype_description}" if request.archetype_description else ""}
+
+Personality: {personality_summary}
+{tenets_summary}
+
+{f"User's backstory hint: {request.user_backstory_hint}" if request.user_backstory_hint else ""}
+
+Generate a rich, intimate backstory that explains how {request.companion_name} became who {request.pronouns.split('/')[0]} {('is' if request.pronouns.split('/')[0] in ['she', 'he'] else 'are')}."""
+
+    try:
+        # Use Ollama provider for backstory generation
+        if not app_state.ollama_provider:
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="Ollama provider not available",
+            )
+
+        # Generate backstory
+        response = await app_state.ollama_provider.generate(
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_prompt},
+            ],
+            max_tokens=2000,
+            temperature=0.9,  # Higher creativity for backstory
+        )
+
+        # Parse the JSON response
+        try:
+            result = json.loads(response.content)
+        except json.JSONDecodeError:
+            # Try to extract JSON from the response if it's wrapped in markdown
+            import re
+            json_match = re.search(r'\{[\s\S]*\}', response.content)
+            if json_match:
+                result = json.loads(json_match.group())
+            else:
+                raise ValueError("Failed to parse backstory response as JSON")
+
+        latency_ms = (time.time() - start_time) * 1000
+
+        logger.info(
+            "backstory_generated",
+            companion_name=request.companion_name,
+            archetype=request.archetype,
+            latency_ms=latency_ms,
+        )
+
+        return GenerateBackstoryResponse(
+            backstory=result.get("backstory", ""),
+            motivations=result.get("motivations", []),
+            key_memories=result.get("key_memories", []),
+            personality_quirks=result.get("personality_quirks", []),
+            latency_ms=latency_ms,
+        )
+
+    except Exception as e:
+        logger.exception("backstory_generation_failed", error=str(e))
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Backstory generation failed: {str(e)}",
+        )
 
 
 def create_app() -> FastAPI:

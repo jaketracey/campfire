@@ -198,6 +198,7 @@ export interface Companion {
   spec: CompanionSpec;
   spec_version: number;
   status: CompanionStatus;
+  is_public: boolean;
   created_at: Timestamp;
   updated_at: Timestamp;
 }
@@ -268,6 +269,7 @@ export interface CompanionInsert {
   spec: CompanionSpec;
   spec_version?: number;
   status?: CompanionStatus;
+  is_public?: boolean;
 }
 
 export interface CompanionAvatar {
@@ -565,6 +567,160 @@ export interface VaultFileInsert {
   size_bytes: number;
   source_event_ids?: UUID[];
   metadata?: JSONObject;
+}
+
+// ============================================================================
+// Token & Gift Types
+// ============================================================================
+
+export type TokenTransactionType =
+  | 'purchase'
+  | 'subscription_bonus'
+  | 'gift_spent'
+  | 'refund'
+  | 'admin_grant';
+
+export type GiftStatus = 'generating' | 'ready' | 'given' | 'failed';
+
+export interface TokenBalance {
+  id: UUID;
+  user_id: UUID;
+  balance: number;
+  lifetime_purchased: number;
+  lifetime_bonus: number;
+  lifetime_spent: number;
+  current_period_bonus: number;
+  bonus_granted_at: Timestamp | null;
+  created_at: Timestamp;
+  updated_at: Timestamp;
+}
+
+export interface TokenBalanceInsert {
+  user_id: UUID;
+  balance?: number;
+}
+
+export interface TokenTransaction {
+  id: UUID;
+  user_id: UUID;
+  transaction_type: TokenTransactionType;
+  amount: number;
+  balance_after: number;
+  stripe_payment_intent_id: string | null;
+  stripe_checkout_session_id: string | null;
+  gift_id: UUID | null;
+  subscription_id: UUID | null;
+  description: string | null;
+  metadata: JSONObject;
+  idempotency_key: string | null;
+  created_at: Timestamp;
+}
+
+export interface TokenTransactionInsert {
+  user_id: UUID;
+  transaction_type: TokenTransactionType;
+  amount: number;
+  balance_after: number;
+  stripe_payment_intent_id?: string | null;
+  stripe_checkout_session_id?: string | null;
+  gift_id?: UUID | null;
+  subscription_id?: UUID | null;
+  description?: string | null;
+  metadata?: JSONObject;
+  idempotency_key?: string | null;
+}
+
+export interface TokenBundle {
+  id: UUID;
+  name: string;
+  description: string | null;
+  tokens: number;
+  price_cents: number;
+  currency: string;
+  stripe_price_id: string | null;
+  stripe_product_id: string | null;
+  is_active: boolean;
+  display_order: number;
+  bonus_tokens: number;
+  bonus_expires_at: Timestamp | null;
+  created_at: Timestamp;
+  updated_at: Timestamp;
+}
+
+export interface TokenBundleInsert {
+  name: string;
+  description?: string | null;
+  tokens: number;
+  price_cents: number;
+  currency?: string;
+  stripe_price_id?: string | null;
+  stripe_product_id?: string | null;
+  is_active?: boolean;
+  display_order?: number;
+  bonus_tokens?: number;
+  bonus_expires_at?: Timestamp | null;
+}
+
+export interface Gift {
+  id: UUID;
+  user_id: UUID;
+  companion_id: UUID;
+  name: string;
+  description: string | null;
+  visual_prompt: string | null;
+  emotional_meaning: string | null;
+  image_url: string | null;
+  s3_bucket: string | null;
+  s3_key: string | null;
+  token_cost: number;
+  status: GiftStatus;
+  generation_params: JSONObject | null;
+  generation_error: string | null;
+  source_event_id: UUID | null;
+  source_turn_id: UUID | null;
+  given_at: Timestamp | null;
+  created_at: Timestamp;
+  updated_at: Timestamp;
+}
+
+export interface GiftInsert {
+  id?: UUID;
+  user_id: UUID;
+  companion_id: UUID;
+  name: string;
+  description?: string | null | undefined;
+  visual_prompt?: string | null | undefined;
+  emotional_meaning?: string | null | undefined;
+  token_cost: number;
+  status?: GiftStatus;
+  generation_params?: JSONObject | null | undefined;
+  source_event_id?: UUID | null | undefined;
+  source_turn_id?: UUID | null | undefined;
+}
+
+export interface GiftMemory {
+  id: UUID;
+  gift_id: UUID;
+  user_id: UUID;
+  companion_id: UUID;
+  memory_content: string;
+  embedding: number[] | null;
+  times_recalled: number;
+  last_recalled_at: Timestamp | null;
+  eligible_for_recall: boolean;
+  recall_cooldown_until: Timestamp | null;
+  created_at: Timestamp;
+  updated_at: Timestamp;
+}
+
+export interface GiftMemoryInsert {
+  gift_id: UUID;
+  user_id: UUID;
+  companion_id: UUID;
+  memory_content: string;
+  embedding?: number[] | null;
+  eligible_for_recall?: boolean;
+  recall_cooldown_until?: Timestamp | null;
 }
 
 // ============================================================================

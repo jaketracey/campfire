@@ -561,6 +561,118 @@ async function seed(sql: postgres.Sql): Promise<SeedData> {
 
   console.log(`[Seed] Created ${events.length} events`);
 
+  // =========================================================================
+  // Token Bundles
+  // =========================================================================
+  console.log('[Seed] Creating token bundles...');
+
+  const tokenBundles = [
+    {
+      name: 'Starter Pack',
+      description: 'Perfect for trying out gifts with your companion.',
+      tokens: 100,
+      price_cents: 499,
+      currency: 'usd',
+      stripe_price_id: 'price_tokens_starter_100',
+      stripe_product_id: 'prod_tokens_starter',
+      display_order: 1,
+      bonus_tokens: 0,
+    },
+    {
+      name: 'Popular Pack',
+      description: 'Our most popular choice! Great value with bonus tokens.',
+      tokens: 500,
+      price_cents: 1999,
+      currency: 'usd',
+      stripe_price_id: 'price_tokens_popular_500',
+      stripe_product_id: 'prod_tokens_popular',
+      display_order: 2,
+      bonus_tokens: 50,
+    },
+    {
+      name: 'Best Value',
+      description: 'The best value for dedicated gift-givers.',
+      tokens: 1200,
+      price_cents: 3999,
+      currency: 'usd',
+      stripe_price_id: 'price_tokens_value_1200',
+      stripe_product_id: 'prod_tokens_value',
+      display_order: 3,
+      bonus_tokens: 200,
+    },
+    {
+      name: 'Ultimate Pack',
+      description: 'For the ultimate companion experience. Maximum savings!',
+      tokens: 3000,
+      price_cents: 7999,
+      currency: 'usd',
+      stripe_price_id: 'price_tokens_ultimate_3000',
+      stripe_product_id: 'prod_tokens_ultimate',
+      display_order: 4,
+      bonus_tokens: 600,
+    },
+  ];
+
+  for (const bundle of tokenBundles) {
+    await sql`
+      INSERT INTO token_bundles (
+        name, description, tokens, price_cents, currency,
+        stripe_price_id, stripe_product_id, display_order, bonus_tokens, is_active
+      )
+      VALUES (
+        ${bundle.name}, ${bundle.description}, ${bundle.tokens}, ${bundle.price_cents}, ${bundle.currency},
+        ${bundle.stripe_price_id}, ${bundle.stripe_product_id}, ${bundle.display_order}, ${bundle.bonus_tokens}, TRUE
+      )
+      ON CONFLICT (stripe_price_id) DO UPDATE SET
+        name = EXCLUDED.name,
+        tokens = EXCLUDED.tokens,
+        price_cents = EXCLUDED.price_cents,
+        bonus_tokens = EXCLUDED.bonus_tokens,
+        display_order = EXCLUDED.display_order
+    `;
+  }
+
+  console.log(`[Seed] Created ${tokenBundles.length} token bundles`);
+
+  // =========================================================================
+  // Token Balances (for test users)
+  // =========================================================================
+  console.log('[Seed] Creating test token balances...');
+
+  const tokenBalances = [
+    {
+      user_id: '00000000-0000-0000-0000-000000000001',
+      balance: 500,
+      lifetime_purchased: 500,
+      lifetime_bonus: 50,
+      lifetime_spent: 50,
+    },
+    {
+      user_id: '00000000-0000-0000-0000-000000000002',
+      balance: 100,
+      lifetime_purchased: 100,
+      lifetime_bonus: 0,
+      lifetime_spent: 0,
+    },
+  ];
+
+  for (const balance of tokenBalances) {
+    await sql`
+      INSERT INTO token_balances (
+        user_id, balance, lifetime_purchased, lifetime_bonus, lifetime_spent
+      )
+      VALUES (
+        ${balance.user_id}, ${balance.balance}, ${balance.lifetime_purchased},
+        ${balance.lifetime_bonus}, ${balance.lifetime_spent}
+      )
+      ON CONFLICT (user_id) DO UPDATE SET
+        balance = EXCLUDED.balance,
+        lifetime_purchased = EXCLUDED.lifetime_purchased
+    `;
+  }
+
+  console.log(`[Seed] Created ${tokenBalances.length} token balances`);
+
   console.log('[Seed] Database seed completed successfully!');
 
   return data;

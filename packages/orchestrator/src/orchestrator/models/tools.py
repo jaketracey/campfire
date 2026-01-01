@@ -21,6 +21,8 @@ class ToolType(str, Enum):
     VAULT_PROJECTION = "vault_projection"
     WEB_SEARCH = "web_search"
     CALENDAR = "calendar"
+    GIFT_GENERATE = "gift_generate"
+    GIFT_ACKNOWLEDGE = "gift_acknowledge"
     CUSTOM = "custom"
 
 
@@ -265,6 +267,52 @@ VAULT_PROJECTION_TOOL = ToolDefinition(
     cost_estimate_usd=0.05,
 )
 
+GIFT_GENERATE_TOOL = ToolDefinition(
+    name="gift_generate",
+    tool_type=ToolType.GIFT_GENERATE,
+    description="Generate a unique, contextually appropriate gift for the user",
+    parameters={
+        "gift_type": {
+            "type": "string",
+            "enum": ["virtual_object", "poem", "song", "memory_collage", "custom"],
+            "description": "The type of gift to generate",
+        },
+        "context": {
+            "type": "string",
+            "description": "Context or occasion for the gift (e.g., 'birthday', 'encouragement', 'milestone')",
+        },
+        "emotional_intent": {
+            "type": "string",
+            "description": "The emotional impact you want the gift to have on the user",
+        },
+    },
+    required_params=["gift_type", "emotional_intent"],
+    cost_estimate_usd=0.05,
+)
+
+GIFT_ACKNOWLEDGE_TOOL = ToolDefinition(
+    name="gift_acknowledge",
+    tool_type=ToolType.GIFT_ACKNOWLEDGE,
+    description="Acknowledge and emotionally react to a gift from the user",
+    parameters={
+        "gift_description": {
+            "type": "string",
+            "description": "Description of the gift received from the user",
+        },
+        "emotional_reaction": {
+            "type": "string",
+            "enum": ["joy", "surprise", "touched", "grateful", "loving"],
+            "description": "The emotional reaction to express",
+        },
+        "emotional_intensity": {
+            "type": "number",
+            "description": "Intensity of the emotional reaction (0.0 to 1.0)",
+            "default": 0.7,
+        },
+    },
+    required_params=["gift_description", "emotional_reaction"],
+)
+
 # Registry of all available tools
 TOOL_REGISTRY: dict[str, ToolDefinition] = {
     "memory_read": MEMORY_READ_TOOL,
@@ -273,4 +321,6 @@ TOOL_REGISTRY: dict[str, ToolDefinition] = {
     "image_analysis": IMAGE_ANALYSIS_TOOL,
     "image_generation": IMAGE_GENERATION_TOOL,
     "vault_projection": VAULT_PROJECTION_TOOL,
+    "gift_generate": GIFT_GENERATE_TOOL,
+    "gift_acknowledge": GIFT_ACKNOWLEDGE_TOOL,
 }

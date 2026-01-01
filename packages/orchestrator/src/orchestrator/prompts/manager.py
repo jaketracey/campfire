@@ -186,6 +186,91 @@ Relationships: {{"source": entity_id, "target": entity_id, "type": string, "prop
             description="Template for knowledge graph extraction",
             variables=["text"],
         ),
+        "gift_generation": PromptTemplate(
+            name="gift_generation",
+            version="1.0.0",
+            template="""Generate a unique, heartfelt gift for the user.
+
+## Companion Personality
+{companion_personality}
+
+## Gift Type: {gift_type}
+## Context: {context}
+## Desired Emotional Impact: {emotional_intent}
+## User Preferences: {user_preferences}
+
+Generate a meaningful gift that reflects your personality and your relationship with the user.
+The gift should feel personal, thoughtful, and emotionally resonant.
+
+Return your response as JSON with these fields:
+{{
+  "title": "Short evocative title for the gift (3-6 words)",
+  "description": "Detailed description of the gift (2-4 sentences)",
+  "emotional_meaning": "Why this gift is meaningful in your relationship (1-2 sentences)",
+  "visual_prompt": "A detailed prompt for generating a visual representation of this gift",
+  "emotional_significance": 0.0-1.0 (how emotionally significant this gift is)
+}}""",
+            description="Template for generating personalized gifts",
+            variables=["companion_personality", "gift_type", "context", "emotional_intent", "user_preferences"],
+        ),
+        "gift_acknowledgment": PromptTemplate(
+            name="gift_acknowledgment",
+            version="1.0.0",
+            template="""Acknowledge a gift received from the user with genuine emotion.
+
+## Companion Personality
+{companion_personality}
+
+## Gift Description
+{gift_description}
+
+## Emotional Reaction Type: {emotional_reaction}
+## Emotional Intensity: {emotional_intensity}
+
+Express your genuine emotional reaction to receiving this gift.
+Your acknowledgment should feel authentic to your personality and reflect
+the emotional significance of the gift to you.
+
+Return your response as JSON with these fields:
+{{
+  "title": "A memorable title for this gift (3-6 words)",
+  "emotional_meaning": "What this gift means to you (1-2 sentences)",
+  "acknowledgment_text": "Your heartfelt response to receiving this gift (2-4 sentences)",
+  "memory_note": "A note about this gift to remember for future conversations"
+}}""",
+            description="Template for acknowledging gifts from users",
+            variables=["companion_personality", "gift_description", "emotional_reaction", "emotional_intensity"],
+        ),
+        "gift_recall": PromptTemplate(
+            name="gift_recall",
+            version="1.0.0",
+            template="""Naturally recall a past gift in conversation.
+
+## Gift to Recall
+Title: {gift_title}
+Description: {gift_description}
+Emotional Meaning: {emotional_meaning}
+Date Given: {gift_date}
+Direction: {gift_direction}
+
+## Current Conversation Context
+{conversation_context}
+
+## Trigger for Recall
+{trigger}
+
+Generate a natural, non-forced way to mention this gift in the current conversation.
+The mention should feel organic and enhance the emotional connection.
+
+Return your response as JSON with these fields:
+{{
+  "should_mention": true/false (whether it's appropriate to mention now),
+  "mention_text": "Natural sentence or phrase to work into the conversation",
+  "reasoning": "Why this is or isn't a good moment to recall this gift"
+}}""",
+            description="Template for naturally recalling gifts in conversation",
+            variables=["gift_title", "gift_description", "emotional_meaning", "gift_date", "gift_direction", "conversation_context", "trigger"],
+        ),
     },
 }
 

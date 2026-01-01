@@ -108,24 +108,26 @@ export class KnowledgeGraphProjectionWorker {
     const targetEntityId = await this.ensureEntityWithData(userId, companionId, edge.targetEntity, targetEntity);
 
     // Check for existing similar edges (deduplication)
+    // Note: Don't filter by status since unique constraint is on (source, target, relation) without status
     const existing = await this.config.db.sql`
-      SELECT id FROM kg_edges
+      SELECT id, status FROM kg_edges
       WHERE source_entity_id = ${sourceEntityId}
         AND target_entity_id = ${targetEntityId}
         AND relation_type = ${edge.relationType}
-        AND status = 'active'
     `;
 
-    if (existing.length > 0) {
+    const existingEdge = existing[0];
+    if (existingEdge) {
       // Update existing edge's confidence and last_seen
       await this.config.db.sql`
         UPDATE kg_edges
         SET confidence = GREATEST(confidence, ${edge.confidence}),
-            last_seen = NOW()
-        WHERE id = ${existing[0].id}
+            last_seen = NOW(),
+            mention_count = mention_count + 1
+        WHERE id = ${existingEdge.id}
       `;
       this.config.logger.info(
-        { userId, edgeId: existing[0].id },
+        { userId, edgeId: existingEdge.id, existingStatus: existingEdge.status },
         'Updated existing KG edge'
       );
       return;
