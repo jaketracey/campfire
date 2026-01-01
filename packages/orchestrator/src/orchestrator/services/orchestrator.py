@@ -2,6 +2,7 @@
 
 import asyncio
 import json
+import re
 import time
 from typing import Any, AsyncGenerator
 from uuid import UUID, uuid4
@@ -17,7 +18,19 @@ from orchestrator.models.conversation import (
     SessionSummary,
     SituationalTenetMatch,
 )
-from orchestrator.models.events import BaseEvent, EventType, ProviderEvent
+from orchestrator.models.events import (
+    BaseEvent,
+    ContentBlockedEvent,
+    ContentRoutingEvent,
+    EventType,
+    ProviderEvent,
+)
+from orchestrator.routing import (
+    ContentCapability,
+    IntentDetector,
+    ModelRouter,
+    RoutingDecision,
+)
 from orchestrator.models.gifts import GiftMemory, GiftRecallContext
 from orchestrator.models.memory import LongTermMemory, CompanionSelfKnowledge
 from orchestrator.models.tools import TOOL_REGISTRY, ToolCall, ToolResult
@@ -52,6 +65,8 @@ class ConversationOrchestrator:
         fallback_provider: LLMProvider | None = None,
         tenet_retriever: TenetRetriever | None = None,
         gift_recall_service: GiftRecallService | None = None,
+        intent_detector: IntentDetector | None = None,
+        model_router: ModelRouter | None = None,
     ):
         self.settings = settings
         self.event_emitter = event_emitter
@@ -82,6 +97,30 @@ class ConversationOrchestrator:
         self.tenet_retriever = tenet_retriever or TenetRetriever(settings)
         self.gift_recall_service = gift_recall_service or GiftRecallService(settings)
 
+        # Initialize content routing (if enabled)
+        self._content_routing_enabled = settings.content_routing_enabled
+        if self._content_routing_enabled:
+            self.intent_detector = intent_detector or IntentDetector(
+                semantic_threshold=settings.semantic_routing_threshold,
+                classifier_threshold=settings.classifier_routing_threshold,
+            )
+            self.model_router = model_router or ModelRouter(
+                intent_detector=self.intent_detector,
+                prefer_local=settings.prefer_local_models,
+            )
+            logger.info(
+                "content_routing_enabled",
+                semantic_threshold=settings.semantic_routing_threshold,
+                classifier_threshold=settings.classifier_routing_threshold,
+                prefer_local=settings.prefer_local_models,
+            )
+        else:
+            self.intent_detector = None
+            self.model_router = None
+
+        # Store current routing decision for use during LLM calls
+        self._current_routing_decision: RoutingDecision | None = None
+
     async def process_message(
         self,
         session_id: UUID,
@@ -92,6 +131,9 @@ class ConversationOrchestrator:
         session_summary: SessionSummary | None = None,
         long_term_memories: list[LongTermMemory] | None = None,
         companion_self_knowledge: list[CompanionSelfKnowledge] | None = None,
+        user_image_url: str | None = None,
+        active_game: dict | None = None,
+        liked_content: list[dict] | None = None,
         stream: bool = False,
     ) -> ConversationTurn | AsyncGenerator[str, None]:
         """Process a user message and generate a response."""
@@ -118,6 +160,77 @@ class ConversationOrchestrator:
                 user_message=user_message,
                 safety_flags=input_flags,
             )
+
+        # Content routing - route to appropriate model based on intent
+        routing_decision: RoutingDecision | None = None
+        if self._content_routing_enabled:
+            routing_decision = await self._route_content(
+                user_message=user_message,
+                companion_spec=companion_spec,
+            )
+
+            if routing_decision:
+                # Emit content routing event
+                await self.event_emitter.emit(
+                    ContentRoutingEvent(
+                        type=EventType.CONTENT_ROUTED,
+                        session_id=session_id,
+                        user_id=user_id,
+                        companion_id=companion_spec.id,
+                        intent=routing_decision.intent_result.intent.value,
+                        confidence=routing_decision.intent_result.confidence,
+                        detection_method=routing_decision.intent_result.detection_method,
+                        selected_model=(
+                            routing_decision.model_spec.model_id
+                            if routing_decision.model_spec
+                            else "none"
+                        ),
+                        selected_provider=(
+                            routing_decision.model_spec.provider
+                            if routing_decision.model_spec
+                            else "none"
+                        ),
+                        routing_reason=routing_decision.routing_reason,
+                        content_blocked=routing_decision.content_blocked,
+                        block_reason=routing_decision.block_reason,
+                        latency_ms=routing_decision.intent_result.latency_ms,
+                    )
+                )
+
+                # Check if content should be blocked/redirected
+                if routing_decision.content_blocked:
+                    # Emit content blocked event
+                    await self.event_emitter.emit(
+                        ContentBlockedEvent(
+                            type=EventType.CONTENT_BLOCKED,
+                            session_id=session_id,
+                            user_id=user_id,
+                            companion_id=companion_spec.id,
+                            detected_intent=routing_decision.intent_result.intent.value,
+                            companion_safety_level=companion_spec.safety_level,
+                            block_reason=routing_decision.block_reason or "Content exceeds safety level",
+                        )
+                    )
+
+                    logger.warning(
+                        "content_blocked_by_routing",
+                        user_id=str(user_id),
+                        intent=routing_decision.intent_result.intent.value,
+                        safety_level=companion_spec.safety_level,
+                        block_reason=routing_decision.block_reason,
+                    )
+
+                    # Return an in-character redirect response
+                    return await self._create_content_redirect_response(
+                        session_id=session_id,
+                        user_id=user_id,
+                        companion_spec=companion_spec,
+                        user_message=user_message,
+                        routing_decision=routing_decision,
+                    )
+
+                # Store routing decision for use in _call_llm_with_fallback
+                self._current_routing_decision = routing_decision
 
         # Start turn
         turn_id, user_msg = await self.turn_manager.start_turn(
@@ -232,6 +345,9 @@ class ConversationOrchestrator:
                 gift_memories=gift_memories,
                 pending_gift_recall=pending_gift_recall,
                 companion_self_knowledge=companion_self_knowledge,
+                user_image_url=user_image_url,
+                active_game=active_game,
+                liked_content=liked_content,
             )
 
             # Get available tools
@@ -266,10 +382,13 @@ class ConversationOrchestrator:
             # Calculate latency
             latency_ms = (time.time() - start_time) * 1000
 
+            # Parse image_prompt from response content
+            cleaned_content, image_prompt = self._parse_image_prompt(response.content)
+
             # Complete turn
             turn = await self.turn_manager.complete_turn(
                 turn_id=turn_id,
-                assistant_response=response.content,
+                assistant_response=cleaned_content,
                 prompt_tokens=response.prompt_tokens,
                 completion_tokens=response.completion_tokens,
                 latency_ms=latency_ms,
@@ -277,6 +396,7 @@ class ConversationOrchestrator:
                 tool_calls=[self._serialize_tool_call(tc) for tc in tool_calls],
                 tool_results=[self._serialize_tool_result(tr) for tr in tool_results],
                 safety_flags=all_safety_flags,
+                image_prompt=image_prompt,
             )
 
             # Fire-and-forget KG extraction (don't block response)
@@ -287,7 +407,7 @@ class ConversationOrchestrator:
                     companion_spec=companion_spec,
                     turn_id=turn_id,
                     user_message=user_message,
-                    assistant_response=response.content,
+                    assistant_response=cleaned_content,
                 )
             )
 
@@ -301,6 +421,9 @@ class ConversationOrchestrator:
                     )
                 )
 
+            # Reset routing decision after turn completes
+            self._current_routing_decision = None
+
             return turn
 
         except Exception as e:
@@ -310,6 +433,8 @@ class ConversationOrchestrator:
                 error=str(e),
                 error_type=type(e).__name__,
             )
+            # Reset routing decision on error
+            self._current_routing_decision = None
             raise
 
     async def _generate_with_tools(
@@ -379,8 +504,17 @@ class ConversationOrchestrator:
         messages: list[dict[str, Any]],
         tools: list[dict[str, Any]] | None = None,
     ) -> LLMResponse:
-        """Call primary LLM with fallback to secondary."""
-        provider_name = self.primary_provider.name
+        """Call primary LLM with fallback to secondary.
+
+        When content routing is enabled and a routing decision is available,
+        the selected provider/model from routing will be used instead of
+        the default primary provider.
+        """
+        # Use routed provider/model if available from content routing
+        provider, model_id = self._get_routed_provider_and_model()
+        provider_name = provider.name if provider else self.primary_provider.name
+        active_provider = provider or self.primary_provider
+
         try:
             # Emit provider request event
             await self.event_emitter.emit(
@@ -390,12 +524,12 @@ class ConversationOrchestrator:
                     user_id=UUID(int=0),
                     companion_id=UUID(int=0),
                     provider=provider_name,
-                    model=self._get_model_for_provider(provider_name),
+                    model=model_id or self._get_model_for_provider(provider_name),
                     operation="chat_completion",
                 )
             )
 
-            response = await self.primary_provider.generate(
+            response = await active_provider.generate(
                 messages=messages,
                 tools=tools,
                 max_tokens=self._get_max_tokens_for_provider(provider_name),
@@ -409,7 +543,7 @@ class ConversationOrchestrator:
                     user_id=UUID(int=0),
                     companion_id=UUID(int=0),
                     provider=provider_name,
-                    model=self._get_model_for_provider(provider_name),
+                    model=model_id or self._get_model_for_provider(provider_name),
                     operation="chat_completion",
                     latency_ms=response.latency_ms,
                 )
@@ -447,6 +581,49 @@ class ConversationOrchestrator:
                 max_tokens=self._get_max_tokens_for_provider(fallback_name),
                 temperature=0.7,
             )
+
+    def _get_routed_provider_and_model(self) -> tuple[LLMProvider | None, str | None]:
+        """Get the provider and model from content routing decision.
+
+        Returns:
+            Tuple of (provider, model_id) if routing decision has a selected model,
+            otherwise (None, None) to use default provider.
+        """
+        if not self._current_routing_decision or not self._current_routing_decision.model_spec:
+            return None, None
+
+        model_spec = self._current_routing_decision.model_spec
+        provider_name = model_spec.provider.lower()
+
+        # Map provider name to provider instance
+        if provider_name == "ollama" and self.settings.ollama_enabled:
+            # For Ollama, we can dynamically use the routed model
+            logger.info(
+                "using_routed_model",
+                provider=provider_name,
+                model_id=model_spec.model_id,
+                is_abliterated=model_spec.is_abliterated,
+            )
+            # Return the primary provider configured with the routed model
+            if self.primary_provider.name == "ollama":
+                # Use with_model() to create provider instance with correct model
+                routed_provider = self.primary_provider.with_model(model_spec.model_id)
+                return routed_provider, model_spec.model_id
+            # For now, return None to use default - dynamic provider creation
+            # would require more infrastructure changes
+            return None, None
+        elif provider_name == "anthropic":
+            if self.primary_provider.name == "anthropic":
+                return self.primary_provider, model_spec.model_id
+            elif self.fallback_provider.name == "anthropic":
+                return self.fallback_provider, model_spec.model_id
+        elif provider_name == "openai":
+            if self.primary_provider.name == "openai":
+                return self.primary_provider, model_spec.model_id
+            elif self.fallback_provider.name == "openai":
+                return self.fallback_provider, model_spec.model_id
+
+        return None, None
 
     def _get_model_for_provider(self, provider: str) -> str:
         """Get the model name for a provider."""
@@ -505,6 +682,88 @@ class ConversationOrchestrator:
             safety_flags=safety_flags,
         )
 
+    async def _route_content(
+        self,
+        user_message: str,
+        companion_spec: CompanionSpec,
+    ) -> RoutingDecision | None:
+        """Route content to appropriate model based on intent and companion settings.
+
+        Args:
+            user_message: The user's message to analyze.
+            companion_spec: The companion specification with safety settings.
+
+        Returns:
+            RoutingDecision with selected model or block reason, or None if
+            content routing is disabled.
+        """
+        if not self._content_routing_enabled or not self.model_router:
+            return None
+
+        return await self.model_router.route(
+            user_message=user_message,
+            companion_safety_level=companion_spec.safety_level,
+            require_tools=bool(companion_spec.allowed_tools),
+        )
+
+    async def _create_content_redirect_response(
+        self,
+        session_id: UUID,
+        user_id: UUID,
+        companion_spec: CompanionSpec,
+        user_message: str,
+        routing_decision: RoutingDecision,
+    ) -> ConversationTurn:
+        """Create an in-character response that redirects the conversation.
+
+        When content is blocked due to safety level restrictions, this method
+        generates a response that stays in-character while gently redirecting
+        the conversation to appropriate topics.
+
+        Args:
+            session_id: The session ID.
+            user_id: The user ID.
+            companion_spec: The companion specification.
+            user_message: The original user message.
+            routing_decision: The routing decision with block reason.
+
+        Returns:
+            A conversation turn with the redirect response.
+        """
+        turn_id, user_msg = await self.turn_manager.start_turn(
+            session_id=session_id,
+            user_id=user_id,
+            companion_id=companion_spec.id,
+            user_message=user_message,
+            model="content_router",
+            prompt_version=self.prompt_manager.current_version,
+            policy_version=self.safety_gate.policy_version,
+        )
+
+        # Try to get a content redirect template, fallback to safety response
+        try:
+            redirect_response = self.prompt_manager.get_prompt(
+                "content_redirect",
+                version=self.prompt_manager.current_version,
+                companion_name=companion_spec.name,
+                detected_intent=routing_decision.intent_result.intent.value,
+            )
+        except Exception:
+            # Fallback to generic redirect if template doesn't exist
+            redirect_response = (
+                f"I'd love to keep chatting with you! "
+                f"Let's talk about something else - what's been on your mind lately?"
+            )
+
+        return await self.turn_manager.complete_turn(
+            turn_id=turn_id,
+            assistant_response=redirect_response,
+            prompt_tokens=0,
+            completion_tokens=0,
+            latency_ms=routing_decision.intent_result.latency_ms,
+            safety_flags=["content_redirect", routing_decision.intent_result.intent.value],
+        )
+
     async def _apply_safety_filter(
         self,
         response: LLMResponse,
@@ -559,6 +818,69 @@ class ConversationOrchestrator:
             "cost_usd": tool_result.cost_usd,
         }
 
+    def _parse_image_prompt(self, content: str) -> tuple[str, str | None]:
+        """Parse image_prompt from response content.
+
+        Extracts the image_prompt from <image_prompt>...</image_prompt> tags
+        and returns the cleaned content without the tag.
+
+        Returns:
+            tuple of (cleaned_content, image_prompt or None)
+        """
+        # Match <image_prompt>...</image_prompt> anywhere in the content
+        pattern = r'<image_prompt>(.*?)</image_prompt>'
+        match = re.search(pattern, content, re.DOTALL)
+
+        if match:
+            image_prompt = match.group(1).strip()
+            # Remove the image_prompt tag from the content
+            cleaned_content = re.sub(pattern, '', content, flags=re.DOTALL).strip()
+            return cleaned_content, image_prompt
+
+        return content, None
+
+    def _parse_multi_messages(self, content: str) -> tuple[list[str], str | None]:
+        """Parse multi-message response from LLM output.
+
+        Extracts individual messages from <message>...</message> tags.
+        Also extracts image_prompt from within messages (should be in last one).
+
+        Returns:
+            tuple of (list of message strings, image_prompt or None)
+        """
+        # Check if content uses multi-message format
+        message_pattern = r'<message>(.*?)</message>'
+        matches = re.findall(message_pattern, content, re.DOTALL)
+
+        if not matches:
+            # No message tags - treat entire content as single message
+            # Still parse image_prompt from it
+            cleaned, image_prompt = self._parse_image_prompt(content)
+            return [cleaned.strip()], image_prompt
+
+        # Extract image_prompt from all messages (should be in last one)
+        image_prompt = None
+        cleaned_messages = []
+
+        for msg in matches:
+            msg_content = msg.strip()
+            # Check this message for image_prompt
+            msg_cleaned, msg_image_prompt = self._parse_image_prompt(msg_content)
+            if msg_image_prompt:
+                image_prompt = msg_image_prompt
+            if msg_cleaned.strip():
+                cleaned_messages.append(msg_cleaned.strip())
+
+        # Filter empty messages
+        cleaned_messages = [m for m in cleaned_messages if m]
+
+        # Fallback: if no valid messages found, return original as single message
+        if not cleaned_messages:
+            cleaned, image_prompt = self._parse_image_prompt(content)
+            return [cleaned.strip()], image_prompt
+
+        return cleaned_messages, image_prompt
+
     async def _extract_knowledge_graph(
         self,
         session_id: UUID,
@@ -603,6 +925,7 @@ Assistant: {assistant_response}"""
                 tools=None,
                 max_tokens=2000,
                 temperature=0.1,  # Low temperature for consistent extraction
+                response_format={"type": "json_object"},  # Force valid JSON output
             )
 
             # Parse the JSON response

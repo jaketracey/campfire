@@ -27,9 +27,67 @@ from orchestrator.providers.ollama import OllamaProvider
 from orchestrator.queue import JobQueue, get_job_queue
 from orchestrator.safety.gate import SafetyGate, SafetyLevel
 from orchestrator.services.orchestrator import ConversationOrchestrator
+from orchestrator.services.prompt_enhancer import PromptEnhancer
 from orchestrator.tools.router import ToolRouter
 
 logger = structlog.get_logger()
+
+
+def repair_json(text: str) -> str:
+    """Attempt to repair common JSON issues from LLM output."""
+    import re
+
+    # Remove any markdown code fences
+    text = re.sub(r'^```(?:json)?\s*', '', text.strip())
+    text = re.sub(r'\s*```$', '', text.strip())
+
+    # Extract JSON object if wrapped in other text
+    json_match = re.search(r'\{[\s\S]*\}', text)
+    if json_match:
+        text = json_match.group()
+
+    # Fix trailing commas before closing brackets/braces
+    text = re.sub(r',\s*([}\]])', r'\1', text)
+
+    # Fix unquoted property names (common LLM mistake)
+    text = re.sub(r'([{,]\s*)([a-zA-Z_][a-zA-Z0-9_]*)\s*:', r'\1"\2":', text)
+
+    # Fix single quotes used instead of double quotes
+    # Be careful not to replace apostrophes inside strings
+    # First, temporarily replace escaped single quotes
+    text = text.replace("\\'", "<<<ESCAPED_SINGLE>>>")
+    # Replace single-quoted strings with double-quoted (simple heuristic)
+    text = re.sub(r"'([^']*)'", r'"\1"', text)
+    # Restore escaped single quotes
+    text = text.replace("<<<ESCAPED_SINGLE>>>", "'")
+
+    # Fix missing commas between array elements or object properties
+    text = re.sub(r'"\s*\n\s*"', '",\n"', text)
+    text = re.sub(r']\s*\n\s*"', '],\n"', text)
+    text = re.sub(r'}\s*\n\s*"', '},\n"', text)
+
+    return text
+
+
+def parse_llm_json(text: str, fallback: dict | None = None) -> dict:
+    """Parse JSON from LLM output with repair attempts."""
+    import json
+
+    # First try direct parsing
+    try:
+        return json.loads(text)
+    except json.JSONDecodeError:
+        pass
+
+    # Try repairing the JSON
+    try:
+        repaired = repair_json(text)
+        return json.loads(repaired)
+    except json.JSONDecodeError as e:
+        logger.warning("json_repair_failed", error=str(e), text_preview=text[:200])
+        if fallback is not None:
+            return fallback
+        raise
 
 
 # Request/Response models
@@ -73,6 +131,9 @@ class StreamMessageRequest(BaseModel):
     session_summary: SessionSummary | None = None
     long_term_memories: list[LongTermMemory] | None = None
     companion_self_knowledge: list[CompanionSelfKnowledge] | None = None
+    user_image_url: str | None = None  # Webcam frame URL for multimodal context
+    active_game: dict | None = None  # Active game state for game context injection
+    liked_content: list[dict] | None = None  # User's liked messages for companion awareness
 
 
 class HealthResponse(BaseModel):
@@ -106,6 +167,7 @@ class ImageGenRequest(BaseModel):
     cfg: float = 7.0
     reference_image_url: str | None = None  # Identity anchor for IP-Adapter
     reference_strength: float = 0.7  # How much to follow reference image
+    is_anchor: bool = False  # Use high-quality anchor workflow (more steps, no upscaling)
 
 
 class ImageGenResponse(BaseModel):
@@ -231,6 +293,7 @@ class AppState:
     comfyui_provider: ComfyUIProvider | None
     fal_provider: FalProvider | None
     ollama_provider: OllamaProvider | None
+    prompt_enhancer: PromptEnhancer | None
 
 
 app_state = AppState()
@@ -315,6 +378,15 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         logger.warning("ollama_not_available", url=settings.ollama_base_url)
         app_state.ollama_provider = None
 
+    # Initialize prompt enhancer for image generation (uses Ollama)
+    app_state.prompt_enhancer = None
+    if settings.prompt_enhancement_enabled and app_state.ollama_provider is not None:
+        app_state.prompt_enhancer = PromptEnhancer(settings)
+        logger.info(
+            "prompt_enhancer_initialized",
+            model=settings.prompt_enhancement_model,
+        )
+
     logger.info(
         "orchestrator_service_started",
         version=settings.app_version,
@@ -324,6 +396,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         comfyui_enabled=app_state.comfyui_provider is not None,
         fal_enabled=app_state.fal_provider is not None,
         ollama_enabled=app_state.ollama_provider is not None,
+        prompt_enhancement_enabled=app_state.prompt_enhancer is not None,
     )
 
     yield
@@ -472,17 +545,79 @@ async def stream_message(request: StreamMessageRequest) -> StreamingResponse:
                 session_summary=request.session_summary,
                 long_term_memories=request.long_term_memories,
                 companion_self_knowledge=request.companion_self_knowledge,
+                user_image_url=request.user_image_url,
+                active_game=request.active_game,
+                liked_content=request.liked_content,
                 stream=True,
             )
 
             if isinstance(result, AsyncGenerator):
+                # Streaming path: accumulate content for multi-message parsing
+                full_content = ""
                 async for chunk in result:
+                    full_content += chunk
                     yield f"data: {chunk}\n\n"
+
+                # Parse multi-messages after stream completes
+                messages, image_prompt = app_state.orchestrator._parse_multi_messages(full_content)
+
+                # Emit [MESSAGE] events for multi-message responses
+                if len(messages) > 1:
+                    import json
+                    for i, msg in enumerate(messages):
+                        # Calculate typing delay: 500ms base + 10ms per char, capped at 3s
+                        delay_ms = min(3000, 500 + len(msg) * 10) if i < len(messages) - 1 else 0
+                        msg_data = {
+                            "content": msg,
+                            "index": i,
+                            "total": len(messages),
+                            "suggested_delay_ms": delay_ms,
+                            "is_last": i == len(messages) - 1,
+                        }
+                        yield f"data: [MESSAGE]{json.dumps(msg_data)}\n\n"
+
+                    # Send image_prompt after all messages
+                    if image_prompt:
+                        metadata = {"image_prompt": image_prompt}
+                        yield f"data: [METADATA]{json.dumps(metadata)}\n\n"
+                else:
+                    # Single message - send image_prompt metadata if present
+                    if image_prompt:
+                        import json
+                        metadata = {"image_prompt": image_prompt}
+                        yield f"data: [METADATA]{json.dumps(metadata)}\n\n"
+
                 yield "data: [DONE]\n\n"
+
             elif isinstance(result, ConversationTurn):
                 # Fallback to non-streaming if provider doesn't support it
                 if result.assistant_message:
-                    yield f"data: {result.assistant_message.content}\n\n"
+                    content = result.assistant_message.content
+                    # Parse multi-messages from the content
+                    messages, image_prompt = app_state.orchestrator._parse_multi_messages(content)
+                    import json
+
+                    if len(messages) > 1:
+                        # Multi-message response
+                        for i, msg in enumerate(messages):
+                            delay_ms = min(3000, 500 + len(msg) * 10) if i < len(messages) - 1 else 0
+                            msg_data = {
+                                "content": msg,
+                                "index": i,
+                                "total": len(messages),
+                                "suggested_delay_ms": delay_ms,
+                                "is_last": i == len(messages) - 1,
+                            }
+                            yield f"data: [MESSAGE]{json.dumps(msg_data)}\n\n"
+                    else:
+                        # Single message - stream the content
+                        yield f"data: {messages[0]}\n\n"
+
+                    # Send image_prompt as metadata event if present
+                    if image_prompt:
+                        metadata = {"image_prompt": image_prompt}
+                        yield f"data: [METADATA]{json.dumps(metadata)}\n\n"
+
                 yield "data: [DONE]\n\n"
 
         except Exception as e:
@@ -550,40 +685,32 @@ async def generate_image(request: ImageGenRequest) -> ImageGenResponse:
 
     Uses local ComfyUI with SDXL checkpoint for high-quality generation.
     Falls back to FAL.ai if ComfyUI is unavailable.
+
+    The companion LLM now provides full imagePrompt with scene, mood, style,
+    and expression details. IP-Adapter preserves identity from anchor image,
+    so the companion has full creative control over the generated scene.
     """
     import base64
 
-    # Build the full prompt with emotional modifiers (sensual/intimate style)
-    emotional_modifiers = {
-        "happy": "radiant smile, sparkling eyes, joyful and flirty expression, warm glow",
-        "calm": "serene sensual expression, relaxed intimate pose, soft bedroom lighting, dreamy",
-        "curious": "alluring curious gaze, head tilted seductively, inviting expression",
-        "excited": "energetic, flushed cheeks, excited anticipation, dynamic sensual pose",
-        "thoughtful": "contemplative sultry gaze, pensive expression, soft romantic focus",
-        "supportive": "warm empathetic gaze, inviting open posture, intimate comforting presence",
-        "playful": "mischievous flirty smile, sparkling teasing eyes, playful seductive pose",
-        "neutral": "confident sensual expression, alluring gaze, intimate presence",
-    }
+    # Enhance the prompt if prompt enhancer is available
+    prompt = request.prompt
+    prompt_was_enhanced = False
+    if app_state.prompt_enhancer and request.prompt:
+        prompt = await app_state.prompt_enhancer.enhance_prompt(
+            original_prompt=request.prompt,
+            emotional_state=request.emotional_state,
+            style=request.style,
+        )
+        prompt_was_enhanced = prompt != request.prompt
 
-    style_prompts = {
-        "realistic": "photorealistic, highly detailed, 8k, professional boudoir photography, intimate lighting",
-        "stylized": "beautiful stylized render, soft romantic lighting, sensual artistic style",
-        "abstract": "ethereal sensual art, soft flowing forms, romantic abstract lighting",
-        "minimal": "elegant minimalist, tasteful intimate, soft clean aesthetic",
-        "anime": "beautiful anime style, expressive sensual, romantic illustration, detailed",
-    }
-
-    # Build full prompt
-    full_prompt = request.prompt
-    if request.emotional_state in emotional_modifiers:
-        full_prompt += f", {emotional_modifiers[request.emotional_state]}"
-    if request.style in style_prompts:
-        full_prompt += f", {style_prompts[request.style]}"
-    full_prompt += ", high quality, detailed, beautiful lighting"
+    # Add minimal quality suffix
+    full_prompt = prompt + ", high quality, detailed"
 
     logger.info(
         "imagegen_request",
         prompt=full_prompt[:100],
+        original_prompt=request.prompt[:100] if prompt_was_enhanced else None,
+        prompt_enhanced=prompt_was_enhanced,
         emotional_state=request.emotional_state,
         style=request.style,
         size=f"{request.width}x{request.height}",
@@ -598,6 +725,7 @@ async def generate_image(request: ImageGenRequest) -> ImageGenResponse:
                 negative_prompt=request.negative_prompt,
                 reference_image_url=request.reference_image_url,
                 reference_strength=request.reference_strength,
+                is_anchor=request.is_anchor,
             )
 
             image_base64 = base64.b64encode(result["image_data"]).decode("utf-8")
@@ -821,27 +949,61 @@ Generate a rich, intimate backstory that explains how {request.companion_name} b
                 detail="Ollama provider not available",
             )
 
-        # Generate backstory
-        response = await app_state.ollama_provider.generate(
-            messages=[
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": user_prompt},
-            ],
-            max_tokens=2000,
-            temperature=0.9,  # Higher creativity for backstory
-        )
+        # Retry logic for JSON parsing failures
+        max_retries = 3
+        last_error = None
+        result = None
 
-        # Parse the JSON response
-        try:
-            result = json.loads(response.content)
-        except json.JSONDecodeError:
-            # Try to extract JSON from the response if it's wrapped in markdown
-            import re
-            json_match = re.search(r'\{[\s\S]*\}', response.content)
-            if json_match:
-                result = json.loads(json_match.group())
-            else:
-                raise ValueError("Failed to parse backstory response as JSON")
+        for attempt in range(max_retries):
+            try:
+                # Generate backstory
+                response = await app_state.ollama_provider.generate(
+                    messages=[
+                        {"role": "system", "content": system_prompt},
+                        {"role": "user", "content": user_prompt},
+                    ],
+                    max_tokens=2000,
+                    temperature=0.9 - (attempt * 0.1),  # Lower temp on retries
+                )
+
+                # Parse the JSON response with repair
+                result = parse_llm_json(response.content)
+                break  # Success, exit retry loop
+
+            except (json.JSONDecodeError, ValueError) as e:
+                last_error = e
+                logger.warning(
+                    "backstory_json_parse_retry",
+                    attempt=attempt + 1,
+                    max_retries=max_retries,
+                    error=str(e),
+                    response_preview=response.content[:200] if response else None,
+                )
+                if attempt == max_retries - 1:
+                    # Final attempt failed, use fallback
+                    logger.error(
+                        "backstory_json_parse_failed_using_fallback",
+                        error=str(e),
+                    )
+                    # Generate a simple fallback backstory
+                    result = {
+                        "backstory": f"{request.companion_name} has always been drawn to meaningful connections. "
+                                     f"With a {request.archetype.lower()} spirit, they bring warmth and understanding "
+                                     f"to every interaction, shaped by experiences that taught them the value of genuine presence.",
+                        "motivations": [
+                            "To form deep, meaningful connections",
+                            "To understand and be understood",
+                            "To bring joy and comfort to those they care about",
+                        ],
+                        "key_memories": [
+                            "A moment of profound connection that changed their perspective",
+                            "Learning the importance of being present for others",
+                        ],
+                        "personality_quirks": [
+                            "Has a unique way of making others feel special",
+                            "Sometimes gets lost in thought about meaningful conversations",
+                        ],
+                    }
 
         latency_ms = (time.time() - start_time) * 1000
 
@@ -850,6 +1012,7 @@ Generate a rich, intimate backstory that explains how {request.companion_name} b
             companion_name=request.companion_name,
             archetype=request.archetype,
             latency_ms=latency_ms,
+            used_fallback=last_error is not None and result is not None,
         )
 
         return GenerateBackstoryResponse(
@@ -860,6 +1023,8 @@ Generate a rich, intimate backstory that explains how {request.companion_name} b
             latency_ms=latency_ms,
         )
 
+    except HTTPException:
+        raise
     except Exception as e:
         logger.exception("backstory_generation_failed", error=str(e))
         raise HTTPException(
@@ -942,25 +1107,43 @@ You must respond with valid JSON in this exact format:
                 detail="Ollama provider not available",
             )
 
-        response = await app_state.ollama_provider.generate(
-            messages=[
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": user_prompt},
-            ],
-            max_tokens=500,
-            temperature=1.0,  # High creativity for variety
-        )
+        # Retry logic for JSON parsing failures
+        max_retries = 3
+        last_error = None
+        result = None
 
-        # Parse the JSON response
-        try:
-            result = json.loads(response.content)
-        except json.JSONDecodeError:
-            import re
-            json_match = re.search(r'\{[\s\S]*\}', response.content)
-            if json_match:
-                result = json.loads(json_match.group())
-            else:
-                raise ValueError("Failed to parse identity response as JSON")
+        for attempt in range(max_retries):
+            try:
+                response = await app_state.ollama_provider.generate(
+                    messages=[
+                        {"role": "system", "content": system_prompt},
+                        {"role": "user", "content": user_prompt},
+                    ],
+                    max_tokens=500,
+                    temperature=1.0 - (attempt * 0.1),  # Lower temp on retries
+                )
+
+                # Parse the JSON response with repair
+                result = parse_llm_json(response.content)
+                break  # Success, exit retry loop
+
+            except (json.JSONDecodeError, ValueError) as e:
+                last_error = e
+                logger.warning(
+                    "identity_json_parse_retry",
+                    attempt=attempt + 1,
+                    max_retries=max_retries,
+                    error=str(e),
+                )
+                if attempt == max_retries - 1:
+                    # Final attempt failed, use fallback
+                    logger.error("identity_json_parse_failed_using_fallback", error=str(e))
+                    fallback_names = ["Alex", "Jordan", "Sam", "Riley", "Morgan", "Casey"]
+                    result = {
+                        "name": random.choice(fallback_names),
+                        "pronouns": "they/them",
+                        "backstory": "Someone with a warm heart and an interesting perspective on life.",
+                    }
 
         latency_ms = (time.time() - start_time) * 1000
 
@@ -968,6 +1151,7 @@ You must respond with valid JSON in this exact format:
             "random_identity_generated",
             name=result.get("name"),
             latency_ms=latency_ms,
+            used_fallback=last_error is not None,
         )
 
         return GenerateRandomIdentityResponse(
@@ -977,6 +1161,8 @@ You must respond with valid JSON in this exact format:
             latency_ms=latency_ms,
         )
 
+    except HTTPException:
+        raise
     except Exception as e:
         logger.exception("identity_generation_failed", error=str(e))
         raise HTTPException(

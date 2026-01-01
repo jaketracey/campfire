@@ -63,8 +63,8 @@ export function CompanionAvatar({
   personality,
   style = 'stylized',
   customPrompt,
-  width = 250,
-  height = 400,
+  width = 512,
+  height = 768,
   className,
   showSkeleton = true,
   onLoad,
@@ -120,12 +120,16 @@ export function CompanionAvatar({
     setError(null);
 
     try {
-      // Build prompt: base character + scene description from LLM
-      let promptToUse = customPrompt || getBasePrompt(style);
+      // Build prompt: use companion's imagePrompt directly if available
+      // The companion provides the full scene description; IP-Adapter preserves identity
+      let promptToUse: string;
 
-      // Add scene/action description from LLM response if provided
       if (sceneDescription) {
-        promptToUse = `${promptToUse}, ${sceneDescription}`;
+        // Companion provided the full prompt - use it directly
+        promptToUse = sceneDescription;
+      } else {
+        // Fallback to old behavior for older messages or when no prompt provided
+        promptToUse = customPrompt || getBasePrompt(style);
       }
 
       const request: ImageGenRequest = {
@@ -170,6 +174,21 @@ export function CompanionAvatar({
         setIdentityAnchorUrl(result.imageUrl);
       }
 
+      // Preload the new image before transitioning
+      // This keeps the blur visible until the image is fully loaded
+      const preloadImage = (url: string): Promise<void> => {
+        return new Promise((resolve, reject) => {
+          const img = new Image();
+          img.onload = () => resolve();
+          img.onerror = () => reject(new Error('Failed to preload image'));
+          img.src = url;
+        });
+      };
+
+      console.log('[CompanionAvatar] Preloading new image...', result.imageUrl?.slice(0, 50));
+      await preloadImage(result.imageUrl);
+      console.log('[CompanionAvatar] Image preloaded successfully');
+
       // If we already have an image, do a crossfade
       if (currentImageUrl && result.imageUrl !== currentImageUrl) {
         console.log('[CompanionAvatar] Starting crossfade transition', {
@@ -178,6 +197,8 @@ export function CompanionAvatar({
         });
         setNextImageUrl(result.imageUrl);
         setIsTransitioning(true);
+        // Now that image is preloaded, we can remove the loading blur
+        setIsLoading(false);
 
         // After transition completes, swap the images
         setTimeout(() => {
@@ -193,6 +214,7 @@ export function CompanionAvatar({
           newImageUrl: result.imageUrl?.slice(0, 50),
         });
         setCurrentImageUrl(result.imageUrl);
+        setIsLoading(false);
       }
 
       setCurrentCacheKey(result.cacheKey);
@@ -202,8 +224,6 @@ export function CompanionAvatar({
       const error = err instanceof Error ? err : new Error('Failed to generate image');
       setError(error);
       onError?.(error);
-    } finally {
-      console.log('[CompanionAvatar] generateImage finished, setting isLoading=false');
       setIsLoading(false);
     }
   }, [
@@ -267,13 +287,17 @@ export function CompanionAvatar({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []); // Only run once on mount
 
+  // Skip inline dimensions if className includes size utilities (w-full, h-full)
+  // This allows parent containers to control the display size while we generate at higher res
+  const useInlineDimensions = !className?.includes('w-full') && !className?.includes('h-full');
+
   return (
     <div
       className={cn(
         'relative overflow-hidden rounded-xl bg-gradient-to-b from-primary/5 to-primary/10',
         className
       )}
-      style={{ width, height }}
+      style={useInlineDimensions ? { width, height } : undefined}
     >
       {/* Loading skeleton */}
       {showSkeleton && isLoading && !currentImageUrl && (
@@ -349,8 +373,8 @@ export function CompanionAvatar({
  */
 export function StaticCompanionAvatar({
   imageUrl,
-  width = 250,
-  height = 400,
+  width = 512,
+  height = 768,
   className,
 }: {
   imageUrl: string;

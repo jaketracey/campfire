@@ -30,7 +30,7 @@ class Settings(BaseSettings):
     workers: int = 4
 
     # Gateway (internal API)
-    gateway_internal_url: str = "http://localhost:3001"
+    gateway_internal_url: str = "http://localhost:3002"
     internal_service_key: str = Field(
         default="dev-internal-service-key",
         validation_alias="INTERNAL_SERVICE_KEY"
@@ -53,6 +53,12 @@ class Settings(BaseSettings):
     anthropic_max_tokens: int = 4096
     anthropic_timeout: float = 60.0
 
+    # Prompt Enhancement (for image generation - uses local Ollama)
+    prompt_enhancement_enabled: bool = True
+    prompt_enhancement_model: str = "goekdenizguelmez/JOSIEFIED-Qwen3:8b"
+    prompt_enhancement_max_tokens: int = 200
+    prompt_enhancement_temperature: float = 0.5
+
     # OpenAI (fallback)
     openai_api_key: str = ""
     openai_model: str = "gpt-4-turbo-preview"
@@ -61,8 +67,8 @@ class Settings(BaseSettings):
 
     # Ollama (local/self-hosted - abliterated models)
     ollama_base_url: str = "http://localhost:11434"
-    ollama_model: str = "huihui_ai/qwen3-abliterated:8b"
-    ollama_fallback_model: str = "dolphin-llama3:8b"
+    ollama_model: str = "goekdenizguelmez/JOSIEFIED-Qwen3:8b"
+    ollama_fallback_model: str = "goekdenizguelmez/JOSIEFIED-Qwen3:8b"
     ollama_max_tokens: int = 4096
     ollama_timeout: float = 120.0
     ollama_enabled: bool = True  # Prefer Ollama over OpenAI when available
@@ -79,15 +85,25 @@ class Settings(BaseSettings):
 
     # ComfyUI (local/self-hosted image generation - preferred)
     comfyui_base_url: str = "http://localhost:8188"
-    comfyui_default_checkpoint: str = "Juggernaut-X-RunDiffusion-NSFW.safetensors"
+    comfyui_default_checkpoint: str = "epiCRealismXL_Pure_fix.safetensors"  # Best photorealism
     comfyui_timeout: float = 300.0
     comfyui_enabled: bool = True  # Prefer ComfyUI over FAL when available
 
     # ComfyUI SDXL settings (for high-quality portrait generation)
-    comfyui_sdxl_checkpoint: str = "sd_xl_base_1.0.safetensors"
+    comfyui_sdxl_checkpoint: str = "epiCRealismXL_Pure_fix.safetensors"  # Best photorealism
     comfyui_sdxl_vae: str = "sdxl_vae.safetensors"
     comfyui_ipadapter_model: str = "ip-adapter-plus_sdxl_vit-h.safetensors"
     comfyui_clip_vision_model: str = "CLIP-ViT-H-14-laion2B-s32B-b79K.safetensors"
+
+    # ComfyUI quality enhancement settings
+    comfyui_detail_lora: str = "detail_tweaker_xl.safetensors"
+    comfyui_detail_lora_strength: float = 0.3  # Detail enhancement
+    comfyui_skin_lora: str = "skin_realism_sdxl.safetensors"  # Natural skin texture
+    comfyui_skin_lora_strength: float = 0.4  # Recommended strength for skin details
+    comfyui_faces_lora: str = "better_faces_sdxl.safetensors"  # Improved facial features
+    comfyui_faces_lora_strength: float = 0.5  # Recommended strength for faces
+    comfyui_upscale_model: str = "RealESRGAN_x4plus.pth"
+    comfyui_enable_upscale: bool = False  # Disabled - 4x upscaling degrades quality
 
     # FAL AI (Image Generation - cloud fallback)
     fal_api_key: str = ""
@@ -126,6 +142,28 @@ class Settings(BaseSettings):
     # Memory
     memory_search_top_k: int = 10
     memory_relevance_threshold: float = 0.5
+
+    # Content Routing
+    content_routing_enabled: bool = True
+    semantic_routing_threshold: float = 0.75
+    classifier_routing_threshold: float = 0.6
+    prefer_local_models: bool = True
+    prefer_abliterated_for_adult: bool = True
+
+    # Intent Detection
+    intent_embedding_model: str = "sentence-transformers/all-MiniLM-L6-v2"
+    intent_classifier_model: str = "TostAI/nsfw-text-detection-large"
+    intent_detection_enabled: bool = True
+
+    # Fallback Behavior
+    fallback_on_nsfw_block: str = "redirect"  # redirect | sanitize | reject
+
+    # Abliterated Models Pool (for adult content routing)
+    ollama_abliterated_models: list[str] = Field(
+        default=[
+            "goekdenizguelmez/JOSIEFIED-Qwen3:8b",  # Gabliterated + fine-tuned, ~5GB VRAM
+        ]
+    )
 
     @property
     def is_production(self) -> bool:

@@ -1,7 +1,6 @@
 import { Worker, Job } from 'bullmq';
 import type { Redis } from 'ioredis';
 import type { Logger } from 'pino';
-import Anthropic from '@anthropic-ai/sdk';
 import type { DbClient } from '../db/client.js';
 
 interface SummaryJobData {
@@ -17,14 +16,22 @@ interface WorkerConfig {
   logger: Logger;
 }
 
+interface OllamaResponse {
+  message: { content: string };
+  model: string;
+  done: boolean;
+}
+
 export class SummaryProjectionWorker {
   private worker: Worker | null = null;
   private config: WorkerConfig;
-  private anthropic: Anthropic;
+  private ollamaBaseUrl: string;
+  private ollamaModel: string;
 
   constructor(config: WorkerConfig) {
     this.config = config;
-    this.anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+    this.ollamaBaseUrl = (process.env.OLLAMA_BASE_URL || 'http://localhost:11434').replace(/\/$/, '');
+    this.ollamaModel = process.env.OLLAMA_MODEL || 'llama3';
   }
 
   async start() {
@@ -73,6 +80,29 @@ export class SummaryProjectionWorker {
     }
   }
 
+  private async generateWithOllama(prompt: string, maxTokens: number = 500): Promise<string> {
+    const response = await fetch(`${this.ollamaBaseUrl}/api/chat`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        model: this.ollamaModel,
+        messages: [{ role: 'user', content: prompt }],
+        stream: false,
+        options: {
+          num_predict: maxTokens,
+          temperature: 0.7,
+        },
+      }),
+    });
+
+    if (!response.ok) {
+      throw new Error(`Ollama request failed: ${response.status} ${response.statusText}`);
+    }
+
+    const data = (await response.json()) as OllamaResponse;
+    return data.message?.content || '';
+  }
+
   private async summarizeSession(
     userId: string,
     _companionId: string,
@@ -92,19 +122,10 @@ export class SummaryProjectionWorker {
       )
       .join('\n\n');
 
-    const message = await this.anthropic.messages.create({
-      model: 'claude-3-5-haiku-20241022',
-      max_tokens: 500,
-      messages: [
-        {
-          role: 'user',
-          content: `Summarize this conversation in 2-3 sentences, capturing the key topics discussed and any important information learned about the user:\n\n${transcript}`,
-        },
-      ],
-    });
-
-    const summary =
-      message.content[0].type === 'text' ? message.content[0].text : '';
+    const summary = await this.generateWithOllama(
+      `Summarize this conversation in 2-3 sentences, capturing the key topics discussed and any important information learned about the user:\n\n${transcript}`,
+      500
+    );
 
     // Store session summary
     await this.config.db.sql`
@@ -137,19 +158,10 @@ export class SummaryProjectionWorker {
 
     const summaries = sessions.map((s) => s.summary).join('\n\n');
 
-    const message = await this.anthropic.messages.create({
-      model: 'claude-3-5-haiku-20241022',
-      max_tokens: 300,
-      messages: [
-        {
-          role: 'user',
-          content: `Create a brief daily summary from these conversation summaries:\n\n${summaries}`,
-        },
-      ],
-    });
-
-    const dailySummary =
-      message.content[0].type === 'text' ? message.content[0].text : '';
+    const dailySummary = await this.generateWithOllama(
+      `Create a brief daily summary from these conversation summaries:\n\n${summaries}`,
+      300
+    );
 
     // Store daily summary (could be in a separate table or vault file)
     this.config.logger.info(

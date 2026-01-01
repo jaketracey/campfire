@@ -225,7 +225,7 @@ export function Step4Archetype() {
           onClick={nextStep}
           className="group h-14 px-12 rounded-full bg-gradient-to-r from-vibes-neon to-vibes-hot hover:shadow-[0_0_30px_rgba(236,72,153,0.3)] transition-all font-bold text-lg disabled:opacity-50"
         >
-          Next: Personality Traits
+          Next: Voice
           <ArrowRight className="ml-2 h-5 w-5 group-hover:translate-x-2 transition-transform duration-300" />
         </Button>
       </div>

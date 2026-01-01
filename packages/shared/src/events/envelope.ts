@@ -34,8 +34,8 @@ export const EventEnvelopeSchema = z.object({
   timestamp: z.string().datetime({ offset: true }),
   /** User ID this event belongs to */
   userId: z.string().min(1),
-  /** Session ID for the current session */
-  sessionId: z.string().min(1),
+  /** Session ID for the current session (null for background events) */
+  sessionId: z.string().min(1).nullable(),
   /** Turn ID within the session (null for background events) */
   turnId: z.string().nullable(),
   /** Trace ID that ties all events in a turn together */

@@ -1,8 +1,14 @@
 """Base classes for provider implementations."""
 
+from __future__ import annotations
+
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
-from typing import Any, AsyncGenerator
+from typing import TYPE_CHECKING, Any, AsyncGenerator, TypeVar
+
+# Self type for methods that return the same class type
+# Using TypeVar since Self was added in Python 3.11
+_T = TypeVar("_T", bound="LLMProvider")
 
 
 @dataclass
@@ -50,6 +56,29 @@ class LLMProvider(ABC):
         """Provider name."""
         ...
 
+    @property
+    def current_model(self) -> str:
+        """Return the active model ID.
+
+        Returns the model that will be used for the next request.
+        Subclasses should override this to support model override.
+        """
+        raise NotImplementedError("Subclass must implement current_model property")
+
+    def with_model(self: _T, model_id: str) -> _T:
+        """Return a new provider instance configured for a specific model.
+
+        This allows the model router to dynamically select which model
+        to use for a specific request.
+
+        Args:
+            model_id: The model ID to use.
+
+        Returns:
+            A new provider instance configured with the specified model.
+        """
+        raise NotImplementedError("Subclass must implement with_model method")
+
     @abstractmethod
     async def generate(
         self,
@@ -58,8 +87,14 @@ class LLMProvider(ABC):
         max_tokens: int = 4096,
         temperature: float = 0.7,
         stop_sequences: list[str] | None = None,
+        response_format: dict[str, str] | None = None,
     ) -> LLMResponse:
-        """Generate a response from the LLM."""
+        """Generate a response from the LLM.
+
+        Args:
+            response_format: Optional format specification. For JSON output,
+                use {"type": "json_object"}. Not all providers support this.
+        """
         ...
 
     @abstractmethod

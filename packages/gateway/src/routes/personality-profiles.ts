@@ -5,12 +5,38 @@
 
 import type { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
 import { requireAuth, requireAdmin } from '../middleware/auth.js';
-import { getPersonalityProfilesRepository } from '../repositories/personality-profiles.js';
+import {
+  getPersonalityProfilesRepository,
+  type PreferredTone,
+  type VerbosityLevel,
+  type GreetingStyle,
+} from '../repositories/personality-profiles.js';
 import { getSessionsRepository } from '../repositories/sessions.js';
 import { logger } from '../observability/logger.js';
 
 interface OrchestratorConfig {
   baseUrl: string;
+}
+
+/**
+ * Analysis response from the orchestrator
+ */
+interface AnalysisResponse {
+  traits?: {
+    warmth?: number | null;
+    energy?: number | null;
+    humor?: number | null;
+    formality?: number | null;
+    curiosity?: number | null;
+    openness?: number | null;
+  };
+  preferred_tone?: PreferredTone | null;
+  verbosity?: VerbosityLevel | null;
+  personality_insights?: string[];
+  detected_interests?: string[];
+  conversation_themes?: string[];
+  greeting_style?: GreetingStyle;
+  custom_insight?: string | null;
 }
 
 /**
@@ -95,21 +121,21 @@ export async function personalityProfilesRoutes(app: FastifyInstance): Promise<v
       }
 
       try {
-        // Get recent turns for analysis
-        const sessions = await sessionsRepo.getRecentSessions(userId, undefined, 10);
-        const turns: { userMessage: string; agentMessage?: string }[] = [];
+        // Get recent turns for analysis - use list() to get sessions for any companion
+        const sessionsResult = await sessionsRepo.list({ userId, limit: 10 });
+        const turns: { user_message: string; agent_message?: string }[] = [];
 
-        for (const session of sessions) {
+        for (const session of sessionsResult.data) {
           const sessionTurns = await sessionsRepo.listTurns({
             sessionId: session.id,
             limit: 50,
           });
 
           for (const turn of sessionTurns.data) {
-            if (turn.userMessage) {
+            if (turn.user_message) {
               turns.push({
-                userMessage: turn.userMessage,
-                agentMessage: turn.agentMessage ?? undefined,
+                user_message: turn.user_message,
+                agent_message: turn.agent_message ?? undefined,
               });
             }
           }
@@ -151,14 +177,14 @@ export async function personalityProfilesRoutes(app: FastifyInstance): Promise<v
 
         if (!response.ok) {
           const error = await response.text();
-          logger.error('orchestrator_analysis_failed', { userId, error });
+          logger.error({ userId, error }, 'Orchestrator analysis failed');
           return reply.status(500).send({
             error: 'Analysis Failed',
             message: 'Failed to analyze personality profile',
           });
         }
 
-        const analysis = await response.json();
+        const analysis = (await response.json()) as AnalysisResponse;
 
         // Upsert the profile
         const profile = await profileRepo.upsert(userId, {
@@ -180,7 +206,7 @@ export async function personalityProfilesRoutes(app: FastifyInstance): Promise<v
           customInsight: analysis.custom_insight ?? null,
         });
 
-        logger.info('personality_profile_refreshed', { userId, turnsAnalyzed: turns.length });
+        logger.info({ userId, turnsAnalyzed: turns.length }, 'Personality profile refreshed');
 
         return reply.send({
           id: profile.id,
@@ -204,7 +230,7 @@ export async function personalityProfilesRoutes(app: FastifyInstance): Promise<v
           conversationThemes: profile.conversationThemes,
         });
       } catch (error) {
-        logger.error('personality_profile_refresh_error', { userId, error: String(error) });
+        logger.error({ userId, error: String(error) }, 'Personality profile refresh error');
         return reply.status(500).send({
           error: 'Internal Error',
           message: 'Failed to refresh personality profile',

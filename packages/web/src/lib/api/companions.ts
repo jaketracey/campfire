@@ -297,3 +297,126 @@ export async function generateRandomIdentity(): Promise<GeneratedIdentity> {
     latencyMs: response.latency_ms,
   };
 }
+
+// ============================================================================
+// Companion Friends API
+// ============================================================================
+
+/**
+ * Friend companion details
+ */
+export interface FriendCompanion {
+  id: string;
+  name: string;
+  avatarUrl: string | null;
+  status: string;
+  isPublic: boolean;
+}
+
+/**
+ * Companion friendship record
+ */
+export interface CompanionFriendship {
+  id: string;
+  companionId: string;
+  friendCompanionId: string;
+  relationshipType: string | null;
+  howTheyMet: string | null;
+  nickname: string | null;
+  familiarityLevel: number;
+  createdAt: string;
+  updatedAt: string;
+  friendCompanion?: FriendCompanion;
+}
+
+/**
+ * Friends list response
+ */
+export interface CompanionFriendsListResponse {
+  friends: CompanionFriendship[];
+  total: number;
+  limit: number;
+  offset: number;
+}
+
+/**
+ * List friends for a companion
+ */
+export async function listCompanionFriends(
+  companionId: string,
+  options?: {
+    limit?: number;
+    offset?: number;
+    relationshipType?: string;
+  }
+): Promise<CompanionFriendsListResponse> {
+  return get<CompanionFriendsListResponse>(
+    `/companions/${companionId}/friends`,
+    options
+  );
+}
+
+/**
+ * Input for adding a friend
+ */
+export interface AddFriendInput {
+  friendCompanionId: string;
+  relationshipType?: string;
+  howTheyMet?: string;
+  nickname?: string;
+}
+
+/**
+ * Add a friend to a companion
+ */
+export async function addCompanionFriend(
+  companionId: string,
+  input: AddFriendInput
+): Promise<CompanionFriendship> {
+  return post<CompanionFriendship>(`/companions/${companionId}/friends`, input);
+}
+
+/**
+ * Input for updating a friendship
+ */
+export interface UpdateFriendshipInput {
+  relationshipType?: string;
+  nickname?: string;
+  familiarityLevel?: number;
+}
+
+/**
+ * Update friendship metadata
+ */
+export async function updateCompanionFriendship(
+  companionId: string,
+  friendId: string,
+  input: UpdateFriendshipInput
+): Promise<CompanionFriendship> {
+  return patch<CompanionFriendship>(
+    `/companions/${companionId}/friends/${friendId}`,
+    input
+  );
+}
+
+/**
+ * Remove a friend from a companion
+ */
+export async function removeCompanionFriend(
+  companionId: string,
+  friendId: string
+): Promise<void> {
+  return del<void>(`/companions/${companionId}/friends/${friendId}`);
+}
+
+/**
+ * Check if two companions are friends
+ */
+export async function checkCompanionFriendship(
+  companionId: string,
+  friendId: string
+): Promise<{ companionId: string; friendCompanionId: string; areFriends: boolean }> {
+  return get<{ companionId: string; friendCompanionId: string; areFriends: boolean }>(
+    `/companions/${companionId}/friends/${friendId}/check`
+  );
+}

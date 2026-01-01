@@ -24,10 +24,20 @@ class ComfyUIProvider(ImageProvider):
         self.timeout = settings.comfyui_timeout
 
         # SDXL-specific settings
-        self.sdxl_checkpoint = getattr(settings, "comfyui_sdxl_checkpoint", "sd_xl_base_1.0.safetensors")
+        self.sdxl_checkpoint = getattr(settings, "comfyui_sdxl_checkpoint", "RealVisXL_V4.0.safetensors")
         self.sdxl_vae = getattr(settings, "comfyui_sdxl_vae", "sdxl_vae.safetensors")
         self.ipadapter_model = getattr(settings, "comfyui_ipadapter_model", "ip-adapter-plus_sdxl_vit-h.safetensors")
         self.clip_vision_model = getattr(settings, "comfyui_clip_vision_model", "CLIP-ViT-H-14-laion2B-s32B-b79K.safetensors")
+
+        # Quality enhancement settings
+        self.detail_lora = getattr(settings, "comfyui_detail_lora", "detail_tweaker_xl.safetensors")
+        self.detail_lora_strength = getattr(settings, "comfyui_detail_lora_strength", 0.3)
+        self.skin_lora = getattr(settings, "comfyui_skin_lora", "skin_realism_sdxl.safetensors")
+        self.skin_lora_strength = getattr(settings, "comfyui_skin_lora_strength", 0.4)
+        self.faces_lora = getattr(settings, "comfyui_faces_lora", "better_faces_sdxl.safetensors")
+        self.faces_lora_strength = getattr(settings, "comfyui_faces_lora_strength", 0.5)
+        self.upscale_model = getattr(settings, "comfyui_upscale_model", "RealESRGAN_x4plus.pth")
+        self.enable_upscale = getattr(settings, "comfyui_enable_upscale", False)
 
     @property
     def name(self) -> str:
@@ -41,6 +51,7 @@ class ComfyUIProvider(ImageProvider):
         negative_prompt: str | None = None,
         reference_image_url: str | None = None,
         reference_strength: float = 0.7,
+        is_anchor: bool = False,
     ) -> dict[str, Any]:
         """Generate an image using ComfyUI.
 
@@ -51,6 +62,7 @@ class ComfyUIProvider(ImageProvider):
             negative_prompt: Things to avoid in the image
             reference_image_url: URL of reference image for IP-Adapter (character consistency)
             reference_strength: How strongly to follow reference (0.0-1.0)
+            is_anchor: If True, use high-quality anchor workflow (more steps, no upscaling)
         """
         start_time = time.time()
 
@@ -79,24 +91,48 @@ class ComfyUIProvider(ImageProvider):
                 if reference_image_url:
                     try:
                         # Download reference image
+                        logger.info("reference_image_downloading", url=reference_image_url[:100])
                         ref_response = await client.get(reference_image_url)
                         ref_response.raise_for_status()
                         reference_image_bytes = ref_response.content
-                        logger.info("reference_image_downloaded", url=reference_image_url[:50])
+                        logger.info(
+                            "reference_image_downloaded",
+                            url=reference_image_url[:50],
+                            size_bytes=len(reference_image_bytes),
+                        )
 
                         # Upload to ComfyUI
                         reference_image_filename = await self._upload_reference_image(
                             client, reference_image_bytes
                         )
                         logger.info("reference_image_uploaded", filename=reference_image_filename)
+                    except httpx.HTTPStatusError as e:
+                        logger.error(
+                            "reference_image_download_failed",
+                            error=str(e),
+                            status_code=e.response.status_code,
+                            url=reference_image_url[:100],
+                        )
+                        # Re-raise so caller knows IP-Adapter won't work
+                        raise RuntimeError(f"Failed to download reference image: {e}")
                     except Exception as e:
-                        logger.warning("reference_image_failed", error=str(e))
+                        logger.error(
+                            "reference_image_failed",
+                            error=str(e),
+                            error_type=type(e).__name__,
+                            url=reference_image_url[:100] if reference_image_url else None,
+                        )
+                        # Re-raise so caller knows IP-Adapter won't work
+                        raise RuntimeError(f"Reference image processing failed: {e}")
 
-                # Build workflow (with or without IP-Adapter)
+                # Build workflow based on image type
                 use_ipadapter = bool(reference_image_filename)
 
                 if use_ipadapter:
-                    workflow = self._build_workflow_with_ipadapter(
+                    # Use high-quality anchor workflow for ALL images with references
+                    # This ensures consistent quality between anchor and session images
+                    # Settings: 45 steps, CFG 8.0, no LoRA, no upscaling, PrepImageForClipVision
+                    workflow = self._build_anchor_workflow(
                         prompt=prompt,
                         negative_prompt=negative_prompt,
                         width=width,
@@ -105,6 +141,7 @@ class ComfyUIProvider(ImageProvider):
                         reference_image_filename=reference_image_filename,
                         reference_strength=reference_strength,
                     )
+                    logger.info("using_anchor_workflow", is_anchor=is_anchor)
                 else:
                     workflow = self._build_workflow(
                         prompt=prompt,
@@ -115,6 +152,15 @@ class ComfyUIProvider(ImageProvider):
                     )
 
                 # Queue the prompt
+                logger.info(
+                    "comfyui_queueing",
+                    workflow_type="anchor" if use_ipadapter else "basic",
+                    has_reference=use_ipadapter,
+                    reference_file=reference_image_filename,
+                    width=width,
+                    height=height,
+                    prompt_preview=prompt[:100] if prompt else None,
+                )
                 response = await client.post(
                     f"{self.base_url}/prompt",
                     json={"prompt": workflow},
@@ -486,6 +532,372 @@ class ComfyUIProvider(ImageProvider):
                 },
             },
         }
+
+    def _build_hq_workflow_with_ipadapter(
+        self,
+        prompt: str,
+        negative_prompt: str,
+        width: int,
+        height: int,
+        checkpoint: str,
+        reference_image_filename: str,
+        reference_strength: float = 0.7,
+        seed: int | None = None,
+        steps: int = 30,  # More steps for higher quality
+        cfg: float = 7.5,
+        sampler: str = "dpmpp_2m",
+        scheduler: str = "karras",
+        lora_name: str | None = None,
+        lora_strength: float = 0.5,
+        upscale_model: str | None = None,
+    ) -> dict[str, Any]:
+        """Build a high-quality ComfyUI workflow with IP-Adapter, LoRA, and upscaling.
+
+        Enhanced version of the IP-Adapter workflow with:
+        - Optional LoRA loading for quality enhancement (detail_tweaker_xl)
+        - Optional RealESRGAN upscaling for higher resolution output
+        - Optimized sampler settings for portrait quality
+        """
+        if seed is None:
+            seed = int(time.time() * 1000) % (2**31)
+
+        workflow: dict[str, Any] = {
+            # Load checkpoint
+            "4": {
+                "class_type": "CheckpointLoaderSimple",
+                "inputs": {
+                    "ckpt_name": checkpoint,
+                },
+            },
+        }
+
+        # Model source for IP-Adapter - either from checkpoint or LoRA
+        model_source = ["4", 0]
+        clip_source = ["4", 1]
+
+        # Optionally add LoRA for quality enhancement
+        if lora_name:
+            workflow["14"] = {
+                "class_type": "LoraLoader",
+                "inputs": {
+                    "lora_name": lora_name,
+                    "strength_model": lora_strength,
+                    "strength_clip": lora_strength,
+                    "model": ["4", 0],
+                    "clip": ["4", 1],
+                },
+            }
+            model_source = ["14", 0]
+            clip_source = ["14", 1]
+
+        # Add IP-Adapter nodes
+        workflow.update({
+            # Load IP-Adapter with unified loader
+            "10": {
+                "class_type": "IPAdapterUnifiedLoader",
+                "inputs": {
+                    "model": model_source,
+                    "preset": "PLUS (high strength)",
+                    "ipadapter": None,
+                },
+            },
+            # Load reference image
+            "12": {
+                "class_type": "LoadImage",
+                "inputs": {
+                    "image": reference_image_filename,
+                },
+            },
+            # Prep image for CLIP Vision (proper scaling, not center crop)
+            "17": {
+                "class_type": "PrepImageForClipVision",
+                "inputs": {
+                    "image": ["12", 0],
+                    "interpolation": "LANCZOS",
+                    "crop_position": "center",
+                    "sharpening": 0.0,
+                },
+            },
+            # Apply IP-Adapter Advanced with prepped image
+            "13": {
+                "class_type": "IPAdapterAdvanced",
+                "inputs": {
+                    "model": ["10", 0],
+                    "ipadapter": ["10", 1],
+                    "image": ["17", 0],  # Use prepped image for proper scaling
+                    "weight": reference_strength,
+                    "weight_type": "ease in-out",
+                    "combine_embeds": "concat",
+                    "start_at": 0.0,
+                    "end_at": 1.0,
+                    "embeds_scaling": "V only",
+                },
+            },
+            # Positive prompt
+            "6": {
+                "class_type": "CLIPTextEncode",
+                "inputs": {
+                    "text": prompt,
+                    "clip": clip_source,
+                },
+            },
+            # Negative prompt
+            "7": {
+                "class_type": "CLIPTextEncode",
+                "inputs": {
+                    "text": negative_prompt,
+                    "clip": clip_source,
+                },
+            },
+            # Empty latent
+            "5": {
+                "class_type": "EmptyLatentImage",
+                "inputs": {
+                    "width": width,
+                    "height": height,
+                    "batch_size": 1,
+                },
+            },
+            # KSampler with IP-Adapter model
+            "3": {
+                "class_type": "KSampler",
+                "inputs": {
+                    "seed": seed,
+                    "steps": steps,
+                    "cfg": cfg,
+                    "sampler_name": sampler,
+                    "scheduler": scheduler,
+                    "denoise": 1.0,
+                    "model": ["13", 0],
+                    "positive": ["6", 0],
+                    "negative": ["7", 0],
+                    "latent_image": ["5", 0],
+                },
+            },
+            # VAE Decode
+            "8": {
+                "class_type": "VAEDecode",
+                "inputs": {
+                    "samples": ["3", 0],
+                    "vae": ["4", 2],
+                },
+            },
+        })
+
+        # Final image source - either from VAE or upscaler
+        image_source = ["8", 0]
+
+        # Optionally add upscaling
+        if upscale_model:
+            workflow["15"] = {
+                "class_type": "UpscaleModelLoader",
+                "inputs": {
+                    "model_name": upscale_model,
+                },
+            }
+            workflow["16"] = {
+                "class_type": "ImageUpscaleWithModel",
+                "inputs": {
+                    "upscale_model": ["15", 0],
+                    "image": ["8", 0],
+                },
+            }
+            image_source = ["16", 0]
+
+        # Save Image (from upscaler if enabled, otherwise from VAE)
+        workflow["9"] = {
+            "class_type": "SaveImage",
+            "inputs": {
+                "filename_prefix": f"hq_{uuid.uuid4().hex[:8]}",
+                "images": image_source,
+            },
+        }
+
+        return workflow
+
+    def _build_anchor_workflow(
+        self,
+        prompt: str,
+        negative_prompt: str,
+        width: int,
+        height: int,
+        checkpoint: str,
+        reference_image_filename: str | None = None,
+        reference_strength: float = 0.85,
+        seed: int | None = None,
+        steps: int = 45,  # Higher steps for anchor quality
+        cfg: float = 7.0,  # Balanced CFG for epiCRealism
+        sampler: str = "dpmpp_2m",
+        scheduler: str = "karras",
+    ) -> dict[str, Any]:
+        """Build a high-quality anchor image workflow optimized for character identity.
+
+        Anchor images are the reference images used for all subsequent generations.
+        This workflow prioritizes quality over speed:
+        - 45 steps (vs 30 for regular)
+        - CFG 7.0 (balanced for epiCRealism)
+        - Quality LoRAs (skin, faces, detail)
+        - No upscaling (native resolution)
+        - PrepImageForClipVision for proper reference handling
+        """
+        if seed is None:
+            seed = int(time.time() * 1000) % (2**31)
+
+        workflow: dict[str, Any] = {
+            # Load checkpoint
+            "4": {
+                "class_type": "CheckpointLoaderSimple",
+                "inputs": {
+                    "ckpt_name": checkpoint,
+                },
+            },
+            # LoRA chain for quality enhancement
+            # Skin realism LoRA
+            "20": {
+                "class_type": "LoraLoader",
+                "inputs": {
+                    "lora_name": self.skin_lora,
+                    "strength_model": self.skin_lora_strength,
+                    "strength_clip": self.skin_lora_strength,
+                    "model": ["4", 0],
+                    "clip": ["4", 1],
+                },
+            },
+            # Better faces LoRA
+            "21": {
+                "class_type": "LoraLoader",
+                "inputs": {
+                    "lora_name": self.faces_lora,
+                    "strength_model": self.faces_lora_strength,
+                    "strength_clip": self.faces_lora_strength,
+                    "model": ["20", 0],
+                    "clip": ["20", 1],
+                },
+            },
+            # Detail tweaker LoRA
+            "22": {
+                "class_type": "LoraLoader",
+                "inputs": {
+                    "lora_name": self.detail_lora,
+                    "strength_model": self.detail_lora_strength,
+                    "strength_clip": self.detail_lora_strength,
+                    "model": ["21", 0],
+                    "clip": ["21", 1],
+                },
+            },
+            # Positive prompt (uses LoRA-enhanced clip)
+            "6": {
+                "class_type": "CLIPTextEncode",
+                "inputs": {
+                    "text": prompt,
+                    "clip": ["22", 1],
+                },
+            },
+            # Negative prompt (uses LoRA-enhanced clip)
+            "7": {
+                "class_type": "CLIPTextEncode",
+                "inputs": {
+                    "text": negative_prompt,
+                    "clip": ["22", 1],
+                },
+            },
+            # Empty latent at high resolution
+            "5": {
+                "class_type": "EmptyLatentImage",
+                "inputs": {
+                    "width": width,
+                    "height": height,
+                    "batch_size": 1,
+                },
+            },
+        }
+
+        # If reference image provided, add IP-Adapter with PrepImageForClipVision
+        if reference_image_filename:
+            workflow.update({
+                # Load IP-Adapter (uses LoRA-enhanced model)
+                "10": {
+                    "class_type": "IPAdapterUnifiedLoader",
+                    "inputs": {
+                        "model": ["22", 0],
+                        "preset": "PLUS (high strength)",
+                        "ipadapter": None,
+                    },
+                },
+                # Load reference image
+                "12": {
+                    "class_type": "LoadImage",
+                    "inputs": {
+                        "image": reference_image_filename,
+                    },
+                },
+                # Prep image for CLIP Vision (proper scaling, not center crop)
+                "17": {
+                    "class_type": "PrepImageForClipVision",
+                    "inputs": {
+                        "image": ["12", 0],
+                        "interpolation": "LANCZOS",
+                        "crop_position": "center",
+                        "sharpening": 0.0,
+                    },
+                },
+                # Apply IP-Adapter with prepared image
+                "13": {
+                    "class_type": "IPAdapterAdvanced",
+                    "inputs": {
+                        "model": ["10", 0],
+                        "ipadapter": ["10", 1],
+                        "image": ["17", 0],  # Use prepped image
+                        "weight": reference_strength,
+                        "weight_type": "ease in-out",
+                        "combine_embeds": "concat",
+                        "start_at": 0.0,
+                        "end_at": 1.0,
+                        "embeds_scaling": "V only",
+                    },
+                },
+            })
+            model_source = ["13", 0]
+        else:
+            # Use LoRA-enhanced model (no IP-Adapter)
+            model_source = ["22", 0]
+
+        # KSampler with high quality settings
+        workflow["3"] = {
+            "class_type": "KSampler",
+            "inputs": {
+                "seed": seed,
+                "steps": steps,
+                "cfg": cfg,
+                "sampler_name": sampler,
+                "scheduler": scheduler,
+                "denoise": 1.0,
+                "model": model_source,
+                "positive": ["6", 0],
+                "negative": ["7", 0],
+                "latent_image": ["5", 0],
+            },
+        }
+
+        # VAE Decode
+        workflow["8"] = {
+            "class_type": "VAEDecode",
+            "inputs": {
+                "samples": ["3", 0],
+                "vae": ["4", 2],
+            },
+        }
+
+        # Save Image (no upscaling for anchors)
+        workflow["9"] = {
+            "class_type": "SaveImage",
+            "inputs": {
+                "filename_prefix": f"anchor_{uuid.uuid4().hex[:8]}",
+                "images": ["8", 0],
+            },
+        }
+
+        return workflow
 
     def _build_sdxl_workflow(
         self,

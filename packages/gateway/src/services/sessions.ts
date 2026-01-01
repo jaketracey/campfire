@@ -22,6 +22,8 @@ import type {
   TurnInsert,
   MessageType,
   JSONObject,
+  SessionParticipant,
+  SessionParticipantWithCompanion,
 } from '../db/types.js';
 import type { TransactionContext } from '../repositories/types.js';
 
@@ -521,6 +523,175 @@ export class SessionsService {
       companionId,
       ...options,
     }, tx);
+  }
+
+  // ===========================================================================
+  // Session Participants (Group Chat)
+  // ===========================================================================
+
+  /**
+   * Maximum number of companions allowed in a group chat session
+   */
+  private readonly MAX_PARTICIPANTS = 5;
+
+  /**
+   * Invite a companion to join a session (group chat)
+   */
+  async inviteCompanion(
+    userId: string,
+    sessionId: string,
+    invitedCompanionId: string,
+    invitedByCompanionId: string,
+    tx?: TransactionContext
+  ): Promise<SessionParticipant> {
+    // Verify session exists and belongs to user
+    const session = await this.getById(userId, sessionId, tx);
+    if (!session) {
+      throw new Error('Session not found');
+    }
+    if (session.status !== 'active') {
+      throw new Error('Session is not active');
+    }
+
+    // Verify the inviting companion is a participant
+    const isInviter = await this.sessions.isParticipant(sessionId, invitedByCompanionId, tx);
+    if (!isInviter) {
+      throw new Error('Inviting companion is not in this session');
+    }
+
+    // Verify the invited companion exists
+    const invitedCompanion = await this.companions.findById(invitedCompanionId, tx);
+    if (!invitedCompanion) {
+      throw new Error('Invited companion not found');
+    }
+    if (invitedCompanion.status !== 'active') {
+      throw new Error('Invited companion is not active');
+    }
+
+    // Check if companion is owned by user or is public
+    if (invitedCompanion.user_id !== userId && !invitedCompanion.is_public) {
+      throw new Error('Cannot invite a private companion from another user');
+    }
+
+    // Check if already a participant
+    const alreadyParticipant = await this.sessions.isParticipant(sessionId, invitedCompanionId, tx);
+    if (alreadyParticipant) {
+      throw new Error('Companion is already in this session');
+    }
+
+    // Check participant limit
+    const currentCount = await this.sessions.getParticipantCount(sessionId, tx);
+    if (currentCount >= this.MAX_PARTICIPANTS) {
+      throw new Error(`Maximum ${this.MAX_PARTICIPANTS} companions per session`);
+    }
+
+    // Add the participant
+    const participant = await this.sessions.addParticipant({
+      session_id: sessionId,
+      companion_id: invitedCompanionId,
+      role: 'invited',
+      invited_by_companion_id: invitedByCompanionId,
+    }, tx);
+
+    // Emit event
+    const context: EventContext = {
+      userId,
+      sessionId,
+      traceId: crypto.randomUUID(),
+    };
+
+    await this.events.emit({
+      type: 'session.participant.joined',
+      payload: {
+        sessionId,
+        companionId: invitedCompanionId,
+        companionName: invitedCompanion.name,
+        invitedByCompanionId,
+        role: 'invited',
+      },
+      context,
+    });
+
+    logger.info(
+      { sessionId, invitedCompanionId, invitedByCompanionId },
+      'Companion invited to session'
+    );
+
+    return participant;
+  }
+
+  /**
+   * Remove a companion from a session (dismiss from group chat)
+   */
+  async dismissCompanion(
+    userId: string,
+    sessionId: string,
+    companionId: string,
+    tx?: TransactionContext
+  ): Promise<SessionParticipant> {
+    // Verify session exists and belongs to user
+    const session = await this.getById(userId, sessionId, tx);
+    if (!session) {
+      throw new Error('Session not found');
+    }
+
+    // Cannot dismiss the primary companion
+    const primary = await this.sessions.getPrimaryParticipant(sessionId, tx);
+    if (primary && primary.companion_id === companionId) {
+      throw new Error('Cannot dismiss the primary companion');
+    }
+
+    // Remove the participant
+    const participant = await this.sessions.removeParticipant(sessionId, companionId, tx);
+
+    // Emit event
+    const context: EventContext = {
+      userId,
+      sessionId,
+      traceId: crypto.randomUUID(),
+    };
+
+    await this.events.emit({
+      type: 'session.participant.left',
+      payload: {
+        sessionId,
+        companionId,
+        reason: 'dismissed',
+      },
+      context,
+    });
+
+    logger.info({ sessionId, companionId }, 'Companion dismissed from session');
+
+    return participant;
+  }
+
+  /**
+   * Get active participants in a session
+   */
+  async getActiveParticipants(
+    userId: string,
+    sessionId: string,
+    tx?: TransactionContext
+  ): Promise<SessionParticipantWithCompanion[]> {
+    // Verify session exists and belongs to user
+    const session = await this.getById(userId, sessionId, tx);
+    if (!session) {
+      throw new Error('Session not found');
+    }
+
+    return this.sessions.getActiveParticipants(sessionId, tx);
+  }
+
+  /**
+   * Check if a session is a group chat (has more than one active participant)
+   */
+  async isGroupChat(
+    sessionId: string,
+    tx?: TransactionContext
+  ): Promise<boolean> {
+    const count = await this.sessions.getParticipantCount(sessionId, tx);
+    return count > 1;
   }
 
   /**

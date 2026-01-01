@@ -121,8 +121,8 @@ export async function generateCompanionImage(
       method: 'POST',
       body: JSON.stringify({
         ...request,
-        width: request.width || 250,
-        height: request.height || 400,
+        width: request.width || 832,
+        height: request.height || 1248,
       }),
       signal: controller.signal,
     });

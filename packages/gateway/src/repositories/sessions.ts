@@ -3,6 +3,7 @@
  * Data access for sessions and turns tables
  */
 
+import postgres from 'postgres';
 import { sql } from '../db/pool.js';
 import { logger } from '../observability/logger.js';
 import type {
@@ -13,6 +14,11 @@ import type {
   TurnInsert,
   MessageType,
   JSONObject,
+  SessionParticipant,
+  SessionParticipantInsert,
+  SessionParticipantRole,
+  SessionParticipantStatus,
+  SessionParticipantWithCompanion,
 } from '../db/types.js';
 import type { TransactionContext, PaginationOptions, PaginatedResult, DateRangeFilter } from './types.js';
 import { NotFoundError, wrapDatabaseError } from './errors.js';
@@ -121,7 +127,7 @@ export class SessionsRepository {
           ${data.user_id},
           ${data.companion_id},
           ${data.status ?? 'active'},
-          ${data.metadata ?? {}}
+          ${db.json((data.metadata ?? {}) as postgres.JSONValue)}
         )
         RETURNING
           id, user_id, companion_id, status, started_at, ended_at,
@@ -177,7 +183,7 @@ export class SessionsRepository {
 
     const result = await db`
       UPDATE sessions
-      SET metadata = metadata || ${metadata}
+      SET metadata = metadata || ${db.json(metadata as postgres.JSONValue)}
       WHERE id = ${id}
       RETURNING
         id, user_id, companion_id, status, started_at, ended_at,
@@ -352,7 +358,7 @@ export class SessionsRepository {
           ${data.user_message_type ?? 'text'},
           ${data.agent_message ?? null},
           ${data.agent_message_type ?? 'text'},
-          ${data.metadata ?? {}}
+          ${db.json((data.metadata ?? {}) as postgres.JSONValue)}
         )
         RETURNING
           id, session_id, turn_number, user_message, user_message_type,
@@ -399,7 +405,7 @@ export class SessionsRepository {
         token_count_input = COALESCE(${data.token_count_input ?? null}, token_count_input),
         token_count_output = COALESCE(${data.token_count_output ?? null}, token_count_output),
         cost_usd = COALESCE(${data.cost_usd ?? null}, cost_usd),
-        metadata = COALESCE(${data.metadata ?? null}, metadata)
+        metadata = COALESCE(${data.metadata ? db.json(data.metadata as postgres.JSONValue) : null}, metadata)
       WHERE id = ${id}
       RETURNING
         id, session_id, turn_number, user_message, user_message_type,
@@ -450,7 +456,7 @@ export class SessionsRepository {
         cost_usd = COALESCE(${data.costUsd ?? null}, cost_usd),
         model_used = COALESCE(${data.modelUsed ?? null}, model_used),
         prompt_version = COALESCE(${data.promptVersion ?? null}, prompt_version),
-        safety_flags = COALESCE(${data.safetyFlags ?? null}, safety_flags)
+        safety_flags = COALESCE(${data.safetyFlags ? db.json(data.safetyFlags as postgres.JSONValue) : null}, safety_flags)
       WHERE id = ${id}
       RETURNING
         id, session_id, turn_number, user_message, user_message_type,
@@ -542,6 +548,112 @@ export class SessionsRepository {
   }
 
   /**
+   * Increment like count for a turn and update session total
+   * Returns the updated turn likes and session total likes
+   */
+  async incrementTurnLikes(
+    turnId: string,
+    sessionId: string,
+    tx?: TransactionContext
+  ): Promise<{ turnLikes: number; sessionLikes: number; contentSnippet: string }> {
+    const db = this.getSql(tx);
+
+    // Atomically increment turn likes
+    const turnResult = await db`
+      UPDATE turns
+      SET metadata = jsonb_set(
+        jsonb_set(
+          COALESCE(metadata, '{}'),
+          '{likes,count}',
+          (COALESCE((metadata->'likes'->>'count')::int, 0) + 1)::text::jsonb
+        ),
+        '{likes,lastLikedAt}',
+        to_jsonb(NOW()::text)
+      )
+      WHERE id = ${turnId}
+      RETURNING
+        (metadata->'likes'->>'count')::int as turn_likes,
+        LEFT(agent_message, 100) as content_snippet
+    `;
+
+    if (!turnResult[0]) {
+      throw new NotFoundError('Turn', turnId);
+    }
+
+    const turnLikes = turnResult[0]['turn_likes'] as number;
+    const contentSnippet = (turnResult[0]['content_snippet'] as string) || '';
+
+    // Update session total likes
+    const sessionResult = await db`
+      UPDATE sessions
+      SET metadata = jsonb_set(
+        COALESCE(metadata, '{}'),
+        '{totalLikes}',
+        (COALESCE((metadata->>'totalLikes')::int, 0) + 1)::text::jsonb
+      )
+      WHERE id = ${sessionId}
+      RETURNING (metadata->>'totalLikes')::int as session_likes
+    `;
+
+    const sessionLikes = sessionResult[0]?.['session_likes'] as number || 1;
+
+    logger.debug(
+      { turnId, sessionId, turnLikes, sessionLikes },
+      'Incremented turn likes'
+    );
+
+    return { turnLikes, sessionLikes, contentSnippet };
+  }
+
+  /**
+   * Get total likes for a session
+   */
+  async getSessionLikes(
+    sessionId: string,
+    tx?: TransactionContext
+  ): Promise<number> {
+    const db = this.getSql(tx);
+
+    const result = await db`
+      SELECT COALESCE((metadata->>'totalLikes')::int, 0) as total_likes
+      FROM sessions
+      WHERE id = ${sessionId}
+    `;
+
+    return (result[0]?.['total_likes'] as number) || 0;
+  }
+
+  /**
+   * Get liked turns for a session (for companion awareness context)
+   * Returns turns that have been liked, sorted by like count
+   */
+  async getLikedTurns(
+    sessionId: string,
+    limit: number = 10,
+    tx?: TransactionContext
+  ): Promise<Array<{ turnId: string; likeCount: number; contentSnippet: string }>> {
+    const db = this.getSql(tx);
+
+    const result = await db`
+      SELECT
+        id as turn_id,
+        COALESCE((metadata->'likes'->>'count')::int, 0) as like_count,
+        LEFT(agent_message, 100) as content_snippet
+      FROM turns
+      WHERE session_id = ${sessionId}
+        AND (metadata->'likes'->>'count')::int > 0
+      ORDER BY (metadata->'likes'->>'count')::int DESC
+      LIMIT ${limit}
+    `;
+
+    return result.map(row => ({
+      turnId: row['turn_id'] as string,
+      likeCount: row['like_count'] as number,
+      contentSnippet: row['content_snippet'] as string,
+    }));
+  }
+
+  /**
    * Get session summary text for context retention
    */
   async getSessionSummary(
@@ -585,6 +697,218 @@ export class SessionsRepository {
 
     if (result.length === 0) return null;
     return result[0].summary as string | null;
+  }
+
+  // ===========================================================================
+  // Session Participants (Group Chat)
+  // ===========================================================================
+
+  /**
+   * Add a participant to a session
+   */
+  async addParticipant(
+    data: SessionParticipantInsert,
+    tx?: TransactionContext
+  ): Promise<SessionParticipant> {
+    const db = this.getSql(tx);
+
+    try {
+      const result = await db`
+        INSERT INTO session_participants (
+          session_id, companion_id, role, status, invited_by_companion_id
+        ) VALUES (
+          ${data.session_id},
+          ${data.companion_id},
+          ${data.role ?? 'invited'},
+          ${data.status ?? 'active'},
+          ${data.invited_by_companion_id ?? null}
+        )
+        RETURNING
+          id, session_id, companion_id, role, status,
+          invited_by_companion_id, joined_at, left_at, message_count,
+          created_at, updated_at
+      `;
+
+      const participant = this.mapParticipant(result[0]!);
+      logger.debug(
+        { sessionId: data.session_id, companionId: data.companion_id, role: data.role },
+        'Participant added to session'
+      );
+      return participant;
+    } catch (error) {
+      throw wrapDatabaseError(error, 'session_participants.add');
+    }
+  }
+
+  /**
+   * Remove a participant from a session (mark as left)
+   */
+  async removeParticipant(
+    sessionId: string,
+    companionId: string,
+    tx?: TransactionContext
+  ): Promise<SessionParticipant> {
+    const db = this.getSql(tx);
+
+    const result = await db`
+      UPDATE session_participants
+      SET
+        status = 'left',
+        left_at = NOW()
+      WHERE session_id = ${sessionId}
+        AND companion_id = ${companionId}
+        AND status = 'active'
+      RETURNING
+        id, session_id, companion_id, role, status,
+        invited_by_companion_id, joined_at, left_at, message_count,
+        created_at, updated_at
+    `;
+
+    if (!result[0]) {
+      throw new NotFoundError('SessionParticipant', `${sessionId}/${companionId}`);
+    }
+
+    logger.debug({ sessionId, companionId }, 'Participant removed from session');
+    return this.mapParticipant(result[0]);
+  }
+
+  /**
+   * Get all active participants in a session with companion details
+   */
+  async getActiveParticipants(
+    sessionId: string,
+    tx?: TransactionContext
+  ): Promise<SessionParticipantWithCompanion[]> {
+    const db = this.getSql(tx);
+
+    const result = await db`
+      SELECT
+        sp.id, sp.session_id, sp.companion_id, sp.role, sp.status,
+        sp.invited_by_companion_id, sp.joined_at, sp.left_at, sp.message_count,
+        sp.created_at, sp.updated_at,
+        c.name as companion_name,
+        a.asset_url as companion_avatar_url
+      FROM session_participants sp
+      JOIN companions c ON sp.companion_id = c.id
+      LEFT JOIN companion_avatars a ON c.active_avatar_id = a.id
+      WHERE sp.session_id = ${sessionId}
+        AND sp.status = 'active'
+      ORDER BY sp.joined_at ASC
+    `;
+
+    return result.map(row => this.mapParticipantWithCompanion(row));
+  }
+
+  /**
+   * Get all participants in a session (including left ones)
+   */
+  async getAllParticipants(
+    sessionId: string,
+    tx?: TransactionContext
+  ): Promise<SessionParticipantWithCompanion[]> {
+    const db = this.getSql(tx);
+
+    const result = await db`
+      SELECT
+        sp.id, sp.session_id, sp.companion_id, sp.role, sp.status,
+        sp.invited_by_companion_id, sp.joined_at, sp.left_at, sp.message_count,
+        sp.created_at, sp.updated_at,
+        c.name as companion_name,
+        a.asset_url as companion_avatar_url
+      FROM session_participants sp
+      JOIN companions c ON sp.companion_id = c.id
+      LEFT JOIN companion_avatars a ON c.active_avatar_id = a.id
+      WHERE sp.session_id = ${sessionId}
+      ORDER BY sp.joined_at ASC
+    `;
+
+    return result.map(row => this.mapParticipantWithCompanion(row));
+  }
+
+  /**
+   * Check if a companion is an active participant in a session
+   */
+  async isParticipant(
+    sessionId: string,
+    companionId: string,
+    tx?: TransactionContext
+  ): Promise<boolean> {
+    const db = this.getSql(tx);
+
+    const result = await db`
+      SELECT 1
+      FROM session_participants
+      WHERE session_id = ${sessionId}
+        AND companion_id = ${companionId}
+        AND status = 'active'
+      LIMIT 1
+    `;
+
+    return result.length > 0;
+  }
+
+  /**
+   * Get the count of active participants in a session
+   */
+  async getParticipantCount(
+    sessionId: string,
+    tx?: TransactionContext
+  ): Promise<number> {
+    const db = this.getSql(tx);
+
+    const result = await db`
+      SELECT COUNT(*)::int as count
+      FROM session_participants
+      WHERE session_id = ${sessionId}
+        AND status = 'active'
+    `;
+
+    return result[0]?.count ?? 0;
+  }
+
+  /**
+   * Increment message count for a participant
+   */
+  async incrementParticipantMessageCount(
+    sessionId: string,
+    companionId: string,
+    tx?: TransactionContext
+  ): Promise<void> {
+    const db = this.getSql(tx);
+
+    await db`
+      UPDATE session_participants
+      SET message_count = message_count + 1
+      WHERE session_id = ${sessionId}
+        AND companion_id = ${companionId}
+    `;
+  }
+
+  /**
+   * Get the primary companion for a session
+   */
+  async getPrimaryParticipant(
+    sessionId: string,
+    tx?: TransactionContext
+  ): Promise<SessionParticipantWithCompanion | null> {
+    const db = this.getSql(tx);
+
+    const result = await db`
+      SELECT
+        sp.id, sp.session_id, sp.companion_id, sp.role, sp.status,
+        sp.invited_by_companion_id, sp.joined_at, sp.left_at, sp.message_count,
+        sp.created_at, sp.updated_at,
+        c.name as companion_name,
+        a.asset_url as companion_avatar_url
+      FROM session_participants sp
+      JOIN companions c ON sp.companion_id = c.id
+      LEFT JOIN companion_avatars a ON c.active_avatar_id = a.id
+      WHERE sp.session_id = ${sessionId}
+        AND sp.role = 'primary'
+      LIMIT 1
+    `;
+
+    return result[0] ? this.mapParticipantWithCompanion(result[0]) : null;
   }
 
   // ===========================================================================
@@ -634,6 +958,31 @@ export class SessionsRepository {
       cost_usd: row['cost_usd'] ? parseFloat(row['cost_usd'] as string) : null,
       metadata: row['metadata'] as JSONObject,
       created_at: row['created_at'] as Date,
+      companion_id: row['companion_id'] as string | null,
+    };
+  }
+
+  private mapParticipant(row: Record<string, unknown>): SessionParticipant {
+    return {
+      id: row['id'] as string,
+      session_id: row['session_id'] as string,
+      companion_id: row['companion_id'] as string,
+      role: row['role'] as SessionParticipantRole,
+      status: row['status'] as SessionParticipantStatus,
+      invited_by_companion_id: row['invited_by_companion_id'] as string | null,
+      joined_at: row['joined_at'] as Date,
+      left_at: row['left_at'] as Date | null,
+      message_count: row['message_count'] as number,
+      created_at: row['created_at'] as Date,
+      updated_at: row['updated_at'] as Date,
+    };
+  }
+
+  private mapParticipantWithCompanion(row: Record<string, unknown>): SessionParticipantWithCompanion {
+    return {
+      ...this.mapParticipant(row),
+      companion_name: row['companion_name'] as string,
+      companion_avatar_url: row['companion_avatar_url'] as string | null,
     };
   }
 }

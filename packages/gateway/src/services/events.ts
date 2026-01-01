@@ -19,7 +19,7 @@ import { logger, getRequestContext } from '../observability/logger.js';
  */
 export interface EventContext {
   userId: string;
-  sessionId: string;
+  sessionId: string | null;
   turnId?: string | null;
   traceId?: string;
   correlationId?: string;

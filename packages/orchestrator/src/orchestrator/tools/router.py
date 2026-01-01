@@ -22,6 +22,16 @@ from orchestrator.tools.handlers import (
     MemoryWriteHandler,
     VaultProjectionHandler,
 )
+from orchestrator.tools.game_handlers import (
+    GameMoveHandler,
+    GameResignHandler,
+    GameStartHandler,
+    GameStateHandler,
+)
+from orchestrator.tools.group_handlers import (
+    DismissFriendHandler,
+    InviteFriendHandler,
+)
 
 logger = structlog.get_logger()
 
@@ -66,6 +76,26 @@ class ToolRouter:
                 self.settings, self.event_emitter, self.http_client
             ),
             GiftAcknowledgeHandler(
+                self.settings, self.event_emitter, self.http_client
+            ),
+            # Game handlers
+            GameStartHandler(
+                self.settings, self.event_emitter, self.http_client
+            ),
+            GameMoveHandler(
+                self.settings, self.event_emitter, self.http_client
+            ),
+            GameStateHandler(
+                self.settings, self.event_emitter, self.http_client
+            ),
+            GameResignHandler(
+                self.settings, self.event_emitter, self.http_client
+            ),
+            # Group chat handlers
+            InviteFriendHandler(
+                self.settings, self.event_emitter, self.http_client
+            ),
+            DismissFriendHandler(
                 self.settings, self.event_emitter, self.http_client
             ),
         ]

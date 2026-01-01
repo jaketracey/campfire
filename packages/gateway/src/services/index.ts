@@ -77,6 +77,19 @@ export type {
   VoicePreview,
 } from './companions.js';
 
+// Companion Friends service (Group Chat)
+import { getCompanionFriendsService as _getCompanionFriendsService } from './companion-friends.js';
+export {
+  CompanionFriendsService,
+  getCompanionFriendsService,
+  AddFriendInputSchema,
+  UpdateFriendshipInputSchema,
+} from './companion-friends.js';
+export type {
+  AddFriendInput,
+  UpdateFriendshipInput,
+} from './companion-friends.js';
+
 // Sessions service
 import { getSessionsService as _getSessionsService } from './sessions.js';
 export {
@@ -136,6 +149,26 @@ import { getVoiceService as _getVoiceService } from './voice.js';
 export { VoiceService, getVoiceService } from './voice.js';
 export type { VoiceTuning, STTSession, TTSOptions } from './voice.js';
 
+// Tenets service
+import { getTenetsService as _getTenetsService } from './tenets.js';
+export {
+  TenetsService,
+  getTenetsService,
+  CreateTenetInputSchema,
+  UpdateTenetInputSchema,
+  TenetCategorySchema,
+  TenetPrioritySchema,
+} from './tenets.js';
+export type {
+  CreateTenetInput,
+  UpdateTenetInput,
+  Tenet,
+  CoreTenet,
+  SituationalTenetMatch,
+  TenetCategory,
+  TenetPriority,
+} from './tenets.js';
+
 /**
  * Initialize all services
  * Call this at application startup to ensure singleton instances are created
@@ -145,10 +178,12 @@ export function initializeServices(): void {
   _getAuthService();
   _getUsersService();
   _getCompanionsService();
+  _getCompanionFriendsService();
   _getSessionsService();
   _getMemoriesService();
   _getBillingService();
   _getVoiceService();
+  _getTenetsService();
 }
 
 /**
@@ -161,10 +196,12 @@ export function getServices() {
     auth: _getAuthService(),
     users: _getUsersService(),
     companions: _getCompanionsService(),
+    companionFriends: _getCompanionFriendsService(),
     sessions: _getSessionsService(),
     memories: _getMemoriesService(),
     billing: _getBillingService(),
     voice: _getVoiceService(),
+    tenets: _getTenetsService(),
   };
 }
 
@@ -176,8 +213,10 @@ export interface ServiceContext {
   auth: ReturnType<typeof _getAuthService>;
   users: ReturnType<typeof _getUsersService>;
   companions: ReturnType<typeof _getCompanionsService>;
+  companionFriends: ReturnType<typeof _getCompanionFriendsService>;
   sessions: ReturnType<typeof _getSessionsService>;
   memories: ReturnType<typeof _getMemoriesService>;
   billing: ReturnType<typeof _getBillingService>;
   voice: ReturnType<typeof _getVoiceService>;
+  tenets: ReturnType<typeof _getTenetsService>;
 }

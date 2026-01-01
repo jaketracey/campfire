@@ -178,7 +178,7 @@ export const useOnboardingStore = create<OnboardingState>()(
         if (typeof window !== 'undefined') {
           window.scrollTo({ top: 0, behavior: 'smooth' });
         }
-        set((state) => ({ currentStep: Math.min(state.currentStep + 1, 9) }));
+        set((state) => ({ currentStep: Math.min(state.currentStep + 1, 6) }));
       },
       prevStep: () => {
         if (typeof window !== 'undefined') {

@@ -367,6 +367,45 @@ export async function giftsRoutes(app: FastifyInstance): Promise<void> {
       // Get companion name for placeholder
       const companionName = companion.spec?.identity?.name ?? 'your companion';
 
+      // Check for existing generating gift for this user/companion
+      const existingGifts = await giftsRepo.listUserGifts(user.userId, {
+        companionId,
+        status: ['generating'],
+        limit: 1,
+      });
+
+      if (existingGifts.data.length > 0) {
+        const existingGift = existingGifts.data[0];
+        const ageMs = Date.now() - existingGift.created_at.getTime();
+        const GENERATION_TIMEOUT_MS = 2 * 60 * 1000; // 2 minutes
+
+        if (ageMs < GENERATION_TIMEOUT_MS) {
+          // Return the existing generating gift - don't create duplicates
+          return reply.status(409).send({
+            success: false,
+            error: {
+              code: 'GIFT_GENERATION_IN_PROGRESS',
+              message: 'A gift is already being generated for this companion',
+              timestamp: new Date().toISOString(),
+            },
+            data: {
+              gift: {
+                id: existingGift.id,
+                status: existingGift.status,
+                createdAt: existingGift.created_at.toISOString(),
+              },
+            },
+          });
+        } else {
+          // Stale generation - mark as failed and allow new request
+          logger.warn(
+            { giftId: existingGift.id, ageMs },
+            'Marking stale generating gift as failed'
+          );
+          await giftsRepo.updateGiftStatus(existingGift.id, 'failed');
+        }
+      }
+
       // Create the gift record with placeholder content (AI will generate the real content)
       const gift = await giftsRepo.createGift({
         user_id: user.userId,
@@ -409,25 +448,70 @@ export async function giftsRoutes(app: FastifyInstance): Promise<void> {
         correlationId: eventTraceId,
       });
 
-      // For now, immediately mark as ready with placeholder content
-      // In production, a worker would process the event and call orchestrator for AI generation
-      const readyGift = await giftsRepo.updateGiftStatus(gift.id, 'ready');
-
-      return reply.status(201).send({
+      // Return 202 Accepted - gift is being generated async
+      // Client should poll GET /gifts/:giftId to check status
+      return reply.status(202).send({
         success: true,
         data: {
           gift: {
-            id: readyGift.id,
-            name: readyGift.name,
-            description: readyGift.description,
-            imageUrl: readyGift.image_url,
-            tokenCost: readyGift.token_cost,
-            emotionalMeaning: readyGift.emotional_meaning,
-            status: readyGift.status,
-            givenAt: readyGift.given_at?.toISOString() ?? null,
-            createdAt: readyGift.created_at.toISOString(),
+            id: gift.id,
+            name: gift.name,
+            description: gift.description,
+            tokenCost: gift.token_cost,
+            status: gift.status,
+            createdAt: gift.created_at.toISOString(),
           },
+          message: 'Gift generation started. Poll GET /gifts/:giftId to check status.',
         },
+      });
+    });
+  });
+
+  /**
+   * GET /gifts/internal - Internal: List gifts for a user-companion pair
+   * NOTE: This route MUST be registered before /:giftId to avoid route conflicts
+   */
+  app.get('/internal', { preHandler: requireInternalService }, async (request: FastifyRequest, reply: FastifyReply) => {
+    return withSpan('gifts.internal.list', async (span) => {
+      const { userId, companionId, limit = '5' } = request.query as {
+        userId?: string;
+        companionId?: string;
+        limit?: string;
+      };
+
+      if (!userId || !companionId) {
+        return reply.status(400).send({
+          success: false,
+          error: {
+            code: 'MISSING_PARAMS',
+            message: 'userId and companionId are required',
+            timestamp: new Date().toISOString(),
+          },
+        });
+      }
+
+      span.setAttributes({ 'user.id': userId, 'companion.id': companionId });
+
+      const result = await giftsRepo.getGiftHistory(userId, companionId, {
+        limit: Math.min(parseInt(limit), 20),
+        offset: 0,
+      });
+
+      const gifts = result.data.map(gift => ({
+        id: gift.id,
+        title: gift.name,
+        description: gift.description,
+        emotionalMeaning: gift.emotional_meaning,
+        direction: 'from_user',
+        giftType: 'generated',
+        createdAt: gift.created_at.toISOString(),
+        givenAt: gift.given_at?.toISOString(),
+        emotionalSignificance: 0.5,
+      }));
+
+      return reply.send({
+        success: true,
+        data: { gifts },
       });
     });
   });
@@ -973,6 +1057,157 @@ export async function giftsRoutes(app: FastifyInstance): Promise<void> {
         data: {
           memoryId: updatedMemory.id,
           hasEmbedding: updatedMemory.embedding !== null,
+        },
+      });
+    });
+  });
+
+
+  /**
+   * POST /gifts/internal/eligible-for-recall - Internal: Find gifts eligible for recall
+   */
+  app.post('/internal/eligible-for-recall', { preHandler: requireInternalService }, async (request: FastifyRequest, reply: FastifyReply) => {
+    return withSpan('gifts.internal.eligibleForRecall', async (span) => {
+      const parseResult = z.object({
+        userId: z.string().uuid(),
+        companionId: z.string().uuid(),
+        maxCreatedAt: z.string().optional(),
+        context: z.string().optional(),
+        limit: z.number().int().positive().max(20).optional(),
+      }).safeParse(request.body);
+
+      if (!parseResult.success) {
+        return reply.status(400).send({
+          success: false,
+          error: {
+            code: 'VALIDATION_ERROR',
+            message: 'Invalid request body',
+            details: parseResult.error.flatten(),
+            timestamp: new Date().toISOString(),
+          },
+        });
+      }
+
+      const { userId, companionId, limit = 5 } = parseResult.data;
+      span.setAttributes({ 'user.id': userId, 'companion.id': companionId });
+
+      // Get gift history - these are all "given" gifts eligible for recall
+      const result = await giftsRepo.getGiftHistory(userId, companionId, {
+        limit,
+        offset: 0,
+      });
+
+      // Filter to gifts that haven't been recalled too recently
+      // For now, return all given gifts - the orchestrator handles recall timing
+      const gifts = result.data.map(gift => ({
+        id: gift.id,
+        title: gift.name,
+        description: gift.description,
+        emotionalMeaning: gift.emotional_meaning,
+        direction: 'from_user',
+        giftType: 'generated',
+        createdAt: gift.created_at.toISOString(),
+        givenAt: gift.given_at?.toISOString(),
+        emotionalSignificance: 0.5,
+      }));
+
+      return reply.send({
+        success: true,
+        data: {
+          gifts,
+        },
+      });
+    });
+  });
+
+  /**
+   * POST /gifts/internal/acknowledge - Internal: Acknowledge a gift from the user
+   */
+  app.post('/internal/acknowledge', { preHandler: requireInternalService }, async (request: FastifyRequest, reply: FastifyReply) => {
+    return withSpan('gifts.internal.acknowledge', async (span) => {
+      const parseResult = z.object({
+        userId: z.string().uuid(),
+        companionId: z.string().uuid(),
+        sessionId: z.string().uuid(),
+        turnId: z.string().uuid(),
+        giftDescription: z.string().min(1).max(2000),
+        emotionalReaction: z.string(),
+        emotionalIntensity: z.number().min(0).max(1),
+        direction: z.string(),
+      }).safeParse(request.body);
+
+      if (!parseResult.success) {
+        return reply.status(400).send({
+          success: false,
+          error: {
+            code: 'VALIDATION_ERROR',
+            message: 'Invalid request body',
+            details: parseResult.error.flatten(),
+            timestamp: new Date().toISOString(),
+          },
+        });
+      }
+
+      const data = parseResult.data;
+      span.setAttributes({ 'user.id': data.userId, 'companion.id': data.companionId });
+
+      // Create a gift record for user-given gifts (acknowledged by companion)
+      const gift = await giftsRepo.createGift({
+        user_id: data.userId,
+        companion_id: data.companionId,
+        name: data.giftDescription.slice(0, 100),
+        description: data.giftDescription,
+        visual_prompt: null,
+        emotional_meaning: `${data.emotionalReaction} (intensity: ${data.emotionalIntensity})`,
+        token_cost: 0, // User-given gifts don't cost tokens
+        status: 'given',
+        generation_params: {
+          direction: data.direction,
+          sessionId: data.sessionId,
+          turnId: data.turnId,
+        } as JSONObject,
+        source_event_id: null,
+        source_turn_id: data.turnId,
+      });
+
+      // Mark as given immediately
+      const givenGift = await giftsRepo.markGiftGiven(gift.id);
+
+      logger.info(
+        { giftId: gift.id, userId: data.userId, companionId: data.companionId },
+        'Gift acknowledged from user'
+      );
+
+      // Emit gift.acknowledged event
+      const eventTraceId = crypto.randomUUID();
+      await eventStore.append({
+        eventId: crypto.randomUUID(),
+        timestamp: new Date().toISOString(),
+        userId: data.userId,
+        sessionId: data.sessionId,
+        turnId: data.turnId,
+        traceId: eventTraceId,
+        type: 'gift.acknowledged',
+        payload: {
+          giftId: gift.id,
+          companionId: data.companionId,
+          description: data.giftDescription,
+          emotionalReaction: data.emotionalReaction,
+          emotionalIntensity: data.emotionalIntensity,
+          direction: data.direction,
+        },
+        version: '1.0',
+        causationId: null,
+        correlationId: eventTraceId,
+      });
+
+      return reply.status(201).send({
+        success: true,
+        data: {
+          id: givenGift.id,
+          name: givenGift.name,
+          status: givenGift.status,
+          givenAt: givenGift.given_at?.toISOString(),
         },
       });
     });

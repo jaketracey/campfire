@@ -99,6 +99,7 @@ class TurnManager:
         tool_calls: list[dict[str, Any]] | None = None,
         tool_results: list[dict[str, Any]] | None = None,
         safety_flags: list[str] | None = None,
+        image_prompt: str | None = None,
     ) -> ConversationTurn:
         """Complete a conversation turn with the assistant response."""
         metadata = self._active_turns.get(turn_id)
@@ -127,6 +128,7 @@ class TurnManager:
             role=MessageRole.ASSISTANT,
             content=assistant_response,
             created_at=datetime.utcnow(),
+            image_prompt=image_prompt,
         )
 
         # Create completed turn

@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
@@ -15,9 +15,10 @@ import {
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
 import { motion } from 'framer-motion';
-import { LogOut, MessageCircle, Plus, RotateCcw, Sparkles, Trash2, ArrowRight, Copy, Check, Users, Link as LinkIcon, Settings, Share2, BookOpen } from 'lucide-react';
+import { MessageCircle, Plus, RotateCcw, Sparkles, Trash2, ArrowRight, Copy, Check, Users, Link as LinkIcon, Settings, BookOpen, X } from 'lucide-react';
 import { ShareCompanionDialog } from '@/components/companion/share-companion-dialog';
 import { BackstoryModal } from '@/components/companion/backstory-modal';
+import { CompanionCardImage } from '@/components/companion/companion-card-image';
 import { useAuth } from '@/hooks/use-auth';
 import {
   listCompanions,
@@ -73,7 +74,7 @@ interface Session {
 
 export default function DashboardPage() {
   const router = useRouter();
-  const { isAuthenticated, isInitialized, user, logout, isLoading: authLoading } = useAuth();
+  const { isAuthenticated, isInitialized, user, isLoading: authLoading } = useAuth();
   const [companions, setCompanions] = useState<Companion[]>([]);
   const [sessions, setSessions] = useState<Session[]>([]);
   const [loading, setLoading] = useState(true);
@@ -86,6 +87,37 @@ export default function DashboardPage() {
   const [backstoryCompanion, setBackstoryCompanion] = useState<Companion | null>(null);
   // Personality profile state for personalized welcome
   const [welcomeMessage, setWelcomeMessage] = useState<string | null>(null);
+  // Invite friends section hidden state
+  const [inviteSectionHidden, setInviteSectionHidden] = useState(true); // Default hidden until we check localStorage
+
+  // Mouse drag scroll for companion carousel
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
+  const [isDragging, setIsDragging] = useState(false);
+  const [startX, setStartX] = useState(0);
+  const [scrollLeft, setScrollLeft] = useState(0);
+
+  const handleMouseDown = (e: React.MouseEvent) => {
+    if (!scrollContainerRef.current) return;
+    setIsDragging(true);
+    setStartX(e.pageX - scrollContainerRef.current.offsetLeft);
+    setScrollLeft(scrollContainerRef.current.scrollLeft);
+  };
+
+  const handleMouseUp = () => {
+    setIsDragging(false);
+  };
+
+  const handleMouseMove = (e: React.MouseEvent) => {
+    if (!isDragging || !scrollContainerRef.current) return;
+    e.preventDefault();
+    const x = e.pageX - scrollContainerRef.current.offsetLeft;
+    const walk = (x - startX) * 1.5; // Adjust scroll speed
+    scrollContainerRef.current.scrollLeft = scrollLeft - walk;
+  };
+
+  const handleMouseLeave = () => {
+    setIsDragging(false);
+  };
 
   // Redirect to login if not authenticated
   useEffect(() => {
@@ -177,6 +209,17 @@ export default function DashboardPage() {
     }
   }, [isInitialized, isAuthenticated, fetchData]);
 
+  // Load invite section hidden state from localStorage
+  useEffect(() => {
+    const hidden = localStorage.getItem('dashboard_invite_section_hidden');
+    setInviteSectionHidden(hidden === 'true');
+  }, []);
+
+  const handleHideInviteSection = () => {
+    setInviteSectionHidden(true);
+    localStorage.setItem('dashboard_invite_section_hidden', 'true');
+  };
+
   const handleNewChat = (companionId: string) => {
     router.push(`/chat/new?companion=${companionId}`);
   };
@@ -253,28 +296,113 @@ export default function DashboardPage() {
                 : 'Manage your digital sanctuary and companions.')}
             </p>
           </div>
-          <div className="flex items-center gap-4">
-            <Button
-              onClick={() => router.push('/onboard')}
-              size="lg"
-              className="h-14 px-8 rounded-full bg-campfire-600 hover:bg-campfire-500 text-white font-bold text-lg shadow-[0_0_20px_rgba(234,88,12,0.3)] transition-all hover:scale-105 active:scale-95"
-            >
-              <Plus className="mr-2 h-6 w-6" />
-              Build New
-            </Button>
-            <Button
-              variant="outline"
-              size="lg"
-              onClick={logout}
-              className="h-14 px-8 rounded-full border-white/5 bg-white/[0.02] hover:bg-white/[0.05] text-gray-300 font-bold transition-all hover:scale-105"
-            >
-              <LogOut className="mr-2 h-5 w-5" />
-              Sign Out
-            </Button>
-          </div>
+          <Button
+            onClick={() => router.push('/onboard')}
+            size="lg"
+            className="h-14 px-8 rounded-full bg-campfire-600 hover:bg-campfire-500 text-white font-bold text-lg shadow-[0_0_20px_rgba(234,88,12,0.3)] transition-all hover:scale-105 active:scale-95"
+          >
+            <Plus className="mr-2 h-6 w-6" />
+            Design new companion
+          </Button>
         </div>
 
         {/* Status Dashboard - Optional futuristic metric bar if we had stats */}
+
+        {/* Invite Friends Section - Dismissible */}
+        {!inviteSectionHidden && (
+          <section className="space-y-6">
+            <div className="flex items-center justify-between">
+              <h2 className="text-2xl font-bold font-display text-white flex items-center gap-3">
+                <div className="h-2 w-2 rounded-full bg-campfire-500/60" />
+                Invite Friends
+              </h2>
+              <div className="flex items-center gap-3">
+                {user?.role === 'admin' && (
+                  <Link
+                    href={'/admin' as Route}
+                    className="flex items-center gap-2 px-4 py-2 rounded-full bg-campfire-500/10 border border-campfire-500/20 text-campfire-500 text-sm font-medium hover:bg-campfire-500/20 transition-colors"
+                  >
+                    <Settings className="h-4 w-4" />
+                    Admin Panel
+                  </Link>
+                )}
+                <button
+                  onClick={handleHideInviteSection}
+                  className="p-2 rounded-full bg-white/5 hover:bg-white/10 border border-white/10 text-white/60 hover:text-white transition-colors"
+                  title="Hide invite section"
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
+            </div>
+
+            <Card className="bg-white/[0.01] border border-white/5 backdrop-blur-xl overflow-hidden">
+              <CardContent className="p-6">
+                {inviteCode ? (
+                  <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                    {/* Stats */}
+                    <div className="flex items-center gap-4 p-4 rounded-2xl bg-white/[0.02] border border-white/5">
+                      <div className="h-12 w-12 rounded-xl bg-campfire-500/10 flex items-center justify-center">
+                        <Users className="h-6 w-6 text-campfire-500" />
+                      </div>
+                      <div>
+                        <p className="text-2xl font-bold text-white">{inviteCode.usesCount}</p>
+                        <p className="text-sm text-gray-500">Friends Invited</p>
+                      </div>
+                    </div>
+
+                    {/* Invite Code */}
+                    <div className="flex items-center gap-4 p-4 rounded-2xl bg-white/[0.02] border border-white/5">
+                      <div className="flex-1">
+                        <p className="text-xs text-gray-500 uppercase tracking-widest mb-1">Your Code</p>
+                        <p className="text-lg font-mono font-bold text-white">{inviteCode.code}</p>
+                      </div>
+                      <Button
+                        variant="outline"
+                        size="icon"
+                        onClick={handleCopyCode}
+                        className="h-10 w-10 rounded-xl border-white/10 hover:bg-white/10"
+                      >
+                        {copiedCode ? (
+                          <Check className="h-4 w-4 text-green-500" />
+                        ) : (
+                          <Copy className="h-4 w-4" />
+                        )}
+                      </Button>
+                    </div>
+
+                    {/* Invite URL */}
+                    <div className="flex items-center gap-4 p-4 rounded-2xl bg-white/[0.02] border border-white/5">
+                      <div className="flex-1 min-w-0">
+                        <p className="text-xs text-gray-500 uppercase tracking-widest mb-1">Share Link</p>
+                        <p className="text-sm text-gray-400 truncate">{inviteCode.inviteUrl}</p>
+                      </div>
+                      <Button
+                        variant="outline"
+                        size="icon"
+                        onClick={handleCopyUrl}
+                        className="h-10 w-10 rounded-xl border-white/10 hover:bg-white/10"
+                      >
+                        {copiedUrl ? (
+                          <Check className="h-4 w-4 text-green-500" />
+                        ) : (
+                          <LinkIcon className="h-4 w-4" />
+                        )}
+                      </Button>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="text-center py-8">
+                    <div className="h-12 w-12 rounded-xl bg-white/5 mx-auto flex items-center justify-center mb-4">
+                      <Users className="h-6 w-6 text-white/20" />
+                    </div>
+                    <p className="text-gray-500">Your invite code will appear here</p>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          </section>
+        )}
 
         {/* Empty State */}
         {!hasCompanions && (
@@ -316,8 +444,15 @@ export default function DashboardPage() {
                 Your Companions
               </h2>
             </div>
-            {/* Mobile: horizontal scroll, Desktop: grid */}
-            <div className="md:hidden -mx-4 px-4 pb-4 overflow-x-auto scrollbar-hide">
+            {/* Mobile: horizontal scroll with mouse drag support, Desktop: grid */}
+            <div
+              ref={scrollContainerRef}
+              className={`md:hidden -mx-4 px-4 pb-4 overflow-x-auto scrollbar-hide ${isDragging ? 'cursor-grabbing select-none' : 'cursor-grab'}`}
+              onMouseDown={handleMouseDown}
+              onMouseUp={handleMouseUp}
+              onMouseMove={handleMouseMove}
+              onMouseLeave={handleMouseLeave}
+            >
               <div className="flex gap-4" style={{ width: 'max-content' }}>
                 {companions.map((companion, idx) => {
                   const hasExistingSession = !!companion.latestSessionId;
@@ -337,63 +472,76 @@ export default function DashboardPage() {
                         <div className="absolute inset-0 bg-gradient-to-br from-white/[0.02] to-transparent pointer-events-none" />
                         <CardContent className="p-0">
                           <div className="aspect-[2/3] relative overflow-hidden">
-                            {displayImageUrl ? (
-                              <img
-                                src={displayImageUrl}
-                                alt={companion.name}
-                                className="w-full h-full object-cover object-top"
-                              />
-                            ) : (
-                              <div className="w-full h-full bg-gradient-to-br from-campfire-500/20 via-campfire-600/10 to-campfire-700/20" />
-                            )}
-                            <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent" />
+                            <CompanionCardImage
+                              images={[
+                                companion.latestConversationImageUrl,
+                                companion.avatarUrl,
+                              ]}
+                              fallbackImage={anchorImageUrl}
+                              alt={companion.name}
+                            />
+                            <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent pointer-events-none" />
 
                             {hasBackstory && (
                               <button
                                 onClick={() => setBackstoryCompanion(companion)}
-                                className="absolute top-3 right-3 p-2 rounded-xl bg-amber-900/60 border border-amber-600/30 text-amber-400 shadow-lg backdrop-blur-sm"
+                                className="absolute top-3 right-3 p-2 rounded-xl bg-amber-900/60 border border-amber-600/30 text-amber-400 shadow-lg backdrop-blur-sm z-10"
                                 title="View Backstory"
                               >
                                 <BookOpen className="h-4 w-4" />
                               </button>
                             )}
 
-                            <div className="absolute bottom-4 left-4 right-4">
+                            {/* Companion name - hidden on hover */}
+                            <div className="absolute bottom-4 left-4 right-4 z-10 group-hover:opacity-0 transition-opacity duration-200">
                               <h3 className="text-xl font-bold text-white truncate">{companion.name}</h3>
                               <p className="text-white/60 text-sm truncate">
                                 {hasExistingSession ? 'Journey in progress' : 'Awaiting first encounter'}
                               </p>
                             </div>
-                          </div>
 
-                          <div className="p-4 space-y-3">
-                            <div className="flex gap-2">
-                              {hasExistingSession ? (
-                                <>
-                                  <Button
-                                    onClick={() => handleResumeChat(companion.latestSessionId!)}
-                                    className="flex-1 bg-white/5 hover:bg-white/10 text-white border border-white/10"
-                                  >
-                                    <RotateCcw className="h-4 w-4 mr-2" />
-                                    Resume
-                                  </Button>
+                            {/* Hover action buttons */}
+                            <div className="absolute bottom-4 left-4 right-4 z-20 opacity-0 group-hover:opacity-100 translate-y-2 group-hover:translate-y-0 transition-all duration-300">
+                              <div className="flex gap-2">
+                                {hasExistingSession ? (
+                                  <>
+                                    <Button
+                                      onClick={() => handleResumeChat(companion.latestSessionId!)}
+                                      className="flex-1 h-10 rounded-xl bg-white/10 hover:bg-white/20 text-white border border-white/20 backdrop-blur-sm"
+                                    >
+                                      <RotateCcw className="h-4 w-4 mr-2" />
+                                      Resume
+                                    </Button>
+                                    <Button
+                                      onClick={() => handleNewChat(companion.id)}
+                                      className="h-10 w-10 rounded-xl bg-campfire-600 hover:bg-campfire-500 text-white"
+                                    >
+                                      <Plus className="h-4 w-4" />
+                                    </Button>
+                                  </>
+                                ) : (
                                   <Button
                                     onClick={() => handleNewChat(companion.id)}
-                                    className="bg-campfire-600 hover:bg-campfire-500 text-white"
-                                    size="icon"
+                                    className="flex-1 h-10 rounded-xl bg-campfire-600 hover:bg-campfire-500 text-white"
                                   >
-                                    <Plus className="h-4 w-4" />
+                                    <MessageCircle className="h-4 w-4 mr-2" />
+                                    Start
                                   </Button>
-                                </>
-                              ) : (
-                                <Button
-                                  onClick={() => handleNewChat(companion.id)}
-                                  className="flex-1 bg-campfire-600 hover:bg-campfire-500 text-white"
-                                >
-                                  <MessageCircle className="h-4 w-4 mr-2" />
-                                  Start Journey
-                                </Button>
-                              )}
+                                )}
+                                <ShareCompanionDialog
+                                  companionId={companion.id}
+                                  companionName={companion.name}
+                                  isPublic={companion.isPublic}
+                                  size="sm"
+                                  onShareStatusChange={(isPublic) => {
+                                    setCompanions((prev) =>
+                                      prev.map((c) =>
+                                        c.id === companion.id ? { ...c, isPublic } : c
+                                      )
+                                    );
+                                  }}
+                                />
+                              </div>
                             </div>
                           </div>
                         </CardContent>
@@ -405,7 +553,7 @@ export default function DashboardPage() {
             </div>
 
             {/* Desktop grid */}
-            <div className="hidden md:grid md:grid-cols-2 xl:grid-cols-3 gap-6">
+            <div className="hidden md:grid md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
               {companions.map((companion, idx) => {
                 const hasExistingSession = !!companion.latestSessionId;
                 // Priority: conversation image -> anchor image (by ethnicity) -> avatar -> gradient
@@ -427,29 +575,38 @@ export default function DashboardPage() {
                       <CardContent className="p-0">
                         {/* Status Image Area - matches anchor image ratio (512x768 = 2:3) */}
                         <div className="aspect-[2/3] relative overflow-hidden">
-                          {displayImageUrl ? (
-                            <img
-                              src={displayImageUrl}
-                              alt={companion.name}
-                              className="w-full h-full object-cover object-top group-hover:scale-110 transition-transform duration-1000"
-                            />
-                          ) : (
-                            <div className="w-full h-full bg-gradient-to-br from-campfire-500/20 via-campfire-600/10 to-campfire-700/20" />
-                          )}
-                          <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent" />
+                          <CompanionCardImage
+                            images={[
+                              companion.latestConversationImageUrl,
+                              companion.avatarUrl,
+                            ]}
+                            fallbackImage={anchorImageUrl}
+                            alt={companion.name}
+                          />
+                          <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/30 to-transparent pointer-events-none" />
 
-                          {/* Backstory button - top right corner */}
-                          {hasBackstory && (
+                          {/* Top right action buttons - visible on hover */}
+                          <div className="absolute top-3 right-3 flex gap-2 z-10 opacity-0 group-hover:opacity-100 transition-opacity">
+                            {hasBackstory && (
+                              <button
+                                onClick={() => setBackstoryCompanion(companion)}
+                                className="p-2.5 rounded-xl bg-amber-900/60 hover:bg-amber-800/80 border border-amber-600/30 text-amber-400 hover:text-amber-300 transition-all shadow-lg backdrop-blur-sm"
+                                title="View Backstory"
+                              >
+                                <BookOpen className="h-4 w-4" />
+                              </button>
+                            )}
                             <button
-                              onClick={() => setBackstoryCompanion(companion)}
-                              className="absolute top-3 right-3 p-2 rounded-xl bg-amber-900/60 hover:bg-amber-800/80 border border-amber-600/30 text-amber-400 hover:text-amber-300 transition-all opacity-0 group-hover:opacity-100 shadow-lg backdrop-blur-sm"
-                              title="View Backstory"
+                              onClick={() => setCompanionToDelete(companion)}
+                              className="p-2.5 rounded-xl bg-white/10 hover:bg-red-500/20 border border-white/10 hover:border-red-500/30 text-white/70 hover:text-red-400 transition-all shadow-lg backdrop-blur-sm"
+                              title="Delete Companion"
                             >
-                              <BookOpen className="h-4 w-4" />
+                              <Trash2 className="h-4 w-4" />
                             </button>
-                          )}
+                          </div>
 
-                          <div className="absolute bottom-4 left-4 right-4">
+                          {/* Companion name - hidden on hover */}
+                          <div className="absolute bottom-4 left-4 right-4 z-10 group-hover:opacity-0 transition-opacity duration-200">
                             <h3 className="font-bold text-xl text-white font-display leading-none mb-2">{companion.name}</h3>
                             <p className="text-xs text-white/60 font-medium tracking-wide">
                               {hasExistingSession
@@ -459,64 +616,49 @@ export default function DashboardPage() {
                                 : 'Awaiting first encounter'}
                             </p>
                           </div>
-                        </div>
 
-                        {/* Actions Area */}
-                        <div className="p-6 space-y-4">
-                          <div className="flex gap-3">
-                            {hasExistingSession ? (
-                              <>
+                          {/* Hover action buttons */}
+                          <div className="absolute bottom-4 left-4 right-4 z-20 opacity-0 group-hover:opacity-100 translate-y-2 group-hover:translate-y-0 transition-all duration-300">
+                            <div className="flex gap-2">
+                              {hasExistingSession ? (
+                                <>
+                                  <Button
+                                    className="flex-1 h-12 rounded-xl bg-white/10 hover:bg-white/20 text-white font-bold border border-white/20 backdrop-blur-sm transition-all"
+                                    onClick={() => handleResumeChat(companion.latestSessionId!)}
+                                  >
+                                    <RotateCcw className="mr-2 h-4 w-4" />
+                                    Resume
+                                  </Button>
+                                  <Button
+                                    className="h-12 w-12 rounded-xl bg-campfire-600 hover:bg-campfire-500 text-white shadow-lg transition-all"
+                                    onClick={() => handleNewChat(companion.id)}
+                                  >
+                                    <Plus className="h-5 w-5" />
+                                  </Button>
+                                </>
+                              ) : (
                                 <Button
-                                  className="flex-1 h-12 rounded-xl bg-white/5 hover:bg-white/10 text-white font-bold border border-white/10 transition-all"
-                                  onClick={() => handleResumeChat(companion.latestSessionId!)}
-                                >
-                                  <RotateCcw className="mr-2 h-4 w-4" />
-                                  Resume
-                                </Button>
-                                <Button
-                                  className="aspect-square h-12 rounded-xl bg-campfire-600 hover:bg-campfire-500 text-white shadow-lg"
+                                  className="flex-1 h-12 rounded-xl bg-campfire-600 hover:bg-campfire-500 text-white font-bold shadow-lg transition-all"
                                   onClick={() => handleNewChat(companion.id)}
                                 >
-                                  <Plus className="h-5 w-5" />
+                                  <MessageCircle className="mr-2 h-5 w-5" />
+                                  Start Journey
                                 </Button>
-                              </>
-                            ) : (
-                              <Button
-                                className="flex-1 h-14 rounded-xl bg-campfire-600 hover:bg-campfire-500 text-white font-bold text-lg shadow-lg"
-                                onClick={() => handleNewChat(companion.id)}
-                              >
-                                <MessageCircle className="mr-2 h-5 w-5" />
-                                Start Journey
-                              </Button>
-                            )}
-                            {/* Backstory button in action bar */}
-                            {hasBackstory && (
-                              <Button
-                                className="aspect-square h-12 md:h-14 rounded-xl bg-amber-900/20 border border-amber-700/30 hover:bg-amber-900/40 hover:border-amber-600/50 text-amber-500 hover:text-amber-400 transition-all"
-                                onClick={() => setBackstoryCompanion(companion)}
-                                title="View Backstory"
-                              >
-                                <BookOpen className="h-5 w-5" />
-                              </Button>
-                            )}
-                            <ShareCompanionDialog
-                              companionId={companion.id}
-                              companionName={companion.name}
-                              isPublic={companion.isPublic}
-                              onShareStatusChange={(isPublic) => {
-                                setCompanions((prev) =>
-                                  prev.map((c) =>
-                                    c.id === companion.id ? { ...c, isPublic } : c
-                                  )
-                                );
-                              }}
-                            />
-                            <Button
-                              className="aspect-square h-12 md:h-14 rounded-xl bg-white/[0.02] border border-white/5 hover:bg-red-500/10 hover:border-red-500/20 hover:text-red-500 text-gray-500 transition-all"
-                              onClick={() => setCompanionToDelete(companion)}
-                            >
-                              <Trash2 className="h-5 w-5" />
-                            </Button>
+                              )}
+                              <ShareCompanionDialog
+                                companionId={companion.id}
+                                companionName={companion.name}
+                                isPublic={companion.isPublic}
+                                size="sm"
+                                onShareStatusChange={(isPublic) => {
+                                  setCompanions((prev) =>
+                                    prev.map((c) =>
+                                      c.id === companion.id ? { ...c, isPublic } : c
+                                    )
+                                  );
+                                }}
+                              />
+                            </div>
                           </div>
                         </div>
                       </CardContent>
@@ -599,90 +741,6 @@ export default function DashboardPage() {
           )}
         </section>
 
-        {/* Affiliate Section */}
-        <section className="space-y-6">
-          <div className="flex items-center justify-between">
-            <h2 className="text-2xl font-bold font-display text-white flex items-center gap-3">
-              <div className="h-2 w-2 rounded-full bg-campfire-500/60" />
-              Invite Friends
-            </h2>
-            {user?.role === 'admin' && (
-              <Link
-                href={'/admin' as Route}
-                className="flex items-center gap-2 px-4 py-2 rounded-full bg-campfire-500/10 border border-campfire-500/20 text-campfire-500 text-sm font-medium hover:bg-campfire-500/20 transition-colors"
-              >
-                <Settings className="h-4 w-4" />
-                Admin Panel
-              </Link>
-            )}
-          </div>
-
-          <Card className="bg-white/[0.01] border border-white/5 backdrop-blur-xl overflow-hidden">
-            <CardContent className="p-6">
-              {inviteCode ? (
-                <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                  {/* Stats */}
-                  <div className="flex items-center gap-4 p-4 rounded-2xl bg-white/[0.02] border border-white/5">
-                    <div className="h-12 w-12 rounded-xl bg-campfire-500/10 flex items-center justify-center">
-                      <Users className="h-6 w-6 text-campfire-500" />
-                    </div>
-                    <div>
-                      <p className="text-2xl font-bold text-white">{inviteCode.usesCount}</p>
-                      <p className="text-sm text-gray-500">Friends Invited</p>
-                    </div>
-                  </div>
-
-                  {/* Invite Code */}
-                  <div className="flex items-center gap-4 p-4 rounded-2xl bg-white/[0.02] border border-white/5">
-                    <div className="flex-1">
-                      <p className="text-xs text-gray-500 uppercase tracking-widest mb-1">Your Code</p>
-                      <p className="text-lg font-mono font-bold text-white">{inviteCode.code}</p>
-                    </div>
-                    <Button
-                      variant="outline"
-                      size="icon"
-                      onClick={handleCopyCode}
-                      className="h-10 w-10 rounded-xl border-white/10 hover:bg-white/10"
-                    >
-                      {copiedCode ? (
-                        <Check className="h-4 w-4 text-green-500" />
-                      ) : (
-                        <Copy className="h-4 w-4" />
-                      )}
-                    </Button>
-                  </div>
-
-                  {/* Invite URL */}
-                  <div className="flex items-center gap-4 p-4 rounded-2xl bg-white/[0.02] border border-white/5">
-                    <div className="flex-1 min-w-0">
-                      <p className="text-xs text-gray-500 uppercase tracking-widest mb-1">Share Link</p>
-                      <p className="text-sm text-gray-400 truncate">{inviteCode.inviteUrl}</p>
-                    </div>
-                    <Button
-                      variant="outline"
-                      size="icon"
-                      onClick={handleCopyUrl}
-                      className="h-10 w-10 rounded-xl border-white/10 hover:bg-white/10"
-                    >
-                      {copiedUrl ? (
-                        <Check className="h-4 w-4 text-green-500" />
-                      ) : (
-                        <LinkIcon className="h-4 w-4" />
-                      )}
-                    </Button>
-                  </div>
-                </div>
-              ) : (
-                <div className="text-center py-8">
-                  <div className="h-12 w-12 rounded-xl bg-white/5 mx-auto flex items-center justify-center mb-4">
-                    <Users className="h-6 w-6 text-white/20" />
-                  </div>
-                  <p className="text-gray-500">Your invite code will appear here</p>
-                </div>
-              )}
-            </CardContent>
-          </Card>
-        </section>
       </motion.div>
 
       {/* Styles for animation */}

@@ -84,6 +84,8 @@ export const AgentMessageCreatedPayloadSchema = z.object({
   createdAt: z.string().datetime({ offset: true }),
   /** Emotion/mood tag for avatar updates */
   emotionTag: z.string().optional(),
+  /** Image generation prompt from companion - describes the visual scene to present */
+  imagePrompt: z.string().optional(),
 });
 
 export type AgentMessageCreatedPayload = z.infer<typeof AgentMessageCreatedPayloadSchema>;
@@ -97,3 +99,24 @@ export type AgentMessageCreatedEvent = TypedEvent<
   typeof EventTypes.AGENT_MESSAGE_CREATED,
   AgentMessageCreatedPayload
 >;
+
+// ============================================================================
+// Multi-message sequence support
+// ============================================================================
+
+/**
+ * Sequence information for multi-message companion responses
+ * Used when a companion sends multiple messages in sequence like natural texting
+ */
+export const MessageSequenceSchema = z.object({
+  /** 0-based index of this message in the sequence */
+  index: z.number().int().nonnegative(),
+  /** Total number of messages in the sequence */
+  total: z.number().int().positive(),
+  /** Whether this is the last message in the sequence */
+  isLast: z.boolean(),
+  /** Suggested delay in ms before showing this message (typing simulation) */
+  typingDelayMs: z.number().int().nonnegative().optional(),
+});
+
+export type MessageSequence = z.infer<typeof MessageSequenceSchema>;

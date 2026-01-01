@@ -1,5 +1,7 @@
 """OpenAI provider implementation (fallback LLM)."""
 
+from __future__ import annotations
+
 import time
 from typing import Any, AsyncGenerator
 
@@ -17,15 +19,50 @@ logger = structlog.get_logger()
 class OpenAIProvider(LLMProvider):
     """OpenAI LLM provider (fallback)."""
 
-    def __init__(self, settings: Settings):
+    def __init__(
+        self,
+        settings: Settings,
+        model_override: str | None = None,
+    ):
+        """Initialize OpenAI provider.
+
+        Args:
+            settings: Application settings.
+            model_override: Optional model ID to use instead of the default.
+        """
         self.settings = settings
         self.client = openai.AsyncOpenAI(
             api_key=settings.openai_api_key,
             timeout=settings.openai_timeout,
         )
-        self.default_model = settings.openai_model
+        self._default_model = settings.openai_model
+        self._model_override = model_override
         self.max_tokens = settings.openai_max_tokens
         self._tokenizer = tiktoken.get_encoding("cl100k_base")
+
+    @property
+    def current_model(self) -> str:
+        """Return the active model ID (override or default)."""
+        return self._model_override or self._default_model
+
+    @property
+    def default_model(self) -> str:
+        """Return the active model ID for backwards compatibility."""
+        return self.current_model
+
+    def with_model(self, model_id: str) -> OpenAIProvider:
+        """Return a new provider instance configured for a specific model.
+
+        Args:
+            model_id: The model ID to use (e.g., "gpt-4o", "gpt-4o-mini").
+
+        Returns:
+            A new OpenAIProvider instance configured with the specified model.
+        """
+        return OpenAIProvider(
+            settings=self.settings,
+            model_override=model_id,
+        )
 
     @property
     def name(self) -> str:
@@ -42,6 +79,7 @@ class OpenAIProvider(LLMProvider):
         max_tokens: int | None = None,
         temperature: float = 0.7,
         stop_sequences: list[str] | None = None,
+        response_format: dict[str, str] | None = None,
     ) -> LLMResponse:
         """Generate a response from OpenAI."""
         start_time = time.time()
@@ -56,6 +94,9 @@ class OpenAIProvider(LLMProvider):
             "temperature": temperature,
             "messages": openai_messages,
         }
+
+        if response_format:
+            params["response_format"] = response_format
 
         if tools:
             params["tools"] = self._convert_tools(tools)

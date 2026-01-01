@@ -5,6 +5,7 @@
 
 import { sql } from '../db/pool.js';
 import { logger } from '../observability/logger.js';
+import type postgres from 'postgres';
 import type {
   Companion,
   CompanionInsert,
@@ -166,7 +167,7 @@ export class CompanionsRepository {
         ) VALUES (
           ${data.user_id},
           ${data.name},
-          ${data.spec},
+          ${db.json(data.spec as unknown as postgres.JSONValue)},
           ${data.spec_version ?? 1},
           ${data.status ?? 'draft'},
           ${data.is_public ?? false}
@@ -195,7 +196,7 @@ export class CompanionsRepository {
       UPDATE companions
       SET
         name = COALESCE(${data.name ?? null}, name),
-        spec = COALESCE(${data.spec ?? null}, spec),
+        spec = COALESCE(${data.spec ? db.json(data.spec as unknown as postgres.JSONValue) : null}, spec),
         status = COALESCE(${data.status ?? null}, status),
         is_public = COALESCE(${data.is_public ?? null}, is_public)
       WHERE id = ${id}
@@ -223,7 +224,7 @@ export class CompanionsRepository {
     // The trigger will auto-increment spec_version and archive the old spec
     const result = await db`
       UPDATE companions
-      SET spec = ${spec}
+      SET spec = ${db.json(spec as unknown as postgres.JSONValue)}
       WHERE id = ${id}
       RETURNING
         id, user_id, name, spec, spec_version, status, is_public,
@@ -403,8 +404,8 @@ export class CompanionsRepository {
         ${data.asset_type},
         ${data.is_active ?? false},
         ${data.is_identity_anchor ?? false},
-        ${data.metadata ?? {}},
-        ${data.generation_params ?? null},
+        ${db.json((data.metadata ?? {}) as postgres.JSONValue)},
+        ${data.generation_params ? db.json(data.generation_params as postgres.JSONValue) : null},
         ${data.source_event_id ?? null}
       )
       RETURNING
@@ -493,6 +494,26 @@ export class CompanionsRepository {
     `;
 
     return result[0] ? this.mapAvatar(result[0]) : null;
+  }
+
+  async getAllIdentityAnchors(companionId: string, tx?: TransactionContext): Promise<CompanionAvatar[]> {
+    const db = this.getSql(tx);
+
+    const result = await db`
+      SELECT
+        id, companion_id, asset_url, asset_type, s3_bucket, s3_key,
+        is_active, is_identity_anchor, metadata, generation_params,
+        source_event_id, content_hash, width, height, size_bytes, created_at
+      FROM companion_avatars
+      WHERE companion_id = ${companionId} AND is_identity_anchor = TRUE
+      ORDER BY
+        CASE WHEN metadata->>'emotionalState' = 'neutral' THEN 0
+             WHEN metadata->>'emotionalState' = 'happy' THEN 1
+             WHEN metadata->>'emotionalState' = 'thoughtful' THEN 2
+             ELSE 3 END
+    `;
+
+    return result.map(row => this.mapAvatar(row));
   }
 
   async deleteAvatar(id: string, tx?: TransactionContext): Promise<void> {

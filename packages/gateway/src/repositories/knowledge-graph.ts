@@ -4,6 +4,7 @@
  * Handles entity extraction and relationship management
  */
 
+import postgres from 'postgres';
 import { sql } from '../db/pool.js';
 import { logger } from '../observability/logger.js';
 import type {
@@ -223,7 +224,7 @@ export class KnowledgeGraphRepository {
           ${canonicalName},
           ${data.entity_type},
           ${data.aliases ?? []},
-          ${data.metadata ?? {}},
+          ${data.metadata ? db.json(data.metadata as postgres.JSONValue) : db.json({})},
           ${data.source_event_id ?? null}
         )
         RETURNING
@@ -257,7 +258,7 @@ export class KnowledgeGraphRepository {
         canonical_name = COALESCE(${data.canonical_name ?? null}, canonical_name),
         entity_type = COALESCE(${data.entity_type ?? null}, entity_type),
         aliases = COALESCE(${data.aliases ?? null}, aliases),
-        metadata = COALESCE(${data.metadata ?? null}, metadata)
+        metadata = COALESCE(${data.metadata ? db.json(data.metadata as postgres.JSONValue) : null}, metadata)
       WHERE id = ${id}
       RETURNING
         id, user_id, companion_id, name, canonical_name,
@@ -360,7 +361,7 @@ export class KnowledgeGraphRepository {
       UPDATE kg_entities
       SET
         aliases = ${mergedAliases},
-        metadata = metadata || ${secondary.metadata}
+        metadata = metadata || ${db.json(secondary.metadata as postgres.JSONValue)}
       WHERE id = ${primaryId}
       RETURNING
         id, user_id, companion_id, name, canonical_name,
@@ -537,7 +538,7 @@ export class KnowledgeGraphRepository {
           ${data.confidence ?? 1.0},
           ${data.status ?? 'active'},
           ${data.source_event_id ?? null},
-          ${data.metadata ?? {}}
+          ${data.metadata ? db.json(data.metadata as postgres.JSONValue) : db.json({})}
         )
         RETURNING
           id, user_id, companion_id, source_entity_id, target_entity_id,
@@ -577,7 +578,7 @@ export class KnowledgeGraphRepository {
         ${data.confidence ?? 1.0},
         ${data.status ?? 'active'},
         ${data.source_event_id ?? null},
-        ${data.metadata ?? {}}
+        ${data.metadata ? db.json(data.metadata as postgres.JSONValue) : db.json({})}
       )
       ON CONFLICT (source_entity_id, target_entity_id, relation_type) DO UPDATE SET
         confidence = GREATEST(kg_edges.confidence, EXCLUDED.confidence),
@@ -610,7 +611,7 @@ export class KnowledgeGraphRepository {
       SET
         confidence = COALESCE(${data.confidence ?? null}, confidence),
         status = COALESCE(${data.status ?? null}, status),
-        metadata = COALESCE(${data.metadata ?? null}, metadata)
+        metadata = COALESCE(${data.metadata ? db.json(data.metadata as postgres.JSONValue) : null}, metadata)
       WHERE id = ${id}
       RETURNING
         id, user_id, companion_id, source_entity_id, target_entity_id,

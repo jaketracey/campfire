@@ -5,6 +5,7 @@
 
 import { sql } from '../db/pool.js';
 import { logger } from '../observability/logger.js';
+import type postgres from 'postgres';
 import type {
   TokenBalance,
   TokenTransaction,
@@ -160,7 +161,7 @@ export class GiftsRepository {
         ${options.stripeCheckoutSessionId ?? null},
         ${options.subscriptionId ?? null},
         ${options.description ?? null},
-        ${options.metadata ?? {}},
+        ${db.json((options.metadata ?? {}) as postgres.JSONValue)},
         ${options.idempotencyKey ?? null}
       )
     `;
@@ -414,7 +415,7 @@ export class GiftsRepository {
         ${data.emotional_meaning ?? null},
         ${data.token_cost},
         ${data.status ?? 'generating'},
-        ${data.generation_params ?? null},
+        ${data.generation_params ? db.json(data.generation_params as postgres.JSONValue) : null},
         ${data.source_event_id ?? null},
         ${data.source_turn_id ?? null}
       )

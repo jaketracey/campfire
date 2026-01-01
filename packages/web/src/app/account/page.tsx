@@ -20,10 +20,14 @@ import {
   Pencil,
   Check,
   X,
+  Brain,
+  ShieldCheck,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
+import { Switch } from '@/components/ui/switch';
+import { Label } from '@/components/ui/label';
 import { useRequireAuth, useAuth } from '@/hooks/use-auth';
 import { useAuthStore } from '@/stores/auth-store';
 import { getTokenBalance, type TokenBalance } from '@/lib/api/tokens';
@@ -43,6 +47,11 @@ export default function AccountPage() {
   const [isSaving, setIsSaving] = useState(false);
   const updateUser = useAuthStore((state) => state.updateUser);
 
+  // Privacy settings state
+  const [consentToMemory, setConsentToMemory] = useState(true);
+  const [consentToLearning, setConsentToLearning] = useState(true);
+  const [isSavingPrivacy, setIsSavingPrivacy] = useState(false);
+
   useEffect(() => {
     if (!isAuthenticated) return;
 
@@ -59,6 +68,15 @@ export default function AccountPage() {
 
     fetchTokenBalance();
   }, [isAuthenticated]);
+
+  // Load privacy settings from user preferences
+  useEffect(() => {
+    if (user?.preferences) {
+      const prefs = user.preferences as Record<string, boolean>;
+      setConsentToMemory(prefs.consentToMemory ?? true);
+      setConsentToLearning(prefs.consentToLearning ?? true);
+    }
+  }, [user?.preferences]);
 
   if (authLoading) {
     return (
@@ -101,6 +119,32 @@ export default function AccountPage() {
       console.error('Failed to update profile:', error);
     } finally {
       setIsSaving(false);
+    }
+  };
+
+  const handlePrivacyChange = async (key: 'consentToMemory' | 'consentToLearning', value: boolean) => {
+    if (!user?.id) return;
+
+    // Update local state immediately for responsiveness
+    if (key === 'consentToMemory') setConsentToMemory(value);
+    if (key === 'consentToLearning') setConsentToLearning(value);
+
+    setIsSavingPrivacy(true);
+    try {
+      const currentPrefs = (user.preferences as Record<string, unknown>) || {};
+      await updateProfile(user.id, {
+        preferences: {
+          ...currentPrefs,
+          [key]: value,
+        },
+      });
+    } catch (error) {
+      console.error('Failed to update privacy settings:', error);
+      // Revert on error
+      if (key === 'consentToMemory') setConsentToMemory(!value);
+      if (key === 'consentToLearning') setConsentToLearning(!value);
+    } finally {
+      setIsSavingPrivacy(false);
     }
   };
 
@@ -249,6 +293,62 @@ export default function AccountPage() {
                     )}
                   </div>
                 </div>
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Privacy & Memory Section */}
+          <Card className="bg-white/[0.02] border-white/10 backdrop-blur-xl overflow-hidden">
+            <CardHeader className="pb-3 sm:pb-4">
+              <div className="flex items-center gap-2 sm:gap-3">
+                <div className="h-8 w-8 sm:h-10 sm:w-10 rounded-xl bg-green-500/20 flex items-center justify-center">
+                  <ShieldCheck className="h-4 w-4 sm:h-5 sm:w-5 text-green-500" />
+                </div>
+                <div>
+                  <CardTitle className="text-lg sm:text-xl text-white">Privacy & Memory</CardTitle>
+                  <CardDescription className="text-xs sm:text-sm text-gray-500">
+                    Control how companions remember and learn
+                  </CardDescription>
+                </div>
+              </div>
+            </CardHeader>
+            <CardContent className="space-y-4 sm:space-y-6">
+              {/* Long-term Memory */}
+              <div className="flex items-center justify-between gap-4 p-3 sm:p-4 rounded-xl bg-white/[0.02] border border-white/5">
+                <div className="flex-1 space-y-1">
+                  <div className="flex items-center gap-2">
+                    <Brain className="h-4 w-4 text-green-500" />
+                    <Label className="text-sm sm:text-base font-medium text-white">Long-term Memory</Label>
+                  </div>
+                  <p className="text-xs sm:text-sm text-gray-500 leading-relaxed">
+                    Allow companions to remember the heart of your conversations and build a shared history.
+                  </p>
+                </div>
+                <Switch
+                  checked={consentToMemory}
+                  onCheckedChange={(checked) => handlePrivacyChange('consentToMemory', checked)}
+                  disabled={isSavingPrivacy}
+                  className="data-[state=checked]:bg-green-500"
+                />
+              </div>
+
+              {/* Active Evolution */}
+              <div className="flex items-center justify-between gap-4 p-3 sm:p-4 rounded-xl bg-white/[0.02] border border-white/5">
+                <div className="flex-1 space-y-1">
+                  <div className="flex items-center gap-2">
+                    <Sparkles className="h-4 w-4 text-cyan-500" />
+                    <Label className="text-sm sm:text-base font-medium text-white">Active Evolution</Label>
+                  </div>
+                  <p className="text-xs sm:text-sm text-gray-500 leading-relaxed">
+                    Let companions evolve their personality and perspective based on your unique interactions.
+                  </p>
+                </div>
+                <Switch
+                  checked={consentToLearning}
+                  onCheckedChange={(checked) => handlePrivacyChange('consentToLearning', checked)}
+                  disabled={isSavingPrivacy}
+                  className="data-[state=checked]:bg-cyan-500"
+                />
               </div>
             </CardContent>
           </Card>

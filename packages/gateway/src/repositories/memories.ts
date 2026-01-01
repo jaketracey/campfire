@@ -3,6 +3,7 @@
  * Data access for memories table with vector search support
  */
 
+import postgres from 'postgres';
 import { sql } from '../db/pool.js';
 import { logger } from '../observability/logger.js';
 import type {
@@ -112,7 +113,7 @@ export class MemoriesRepository {
           ${data.importance ?? 0.5},
           ${data.source_event_id ?? null},
           ${data.source_turn_id ?? null},
-          ${data.metadata ?? {}},
+          ${db.json((data.metadata ?? {}) as postgres.JSONValue)},
           ${[] as string[]},
           ${data.expires_at ?? null}
         )
@@ -144,7 +145,7 @@ export class MemoriesRepository {
         content = COALESCE(${data.content ?? null}, content),
         content_type = COALESCE(${data.content_type ?? null}, content_type),
         importance = COALESCE(${data.importance ?? null}, importance),
-        metadata = COALESCE(${data.metadata ?? null}, metadata),
+        metadata = COALESCE(${data.metadata ? db.json(data.metadata as postgres.JSONValue) : null}, metadata),
         expires_at = COALESCE(${data.expires_at ?? null}, expires_at)
       WHERE id = ${id}
       RETURNING

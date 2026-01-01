@@ -11,6 +11,7 @@ import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { requireAuth } from '../middleware/auth.js';
 import { logger } from '../observability/logger.js';
 import { db } from '../db/index.js';
+import type { CompanionAvatar } from '../db/types.js';
 import { getCompanionsRepository } from '../repositories/companions.js';
 import { getSessionsRepository } from '../repositories/sessions.js';
 import {
@@ -119,43 +120,121 @@ const imageCache = new Map<string, { url: string; timestamp: number }>();
 const CACHE_TTL_MS = 1000 * 60 * 60 * 24; // 24 hours
 
 /**
+ * Maps emotional states to anchor types for emotion-matched reference selection.
+ * During onboarding, 3 anchors are generated: neutral, happy, thoughtful.
+ * This map allows selecting the most appropriate anchor based on the scene's emotion.
+ */
+const EMOTION_TO_ANCHOR_MAP: Record<string, string> = {
+  // Happy anchors
+  happy: 'happy',
+  excited: 'happy',
+  playful: 'happy',
+  joyful: 'happy',
+  flirty: 'happy',
+  amused: 'happy',
+  delighted: 'happy',
+  // Thoughtful anchors
+  thoughtful: 'thoughtful',
+  curious: 'thoughtful',
+  contemplative: 'thoughtful',
+  pensive: 'thoughtful',
+  concerned: 'thoughtful',
+  worried: 'thoughtful',
+  introspective: 'thoughtful',
+  // Neutral anchors (default)
+  neutral: 'neutral',
+  calm: 'neutral',
+  supportive: 'neutral',
+  warm: 'neutral',
+  serene: 'neutral',
+};
+
+/**
+ * Select the best anchor image based on the target emotional state.
+ * Falls back to neutral anchor, then any available anchor.
+ */
+function selectBestAnchor(
+  anchors: CompanionAvatar[],
+  targetEmotionalState: string
+): CompanionAvatar | null {
+  if (anchors.length === 0) return null;
+
+  // Map target emotion to anchor emotional state
+  const targetAnchorEmotion = EMOTION_TO_ANCHOR_MAP[targetEmotionalState.toLowerCase()] || 'neutral';
+
+  // Find matching anchor
+  const matched = anchors.find(
+    a => (a.metadata?.emotionalState as string)?.toLowerCase() === targetAnchorEmotion
+  );
+  if (matched) return matched;
+
+  // Fallback to neutral
+  const neutralAnchor = anchors.find(
+    a => (a.metadata?.emotionalState as string)?.toLowerCase() === 'neutral'
+  );
+  if (neutralAnchor) return neutralAnchor;
+
+  // Fallback to first available
+  return anchors[0];
+}
+
+/**
  * Get the identity anchor URL for a companion.
  * Priority:
- * 1. Existing identity anchor in companion_avatars table (refresh presigned URL if needed)
+ * 1. Emotion-matched identity anchor from companion_avatars table
  * 2. Pre-generated variation image based on appearance settings (from S3)
  * 3. null (no reference, generate without IP-Adapter)
  */
 async function getCompanionIdentityAnchorUrl(
-  companionId: string
+  companionId: string,
+  emotionalState?: string
 ): Promise<string | null> {
   const companionRepo = getCompanionsRepository();
 
   try {
-    // First, check if companion has a stored identity anchor
-    const identityAnchor = await companionRepo.getIdentityAnchor(companionId);
-    if (identityAnchor) {
-      // If we have s3_key and s3_bucket, generate a fresh presigned URL
-      // This avoids 403 errors from expired presigned URLs
-      if (identityAnchor.s3_key && identityAnchor.s3_bucket) {
-        const freshUrl = await getSignedUrl(
-          s3Client,
-          new GetObjectCommand({
-            Bucket: identityAnchor.s3_bucket,
-            Key: identityAnchor.s3_key,
-          }),
-          { expiresIn: 3600 } // 1 hour is enough for image generation
-        );
-        logger.debug({ companionId, anchorId: identityAnchor.id, s3Key: identityAnchor.s3_key }, 'Using refreshed identity anchor URL');
-        return freshUrl;
-      }
-      // Fallback to stored URL if no s3_key
-      if (identityAnchor.asset_url) {
-        logger.debug({ companionId, anchorId: identityAnchor.id }, 'Using stored identity anchor URL (no s3_key)');
-        return identityAnchor.asset_url;
+    // Fetch all identity anchors for emotion-matched selection
+    const anchors = await companionRepo.getAllIdentityAnchors(companionId);
+    if (anchors.length > 0) {
+      // Select best anchor based on emotional state
+      const selectedAnchor = selectBestAnchor(anchors, emotionalState || 'neutral');
+      if (selectedAnchor) {
+        // If we have s3_key and s3_bucket in metadata, generate a fresh presigned URL
+        // This avoids 403 errors from expired presigned URLs
+        const s3Key = selectedAnchor.metadata?.s3_key as string | undefined;
+        const s3Bucket = selectedAnchor.metadata?.s3_bucket as string | undefined;
+        if (s3Key && s3Bucket) {
+          const freshUrl = await getSignedUrl(
+            s3Client,
+            new GetObjectCommand({
+              Bucket: s3Bucket,
+              Key: s3Key,
+            }),
+            { expiresIn: 3600 } // 1 hour is enough for image generation
+          );
+          logger.debug({
+            companionId,
+            anchorId: selectedAnchor.id,
+            s3Key,
+            requestedEmotion: emotionalState,
+            selectedEmotion: selectedAnchor.metadata?.emotionalState,
+            anchorCount: anchors.length,
+          }, 'Using emotion-matched identity anchor');
+          return freshUrl;
+        }
+        // Fallback to stored URL if no s3_key
+        if (selectedAnchor.asset_url) {
+          logger.debug({
+            companionId,
+            anchorId: selectedAnchor.id,
+            requestedEmotion: emotionalState,
+            selectedEmotion: selectedAnchor.metadata?.emotionalState,
+          }, 'Using stored identity anchor URL (no s3_key)');
+          return selectedAnchor.asset_url;
+        }
       }
     }
 
-    // If no stored anchor, try to build URL from companion's appearance settings
+    // If no stored anchors, try to build URL from companion's appearance settings
     const companion = await companionRepo.findById(companionId);
     if (!companion?.spec) {
       logger.debug({ companionId }, 'Companion not found or has no spec');
@@ -205,60 +284,18 @@ function generateCacheKey(params: ImageGenRequest): string {
 }
 
 /**
- * Build the full prompt based on emotional state and personality
- * For adult companion app - uses sensual/intimate modifiers
+ * Build the full prompt for image generation.
+ *
+ * Since the companion LLM now provides full imagePrompt with scene, mood, style,
+ * and expression details, we use that directly. IP-Adapter preserves identity
+ * from the anchor image, so the companion has full creative control.
+ *
+ * Only add minimal quality suffix for best results.
  */
 function buildPrompt(params: ImageGenRequest): string {
-  const stylePrompts: Record<string, string> = {
-    realistic: 'photorealistic, highly detailed, 8k, professional boudoir photography, intimate lighting',
-    stylized: 'beautiful stylized render, soft romantic lighting, sensual artistic style',
-    abstract: 'ethereal sensual art, soft flowing forms, romantic abstract lighting',
-    minimal: 'elegant minimalist, tasteful intimate, soft clean aesthetic',
-    anime: 'beautiful anime style, expressive sensual, romantic illustration, detailed',
-  };
-
-  const emotionalModifiers: Record<string, string> = {
-    happy: 'radiant smile, sparkling eyes, joyful and flirty expression, warm glow',
-    calm: 'serene sensual expression, relaxed intimate pose, soft bedroom lighting, dreamy',
-    curious: 'alluring curious gaze, head tilted seductively, inviting expression',
-    excited: 'energetic, flushed cheeks, excited anticipation, dynamic sensual pose',
-    thoughtful: 'contemplative sultry gaze, pensive expression, soft romantic focus',
-    supportive: 'warm empathetic gaze, inviting open posture, intimate comforting presence',
-    playful: 'mischievous flirty smile, sparkling teasing eyes, playful seductive pose',
-    neutral: 'confident sensual expression, alluring gaze, intimate presence',
-  };
-
-  let fullPrompt = params.prompt;
-
-  // Add emotional modifier
-  if (params.emotionalState && emotionalModifiers[params.emotionalState]) {
-    fullPrompt += `, ${emotionalModifiers[params.emotionalState]}`;
-  }
-
-  // Add personality-based modifiers
-  if (params.personality) {
-    const { warmth = 50, playfulness = 50, empathy = 50 } = params.personality;
-
-    if (warmth > 70) {
-      fullPrompt += ', warm and inviting sensual presence';
-    }
-    if (playfulness > 70) {
-      fullPrompt += ', playfully seductive';
-    }
-    if (empathy > 70) {
-      fullPrompt += ', intimate and understanding';
-    }
-  }
-
-  // Add style modifier
-  if (params.style && stylePrompts[params.style]) {
-    fullPrompt += `, ${stylePrompts[params.style]}`;
-  }
-
-  // Add quality modifiers
-  fullPrompt += ', high quality, detailed, beautiful lighting, alluring';
-
-  return fullPrompt;
+  // The prompt from companion already contains the full scene description
+  // Note: "high quality, detailed" is added by the orchestrator, don't duplicate here
+  return params.prompt;
 }
 
 interface OrchestratorImageGenResponse {
@@ -281,11 +318,12 @@ async function generateWithOrchestrator(
   width: number,
   height: number,
   referenceImageUrl?: string,
-  referenceStrength?: number
+  referenceStrength?: number,
+  isAnchor?: boolean
 ): Promise<{ imageBuffer: Buffer; latencyMs: number; provider: string; format: string }> {
   const url = `${ORCHESTRATOR_URL}/imagegen/generate`;
 
-  logger.info({ url, prompt: prompt.slice(0, 100), emotionalState, style, hasReference: !!referenceImageUrl }, 'Calling orchestrator for image generation');
+  logger.info({ url, prompt: prompt.slice(0, 100), emotionalState, style, hasReference: !!referenceImageUrl, isAnchor }, 'Calling orchestrator for image generation');
 
   const response = await fetch(url, {
     method: 'POST',
@@ -300,6 +338,7 @@ async function generateWithOrchestrator(
       height,
       reference_image_url: referenceImageUrl,
       reference_strength: referenceStrength ?? 0.7,
+      is_anchor: isAnchor ?? false,
     }),
   });
 
@@ -495,8 +534,8 @@ export async function imagegenRoutes(app: FastifyInstance): Promise<void> {
               },
             },
             style: { type: 'string', enum: ['realistic', 'stylized', 'abstract', 'minimal', 'anime'] },
-            width: { type: 'number', default: 250 },
-            height: { type: 'number', default: 400 },
+            width: { type: 'number', default: 832 },
+            height: { type: 'number', default: 1248 },
             saveToS3: { type: 'boolean', default: true },
             cacheKey: { type: 'string' },
             userId: { type: 'string' },
@@ -510,11 +549,36 @@ export async function imagegenRoutes(app: FastifyInstance): Promise<void> {
     },
     async (request: FastifyRequest<{ Body: ImageGenRequest }>, reply: FastifyReply) => {
       const params = request.body;
-      const width = params.width || 250;
-      const height = params.height || 400;
+      const width = params.width || 832;
+      const height = params.height || 1248;
       const saveToS3 = params.saveToS3 !== false; // Default to true
       const emotionalState = params.emotionalState || 'neutral';
-      const style = params.style || 'stylized';
+
+      // Get companion's stored style if companionId provided, otherwise use request param or default
+      let style = params.style || 'stylized';
+      let referenceImageUrl = params.referenceImageUrl;
+
+      if (params.companionId) {
+        const companionRepo = getCompanionsRepository();
+        const companion = await companionRepo.findById(params.companionId);
+        if (companion) {
+          // Use companion's stored style from spec if not explicitly overridden in request
+          if (!params.style && companion.spec?.visual_style?.style_type) {
+            const storedStyle = companion.spec.visual_style.style_type;
+            // Validate stored style is one of the allowed values
+            if (['realistic', 'stylized', 'abstract', 'minimal', 'anime'].includes(storedStyle)) {
+              style = storedStyle as 'realistic' | 'stylized' | 'abstract' | 'minimal' | 'anime';
+            }
+          }
+          // Get emotion-matched identity anchor for character consistency
+          if (!referenceImageUrl) {
+            referenceImageUrl = await getCompanionIdentityAnchorUrl(
+              params.companionId,
+              params.emotionalState
+            ) || undefined;
+          }
+        }
+      }
 
       // Generate or use provided cache key
       const cacheKey = params.cacheKey || generateCacheKey(params);
@@ -537,17 +601,11 @@ export async function imagegenRoutes(app: FastifyInstance): Promise<void> {
         // Build the full prompt
         const fullPrompt = buildPrompt(params);
 
-        // Get identity anchor for character consistency
-        // Priority: explicit referenceImageUrl > companion's anchor from DB/appearance
-        let referenceImageUrl = params.referenceImageUrl;
-        if (!referenceImageUrl && params.companionId) {
-          referenceImageUrl = await getCompanionIdentityAnchorUrl(params.companionId) || undefined;
-        }
-
         logger.info({
           prompt: fullPrompt,
           width,
           height,
+          style,
           saveToS3,
           hasReference: !!referenceImageUrl,
           companionId: params.companionId,
@@ -829,10 +887,11 @@ export async function imagegenRoutes(app: FastifyInstance): Promise<void> {
             fullPrompt,
             emotionalState,
             style,
-            512,  // Higher resolution for anchors
-            768,
+            832,  // Higher resolution for anchors (optimal SDXL portrait)
+            1248,
             isPrimary ? undefined : primaryAnchorUrl || undefined,
-            isPrimary ? undefined : 0.85  // Strong reference for consistency
+            isPrimary ? undefined : 0.85,  // Strong reference for consistency
+            true  // isAnchor - use high quality anchor workflow
           );
 
           // Upload to S3 under anchors path
@@ -872,8 +931,8 @@ export async function imagegenRoutes(app: FastifyInstance): Promise<void> {
             },
             generation_params: {
               prompt: fullPrompt,
-              width: 512,
-              height: 768,
+              width: 832,
+              height: 1248,
               provider,
               latencyMs,
               referenceStrength: isPrimary ? null : 0.85,
@@ -895,8 +954,8 @@ export async function imagegenRoutes(app: FastifyInstance): Promise<void> {
             companionId,
             s3Key,
             s3Url,
-            512, // width
-            768, // height
+            832, // width
+            1248, // height
             imageBuffer.length,
             emotionalState,
             style,
@@ -1096,10 +1155,11 @@ export async function imagegenRoutes(app: FastifyInstance): Promise<void> {
               fullPrompt,
               emotionalState,
               style,
-              512,
-              768,
+              832,  // Optimal SDXL portrait resolution
+              1248,
               isPrimary ? undefined : primaryAnchorUrl || undefined,
-              isPrimary ? undefined : 0.85
+              isPrimary ? undefined : 0.85,
+              true  // isAnchor - use high quality anchor workflow
             );
 
             const cacheKey = `anchor-${emotionalState}-${Date.now()}`;
@@ -1136,8 +1196,8 @@ export async function imagegenRoutes(app: FastifyInstance): Promise<void> {
               },
               generation_params: {
                 prompt: fullPrompt,
-                width: 512,
-                height: 768,
+                width: 832,
+                height: 1248,
                 provider,
                 latencyMs,
                 referenceStrength: isPrimary ? null : 0.85,
@@ -1159,8 +1219,8 @@ export async function imagegenRoutes(app: FastifyInstance): Promise<void> {
               companionId,
               s3Key,
               s3Url,
-              512, // width
-              768, // height
+              832, // width
+              1248, // height
               imageBuffer.length,
               emotionalState,
               style,

@@ -340,6 +340,8 @@ export interface Turn {
   cost_usd: number | null;
   metadata: JSONObject;
   created_at: Timestamp;
+  /** Which companion sent the agent_message (for group chat) */
+  companion_id: UUID | null;
 }
 
 export type MessageType = 'text' | 'audio' | 'image' | 'multimodal';
@@ -357,6 +359,69 @@ export interface TurnInsert {
   token_count_output?: number | null;
   cost_usd?: number | null;
   metadata?: JSONObject;
+  companion_id?: UUID | null;
+}
+
+// ============================================================================
+// Companion Friends Types (Group Chat)
+// ============================================================================
+
+export interface CompanionFriend {
+  id: UUID;
+  companion_id: UUID;
+  friend_companion_id: UUID;
+  relationship_type: string | null;
+  how_they_met: string | null;
+  nickname: string | null;
+  familiarity_level: number;
+  created_at: Timestamp;
+  updated_at: Timestamp;
+}
+
+export interface CompanionFriendInsert {
+  companion_id: UUID;
+  friend_companion_id: UUID;
+  relationship_type?: string | null;
+  how_they_met?: string | null;
+  nickname?: string | null;
+  familiarity_level?: number;
+}
+
+// ============================================================================
+// Session Participants Types (Group Chat)
+// ============================================================================
+
+export type SessionParticipantRole = 'primary' | 'invited';
+export type SessionParticipantStatus = 'active' | 'left';
+
+export interface SessionParticipant {
+  id: UUID;
+  session_id: UUID;
+  companion_id: UUID;
+  role: SessionParticipantRole;
+  status: SessionParticipantStatus;
+  invited_by_companion_id: UUID | null;
+  joined_at: Timestamp;
+  left_at: Timestamp | null;
+  message_count: number;
+  created_at: Timestamp;
+  updated_at: Timestamp;
+}
+
+export interface SessionParticipantInsert {
+  session_id: UUID;
+  companion_id: UUID;
+  role?: SessionParticipantRole;
+  status?: SessionParticipantStatus;
+  invited_by_companion_id?: UUID | null;
+}
+
+/**
+ * Session participant with companion details for API responses
+ */
+export interface SessionParticipantWithCompanion extends SessionParticipant {
+  companion_name: string;
+  companion_avatar_url: string | null;
 }
 
 // ============================================================================

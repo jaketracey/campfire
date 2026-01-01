@@ -6,18 +6,24 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card } from '@/components/ui/card';
-import { X, Send, Mic, MicOff, Bug, Images, Flame, Sparkles, Gift, BookOpen, GripVertical, Volume2, Menu, User } from 'lucide-react';
+import { X, ArrowRight, Mic, MicOff, Bug, Images, Flame, Sparkles, Gift, BookOpen, GripVertical, Volume2, Menu, User, Video, VideoOff, Gamepad2, Heart, Users } from 'lucide-react';
 import Link from 'next/link';
 import { getSessionTurns, getSession, getCompanion, getCompanionBackstory, type Companion, type CompanionBackstory } from '@/lib/api';
-import { CampfireWebSocket, connectWebSocket } from '@/lib/ws';
+import { CampfireWebSocket, connectWebSocket, type GroupParticipant } from '@/lib/ws';
+import { ParticipantList, GroupMessageBubble, CompanionJoinNotification, TypingIndicator } from '@/components/group-chat';
 import { CompanionAvatar, StaticCompanionAvatar, CompanionGallery, PersonalityModal, BackstoryModal } from '@/components/companion';
 import { DebugPanel } from '@/components/debug-panel';
 import { GiftsPanel } from '@/components/gifts';
+import { FriendsPanel } from '@/components/friends';
+import { GamesModal, GameBoardContainer } from '@/components/games';
+import { LikeButton } from '@/components/likes';
+import type { ActiveGame } from '@campfire/shared';
 import { useRequireAuth } from '@/hooks/use-auth';
 import { useAuthStore } from '@/stores/auth-store';
 import { buildPromptFromCompanion, getSessionGallery, type EmotionalState, type GalleryImage } from '@/lib/api/imagegen';
 import { useVoiceRecording } from '@/hooks/use-voice-recording';
 import { useAudioPlayer } from '@/hooks/use-audio-player';
+import { useWebcamCapture } from '@/hooks/use-webcam-capture';
 
 interface Message {
   id: string;
@@ -25,6 +31,24 @@ interface Message {
   content: string;
   timestamp: Date;
   emotionalState?: EmotionalState;
+  // Group chat fields
+  companionId?: string;
+  companionName?: string;
+  themeColor?: string;
+  isReaction?: boolean;
+}
+
+// Chat event for join/leave notifications
+interface ChatEvent {
+  id: string;
+  type: 'companion_joined' | 'companion_left';
+  companionId: string;
+  companionName: string;
+  avatarUrl: string | null;
+  themeColor: string;
+  reason?: string;
+  invitedByName?: string;
+  timestamp: Date;
 }
 
 interface ChatSessionContentProps {
@@ -104,8 +128,12 @@ export function ChatSessionContent({ sessionId }: ChatSessionContentProps) {
   const [showPersonality, setShowPersonality] = useState(false);
   const [showBackstory, setShowBackstory] = useState(false);
   const [showGiftsPanel, setShowGiftsPanel] = useState(false);
+  const [showFriendsPanel, setShowFriendsPanel] = useState(false);
   const [showMobileAvatar, setShowMobileAvatar] = useState(false);
   const [showMobileMenu, setShowMobileMenu] = useState(false);
+  const [showGames, setShowGames] = useState(false);
+  const [activeGame, setActiveGame] = useState<ActiveGame | null>(null);
+  const [waitingForCompanionMove, setWaitingForCompanionMove] = useState(false);
   const [debugRefreshTrigger, setDebugRefreshTrigger] = useState(0);
   const [companion, setCompanion] = useState<Companion | null>(null);
   const [backstoryData, setBackstoryData] = useState<CompanionBackstory | null>(null);
@@ -116,6 +144,18 @@ export function ChatSessionContent({ sessionId }: ChatSessionContentProps) {
   // Gallery images for random display on load
   const [galleryImages, setGalleryImages] = useState<GalleryImage[]>([]);
   const [sceneDescription, setSceneDescription] = useState<string | undefined>(undefined);
+  // Likes tracking
+  const [messageLikes, setMessageLikes] = useState<Record<string, number>>({});
+  const [sessionTotalLikes, setSessionTotalLikes] = useState(0);
+  // Multi-message sequence tracking
+  const [showTypingBetweenMessages, setShowTypingBetweenMessages] = useState(false);
+  // Group chat state
+  const [isGroupChat, setIsGroupChat] = useState(false);
+  const [groupParticipants, setGroupParticipants] = useState<GroupParticipant[]>([]);
+  const [hostCompanionId, setHostCompanionId] = useState<string | null>(null);
+  const [chatEvents, setChatEvents] = useState<ChatEvent[]>([]);
+  const [typingCompanionId, setTypingCompanionId] = useState<string | null>(null);
+  const [streamingByCompanion, setStreamingByCompanion] = useState<Map<string, string>>(new Map());
   // Resizable sidebar state
   const [sidebarWidth, setSidebarWidth] = useState(280);
   const [isResizing, setIsResizing] = useState(false);
@@ -126,6 +166,8 @@ export function ChatSessionContent({ sessionId }: ChatSessionContentProps) {
   const wsRef = useRef<CampfireWebSocket | null>(null);
   const inputContainerRef = useRef<HTMLDivElement>(null);
   const [keyboardHeight, setKeyboardHeight] = useState(0);
+  // Track if we've shown the initial pulse animation (only show once)
+  const [hasShownPulse, setHasShownPulse] = useState(false);
 
   // Handle iOS keyboard - position input above keyboard
   useEffect(() => {
@@ -226,6 +268,30 @@ export function ChatSessionContent({ sessionId }: ChatSessionContentProps) {
     },
   });
 
+  // Webcam capture hook for sending frames to AI
+  const {
+    isEnabled: isWebcamEnabled,
+    isCapturing,
+    error: webcamError,
+    latestFrame,
+    enableWebcam,
+    disableWebcam,
+  } = useWebcamCapture(wsRef, {
+    captureInterval: 10000, // 10 seconds
+    targetWidth: 640,
+    targetHeight: 480,
+    quality: 0.75,
+  });
+
+  // Toggle webcam mode
+  const toggleWebcam = useCallback(async () => {
+    if (isWebcamEnabled) {
+      disableWebcam();
+    } else {
+      await enableWebcam();
+    }
+  }, [isWebcamEnabled, enableWebcam, disableWebcam]);
+
   // Refs to store stable references to audio functions for WebSocket callbacks
   const queueAudioRef = useRef(queueAudio);
   const finishQueueRef = useRef(finishQueue);
@@ -236,12 +302,21 @@ export function ChatSessionContent({ sessionId }: ChatSessionContentProps) {
 
   // Calculate avatar dimensions based on sidebar width
   // Maintain a portrait aspect ratio (roughly 5:8) with some padding
+  // Generation dimensions are always at least 512x768 for quality
   const avatarDimensions = useMemo(() => {
     const padding = 32; // 16px on each side
     const availableWidth = sidebarWidth - padding;
-    const width = Math.max(150, availableWidth);
-    const height = Math.round(width * 1.6); // 5:8 aspect ratio
-    return { width, height };
+    const displayWidth = Math.max(150, availableWidth);
+    const displayHeight = Math.round(displayWidth * 1.6); // 5:8 aspect ratio
+    // Generate at higher resolution for quality (minimum 512x768)
+    const genWidth = Math.max(512, displayWidth);
+    const genHeight = Math.round(genWidth * 1.6);
+    return {
+      width: displayWidth,
+      height: displayHeight,
+      genWidth,
+      genHeight,
+    };
   }, [sidebarWidth]);
 
   // Build custom prompt from companion visual data
@@ -368,9 +443,23 @@ export function ChatSessionContent({ sessionId }: ChatSessionContentProps) {
     });
 
     // Subscribe to session started
-    const unsubSessionStarted = ws.on('session_started', () => {
+    const unsubSessionStarted = ws.on<{
+      sessionId: string;
+      companionId: string;
+      isGroupChat?: boolean;
+      participants?: GroupParticipant[];
+    }>('session_started', (msg) => {
       setWsConnected(true);
       console.log('[Chat] Session resumed via WebSocket');
+
+      // Initialize group chat state if applicable
+      if (msg.payload.isGroupChat !== undefined) {
+        setIsGroupChat(msg.payload.isGroupChat);
+      }
+      if (msg.payload.participants) {
+        setGroupParticipants(msg.payload.participants);
+        setHostCompanionId(msg.payload.companionId);
+      }
     });
 
     // Subscribe to agent messages (non-streaming)
@@ -402,12 +491,11 @@ export function ChatSessionContent({ sessionId }: ChatSessionContentProps) {
       setStreamingContent((prev) => prev + chunk);
     });
 
-    // Subscribe to message end
-    const unsubEnd = ws.onAgentMessageEnd((content) => {
-      setIsLoading(false);
-      setStreamingContent('');
+    // Subscribe to message end (with multi-message sequence support)
+    const unsubEnd = ws.onAgentMessageEnd((content, imagePrompt, sequence) => {
       const emotionalState = detectEmotionalState(content);
-      setCurrentEmotionalState(emotionalState);
+
+      // Add message immediately
       setMessages((prev) => [
         ...prev,
         {
@@ -418,8 +506,25 @@ export function ChatSessionContent({ sessionId }: ChatSessionContentProps) {
           emotionalState,
         },
       ]);
-      // Extract scene description and trigger image generation
-      const scene = extractSceneDescription(content);
+
+      // Clear streaming content for this message
+      setStreamingContent('');
+
+      // Handle multi-message sequences
+      if (sequence && !sequence.isLast) {
+        // More messages coming - show typing indicator between messages
+        setShowTypingBetweenMessages(true);
+        // Keep loading state since more messages are coming
+        return;
+      }
+
+      // This is the last message (or single message) - finalize
+      setShowTypingBetweenMessages(false);
+      setIsLoading(false);
+      setCurrentEmotionalState(emotionalState);
+
+      // Use companion's imagePrompt directly, fallback to scene extraction for older messages
+      const scene = imagePrompt || extractSceneDescription(content);
       setSceneDescription(scene);
       setImageGenTrigger((prev) => prev + 1);
       // Trigger debug panel refresh
@@ -451,6 +556,135 @@ export function ChatSessionContent({ sessionId }: ChatSessionContentProps) {
       finishQueueRef.current();
     });
 
+    // Subscribe to game updates
+    const unsubGameUpdate = ws.onGameUpdate((gameState) => {
+      if (gameState) {
+        const game = gameState as unknown as ActiveGame;
+        setActiveGame(game);
+        setWaitingForCompanionMove(game.currentPlayer === 'companion');
+      } else {
+        setActiveGame(null);
+        setWaitingForCompanionMove(false);
+      }
+    });
+
+    // Subscribe to like acknowledgments
+    const unsubLikeAck = ws.onLikeAcknowledged(({ turnId, turnLikes, sessionLikes }) => {
+      setMessageLikes((prev) => ({ ...prev, [turnId]: turnLikes }));
+      setSessionTotalLikes(sessionLikes);
+    });
+
+    // Group chat: Subscribe to companion joined
+    const unsubCompanionJoined = ws.onCompanionJoined(({ companion, invitedByCompanionId, reason, participants }) => {
+      setGroupParticipants(participants);
+      setIsGroupChat(participants.length > 1);
+
+      // Find who invited
+      const invitedBy = participants.find(p => p.companionId === invitedByCompanionId);
+
+      // Add join event to chat
+      setChatEvents((prev) => [
+        ...prev,
+        {
+          id: crypto.randomUUID(),
+          type: 'companion_joined',
+          companionId: companion.companionId,
+          companionName: companion.companionName,
+          avatarUrl: companion.avatarUrl,
+          themeColor: companion.themeColor,
+          reason,
+          invitedByName: invitedBy?.companionName,
+          timestamp: new Date(),
+        },
+      ]);
+    });
+
+    // Group chat: Subscribe to companion left
+    const unsubCompanionLeft = ws.onCompanionLeft(({ companionId, companionName, reason, participants }) => {
+      setGroupParticipants(participants);
+      setIsGroupChat(participants.length > 1);
+
+      // Get theme color before removing
+      const leftCompanion = groupParticipants.find(p => p.companionId === companionId);
+
+      // Add leave event to chat
+      setChatEvents((prev) => [
+        ...prev,
+        {
+          id: crypto.randomUUID(),
+          type: 'companion_left',
+          companionId,
+          companionName,
+          avatarUrl: leftCompanion?.avatarUrl || null,
+          themeColor: leftCompanion?.themeColor || '#8B5CF6',
+          reason,
+          timestamp: new Date(),
+        },
+      ]);
+    });
+
+    // Group chat: Subscribe to group chat state updates
+    const unsubGroupChatState = ws.onGroupChatState((state) => {
+      setIsGroupChat(state.isGroupChat);
+      setGroupParticipants(state.participants);
+      setHostCompanionId(state.hostCompanionId);
+    });
+
+    // Group chat: Subscribe to companion message start (typing)
+    const unsubCompanionMsgStart = ws.onCompanionMessageStart(({ companionId }) => {
+      setTypingCompanionId(companionId);
+      setStreamingByCompanion((prev) => {
+        const next = new Map(prev);
+        next.set(companionId, '');
+        return next;
+      });
+    });
+
+    // Group chat: Subscribe to companion message chunks
+    const unsubCompanionChunk = ws.onCompanionMessageChunk((companionId, content) => {
+      setStreamingByCompanion((prev) => {
+        const next = new Map(prev);
+        next.set(companionId, (prev.get(companionId) || '') + content);
+        return next;
+      });
+    });
+
+    // Group chat: Subscribe to companion message end
+    const unsubCompanionMsgEnd = ws.onCompanionMessageEnd(({ companionId, companionName, content, isReaction, turnId }) => {
+      setTypingCompanionId(null);
+      setStreamingByCompanion((prev) => {
+        const next = new Map(prev);
+        next.delete(companionId);
+        return next;
+      });
+
+      // Get companion theme color
+      const companion = groupParticipants.find(p => p.companionId === companionId);
+      const emotionalState = detectEmotionalState(content);
+
+      setMessages((prev) => [
+        ...prev,
+        {
+          id: turnId || crypto.randomUUID(),
+          role: 'assistant',
+          content,
+          timestamp: new Date(),
+          emotionalState,
+          companionId,
+          companionName,
+          themeColor: companion?.themeColor || '#8B5CF6',
+          isReaction,
+        },
+      ]);
+
+      // Update emotional state if this is the primary companion
+      if (!isReaction && companionId === hostCompanionId) {
+        setCurrentEmotionalState(emotionalState);
+      }
+
+      setIsLoading(false);
+    });
+
     // Note: connectWebSocket() already calls connect(), don't call it again
 
     return () => {
@@ -464,6 +698,14 @@ export function ChatSessionContent({ sessionId }: ChatSessionContentProps) {
       unsubTranscription();
       unsubTTSChunk();
       unsubTTSEnd();
+      unsubGameUpdate();
+      unsubLikeAck();
+      unsubCompanionJoined();
+      unsubCompanionLeft();
+      unsubGroupChatState();
+      unsubCompanionMsgStart();
+      unsubCompanionChunk();
+      unsubCompanionMsgEnd();
       ws.disconnect();
     };
   }, [sessionId, authLoading, isAuthenticated]);
@@ -496,6 +738,93 @@ export function ChatSessionContent({ sessionId }: ChatSessionContentProps) {
       inputRef.current?.focus();
     }, 10);
   }, [input, isLoading]);
+
+  // Handle liking a message
+  const handleLikeMessage = useCallback((turnId: string) => {
+    if (!wsRef.current?.isConnected) return;
+    wsRef.current.likeMessage(turnId);
+  }, []);
+
+  // Handle starting a game from the modal
+  const handleStartGame = useCallback((gameType: string) => {
+    if (!wsRef.current?.isConnected) return;
+
+    // Send a message asking to start the game - the companion will use the game_start tool
+    const message = `Let's play ${gameType === 'tic_tac_toe' ? 'tic-tac-toe' : gameType}!`;
+
+    const userMessage: Message = {
+      id: crypto.randomUUID(),
+      role: 'user',
+      content: message,
+      timestamp: new Date(),
+    };
+
+    setMessages((prev) => [...prev, userMessage]);
+    setIsLoading(true);
+    setStreamingContent('');
+    setWaitingForCompanionMove(true);
+
+    wsRef.current.sendMessage(message);
+  }, []);
+
+  // Handle user making a move in the game
+  const handleUserMove = useCallback((move: string) => {
+    if (!wsRef.current?.isConnected || !activeGame) return;
+
+    // Update local game state optimistically
+    if (activeGame.currentPlayer === 'user') {
+      const newMoveHistory = [...activeGame.moveHistory, {
+        player: 'user' as const,
+        notation: move,
+        timestamp: new Date().toISOString(),
+      }];
+
+      // For tic-tac-toe, update the board
+      if (activeGame.gameType === 'tic_tac_toe') {
+        const col = move.charCodeAt(0) - 'A'.charCodeAt(0);
+        const row = parseInt(move[1]) - 1;
+        const newBoard = (activeGame.board as string[][]).map(r => [...r]);
+        newBoard[row][col] = activeGame.userSymbol || 'X';
+
+        setActiveGame({
+          ...activeGame,
+          board: newBoard,
+          currentPlayer: 'companion',
+          moveHistory: newMoveHistory,
+        });
+      }
+
+      setWaitingForCompanionMove(true);
+    }
+
+    // Send the move as a message
+    const message = `[Game move: ${move}]`;
+    wsRef.current.sendMessage(message);
+    setIsLoading(true);
+  }, [activeGame]);
+
+  // Handle resigning from the game
+  const handleResign = useCallback(() => {
+    if (!wsRef.current?.isConnected || !activeGame) return;
+
+    const message = 'I resign from the game.';
+
+    const userMessage: Message = {
+      id: crypto.randomUUID(),
+      role: 'user',
+      content: message,
+      timestamp: new Date(),
+    };
+
+    setMessages((prev) => [...prev, userMessage]);
+    setIsLoading(true);
+
+    wsRef.current.sendMessage(message);
+
+    // Clear game state
+    setActiveGame(null);
+    setWaitingForCompanionMove(false);
+  }, [activeGame]);
 
   // Toggle voice mode on/off
   const toggleVoiceMode = useCallback(() => {
@@ -532,6 +861,24 @@ export function ChatSessionContent({ sessionId }: ChatSessionContentProps) {
   }, []);
 
   // Handle resize move
+  // Auto-focus input when page loads and WebSocket connects
+  useEffect(() => {
+    if (wsConnected && inputRef.current) {
+      // Small delay to ensure DOM is ready
+      const timer = setTimeout(() => {
+        inputRef.current?.focus();
+      }, 100);
+      return () => clearTimeout(timer);
+    }
+  }, [wsConnected]);
+
+  // Mark pulse as shown once user starts typing
+  useEffect(() => {
+    if (input.length > 0 && !hasShownPulse) {
+      setHasShownPulse(true);
+    }
+  }, [input, hasShownPulse]);
+
   useEffect(() => {
     if (!isResizing) return;
 
@@ -595,18 +942,19 @@ export function ChatSessionContent({ sessionId }: ChatSessionContentProps) {
         {companion?.avatarUrl ? (
           <button
             onClick={() => setShowGallery(true)}
-            className="cursor-pointer hover:opacity-90 transition-opacity focus:outline-none focus:ring-2 focus:ring-campfire-500 focus:ring-offset-2 focus:ring-offset-background rounded-xl"
+            className="cursor-pointer hover:opacity-90 transition-opacity focus:outline-none focus:ring-2 focus:ring-campfire-500 focus:ring-offset-2 focus:ring-offset-background rounded-xl overflow-hidden"
+            style={{ width: avatarDimensions.width, height: avatarDimensions.height }}
             aria-label="View gallery"
           >
             <CompanionAvatar
               emotionalState={currentEmotionalState}
               style="stylized"
               customPrompt={customPrompt}
-              width={avatarDimensions.width}
-              height={avatarDimensions.height}
+              width={avatarDimensions.genWidth}
+              height={avatarDimensions.genHeight}
               autoRegenerate={false}
               debounceDelay={2000}
-              className="shadow-lg"
+              className="shadow-lg w-full h-full"
               userId={user?.id}
               sessionId={sessionId}
               companionId={companion.id}
@@ -626,31 +974,82 @@ export function ChatSessionContent({ sessionId }: ChatSessionContentProps) {
             style={{ width: avatarDimensions.width, height: avatarDimensions.height }}
           />
         )}
-        <p className="mt-3 text-sm text-muted-foreground">
+        {companion && (
+          <p className="mt-3 text-base font-semibold text-foreground">{companion.name}</p>
+        )}
+        {sessionTotalLikes > 0 && (
+          <div className="flex items-center justify-center gap-1 mt-1 text-sm text-muted-foreground">
+            <Heart className="h-3.5 w-3.5 text-red-500 fill-red-500" />
+            <span className="font-medium text-foreground">{sessionTotalLikes}</span>
+          </div>
+        )}
+        <p className="mt-1 text-sm text-muted-foreground">
           Feeling: <span className="font-medium text-foreground capitalize">{currentEmotionalState}</span>
         </p>
-        <div className="flex flex-wrap gap-2 mt-2 justify-center">
+        <div className="flex flex-col gap-2.5 mt-4 w-full px-2">
           <Button
             variant="outline"
-            size="sm"
-            className="gap-1"
+            className="w-full justify-start gap-3 px-5 py-4 text-base"
             onClick={() => setShowPersonality(true)}
           >
-            <Sparkles className="h-4 w-4" />
+            <Sparkles className="h-5 w-5" />
             Personality
           </Button>
           {backstoryData?.hasBackstory && (
             <Button
               variant="outline"
-              size="sm"
-              className="gap-1 border-amber-700/30 text-amber-500 hover:bg-amber-900/20 hover:text-amber-400"
+              className="w-full justify-start gap-3 px-5 py-4 text-base border-amber-700/30 text-amber-500 hover:bg-amber-900/20 hover:text-amber-400"
               onClick={() => setShowBackstory(true)}
             >
-              <BookOpen className="h-4 w-4" />
+              <BookOpen className="h-5 w-5" />
               Backstory
             </Button>
           )}
+          <Button
+            variant="outline"
+            className="w-full justify-start gap-3 px-5 py-4 text-base border-emerald-700/30 text-emerald-500 hover:bg-emerald-900/20 hover:text-emerald-400"
+            onClick={() => setShowGames(true)}
+          >
+            <Gamepad2 className="h-5 w-5" />
+            Games
+          </Button>
+          <Button
+            variant="outline"
+            className="w-full justify-start gap-3 px-5 py-4 text-base border-rose-700/30 text-rose-500 hover:bg-rose-900/20 hover:text-rose-400"
+            onClick={() => setShowGiftsPanel(true)}
+          >
+            <Gift className="h-5 w-5" />
+            Gifts
+          </Button>
+          <Button
+            variant="outline"
+            className="w-full justify-start gap-3 px-5 py-4 text-base border-purple-700/30 text-purple-500 hover:bg-purple-900/20 hover:text-purple-400"
+            onClick={() => setShowFriendsPanel(true)}
+          >
+            <Users className="h-5 w-5" />
+            Friends
+          </Button>
         </div>
+
+        {/* Spacer to push webcam to bottom */}
+        <div className="flex-1" />
+
+        {/* Webcam preview at bottom of sidebar */}
+        {isWebcamEnabled && latestFrame && (
+          <div className="mt-4 flex flex-col items-center gap-2">
+            <div className="relative">
+              <img
+                src={latestFrame}
+                alt="Webcam preview"
+                className="w-24 h-18 rounded-lg object-cover border-2 border-campfire-500/50 shadow-md"
+              />
+              {isCapturing && (
+                <div className="absolute top-1 right-1 w-2.5 h-2.5 bg-red-500 rounded-full animate-pulse shadow-sm" />
+              )}
+            </div>
+            <span className="text-xs text-muted-foreground">Camera active</span>
+          </div>
+        )}
 
         {/* Resize Grabber */}
         <AnimatePresence>
@@ -830,6 +1229,15 @@ export function ChatSessionContent({ sessionId }: ChatSessionContentProps) {
                 }`}
               >
                 <p className="text-sm whitespace-pre-wrap">{message.content}</p>
+                {message.role === 'assistant' && (
+                  <div className="flex justify-end mt-1 -mb-1 -mr-1">
+                    <LikeButton
+                      turnId={message.id}
+                      initialCount={messageLikes[message.id] || 0}
+                      onLike={handleLikeMessage}
+                    />
+                  </div>
+                )}
               </Card>
             </div>
           ))}
@@ -841,16 +1249,45 @@ export function ChatSessionContent({ sessionId }: ChatSessionContentProps) {
               </Card>
             </div>
           )}
-          {/* Loading indicator */}
-          {isLoading && !streamingContent && (
-            <div className="flex justify-start">
-              <Card className="bg-muted p-3">
+          {/* Loading indicator / typing indicator between multi-messages */}
+          {(isLoading && !streamingContent) || showTypingBetweenMessages ? (
+            <motion.div
+              className="flex justify-start"
+              initial={{ opacity: 0, y: 5 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.15 }}
+            >
+              <Card className={`bg-muted p-3 ${showTypingBetweenMessages ? 'mt-1' : ''}`}>
                 <div className="flex gap-1">
-                  <span className="w-2 h-2 bg-foreground/50 rounded-full animate-bounce" />
-                  <span className="w-2 h-2 bg-foreground/50 rounded-full animate-bounce [animation-delay:0.1s]" />
-                  <span className="w-2 h-2 bg-foreground/50 rounded-full animate-bounce [animation-delay:0.2s]" />
+                  <motion.span
+                    className="w-2 h-2 bg-foreground/50 rounded-full"
+                    animate={{ y: [0, -4, 0], opacity: [0.5, 1, 0.5] }}
+                    transition={{ duration: 0.6, repeat: Infinity, delay: 0 }}
+                  />
+                  <motion.span
+                    className="w-2 h-2 bg-foreground/50 rounded-full"
+                    animate={{ y: [0, -4, 0], opacity: [0.5, 1, 0.5] }}
+                    transition={{ duration: 0.6, repeat: Infinity, delay: 0.1 }}
+                  />
+                  <motion.span
+                    className="w-2 h-2 bg-foreground/50 rounded-full"
+                    animate={{ y: [0, -4, 0], opacity: [0.5, 1, 0.5] }}
+                    transition={{ duration: 0.6, repeat: Infinity, delay: 0.2 }}
+                  />
                 </div>
               </Card>
+            </motion.div>
+          ) : null}
+          {/* Active Game Board */}
+          {activeGame && (
+            <div className="flex justify-center my-4">
+              <GameBoardContainer
+                gameState={activeGame}
+                onUserMove={handleUserMove}
+                onResign={handleResign}
+                companionName={companion?.name || 'Companion'}
+                isWaitingForCompanion={waitingForCompanionMove}
+              />
             </div>
           )}
           <div ref={messagesEndRef} />
@@ -876,6 +1313,15 @@ export function ChatSessionContent({ sessionId }: ChatSessionContentProps) {
             </div>
           )}
 
+          {/* Webcam error display */}
+          {webcamError && (
+            <div className="max-w-4xl mx-auto mb-2">
+              <Card className="p-2 bg-destructive/10 border-destructive/50">
+                <p className="text-sm text-destructive">{webcamError}</p>
+              </Card>
+            </div>
+          )}
+
           <div className="flex gap-2 max-w-4xl mx-auto">
             {/* Voice mode toggle */}
             <Button
@@ -885,6 +1331,21 @@ export function ChatSessionContent({ sessionId }: ChatSessionContentProps) {
               title={voiceModeEnabled ? 'Disable voice mode' : 'Enable voice mode'}
             >
               <Volume2 className={`h-5 w-5 ${voiceModeEnabled ? 'text-campfire-500' : ''}`} />
+            </Button>
+
+            {/* Webcam toggle */}
+            <Button
+              variant={isWebcamEnabled ? 'secondary' : 'outline'}
+              size="icon"
+              onClick={toggleWebcam}
+              title={isWebcamEnabled ? 'Disable webcam' : 'Enable webcam'}
+              className={isCapturing ? 'animate-pulse' : ''}
+            >
+              {isWebcamEnabled ? (
+                <Video className="h-5 w-5 text-campfire-500" />
+              ) : (
+                <VideoOff className="h-5 w-5" />
+              )}
             </Button>
 
             {/* Push-to-talk mic button */}
@@ -912,14 +1373,18 @@ export function ChatSessionContent({ sessionId }: ChatSessionContentProps) {
               onKeyDown={(e) => e.key === 'Enter' && !isLoading && handleSend()}
               placeholder={voiceModeEnabled ? 'Type or hold mic to speak...' : 'Type a message...'}
               readOnly={isLoading || isRecording}
-              className="flex-1"
+              className={`flex-1 transition-shadow duration-300 ${
+                !hasShownPulse && input.length === 0
+                  ? 'focus:animate-campfire-pulse'
+                  : ''
+              }`}
             />
             <Button
               onClick={handleSend}
               onMouseDown={(e) => e.preventDefault()}
               disabled={!input.trim() || isLoading || isRecording}
             >
-              <Send className="h-5 w-5" />
+              <ArrowRight className="h-5 w-5" />
             </Button>
           </div>
 
@@ -946,6 +1411,7 @@ export function ChatSessionContent({ sessionId }: ChatSessionContentProps) {
               <span>Speaking...</span>
             </div>
           )}
+
         </div>
 
         {/* Mobile/Tablet Floating Avatar Thumbnail */}
@@ -1010,6 +1476,14 @@ export function ChatSessionContent({ sessionId }: ChatSessionContentProps) {
         avatarUrl={companion?.avatarUrl || undefined}
       />
 
+      {/* Games Modal */}
+      <GamesModal
+        isOpen={showGames}
+        onClose={() => setShowGames(false)}
+        onSelectGame={handleStartGame}
+        companionName={companion?.name}
+      />
+
       {/* Gifts Panel */}
       {companion && (
         <GiftsPanel
@@ -1020,6 +1494,28 @@ export function ChatSessionContent({ sessionId }: ChatSessionContentProps) {
           onGiftSent={(gift) => {
             // Could trigger animation or chat notification
             console.log('Gift sent:', gift.name);
+          }}
+        />
+      )}
+
+      {/* Friends Panel */}
+      {companion && (
+        <FriendsPanel
+          companionId={companion.id}
+          companionName={companion.name}
+          isOpen={showFriendsPanel}
+          onClose={() => setShowFriendsPanel(false)}
+          activeParticipantIds={groupParticipants.map(p => p.companionId)}
+          isGroupChat={isGroupChat}
+          onInviteFriend={(friend) => {
+            if (wsRef.current?.isConnected) {
+              wsRef.current.inviteCompanion(
+                friend.friendCompanionId,
+                friend.relationshipType ? `${friend.relationshipType} wanted to join` : undefined
+              );
+              // Close the panel after inviting
+              setShowFriendsPanel(false);
+            }
           }}
         />
       )}

@@ -1,5 +1,7 @@
 """Ollama provider implementation (local/self-hosted LLM)."""
 
+from __future__ import annotations
+
 import time
 from typing import Any, AsyncGenerator
 
@@ -16,13 +18,54 @@ logger = structlog.get_logger()
 class OllamaProvider(LLMProvider):
     """Ollama LLM provider for local/self-hosted models."""
 
-    def __init__(self, settings: Settings):
+    def __init__(
+        self,
+        settings: Settings,
+        model_override: str | None = None,
+    ):
+        """Initialize Ollama provider.
+
+        Args:
+            settings: Application settings.
+            model_override: Optional model ID to use instead of the default.
+                           This allows dynamic model selection for abliterated
+                           models like dolphin-llama3:8b or qwen3-abliterated.
+        """
         self.settings = settings
         self.base_url = settings.ollama_base_url.rstrip("/")
-        self.default_model = settings.ollama_model
+        self._default_model = settings.ollama_model
+        self._model_override = model_override
         self.fallback_model = settings.ollama_fallback_model
         self.max_tokens = settings.ollama_max_tokens
         self.timeout = settings.ollama_timeout
+
+    @property
+    def current_model(self) -> str:
+        """Return the active model ID (override or default)."""
+        return self._model_override or self._default_model
+
+    @property
+    def default_model(self) -> str:
+        """Return the active model ID for backwards compatibility."""
+        return self.current_model
+
+    def with_model(self, model_id: str) -> OllamaProvider:
+        """Return a new provider instance configured for a specific model.
+
+        This allows the model router to dynamically select which abliterated
+        model to use (e.g., dolphin-llama3:8b vs qwen3-abliterated) for a
+        specific request.
+
+        Args:
+            model_id: The model ID to use (e.g., "dolphin-llama3:8b").
+
+        Returns:
+            A new OllamaProvider instance configured with the specified model.
+        """
+        return OllamaProvider(
+            settings=self.settings,
+            model_override=model_id,
+        )
 
     @property
     def name(self) -> str:
@@ -39,6 +82,7 @@ class OllamaProvider(LLMProvider):
         max_tokens: int | None = None,
         temperature: float = 0.7,
         stop_sequences: list[str] | None = None,
+        response_format: dict[str, str] | None = None,
     ) -> LLMResponse:
         """Generate a response from Ollama."""
         start_time = time.time()
@@ -62,6 +106,10 @@ class OllamaProvider(LLMProvider):
 
         if stop_sequences:
             payload["options"]["stop"] = stop_sequences
+
+        # Enable JSON mode if requested
+        if response_format and response_format.get("type") == "json_object":
+            payload["format"] = "json"
 
         # Note: Ollama tool support varies by model
         if tools and self._model_supports_tools():
@@ -249,7 +297,7 @@ class OllamaProvider(LLMProvider):
             "qwen",
             "dolphin",
         ]
-        model_lower = self.default_model.lower()
+        model_lower = self.current_model.lower()
         return any(m in model_lower for m in tool_capable_models)
 
     async def health_check(self) -> bool:

@@ -123,6 +123,16 @@ const config: Config = {
           '0%, 100%': { transform: 'translateY(0)' },
           '50%': { transform: 'translateY(-20px)' },
         },
+        'campfire-pulse': {
+          '0%, 100%': {
+            boxShadow: '0 0 0 0 rgba(251, 146, 60, 0), 0 0 0 0 rgba(251, 191, 36, 0)',
+            borderColor: 'hsl(var(--input))',
+          },
+          '50%': {
+            boxShadow: '0 0 0 4px rgba(251, 146, 60, 0.3), 0 0 20px rgba(251, 191, 36, 0.4)',
+            borderColor: 'rgba(251, 146, 60, 0.8)',
+          },
+        },
       },
       animation: {
         'accordion-down': 'accordion-down 0.2s ease-out',
@@ -131,6 +141,7 @@ const config: Config = {
         wiggle: 'wiggle 1s ease-in-out infinite',
         float: 'float 3s ease-in-out infinite',
         'float-fast': 'float-fast 2s ease-in-out infinite',
+        'campfire-pulse': 'campfire-pulse 3s ease-in-out infinite',
       },
     },
   },

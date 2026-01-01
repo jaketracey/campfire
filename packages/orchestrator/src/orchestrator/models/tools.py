@@ -23,6 +23,12 @@ class ToolType(str, Enum):
     CALENDAR = "calendar"
     GIFT_GENERATE = "gift_generate"
     GIFT_ACKNOWLEDGE = "gift_acknowledge"
+    GAME_START = "game_start"
+    GAME_MOVE = "game_move"
+    GAME_STATE = "game_state"
+    GAME_RESIGN = "game_resign"
+    INVITE_FRIEND = "invite_friend"
+    DISMISS_FRIEND = "dismiss_friend"
     CUSTOM = "custom"
 
 
@@ -313,6 +319,99 @@ GIFT_ACKNOWLEDGE_TOOL = ToolDefinition(
     required_params=["gift_description", "emotional_reaction"],
 )
 
+# Game tools
+GAME_START_TOOL = ToolDefinition(
+    name="game_start",
+    tool_type=ToolType.GAME_START,
+    description="Start a new game with the user. Use when the user wants to play chess, tic-tac-toe, or other games.",
+    parameters={
+        "game_type": {
+            "type": "string",
+            "enum": ["chess", "tic_tac_toe", "connect_four"],
+            "description": "The type of game to start",
+        },
+        "companion_plays_first": {
+            "type": "boolean",
+            "description": "Whether you (the companion) make the first move. Default is false (user goes first).",
+            "default": False,
+        },
+    },
+    required_params=["game_type"],
+)
+
+GAME_MOVE_TOOL = ToolDefinition(
+    name="game_move",
+    tool_type=ToolType.GAME_MOVE,
+    description="Make a move in the current game. Returns updated board state. Only use when it's your turn.",
+    parameters={
+        "move": {
+            "type": "string",
+            "description": "Move notation. For tic-tac-toe: A1, B2, C3 etc. For chess: e2e4, Nf3, O-O etc.",
+        },
+        "thinking": {
+            "type": "string",
+            "description": "Brief explanation of your move strategy to share with the user (optional)",
+        },
+    },
+    required_params=["move"],
+)
+
+GAME_STATE_TOOL = ToolDefinition(
+    name="game_state",
+    tool_type=ToolType.GAME_STATE,
+    description="Get the current game state including board position and available moves. Use to check the board before making a move.",
+    parameters={},
+    required_params=[],
+)
+
+GAME_RESIGN_TOOL = ToolDefinition(
+    name="game_resign",
+    tool_type=ToolType.GAME_RESIGN,
+    description="Resign from the current game, ending it in the user's favor. Use only if you genuinely want to concede.",
+    parameters={
+        "reason": {
+            "type": "string",
+            "description": "Reason for resigning (optional)",
+        },
+    },
+    required_params=[],
+)
+
+# Group chat tools
+INVITE_FRIEND_TOOL = ToolDefinition(
+    name="invite_friend",
+    tool_type=ToolType.INVITE_FRIEND,
+    description="Invite one of your friends (another companion) to join this conversation. Use when the conversation could benefit from another perspective, expertise, or personality. Only invite friends who are relevant to the current topic.",
+    parameters={
+        "friend_companion_id": {
+            "type": "string",
+            "description": "The UUID of the friend companion to invite",
+        },
+        "reason": {
+            "type": "string",
+            "description": "Brief explanation of why you're inviting this friend (will be shared with the user)",
+        },
+    },
+    required_params=["friend_companion_id", "reason"],
+)
+
+DISMISS_FRIEND_TOOL = ToolDefinition(
+    name="dismiss_friend",
+    tool_type=ToolType.DISMISS_FRIEND,
+    description="Politely ask a friend to leave the conversation. Use sparingly and only when the friend's presence is no longer helpful or when they need to go.",
+    parameters={
+        "friend_companion_id": {
+            "type": "string",
+            "description": "The UUID of the friend companion to dismiss",
+        },
+        "reason": {
+            "type": "string",
+            "description": "Brief, polite explanation for why they should leave",
+        },
+    },
+    required_params=["friend_companion_id"],
+)
+
 # Registry of all available tools
 TOOL_REGISTRY: dict[str, ToolDefinition] = {
     "memory_read": MEMORY_READ_TOOL,
@@ -323,4 +422,10 @@ TOOL_REGISTRY: dict[str, ToolDefinition] = {
     "vault_projection": VAULT_PROJECTION_TOOL,
     "gift_generate": GIFT_GENERATE_TOOL,
     "gift_acknowledge": GIFT_ACKNOWLEDGE_TOOL,
+    "game_start": GAME_START_TOOL,
+    "game_move": GAME_MOVE_TOOL,
+    "game_state": GAME_STATE_TOOL,
+    "game_resign": GAME_RESIGN_TOOL,
+    "invite_friend": INVITE_FRIEND_TOOL,
+    "dismiss_friend": DISMISS_FRIEND_TOOL,
 }

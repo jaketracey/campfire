@@ -4,6 +4,7 @@
  * Handles Obsidian-style vault projection storage
  */
 
+import postgres from 'postgres';
 import { sql } from '../db/pool.js';
 import { logger } from '../observability/logger.js';
 import type {
@@ -215,7 +216,7 @@ export class VaultRepository {
           ${data.s3_key},
           ${data.size_bytes},
           ${data.title ?? null},
-          ${data.frontmatter ?? {}},
+          ${db.json((data.frontmatter ?? {}) as postgres.JSONValue)},
           ${data.tags ?? []},
           ${data.source_event_ids ?? []},
           ${data.sourceSessionId ?? null},
@@ -256,7 +257,7 @@ export class VaultRepository {
         s3_key = COALESCE(${data.s3_key ?? null}, s3_key),
         size_bytes = COALESCE(${data.size_bytes ?? null}, size_bytes),
         title = COALESCE(${data.title ?? null}, title),
-        frontmatter = COALESCE(${data.frontmatter ?? null}, frontmatter),
+        frontmatter = COALESCE(${data.frontmatter ? db.json(data.frontmatter as postgres.JSONValue) : null}, frontmatter),
         tags = COALESCE(${data.tags ?? null}, tags),
         source_event_ids = COALESCE(${data.source_event_ids ?? null}, source_event_ids),
         render_duration_ms = COALESCE(${data.renderDurationMs ?? null}, render_duration_ms),
@@ -298,7 +299,7 @@ export class VaultRepository {
         ${data.s3_key},
         ${data.size_bytes},
         ${data.title ?? null},
-        ${data.frontmatter ?? {}},
+        ${db.json((data.frontmatter ?? {}) as postgres.JSONValue)},
         ${data.tags ?? []},
         ${data.source_event_ids ?? []},
         ${data.sourceSessionId ?? null},

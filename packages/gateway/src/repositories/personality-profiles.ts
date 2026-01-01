@@ -153,7 +153,7 @@ export class PersonalityProfilesRepository {
       `;
       return result[0] ? this.mapProfile(result[0]) : null;
     } catch (error) {
-      throw wrapDatabaseError(error);
+      throw wrapDatabaseError(error, 'PersonalityProfilesRepository.findById');
     }
   }
 
@@ -170,7 +170,7 @@ export class PersonalityProfilesRepository {
       `;
       return result[0] ? this.mapProfile(result[0]) : null;
     } catch (error) {
-      throw wrapDatabaseError(error);
+      throw wrapDatabaseError(error, 'PersonalityProfilesRepository.findByUserId');
     }
   }
 
@@ -221,10 +221,10 @@ export class PersonalityProfilesRepository {
         RETURNING *
       `;
 
-      logger.info('personality_profile_created', { userId: data.userId });
+      logger.info({ userId: data.userId }, 'personality_profile_created');
       return this.mapProfile(result[0]);
     } catch (error) {
-      throw wrapDatabaseError(error);
+      throw wrapDatabaseError(error, 'PersonalityProfilesRepository.create');
     }
   }
 
@@ -263,14 +263,14 @@ export class PersonalityProfilesRepository {
       `;
 
       if (!result[0]) {
-        throw new NotFoundError(`Personality profile for user ${userId} not found`);
+        throw new NotFoundError('PersonalityProfile', userId);
       }
 
-      logger.info('personality_profile_updated', { userId });
+      logger.info({ userId }, 'personality_profile_updated');
       return this.mapProfile(result[0]);
     } catch (error) {
       if (error instanceof NotFoundError) throw error;
-      throw wrapDatabaseError(error);
+      throw wrapDatabaseError(error, 'PersonalityProfilesRepository.update');
     }
   }
 
@@ -344,10 +344,10 @@ export class PersonalityProfilesRepository {
         RETURNING *
       `;
 
-      logger.info('personality_profile_upserted', { userId });
+      logger.info({ userId }, 'personality_profile_upserted');
       return this.mapProfile(result[0]);
     } catch (error) {
-      throw wrapDatabaseError(error);
+      throw wrapDatabaseError(error, 'PersonalityProfilesRepository.upsert');
     }
   }
 
@@ -361,9 +361,9 @@ export class PersonalityProfilesRepository {
         DELETE FROM user_personality_profiles
         WHERE user_id = ${userId}
       `;
-      logger.info('personality_profile_deleted', { userId });
+      logger.info({ userId }, 'personality_profile_deleted');
     } catch (error) {
-      throw wrapDatabaseError(error);
+      throw wrapDatabaseError(error, 'PersonalityProfilesRepository.delete');
     }
   }
 
@@ -393,7 +393,7 @@ export class PersonalityProfilesRepository {
         offset,
       };
     } catch (error) {
-      throw wrapDatabaseError(error);
+      throw wrapDatabaseError(error, 'PersonalityProfilesRepository.listAll');
     }
   }
 
@@ -431,7 +431,7 @@ export class PersonalityProfilesRepository {
         currentThreshold: Number(row.current_threshold),
       }));
     } catch (error) {
-      throw wrapDatabaseError(error);
+      throw wrapDatabaseError(error, 'PersonalityProfilesRepository.getUsersNeedingAnalysis');
     }
   }
 }

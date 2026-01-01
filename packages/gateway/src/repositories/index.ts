@@ -68,6 +68,17 @@ export type {
   CompanionListFilters,
 } from './companions.js';
 
+// Companion Friends repository (Group Chat)
+import { getCompanionFriendsRepository as _getCompanionFriendsRepository } from './companion-friends.js';
+export {
+  CompanionFriendsRepository,
+  getCompanionFriendsRepository,
+} from './companion-friends.js';
+export type {
+  CompanionFriendWithDetails,
+  FriendListFilters,
+} from './companion-friends.js';
+
 // Sessions repository
 import { getSessionsRepository as _getSessionsRepository } from './sessions.js';
 export {
@@ -189,6 +200,7 @@ export function initializeRepositories(): void {
   _getUsersRepository();
   _getReferralsRepository();
   _getCompanionsRepository();
+  _getCompanionFriendsRepository();
   _getSessionsRepository();
   _getMemoriesRepository();
   _getBillingRepository();
@@ -207,6 +219,7 @@ export function getRepositories() {
     users: _getUsersRepository(),
     referrals: _getReferralsRepository(),
     companions: _getCompanionsRepository(),
+    companionFriends: _getCompanionFriendsRepository(),
     sessions: _getSessionsRepository(),
     memories: _getMemoriesRepository(),
     billing: _getBillingRepository(),

@@ -11,6 +11,8 @@ from orchestrator.models.conversation import (
 )
 from orchestrator.models.events import (
     BaseEvent,
+    ContentBlockedEvent,
+    ContentRoutingEvent,
     ConversationEvent,
     CostTrackingEvent,
     EventType,
@@ -42,6 +44,19 @@ from orchestrator.models.tools import (
     ToolResult,
     ToolType,
 )
+from orchestrator.models.group_chat import (
+    GroupChatContext,
+    GroupChatRequest,
+    GroupChatResponse,
+    GroupConversationTurn,
+    GroupMessage,
+    GroupParticipant,
+    ParticipantRole,
+    ParticipantStatus,
+    SpeakerSelection,
+    SpeakerType,
+    get_theme_color,
+)
 
 __all__ = [
     # Conversation
@@ -54,6 +69,8 @@ __all__ = [
     "TurnMetadata",
     # Events
     "BaseEvent",
+    "ContentBlockedEvent",
+    "ContentRoutingEvent",
     "ConversationEvent",
     "CostTrackingEvent",
     "EventType",
@@ -81,4 +98,16 @@ __all__ = [
     "ToolDefinition",
     "ToolResult",
     "ToolType",
+    # Group Chat
+    "GroupChatContext",
+    "GroupChatRequest",
+    "GroupChatResponse",
+    "GroupConversationTurn",
+    "GroupMessage",
+    "GroupParticipant",
+    "ParticipantRole",
+    "ParticipantStatus",
+    "SpeakerSelection",
+    "SpeakerType",
+    "get_theme_color",
 ]

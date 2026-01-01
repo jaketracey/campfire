@@ -5,6 +5,7 @@
 
 import { sql } from '../db/pool.js';
 import { logger } from '../observability/logger.js';
+import type postgres from 'postgres';
 import type {
   User,
   UserInsert,
@@ -489,7 +490,7 @@ export class UsersRepository {
           ${data.bio ?? null},
           ${data.timezone ?? 'UTC'},
           ${data.locale ?? 'en-US'},
-          ${data.preferences ?? {}}
+          ${db.json((data.preferences ?? {}) as postgres.JSONValue)}
         )
         RETURNING
           id, user_id, display_name, avatar_url, bio,
@@ -521,7 +522,7 @@ export class UsersRepository {
         bio = COALESCE(${data.bio ?? null}, bio),
         timezone = COALESCE(${data.timezone ?? null}, timezone),
         locale = COALESCE(${data.locale ?? null}, locale),
-        preferences = COALESCE(${data.preferences ?? null}, preferences)
+        preferences = COALESCE(${data.preferences ? db.json(data.preferences as postgres.JSONValue) : null}, preferences)
       WHERE user_id = ${userId}
       RETURNING
         id, user_id, display_name, avatar_url, bio,
@@ -664,7 +665,7 @@ export class UsersRepository {
       ) VALUES (
         ${data.userId},
         ${data.tokenHash},
-        ${data.deviceInfo ?? null},
+        ${data.deviceInfo ? db.json(data.deviceInfo as postgres.JSONValue) : null},
         ${data.ipAddress ?? null},
         ${data.userAgent ?? null},
         ${data.expiresAt}
@@ -807,7 +808,7 @@ export class UsersRepository {
           ${data.accessToken ?? null},
           ${data.refreshToken ?? null},
           ${data.tokenExpiresAt ?? null},
-          ${data.profileData ?? null}
+          ${data.profileData ? db.json(data.profileData as postgres.JSONValue) : null}
         )
         RETURNING
           id, user_id, provider, provider_user_id, provider_email,
@@ -840,7 +841,7 @@ export class UsersRepository {
         access_token = COALESCE(${data.accessToken ?? null}, access_token),
         refresh_token = COALESCE(${data.refreshToken ?? null}, refresh_token),
         token_expires_at = COALESCE(${data.tokenExpiresAt ?? null}, token_expires_at),
-        profile_data = COALESCE(${data.profileData ?? null}, profile_data)
+        profile_data = COALESCE(${data.profileData ? db.json(data.profileData as postgres.JSONValue) : null}, profile_data)
       WHERE id = ${id}
       RETURNING
         id, user_id, provider, provider_user_id, provider_email,

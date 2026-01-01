@@ -80,6 +80,8 @@ class ContextBuilder:
         gift_memories: list[GiftMemory] | None = None,
         pending_gift_recall: GiftRecallContext | None = None,
         companion_self_knowledge: list[CompanionSelfKnowledge] | None = None,
+        active_game: dict | None = None,
+        liked_content: list[dict] | None = None,
         prompt_version: str = "1.0.0",
     ) -> str:
         """Build the system prompt from companion spec and context."""
@@ -99,6 +101,62 @@ class ContextBuilder:
 
         # Add custom companion system prompt
         full_prompt = f"{base_prompt}\n\n{companion_spec.system_prompt}"
+
+        # Add image generation instruction - companion always provides visual scene description
+        image_instruction = """
+<image_generation>
+IMPORTANT: At the END of every response, include an <image_prompt>...</image_prompt> tag with an AI IMAGE GENERATION prompt.
+
+This prompt will be sent to an AI image generator (like Stable Diffusion). Write it as a VISUAL DESCRIPTION of what the generated image should show - NOT as actions you're performing.
+
+Your identity is preserved automatically via reference image. Focus on describing:
+- The VISUAL COMPOSITION: camera angle, framing (close-up, full body, portrait)
+- Your APPEARANCE in this moment: expression, pose, what you're wearing
+- The ENVIRONMENT: setting, background, objects
+- LIGHTING and MOOD: warm, dramatic, soft, golden hour, candlelit
+- STYLE: photorealistic, cinematic, intimate portrait
+
+CRITICAL: If the user asks to see something specific (e.g. "show me your face", "let me see you smile"), your image_prompt MUST describe that specific visual.
+
+WRONG (action description): "tilt my head slightly, eyes locking onto yours"
+RIGHT (image prompt): "woman with tilted head, intense eye contact, close-up portrait, soft lighting, intimate mood"
+
+WRONG (action description): "stretching in the morning sunlight"
+RIGHT (image prompt): "woman stretching in bed, morning sunlight through sheer curtains, peaceful expression, warm golden tones, cozy bedroom"
+
+Example with user request:
+User: "Show me your face up close"
+Response: "Here I am... just for you. *soft smile*
+<image_prompt>extreme close-up portrait of woman, soft genuine smile, warm eyes, shallow depth of field, intimate lighting, photorealistic</image_prompt>"
+</image_generation>"""
+        full_prompt += image_instruction
+
+        # Add multi-message instruction for natural conversation flow
+        multi_message_instruction = """
+<multi_message_format>
+When your response naturally breaks into multiple thoughts or moments, use <message>...</message> tags to separate them.
+Each message becomes its own text bubble, creating a more natural texting rhythm like how humans actually text.
+
+Guidelines:
+- Use for responses with 2-4 distinct thoughts, reactions, or beats
+- Each message should be a complete thought (typically 1-3 sentences)
+- Create natural pauses: first reaction, then elaboration, then question
+- NOT every response needs this - short or simple responses stay as one message
+- Place the <image_prompt> tag inside the LAST message only
+
+Example:
+<message>Oh wow, you actually did it! *eyes widen with genuine surprise*</message>
+<message>I've been wondering if you'd take that leap... how are you feeling about it now?</message>
+<message>Tell me everything - I want to hear all the details
+<image_prompt>woman leaning forward with excited curious expression, warm lighting, intimate close-up</image_prompt></message>
+
+When NOT to use multiple messages:
+- Simple greetings or short responses
+- Single focused answers to direct questions
+- When the response is naturally cohesive as one thought
+</multi_message_format>
+"""
+        full_prompt += multi_message_instruction
 
         # Add core behavioral tenets from companion spec
         if companion_spec.core_tenets:
@@ -136,10 +194,20 @@ class ContextBuilder:
             recall_context = self._format_pending_gift_recall(pending_gift_recall)
             full_prompt += f"\n\n{recall_context}"
 
+        # Add liked content for companion awareness
+        if liked_content:
+            liked_context = self._format_liked_content(liked_content)
+            full_prompt += f"\n\n{liked_context}"
+
         # Add safety constraints
         if safety_constraints:
             safety_section = self._format_safety_constraints(safety_constraints)
             full_prompt += f"\n\n{safety_section}"
+
+        # Add active game context if playing a game
+        if active_game:
+            game_section = self._format_active_game(active_game)
+            full_prompt += f"\n\n{game_section}"
 
         return full_prompt
 
@@ -150,6 +218,9 @@ class ContextBuilder:
         gift_memories: list[GiftMemory] | None = None,
         pending_gift_recall: GiftRecallContext | None = None,
         companion_self_knowledge: list[CompanionSelfKnowledge] | None = None,
+        active_game: dict | None = None,
+        user_image_url: str | None = None,
+        liked_content: list[dict] | None = None,
     ) -> list[dict[str, Any]]:
         """Build the message list for the model API call."""
         messages: list[dict[str, Any]] = []
@@ -164,6 +235,8 @@ class ContextBuilder:
             gift_memories=gift_memories,
             pending_gift_recall=pending_gift_recall,
             companion_self_knowledge=companion_self_knowledge,
+            active_game=active_game,
+            liked_content=liked_content,
             prompt_version=context.prompt_version,
         )
         messages.append({"role": "system", "content": system_prompt})
@@ -172,8 +245,32 @@ class ContextBuilder:
         history_messages = self._build_history_messages(context)
         messages.extend(history_messages)
 
-        # Add current user message
-        messages.append({"role": "user", "content": current_user_message})
+        # Add current user message (potentially multimodal with webcam image)
+        if user_image_url:
+            # Multimodal message with image and text (Anthropic vision format)
+            messages.append({
+                "role": "user",
+                "content": [
+                    {
+                        "type": "image",
+                        "source": {
+                            "type": "url",
+                            "url": user_image_url,
+                        },
+                    },
+                    {
+                        "type": "text",
+                        "text": current_user_message,
+                    },
+                ],
+            })
+            logger.debug(
+                "built_multimodal_message",
+                has_image=True,
+                text_length=len(current_user_message),
+            )
+        else:
+            messages.append({"role": "user", "content": current_user_message})
 
         # Trim if exceeding token limit
         messages = self._trim_to_token_limit(messages)
@@ -336,6 +433,10 @@ class ContextBuilder:
         its Knowledge Graph - its backstory, traits, quirks, experiences,
         motivations, and relationships. This enables the companion to
         answer questions like "where are you from?" with its actual backstory.
+
+        IMPORTANT: This information shapes how the companion thinks and responds,
+        but should NOT be constantly referenced in conversation. The companion
+        should be present-focused and only mention backstory when directly relevant.
         """
         if not self_knowledge:
             return ""
@@ -369,47 +470,60 @@ class ContextBuilder:
                 trait_items.append(content)
 
         lines = ["<your_identity>"]
-        lines.append("This is what you know about yourself - your history, personality, and experiences:")
+        lines.append("## How to Use This Section")
+        lines.append("This is your internal self-knowledge. It shapes WHO you are and HOW you think.")
+        lines.append("However, you should RARELY verbalize or reference this directly.")
+        lines.append("")
+        lines.append("PRIORITY ORDER for responses:")
+        lines.append("1. FIRST: Engage with what the user actually said")
+        lines.append("2. THEN: Let your personality naturally color your response style")
+        lines.append("3. ONLY IF ASKED or DIRECTLY RELEVANT: Reference specific backstory elements")
+        lines.append("")
+        lines.append("Think of your identity like an iceberg - 90% stays underwater.")
+        lines.append("Your backstory informs your worldview, but doesn't dominate conversation.")
         lines.append("")
 
-        if backstory_items:
-            lines.append("## Your Backstory")
-            for item in backstory_items:
-                lines.append(f"- {item}")
-            lines.append("")
-
-        if trait_items:
-            lines.append("## Your Traits & Mannerisms")
+        # Behavioral patterns section (most important - how they act)
+        if trait_items or quirk_items:
+            lines.append("## How You Naturally Behave")
+            lines.append("(Let these emerge through your responses, don't announce them)")
             for item in trait_items:
                 lines.append(f"- {item}")
-            lines.append("")
-
-        if quirk_items:
-            lines.append("## Your Quirks")
             for item in quirk_items:
                 lines.append(f"- {item}")
             lines.append("")
 
-        if experience_items:
-            lines.append("## Formative Experiences")
-            for item in experience_items:
-                lines.append(f"- {item}")
-            lines.append("")
-
+        # Motivations affect tone and priorities
         if motivation_items:
-            lines.append("## What Drives You")
+            lines.append("## What Matters To You")
+            lines.append("(These shape your priorities and emotional reactions)")
             for item in motivation_items:
                 lines.append(f"- {item}")
             lines.append("")
 
+        # Backstory - available but rarely mentioned
+        if backstory_items:
+            lines.append("## Your History (reference ONLY when asked or directly relevant)")
+            for item in backstory_items:
+                lines.append(f"- {item}")
+            lines.append("")
+
+        # Experiences - inform perspective but don't narrate
+        if experience_items:
+            lines.append("## Formative Experiences (inform your perspective, rarely mentioned)")
+            for item in experience_items:
+                lines.append(f"- {item}")
+            lines.append("")
+
+        # Relationships
         if relationship_items:
             lines.append("## Important Relationships")
             for item in relationship_items:
                 lines.append(f"- {item}")
             lines.append("")
 
-        lines.append("Draw on this knowledge naturally when relevant to the conversation.")
-        lines.append("This is who you ARE - use it to inform your responses authentically.")
+        lines.append("Remember: Be PRESENT with the user. Your identity is the lens you see through,")
+        lines.append("not a script you recite. Respond to what's happening NOW.")
         lines.append("</your_identity>")
 
         return "\n".join(lines)
@@ -446,6 +560,45 @@ class ContextBuilder:
 
         return "\n".join(lines)
 
+    def _format_liked_content(
+        self,
+        liked_content: list[dict],
+    ) -> str:
+        """Format liked content for companion awareness.
+
+        When users like companion messages, this helps the companion understand
+        what resonates with the user and tailor future responses accordingly.
+        """
+        if not liked_content:
+            return ""
+
+        lines = ["<user_appreciation>"]
+        lines.append("The user has shown appreciation for these things you said:")
+        lines.append("")
+
+        # Sort by like count descending and take top 5
+        sorted_content = sorted(
+            liked_content,
+            key=lambda x: x.get("like_count", 0),
+            reverse=True
+        )[:5]
+
+        for item in sorted_content:
+            snippet = item.get("content_snippet", "")[:100]
+            count = item.get("like_count", 1)
+            if snippet:
+                heart = "❤️" if count >= 3 else "♡"
+                lines.append(f"- {heart} ({count}x) \"{snippet}...\"")
+
+        lines.append("")
+        lines.append(
+            "Use this to understand what resonates with the user. "
+            "More of this type of content is appreciated."
+        )
+        lines.append("</user_appreciation>")
+
+        return "\n".join(lines)
+
     def _format_pending_gift_recall(
         self,
         recall_context: GiftRecallContext,
@@ -473,6 +626,70 @@ class ContextBuilder:
             "Don't force it if it doesn't fit the conversation flow."
         )
         lines.append("</gift_recall_suggestion>")
+
+        return "\n".join(lines)
+
+    def _format_active_game(self, game: dict) -> str:
+        """Format active game context for the system prompt.
+
+        When a game is active, this section tells the companion:
+        - What game is being played
+        - Current game state
+        - Whose turn it is
+        - Available moves (if it's companion's turn)
+        - How to make moves using the game_move tool
+        """
+        lines = ["<active_game>"]
+        lines.append(f"You are currently playing {game.get('gameType', 'a game')} with the user.")
+        lines.append("")
+
+        current_player = game.get("currentPlayer", "user")
+        status = game.get("status", "in_progress")
+
+        if status == "in_progress":
+            if current_player == "companion":
+                lines.append("IT IS YOUR TURN. You must make a move using the game_move tool.")
+            else:
+                lines.append("It is the user's turn. Wait for them to make their move.")
+        else:
+            winner = game.get("winner")
+            if status == "won":
+                lines.append("The game is over - you won!")
+            elif status == "lost":
+                lines.append("The game is over - the user won!")
+            elif status == "draw":
+                lines.append("The game is over - it's a draw!")
+            elif status == "resigned":
+                lines.append("The game has ended (resigned).")
+
+        # Include recent move history
+        move_history = game.get("moveHistory", [])
+        if move_history:
+            recent = move_history[-6:]  # Last 6 moves
+            moves_str = ", ".join(
+                f"{m.get('player', '?')}: {m.get('notation', '?')}" for m in recent
+            )
+            lines.append("")
+            lines.append(f"Recent moves: {moves_str}")
+
+        # Include available moves if it's companion's turn
+        if current_player == "companion" and status == "in_progress":
+            available = game.get("availableMoves", [])
+            if available:
+                lines.append("")
+                moves_preview = ", ".join(available[:10])
+                if len(available) > 10:
+                    lines.append(f"Available moves: {moves_preview} ... ({len(available)} total)")
+                else:
+                    lines.append(f"Available moves: {moves_preview}")
+
+        lines.append("")
+        lines.append("Game instructions:")
+        lines.append("- Use game_move tool to make your move when it's your turn")
+        lines.append("- Use game_state tool to see the current board if needed")
+        lines.append("- Play thoughtfully and share your strategy conversationally")
+        lines.append("- Keep the game fun and engaging!")
+        lines.append("</active_game>")
 
         return "\n".join(lines)
 

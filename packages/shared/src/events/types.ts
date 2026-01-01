@@ -112,6 +112,15 @@ export const EventTypes = {
   TOKENS_PURCHASED: 'tokens.purchased',
   TOKENS_BONUS_GRANTED: 'tokens.bonus_granted',
   TOKENS_SPENT: 'tokens.spent',
+
+  // Group Chat events
+  COMPANION_INVITED: 'companion.invited',
+  COMPANION_JOINED: 'companion.joined',
+  COMPANION_LEFT: 'companion.left',
+  COMPANION_MESSAGE_START: 'companion.message.start',
+  COMPANION_MESSAGE_CHUNK: 'companion.message.chunk',
+  COMPANION_MESSAGE_END: 'companion.message.end',
+  GROUP_CHAT_STATE_UPDATE: 'group.chat.state.update',
 } as const;
 
 export type EventType = typeof EventTypes[keyof typeof EventTypes];
@@ -150,6 +159,15 @@ export const EventCategories = {
   ],
   GIFT: ['gift.generated', 'gift.received', 'gift.acknowledged', 'gift.memory.recalled'],
   TOKENS: ['tokens.purchased', 'tokens.bonus_granted', 'tokens.spent'],
+  GROUP_CHAT: [
+    'companion.invited',
+    'companion.joined',
+    'companion.left',
+    'companion.message.start',
+    'companion.message.chunk',
+    'companion.message.end',
+    'group.chat.state.update',
+  ],
 } as const;
 
 export type EventCategory = keyof typeof EventCategories;

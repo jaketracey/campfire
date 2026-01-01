@@ -1,5 +1,7 @@
 """Anthropic Claude provider implementation."""
 
+from __future__ import annotations
+
 import time
 from typing import Any, AsyncGenerator
 
@@ -16,14 +18,49 @@ logger = structlog.get_logger()
 class AnthropicProvider(LLMProvider):
     """Anthropic Claude LLM provider."""
 
-    def __init__(self, settings: Settings):
+    def __init__(
+        self,
+        settings: Settings,
+        model_override: str | None = None,
+    ):
+        """Initialize Anthropic provider.
+
+        Args:
+            settings: Application settings.
+            model_override: Optional model ID to use instead of the default.
+        """
         self.settings = settings
         self.client = anthropic.AsyncAnthropic(
             api_key=settings.anthropic_api_key,
             timeout=settings.anthropic_timeout,
         )
-        self.default_model = settings.anthropic_model
+        self._default_model = settings.anthropic_model
+        self._model_override = model_override
         self.max_tokens = settings.anthropic_max_tokens
+
+    @property
+    def current_model(self) -> str:
+        """Return the active model ID (override or default)."""
+        return self._model_override or self._default_model
+
+    @property
+    def default_model(self) -> str:
+        """Return the active model ID for backwards compatibility."""
+        return self.current_model
+
+    def with_model(self, model_id: str) -> AnthropicProvider:
+        """Return a new provider instance configured for a specific model.
+
+        Args:
+            model_id: The model ID to use (e.g., "claude-sonnet-4-20250514").
+
+        Returns:
+            A new AnthropicProvider instance configured with the specified model.
+        """
+        return AnthropicProvider(
+            settings=self.settings,
+            model_override=model_id,
+        )
 
     @property
     def name(self) -> str:
@@ -36,6 +73,7 @@ class AnthropicProvider(LLMProvider):
         max_tokens: int | None = None,
         temperature: float = 0.7,
         stop_sequences: list[str] | None = None,
+        response_format: dict[str, str] | None = None,  # Not used by Anthropic
     ) -> LLMResponse:
         """Generate a response from Claude."""
         start_time = time.time()
@@ -176,6 +214,7 @@ class AnthropicProvider(LLMProvider):
     def _convert_message(self, message: dict[str, Any]) -> dict[str, Any]:
         """Convert message to Anthropic format."""
         role = message.get("role", "user")
+        content = message.get("content", "")
 
         # Handle tool messages
         if role == "tool":
@@ -185,29 +224,34 @@ class AnthropicProvider(LLMProvider):
                     {
                         "type": "tool_result",
                         "tool_use_id": message.get("tool_call_id"),
-                        "content": message.get("content", ""),
+                        "content": content if isinstance(content, str) else "",
                     }
                 ],
             }
 
         # Handle assistant messages with tool calls
         if role == "assistant" and message.get("tool_calls"):
-            content = []
-            if message.get("content"):
-                content.append({"type": "text", "text": message["content"]})
+            result_content = []
+            if content and isinstance(content, str):
+                result_content.append({"type": "text", "text": content})
 
             for tool_call in message["tool_calls"]:
-                content.append({
+                result_content.append({
                     "type": "tool_use",
                     "id": tool_call["id"],
                     "name": tool_call["name"],
                     "input": tool_call["arguments"],
                 })
 
-            return {"role": "assistant", "content": content}
+            return {"role": "assistant", "content": result_content}
 
-        # Standard message
+        # Handle multimodal content (already in Anthropic format - list of content blocks)
+        # This handles webcam images and other multimodal content
+        if isinstance(content, list):
+            return {"role": role, "content": content}
+
+        # Standard text message
         return {
             "role": role,
-            "content": message.get("content", ""),
+            "content": content,
         }

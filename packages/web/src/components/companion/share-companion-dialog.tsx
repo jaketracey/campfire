@@ -21,6 +21,7 @@ interface ShareCompanionDialogProps {
   companionName: string;
   isPublic: boolean;
   onShareStatusChange?: (isPublic: boolean) => void;
+  size?: 'sm' | 'default';
 }
 
 export function ShareCompanionDialog({
@@ -28,6 +29,7 @@ export function ShareCompanionDialog({
   companionName,
   isPublic: initialIsPublic,
   onShareStatusChange,
+  size = 'default',
 }: ShareCompanionDialogProps) {
   const [open, setOpen] = useState(false);
   const [isPublic, setIsPublic] = useState(initialIsPublic);
@@ -72,12 +74,14 @@ export function ShareCompanionDialog({
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild>
         <Button
-          variant="outline"
-          size="icon"
-          className="h-8 w-8 border-white/10 hover:bg-white/10"
+          className={
+            size === 'sm'
+              ? 'h-12 w-12 rounded-xl bg-white/10 hover:bg-white/20 border border-white/20 text-white backdrop-blur-sm transition-all'
+              : 'aspect-square h-12 md:h-14 rounded-2xl bg-white/[0.02] border border-white/5 hover:bg-white/10 hover:border-white/20 text-gray-400 hover:text-white transition-all'
+          }
           title="Share companion"
         >
-          <Share2 className="h-4 w-4" />
+          <Share2 className="h-5 w-5" />
         </Button>
       </DialogTrigger>
       <DialogContent className="bg-zinc-950 border border-white/10 sm:max-w-md">

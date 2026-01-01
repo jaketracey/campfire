@@ -13,13 +13,22 @@ import {
   getSessionsService,
   getEventsService,
   getVoiceService,
+  getTenetsService,
   type EventContext,
 } from '../services/index.js';
-import { getKnowledgeGraphRepository } from '../repositories/index.js';
+import { getKnowledgeGraphRepository, getSessionsRepository } from '../repositories/index.js';
 import { enqueueSummaryJob } from '../utils/queue.js';
+import { uploadWebcamFrame } from '../utils/webcam-storage.js';
 
 // Orchestrator base URL
 const ORCHESTRATOR_URL = process.env['ORCHESTRATOR_URL'] || 'http://localhost:8000';
+
+/**
+ * Sleep utility for typing delays between messages
+ */
+function sleep(ms: number): Promise<void> {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
 
 /**
  * WebSocket message types
@@ -50,6 +59,24 @@ export type WSMessageType =
   | 'tts_audio_end'
   | 'tool_call'
   | 'tool_result'
+  | 'webcam_enabled'
+  | 'webcam_frame'
+  | 'game_update'
+  | 'user_game_move'
+  | 'start_game'
+  | 'resign_game'
+  | 'like_message'
+  | 'like_acknowledged'
+  // Group chat message types
+  | 'companion_invited'
+  | 'companion_joined'
+  | 'companion_left'
+  | 'companion_message_start'
+  | 'companion_message_chunk'
+  | 'companion_message_end'
+  | 'group_chat_state'
+  | 'invite_companion'
+  | 'dismiss_companion'
   | 'error';
 
 /**
@@ -60,6 +87,18 @@ export interface WSMessage<T = unknown> {
   id: string;
   timestamp: string;
   payload: T;
+}
+
+/**
+ * Group chat participant info
+ */
+interface GroupParticipantInfo {
+  companionId: string;
+  companionName: string;
+  avatarUrl: string | null;
+  role: 'primary' | 'invited';
+  themeColor: string;
+  joinedAt: Date;
 }
 
 /**
@@ -76,6 +115,16 @@ interface ConnectedClient {
   lastPing: Date;
   voiceEnabled: boolean;
   voiceTranscription: string;
+  webcamEnabled: boolean;
+  lastWebcamFrame?: {
+    s3Url: string;
+    capturedAt: Date;
+    width: number;
+    height: number;
+  };
+  // Group chat state
+  isGroupChat: boolean;
+  groupParticipants: Map<string, GroupParticipantInfo>;
 }
 
 // Active connections
@@ -112,6 +161,9 @@ export async function registerWebSocketHandler(app: FastifyInstance): Promise<vo
       lastPing: new Date(),
       voiceEnabled: false,
       voiceTranscription: '',
+      webcamEnabled: false,
+      isGroupChat: false,
+      groupParticipants: new Map(),
     };
 
     clients.set(clientId, client);
@@ -207,6 +259,38 @@ async function handleMessage(client: ConnectedClient, message: WSMessage): Promi
 
     case 'voice_end':
       await handleVoiceEnd(client);
+      break;
+
+    case 'webcam_enabled':
+      await handleWebcamEnabled(client, message.payload as { enabled: boolean });
+      break;
+
+    case 'webcam_frame':
+      await handleWebcamFrame(client, message.payload as { data: string; width: number; height: number; timestamp: number });
+      break;
+
+    case 'start_game':
+      await handleStartGame(client, message.payload as { gameType: string });
+      break;
+
+    case 'user_game_move':
+      await handleUserGameMove(client, message.payload as { move: string });
+      break;
+
+    case 'resign_game':
+      await handleResignGame(client);
+      break;
+
+    case 'like_message':
+      await handleLikeMessage(client, message.payload as { turnId: string });
+      break;
+
+    case 'invite_companion':
+      await handleInviteCompanion(client, message.payload as { friendCompanionId: string; reason?: string });
+      break;
+
+    case 'dismiss_companion':
+      await handleDismissCompanion(client, message.payload as { companionId: string });
       break;
 
     default:
@@ -305,9 +389,44 @@ async function handleSessionStart(
     client.sessionId = sessionId;
     client.companionId = companionId;
 
+    // Load session participants for group chat support
+    const participants = await sessionsService.getActiveParticipants(client.user.userId, sessionId);
+    client.groupParticipants.clear();
+
+    for (const p of participants) {
+      client.groupParticipants.set(p.companion_id, {
+        companionId: p.companion_id,
+        companionName: p.companion_name,
+        avatarUrl: p.companion_avatar_url,
+        role: p.role,
+        themeColor: getThemeColorForIndex(client.groupParticipants.size),
+        joinedAt: new Date(p.joined_at),
+      });
+    }
+
+    // Session becomes a group chat when there are multiple participants
+    client.isGroupChat = client.groupParticipants.size > 1;
+
+    logger.debug(
+      { sessionId, participantCount: client.groupParticipants.size, isGroupChat: client.isGroupChat },
+      'Session participants loaded'
+    );
+
     send(client, {
       type: 'session_started',
-      payload: { sessionId, companionId },
+      payload: {
+        sessionId,
+        companionId,
+        isGroupChat: client.isGroupChat,
+        participants: Array.from(client.groupParticipants.values()).map(p => ({
+          companionId: p.companionId,
+          companionName: p.companionName,
+          avatarUrl: p.avatarUrl,
+          role: p.role,
+          themeColor: p.themeColor,
+          joinedAt: p.joinedAt.toISOString(),
+        })),
+      },
     });
   } catch (error) {
     logger.error({ err: error, clientId: client.id }, 'Failed to start session');
@@ -334,6 +453,8 @@ async function handleSessionEnd(client: ConnectedClient): Promise<void> {
 
     client.sessionId = undefined;
     client.companionId = undefined;
+    client.isGroupChat = false;
+    client.groupParticipants.clear();
 
     logger.info({ clientId: client.id, sessionId }, 'Session ended');
 
@@ -405,7 +526,22 @@ async function handleUserMessage(
       userMessageType: 'text',
     });
 
-    // 5. Build CompanionSpec for orchestrator
+    // 5. Fetch core tenets for the companion
+    const tenetsService = getTenetsService();
+    const coreTenets = await tenetsService.getCoreTenets(companionId);
+
+    // Map core tenets to orchestrator's BehavioralTenet format
+    const mappedTenets = coreTenets.map(tenet => ({
+      id: tenet.id,
+      category: tenet.category,
+      priority: 'core' as const,
+      rule: tenet.rule,
+      description: null,
+      is_negation: tenet.isNegation,
+      trigger_contexts: [],
+    }));
+
+    // 6. Build CompanionSpec for orchestrator
     const spec = companion.spec;
     const companionSpec = {
       id: companion.id,
@@ -421,14 +557,15 @@ async function handleUserMessage(
       voice_id: spec?.voice?.voice_id || null,
       avatar_url: null,
       system_prompt: buildSystemPrompt(companion as unknown as { name: string; spec: Record<string, unknown> | null }),
-      safety_level: spec?.boundaries?.content_rating === 'G' ? 'strict' : 'standard',
+      safety_level: mapContentRatingToSafetyLevel(spec?.boundaries?.content_rating),
       allowed_tools: [],
       max_context_turns: 20,
       temperature: 0.7,
       version: companion.spec_version,
+      core_tenets: mappedTenets,
     };
 
-    // 6. Fetch companion self-knowledge from KG
+    // 7. Fetch companion self-knowledge from KG
     const selfKnowledge = await fetchCompanionSelfKnowledge(userId, companionId, companion.name);
 
     // 7. Get recent turns for context (match max_context_turns in companion spec)
@@ -473,10 +610,128 @@ async function handleUserMessage(
         created_at: t.created_at.toISOString(),
       }));
 
-    // 8. Fetch session summary for context retention
-    const sessionSummary = await sessionsService.getContextSummary(userId, sessionId, companionId);
+    // 8. Fetch session with metadata for game state
+    const session = await sessionsService.getById(userId, sessionId);
+    const activeGame = session?.metadata?.activeGame as Record<string, unknown> | undefined;
+
+    // 8a. Fetch session summary for context retention
+    const summaryText = await sessionsService.getContextSummary(userId, sessionId, companionId);
+    // Format as SessionSummary object for orchestrator
+    const sessionSummary = summaryText ? {
+      session_id: sessionId,
+      user_id: userId,
+      companion_id: companionId,
+      summary_text: summaryText,
+      key_topics: [],
+      emotional_state: null,
+      last_interaction: new Date().toISOString(),
+      turn_count: formattedTurns.length,
+      version: 1,
+    } : null;
+
+    // 8a. Check for recent webcam frame to include in context
+    let userImageUrl: string | undefined;
+    if (client.webcamEnabled && client.lastWebcamFrame) {
+      const frameAge = Date.now() - client.lastWebcamFrame.capturedAt.getTime();
+      // Only include if frame is less than 30 seconds old
+      if (frameAge < 30000) {
+        userImageUrl = client.lastWebcamFrame.s3Url;
+        logger.debug(
+          { sessionId, frameAge, width: client.lastWebcamFrame.width, height: client.lastWebcamFrame.height },
+          'Including webcam frame in orchestrator request'
+        );
+      }
+    }
+
+    // 8b. Fetch liked turns for companion awareness
+    const likedTurns = await getSessionsRepository().getLikedTurns(sessionId, 5);
+    const likedContent = likedTurns.length > 0
+      ? likedTurns.map(t => ({
+          content_snippet: t.contentSnippet,
+          like_count: t.likeCount,
+        }))
+      : null;
+
+    // 8c. Build group chat context if applicable
+    let groupChatContext: {
+      is_group_chat: boolean;
+      host_companion_id: string;
+      participants: Array<{
+        companion_id: string;
+        companion_name: string;
+        avatar_url: string | null;
+        role: 'primary' | 'invited';
+        theme_color: string;
+      }>;
+    } | null = null;
+
+    if (client.isGroupChat && client.groupParticipants.size > 1) {
+      // Build companion specs for all participants
+      const participantSpecs = await Promise.all(
+        Array.from(client.groupParticipants.values()).map(async (p) => {
+          const pCompanion = await companionsService.getById(userId, p.companionId);
+          if (!pCompanion) return null;
+
+          const pSpec = pCompanion.spec;
+          const pTenets = await tenetsService.getCoreTenets(p.companionId);
+
+          return {
+            companion_id: p.companionId,
+            companion_name: p.companionName,
+            avatar_url: p.avatarUrl,
+            role: p.role,
+            theme_color: p.themeColor,
+            spec: {
+              id: pCompanion.id,
+              name: pCompanion.name,
+              description: (pSpec?.identity as Record<string, unknown> | undefined)?.['selfDescription'] as string | undefined
+                || `An AI companion named ${pCompanion.name}`,
+              personality_traits: pSpec?.personality?.traits
+                ? Object.entries(pSpec.personality.traits)
+                    .filter(([_, v]) => (v as number) > 0.5)
+                    .map(([k]) => k)
+                : ['friendly', 'helpful'],
+              communication_style: pSpec?.personality?.archetype || 'friendly and supportive',
+              archetype: pSpec?.personality?.archetype || null,
+              temperature: 0.7,
+              core_tenets: pTenets.map(tenet => ({
+                id: tenet.id,
+                category: tenet.category,
+                priority: 'core' as const,
+                rule: tenet.rule,
+                description: null,
+                is_negation: tenet.isNegation,
+                trigger_contexts: [],
+              })),
+            },
+          };
+        })
+      );
+
+      const validParticipants = participantSpecs.filter((p): p is NonNullable<typeof p> => p !== null);
+
+      groupChatContext = {
+        is_group_chat: true,
+        host_companion_id: companionId,
+        participants: validParticipants.map(p => ({
+          companion_id: p.companion_id,
+          companion_name: p.companion_name,
+          avatar_url: p.avatar_url,
+          role: p.role,
+          theme_color: p.theme_color,
+        })),
+      };
+
+      logger.debug(
+        { sessionId, participantCount: validParticipants.length },
+        'Group chat context built'
+      );
+    }
 
     // 9. Call orchestrator streaming endpoint
+    const isGroupChat = client.isGroupChat && client.groupParticipants.size > 1;
+    const orchestratorUrl = isGroupChat ? `${ORCHESTRATOR_URL}/group/stream` : `${ORCHESTRATOR_URL}/stream`;
+
     const orchestratorRequest = {
       session_id: sessionId,
       user_id: userId,
@@ -486,14 +741,19 @@ async function handleUserMessage(
       session_summary: sessionSummary,
       long_term_memories: null,
       companion_self_knowledge: selfKnowledge.length > 0 ? selfKnowledge : null,
+      user_image_url: userImageUrl,
+      active_game: activeGame || null,
+      liked_content: likedContent,
+      // Group chat fields
+      group_chat: groupChatContext,
     };
 
     logger.debug(
-      { sessionId, companionId, orchestratorUrl: `${ORCHESTRATOR_URL}/stream` },
+      { sessionId, companionId, orchestratorUrl, isGroupChat },
       'Calling orchestrator'
     );
 
-    const response = await fetch(`${ORCHESTRATOR_URL}/stream`, {
+    const response = await fetch(orchestratorUrl, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -510,6 +770,12 @@ async function handleUserMessage(
 
     // 8. Stream SSE response to WebSocket client
     let fullContent = '';
+    let imagePrompt: string | undefined;
+    let multiMessageSent = false; // Track if we sent multi-messages (skip final agent_message_end)
+    let currentSpeakerId: string | undefined; // Track current speaker for group chat
+    let currentSpeakerName: string | undefined;
+    let currentSpeakerContent = ''; // Accumulate content per speaker
+    let isGroupChatResponse = isGroupChat;
     const reader = response.body?.getReader();
     const decoder = new TextDecoder();
 
@@ -542,12 +808,169 @@ async function handleUserMessage(
               return;
             }
 
+            if (data.startsWith('[METADATA]')) {
+              // Parse metadata (contains image_prompt from companion)
+              try {
+                const metadataJson = data.slice(10); // Remove [METADATA] prefix
+                const metadata = JSON.parse(metadataJson);
+                if (metadata.image_prompt) {
+                  imagePrompt = metadata.image_prompt;
+                  logger.debug({ sessionId, imagePromptLength: imagePrompt?.length }, 'Received image_prompt from orchestrator');
+                }
+              } catch (e) {
+                logger.warn({ error: e, data }, 'Failed to parse metadata');
+              }
+              continue;
+            }
+
+            // Group chat: Companion speaker start
+            if (data.startsWith('[COMPANION_START]')) {
+              try {
+                const speakerJson = data.slice(17); // Remove [COMPANION_START] prefix
+                const speakerData = JSON.parse(speakerJson) as {
+                  companion_id: string;
+                  companion_name: string;
+                  theme_color: string;
+                  is_reaction: boolean;
+                };
+
+                currentSpeakerId = speakerData.companion_id;
+                currentSpeakerName = speakerData.companion_name;
+                currentSpeakerContent = '';
+
+                send(client, {
+                  type: 'companion_message_start',
+                  payload: {
+                    companionId: speakerData.companion_id,
+                    companionName: speakerData.companion_name,
+                    themeColor: speakerData.theme_color,
+                    isReaction: speakerData.is_reaction,
+                    turnId: turn.id,
+                  },
+                });
+
+                logger.debug(
+                  { sessionId, speakerId: currentSpeakerId, speakerName: currentSpeakerName },
+                  'Group chat companion started speaking'
+                );
+              } catch (e) {
+                logger.warn({ error: e, data }, 'Failed to parse [COMPANION_START] event');
+              }
+              continue;
+            }
+
+            // Group chat: Companion speaker end
+            if (data.startsWith('[COMPANION_END]')) {
+              try {
+                const endJson = data.slice(15); // Remove [COMPANION_END] prefix
+                const endData = JSON.parse(endJson) as {
+                  companion_id: string;
+                  companion_name: string;
+                  full_message: string;
+                  is_reaction: boolean;
+                };
+
+                // Add to full content with speaker label
+                if (endData.is_reaction) {
+                  fullContent += `\n[${endData.companion_name} adds]: ${endData.full_message}`;
+                } else {
+                  fullContent += (fullContent ? '\n' : '') + `[${endData.companion_name}]: ${endData.full_message}`;
+                }
+
+                send(client, {
+                  type: 'companion_message_end',
+                  payload: {
+                    companionId: endData.companion_id,
+                    companionName: endData.companion_name,
+                    content: endData.full_message,
+                    isReaction: endData.is_reaction,
+                    turnId: turn.id,
+                  },
+                });
+
+                multiMessageSent = true;
+                currentSpeakerId = undefined;
+                currentSpeakerName = undefined;
+                currentSpeakerContent = '';
+
+                logger.debug(
+                  { sessionId, speakerId: endData.companion_id, contentLength: endData.full_message.length },
+                  'Group chat companion finished speaking'
+                );
+              } catch (e) {
+                logger.warn({ error: e, data }, 'Failed to parse [COMPANION_END] event');
+              }
+              continue;
+            }
+
+            if (data.startsWith('[MESSAGE]')) {
+              // Multi-message response: parse and send each message with sequence info
+              try {
+                const messageJson = data.slice(9); // Remove [MESSAGE] prefix
+                const messageData = JSON.parse(messageJson) as {
+                  content: string;
+                  index: number;
+                  total: number;
+                  suggested_delay_ms: number;
+                  is_last: boolean;
+                };
+
+                // Accumulate content for database storage
+                fullContent += (fullContent ? '\n' : '') + messageData.content;
+
+                // Send message with sequence info
+                send(client, {
+                  type: 'agent_message_end',
+                  payload: {
+                    content: messageData.content,
+                    sessionId,
+                    turnId: turn.id,
+                    imagePrompt: messageData.is_last ? imagePrompt : undefined,
+                    sequence: {
+                      index: messageData.index,
+                      total: messageData.total,
+                      isLast: messageData.is_last,
+                      typingDelayMs: messageData.suggested_delay_ms,
+                    },
+                  },
+                });
+
+                multiMessageSent = true;
+
+                logger.debug(
+                  { sessionId, messageIndex: messageData.index, total: messageData.total, delayMs: messageData.suggested_delay_ms },
+                  'Sent multi-message part'
+                );
+
+                // Wait for typing delay before next message (simulates natural typing)
+                if (!messageData.is_last && messageData.suggested_delay_ms > 0) {
+                  await sleep(messageData.suggested_delay_ms);
+                }
+              } catch (e) {
+                logger.warn({ error: e, data }, 'Failed to parse [MESSAGE] event');
+              }
+              continue;
+            }
+
             // Send chunk to client
-            fullContent += data;
-            send(client, {
-              type: 'agent_message_chunk',
-              payload: { content: data },
-            });
+            if (isGroupChatResponse && currentSpeakerId) {
+              // Group chat: send chunk with companion attribution
+              currentSpeakerContent += data;
+              send(client, {
+                type: 'companion_message_chunk',
+                payload: {
+                  companionId: currentSpeakerId,
+                  content: data,
+                },
+              });
+            } else {
+              // Regular streaming
+              fullContent += data;
+              send(client, {
+                type: 'agent_message_chunk',
+                payload: { content: data },
+              });
+            }
           }
         }
       }
@@ -583,15 +1006,39 @@ async function handleUserMessage(
       });
     }
 
-    // 11. Send completion message
-    send(client, {
-      type: 'agent_message_end',
-      payload: {
-        content: fullContent,
-        sessionId,
-        turnId: turn.id,
-      },
-    });
+    // 11. Send completion message (skip if we already sent multi-messages with sequence info)
+    if (!multiMessageSent) {
+      send(client, {
+        type: 'agent_message_end',
+        payload: {
+          content: fullContent,
+          sessionId,
+          turnId: turn.id,
+          imagePrompt: imagePrompt,
+        },
+      });
+    }
+
+    // 11a. Check for game state updates and emit game_update
+    const updatedSession = await sessionsService.getById(userId, sessionId);
+    const updatedActiveGame = updatedSession?.metadata?.activeGame as Record<string, unknown> | undefined;
+    if (updatedActiveGame) {
+      send(client, {
+        type: 'game_update',
+        payload: { activeGame: updatedActiveGame },
+      });
+      logger.debug(
+        { sessionId, gameType: updatedActiveGame['gameType'], status: updatedActiveGame['status'] },
+        'Game state updated'
+      );
+    } else if (activeGame && !updatedActiveGame) {
+      // Game was ended/cleared
+      send(client, {
+        type: 'game_update',
+        payload: { activeGame: null },
+      });
+      logger.debug({ sessionId }, 'Game ended');
+    }
 
     // 12. If voice is enabled, synthesize TTS for the response
     if (client.voiceEnabled && fullContent) {
@@ -664,6 +1111,24 @@ function buildSystemPrompt(companion: { name: string; spec: Record<string, unkno
   parts.push('Be conversational, warm, and engaging. Listen actively and respond thoughtfully.');
 
   return parts.join('\n');
+}
+
+/**
+ * Map content rating (G, PG, PG-13, R) to orchestrator safety level
+ */
+function mapContentRatingToSafetyLevel(contentRating: string | undefined): string {
+  switch (contentRating) {
+    case 'R':
+      return 'adult';
+    case 'PG-13':
+      return 'permissive';
+    case 'PG':
+      return 'standard';
+    case 'G':
+      return 'strict';
+    default:
+      return 'standard';
+  }
 }
 
 /**
@@ -810,6 +1275,431 @@ async function handleVoiceEnabled(
 
   client.voiceEnabled = payload.enabled;
   logger.info({ clientId: client.id, voiceEnabled: payload.enabled }, 'Voice mode updated');
+}
+
+/**
+ * Handle webcam enabled/disabled
+ */
+async function handleWebcamEnabled(
+  client: ConnectedClient,
+  payload: { enabled: boolean }
+): Promise<void> {
+  if (!client.authenticated) {
+    sendError(client, 'Authentication required');
+    return;
+  }
+
+  client.webcamEnabled = payload.enabled;
+  if (!payload.enabled) {
+    // Clear last frame when webcam is disabled
+    client.lastWebcamFrame = undefined;
+  }
+  logger.info({ clientId: client.id, webcamEnabled: payload.enabled }, 'Webcam mode updated');
+}
+
+/**
+ * Handle webcam frame upload
+ */
+async function handleWebcamFrame(
+  client: ConnectedClient,
+  payload: { data: string; width: number; height: number; timestamp: number }
+): Promise<void> {
+  if (!client.authenticated || !client.user) {
+    sendError(client, 'Authentication required');
+    return;
+  }
+
+  if (!client.sessionId) {
+    sendError(client, 'No active session');
+    return;
+  }
+
+  if (!client.webcamEnabled) {
+    // Ignore frames if webcam not enabled
+    return;
+  }
+
+  try {
+    // Upload to S3
+    const s3Result = await uploadWebcamFrame(
+      client.user.userId,
+      client.sessionId,
+      payload.data,
+      payload.width,
+      payload.height
+    );
+
+    // Store for context in next LLM call
+    client.lastWebcamFrame = {
+      s3Url: s3Result.s3Url,
+      capturedAt: new Date(payload.timestamp),
+      width: payload.width,
+      height: payload.height,
+    };
+
+    logger.debug(
+      {
+        clientId: client.id,
+        sessionId: client.sessionId,
+        s3Key: s3Result.s3Key,
+        sizeBytes: s3Result.sizeBytes,
+      },
+      'Webcam frame stored'
+    );
+  } catch (error) {
+    logger.error({ err: error, clientId: client.id }, 'Failed to store webcam frame');
+  }
+}
+
+/**
+ * Handle start game request
+ * Creates a game by sending a message to the companion
+ */
+async function handleStartGame(
+  client: ConnectedClient,
+  payload: { gameType: string }
+): Promise<void> {
+  if (!client.authenticated || !client.user) {
+    sendError(client, 'Authentication required');
+    return;
+  }
+
+  if (!client.sessionId || !client.companionId) {
+    sendError(client, 'No active session');
+    return;
+  }
+
+  logger.info(
+    { clientId: client.id, sessionId: client.sessionId, gameType: payload.gameType },
+    'Starting game via user message'
+  );
+
+  // Send as a user message which will trigger the companion to use game_start tool
+  const gameRequest = `Let's play ${payload.gameType.replace('_', ' ')}! You can go first.`;
+  await handleUserMessage(client, { content: gameRequest });
+}
+
+/**
+ * Handle user game move
+ * Sends the move as a user message for the companion to process
+ */
+async function handleUserGameMove(
+  client: ConnectedClient,
+  payload: { move: string }
+): Promise<void> {
+  if (!client.authenticated || !client.user) {
+    sendError(client, 'Authentication required');
+    return;
+  }
+
+  if (!client.sessionId || !client.companionId) {
+    sendError(client, 'No active session');
+    return;
+  }
+
+  logger.debug(
+    { clientId: client.id, sessionId: client.sessionId, move: payload.move },
+    'User game move'
+  );
+
+  // Send as a user message - the orchestrator will process this as a game move
+  const moveMessage = `[Game move: ${payload.move}]`;
+  await handleUserMessage(client, { content: moveMessage });
+}
+
+/**
+ * Handle resign game request
+ */
+async function handleResignGame(client: ConnectedClient): Promise<void> {
+  if (!client.authenticated || !client.user) {
+    sendError(client, 'Authentication required');
+    return;
+  }
+
+  if (!client.sessionId || !client.companionId) {
+    sendError(client, 'No active session');
+    return;
+  }
+
+  logger.info(
+    { clientId: client.id, sessionId: client.sessionId },
+    'User resigning game'
+  );
+
+  // Send as a user message
+  await handleUserMessage(client, { content: 'I resign from the game.' });
+}
+
+/**
+ * Handle like message
+ * Increments the like count for a specific turn and notifies the client
+ */
+async function handleLikeMessage(
+  client: ConnectedClient,
+  payload: { turnId: string }
+): Promise<void> {
+  if (!client.authenticated || !client.user) {
+    sendError(client, 'Authentication required');
+    return;
+  }
+
+  if (!client.sessionId) {
+    sendError(client, 'No active session');
+    return;
+  }
+
+  try {
+    const sessionsRepo = getSessionsRepository();
+
+    // Increment the like count
+    const { turnLikes, sessionLikes, contentSnippet } = await sessionsRepo.incrementTurnLikes(
+      payload.turnId,
+      client.sessionId
+    );
+
+    logger.debug(
+      { clientId: client.id, turnId: payload.turnId, turnLikes, sessionLikes },
+      'Message liked'
+    );
+
+    // Send acknowledgment to client
+    send(client, {
+      type: 'like_acknowledged',
+      payload: {
+        turnId: payload.turnId,
+        turnLikes,
+        sessionLikes,
+        contentSnippet,
+      },
+    });
+  } catch (error) {
+    logger.error({ err: error, clientId: client.id, turnId: payload.turnId }, 'Failed to like message');
+    sendError(client, error instanceof Error ? error.message : 'Failed to like message');
+  }
+}
+
+/**
+ * Theme colors for group chat participants
+ */
+const GROUP_THEME_COLORS = [
+  '#8B5CF6', // Purple (primary)
+  '#EC4899', // Pink
+  '#3B82F6', // Blue
+  '#10B981', // Green
+  '#F59E0B', // Amber
+];
+
+/**
+ * Get theme color for participant by index
+ */
+function getThemeColorForIndex(index: number): string {
+  return GROUP_THEME_COLORS[index % GROUP_THEME_COLORS.length] || '#8B5CF6';
+}
+
+/**
+ * Handle invite companion (user-initiated via UI)
+ * Used when user manually invites a friend to the session
+ */
+async function handleInviteCompanion(
+  client: ConnectedClient,
+  payload: { friendCompanionId: string; reason?: string }
+): Promise<void> {
+  if (!client.authenticated || !client.user) {
+    sendError(client, 'Authentication required');
+    return;
+  }
+
+  if (!client.sessionId || !client.companionId) {
+    sendError(client, 'No active session');
+    return;
+  }
+
+  const { friendCompanionId, reason } = payload;
+  const userId = client.user.userId;
+  const sessionId = client.sessionId;
+
+  try {
+    const sessionsService = getSessionsService();
+    const companionsService = getCompanionsService();
+
+    // Check max participants
+    if (client.groupParticipants.size >= 5) {
+      sendError(client, 'Maximum of 5 participants allowed in group chat');
+      return;
+    }
+
+    // Check if already a participant
+    if (client.groupParticipants.has(friendCompanionId)) {
+      sendError(client, 'Companion is already in the chat');
+      return;
+    }
+
+    // Get friend companion details with avatar
+    const friendCompanionWithAvatar = await companionsService.getWithAvatar(userId, friendCompanionId);
+    if (!friendCompanionWithAvatar) {
+      sendError(client, 'Friend companion not found');
+      return;
+    }
+
+    // CompanionWithAvatar extends Companion, so we can use it directly
+    const friendCompanion = friendCompanionWithAvatar;
+    const friendAvatarUrl = friendCompanionWithAvatar.activeAvatar?.asset_url || null;
+
+    // Add to session participants
+    await sessionsService.inviteCompanion(userId, sessionId, friendCompanionId, client.companionId);
+
+    // Add to local state
+    const themeColor = getThemeColorForIndex(client.groupParticipants.size);
+    const participantInfo: GroupParticipantInfo = {
+      companionId: friendCompanionId,
+      companionName: friendCompanion.name,
+      avatarUrl: friendAvatarUrl,
+      role: 'invited',
+      themeColor,
+      joinedAt: new Date(),
+    };
+    client.groupParticipants.set(friendCompanionId, participantInfo);
+    client.isGroupChat = client.groupParticipants.size > 1;
+
+    logger.info(
+      { sessionId, friendCompanionId, friendName: friendCompanion.name, reason },
+      'Companion invited to group chat'
+    );
+
+    // Notify client
+    send(client, {
+      type: 'companion_joined',
+      payload: {
+        companion: {
+          companionId: friendCompanionId,
+          companionName: friendCompanion.name,
+          avatarUrl: friendAvatarUrl,
+          role: 'invited',
+          themeColor,
+          joinedAt: new Date().toISOString(),
+        },
+        invitedByCompanionId: client.companionId,
+        reason: reason || 'Joined the conversation',
+        participants: Array.from(client.groupParticipants.values()).map(p => ({
+          companionId: p.companionId,
+          companionName: p.companionName,
+          avatarUrl: p.avatarUrl,
+          role: p.role,
+          themeColor: p.themeColor,
+          joinedAt: p.joinedAt.toISOString(),
+        })),
+      },
+    });
+
+    // Send group chat state update
+    send(client, {
+      type: 'group_chat_state',
+      payload: {
+        isGroupChat: client.isGroupChat,
+        hostCompanionId: client.companionId,
+        participants: Array.from(client.groupParticipants.values()).map(p => ({
+          companionId: p.companionId,
+          companionName: p.companionName,
+          avatarUrl: p.avatarUrl,
+          role: p.role,
+          themeColor: p.themeColor,
+          joinedAt: p.joinedAt.toISOString(),
+        })),
+      },
+    });
+  } catch (error) {
+    logger.error({ err: error, clientId: client.id, friendCompanionId }, 'Failed to invite companion');
+    sendError(client, error instanceof Error ? error.message : 'Failed to invite companion');
+  }
+}
+
+/**
+ * Handle dismiss companion (remove from group chat)
+ */
+async function handleDismissCompanion(
+  client: ConnectedClient,
+  payload: { companionId: string }
+): Promise<void> {
+  if (!client.authenticated || !client.user) {
+    sendError(client, 'Authentication required');
+    return;
+  }
+
+  if (!client.sessionId || !client.companionId) {
+    sendError(client, 'No active session');
+    return;
+  }
+
+  const { companionId: targetCompanionId } = payload;
+  const userId = client.user.userId;
+  const sessionId = client.sessionId;
+
+  // Cannot dismiss the primary companion
+  if (targetCompanionId === client.companionId) {
+    sendError(client, 'Cannot dismiss the primary companion');
+    return;
+  }
+
+  // Check if participant exists
+  const participant = client.groupParticipants.get(targetCompanionId);
+  if (!participant) {
+    sendError(client, 'Companion is not in the chat');
+    return;
+  }
+
+  try {
+    const sessionsService = getSessionsService();
+
+    // Remove from session participants
+    await sessionsService.dismissCompanion(userId, sessionId, targetCompanionId);
+
+    // Remove from local state
+    client.groupParticipants.delete(targetCompanionId);
+    client.isGroupChat = client.groupParticipants.size > 1;
+
+    logger.info(
+      { sessionId, companionId: targetCompanionId, companionName: participant.companionName },
+      'Companion dismissed from group chat'
+    );
+
+    // Notify client
+    send(client, {
+      type: 'companion_left',
+      payload: {
+        companionId: targetCompanionId,
+        companionName: participant.companionName,
+        reason: 'dismissed',
+        participants: Array.from(client.groupParticipants.values()).map(p => ({
+          companionId: p.companionId,
+          companionName: p.companionName,
+          avatarUrl: p.avatarUrl,
+          role: p.role,
+          themeColor: p.themeColor,
+          joinedAt: p.joinedAt.toISOString(),
+        })),
+      },
+    });
+
+    // Send group chat state update
+    send(client, {
+      type: 'group_chat_state',
+      payload: {
+        isGroupChat: client.isGroupChat,
+        hostCompanionId: client.companionId,
+        participants: Array.from(client.groupParticipants.values()).map(p => ({
+          companionId: p.companionId,
+          companionName: p.companionName,
+          avatarUrl: p.avatarUrl,
+          role: p.role,
+          themeColor: p.themeColor,
+          joinedAt: p.joinedAt.toISOString(),
+        })),
+      },
+    });
+  } catch (error) {
+    logger.error({ err: error, clientId: client.id, companionId: targetCompanionId }, 'Failed to dismiss companion');
+    sendError(client, error instanceof Error ? error.message : 'Failed to dismiss companion');
+  }
 }
 
 /**

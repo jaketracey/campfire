@@ -29,7 +29,46 @@ export type WSMessageType =
   | 'tts_audio_chunk'
   | 'tts_audio_end'
   | 'voice_enabled'
+  | 'webcam_enabled'
+  | 'webcam_frame'
+  | 'game_update'
+  | 'start_game'
+  | 'user_game_move'
+  | 'resign_game'
+  | 'like_message'
+  | 'like_acknowledged'
+  // Group chat message types
+  | 'companion_invited'
+  | 'companion_joined'
+  | 'companion_left'
+  | 'companion_message_start'
+  | 'companion_message_chunk'
+  | 'companion_message_end'
+  | 'group_chat_state'
+  | 'invite_companion'
+  | 'dismiss_companion'
   | 'error';
+
+/**
+ * Group chat participant info
+ */
+export interface GroupParticipant {
+  companionId: string;
+  companionName: string;
+  avatarUrl: string | null;
+  role: 'primary' | 'invited';
+  themeColor: string;
+  joinedAt: string;
+}
+
+/**
+ * Group chat state
+ */
+export interface GroupChatState {
+  isGroupChat: boolean;
+  hostCompanionId: string;
+  participants: GroupParticipant[];
+}
 
 export interface WSMessage<T = unknown> {
   type: WSMessageType;
@@ -56,6 +95,8 @@ export class CampfireWebSocket {
   private _isConnected = false;
   private _isAuthenticated = false;
   private _sessionId: string | null = null;
+  private _isGroupChat = false;
+  private _groupParticipants: Map<string, GroupParticipant> = new Map();
 
   constructor(options: CampfireWSOptions = {}) {
     this.options = {
@@ -75,6 +116,18 @@ export class CampfireWebSocket {
 
   get sessionId(): string | null {
     return this._sessionId;
+  }
+
+  get isGroupChat(): boolean {
+    return this._isGroupChat;
+  }
+
+  get groupParticipants(): GroupParticipant[] {
+    return Array.from(this._groupParticipants.values());
+  }
+
+  getParticipant(companionId: string): GroupParticipant | undefined {
+    return this._groupParticipants.get(companionId);
   }
 
   /**
@@ -138,6 +191,8 @@ export class CampfireWebSocket {
     this._isConnected = false;
     this._isAuthenticated = false;
     this._sessionId = null;
+    this._isGroupChat = false;
+    this._groupParticipants.clear();
   }
 
   /**
@@ -244,6 +299,73 @@ export class CampfireWebSocket {
   }
 
   /**
+   * Enable webcam mode for the current session
+   */
+  enableWebcam(): void {
+    this.send('webcam_enabled', { enabled: true });
+  }
+
+  /**
+   * Disable webcam mode for the current session
+   */
+  disableWebcam(): void {
+    this.send('webcam_enabled', { enabled: false });
+  }
+
+  /**
+   * Send a webcam frame (base64 encoded JPEG)
+   */
+  sendWebcamFrame(data: string, width: number, height: number): void {
+    this.send('webcam_frame', { data, width, height, timestamp: Date.now() });
+  }
+
+  /**
+   * Start a game with the companion
+   */
+  startGame(gameType: string): void {
+    this.send('start_game', { gameType });
+  }
+
+  /**
+   * Send a user game move
+   */
+  sendGameMove(move: string): void {
+    this.send('user_game_move', { move });
+  }
+
+  /**
+   * Resign from the current game
+   */
+  resignGame(): void {
+    this.send('resign_game', {});
+  }
+
+  /**
+   * Like a message (increment like count)
+   */
+  likeMessage(turnId: string): void {
+    this.send('like_message', { turnId });
+  }
+
+  // ===========================================================================
+  // Group Chat Methods
+  // ===========================================================================
+
+  /**
+   * Invite a companion to the current session
+   */
+  inviteCompanion(friendCompanionId: string, reason?: string): void {
+    this.send('invite_companion', { friendCompanionId, reason });
+  }
+
+  /**
+   * Dismiss a companion from the current session
+   */
+  dismissCompanion(companionId: string): void {
+    this.send('dismiss_companion', { companionId });
+  }
+
+  /**
    * Subscribe to a specific message type
    */
   on<T = unknown>(type: WSMessageType | '*', handler: MessageHandler<T>): () => void {
@@ -277,11 +399,32 @@ export class CampfireWebSocket {
   }
 
   /**
-   * Subscribe to agent message end
+   * Message sequence info for multi-message responses
    */
-  onAgentMessageEnd(handler: (content: string) => void): () => void {
-    return this.on<{ content: string }>('agent_message_end', (msg) => {
-      handler(msg.payload.content);
+  // eslint-disable-next-line @typescript-eslint/no-empty-object-type
+  static readonly MessageSequence: {
+    index: number;
+    total: number;
+    isLast: boolean;
+    typingDelayMs?: number;
+  } = {} as never;
+
+  /**
+   * Subscribe to agent message end (with optional sequence info for multi-message)
+   */
+  onAgentMessageEnd(
+    handler: (
+      content: string,
+      imagePrompt?: string,
+      sequence?: { index: number; total: number; isLast: boolean; typingDelayMs?: number }
+    ) => void
+  ): () => void {
+    return this.on<{
+      content: string;
+      imagePrompt?: string;
+      sequence?: { index: number; total: number; isLast: boolean; typingDelayMs?: number };
+    }>('agent_message_end', (msg) => {
+      handler(msg.payload.content, msg.payload.imagePrompt, msg.payload.sequence);
     });
   }
 
@@ -321,6 +464,139 @@ export class CampfireWebSocket {
     });
   }
 
+  /**
+   * Subscribe to game updates
+   */
+  onGameUpdate(handler: (activeGame: Record<string, unknown> | null) => void): () => void {
+    return this.on<{ activeGame: Record<string, unknown> | null }>('game_update', (msg) => {
+      handler(msg.payload.activeGame);
+    });
+  }
+
+  /**
+   * Subscribe to like acknowledgments
+   */
+  onLikeAcknowledged(
+    handler: (data: { turnId: string; turnLikes: number; sessionLikes: number; contentSnippet: string }) => void
+  ): () => void {
+    return this.on<{ turnId: string; turnLikes: number; sessionLikes: number; contentSnippet: string }>(
+      'like_acknowledged',
+      (msg) => {
+        handler(msg.payload);
+      }
+    );
+  }
+
+  // ===========================================================================
+  // Group Chat Event Handlers
+  // ===========================================================================
+
+  /**
+   * Subscribe to companion joined events
+   */
+  onCompanionJoined(
+    handler: (data: {
+      companion: GroupParticipant;
+      invitedByCompanionId: string;
+      reason: string;
+      participants: GroupParticipant[];
+    }) => void
+  ): () => void {
+    return this.on<{
+      companion: GroupParticipant;
+      invitedByCompanionId: string;
+      reason: string;
+      participants: GroupParticipant[];
+    }>('companion_joined', (msg) => {
+      handler(msg.payload);
+    });
+  }
+
+  /**
+   * Subscribe to companion left events
+   */
+  onCompanionLeft(
+    handler: (data: {
+      companionId: string;
+      companionName: string;
+      reason: string;
+      participants: GroupParticipant[];
+    }) => void
+  ): () => void {
+    return this.on<{
+      companionId: string;
+      companionName: string;
+      reason: string;
+      participants: GroupParticipant[];
+    }>('companion_left', (msg) => {
+      handler(msg.payload);
+    });
+  }
+
+  /**
+   * Subscribe to group chat state updates
+   */
+  onGroupChatState(handler: (state: GroupChatState) => void): () => void {
+    return this.on<GroupChatState>('group_chat_state', (msg) => {
+      handler(msg.payload);
+    });
+  }
+
+  /**
+   * Subscribe to companion message start (group chat)
+   */
+  onCompanionMessageStart(
+    handler: (data: {
+      companionId: string;
+      companionName: string;
+      themeColor: string;
+      isReaction: boolean;
+      turnId: string;
+    }) => void
+  ): () => void {
+    return this.on<{
+      companionId: string;
+      companionName: string;
+      themeColor: string;
+      isReaction: boolean;
+      turnId: string;
+    }>('companion_message_start', (msg) => {
+      handler(msg.payload);
+    });
+  }
+
+  /**
+   * Subscribe to companion message chunks (group chat streaming)
+   */
+  onCompanionMessageChunk(handler: (companionId: string, content: string) => void): () => void {
+    return this.on<{ companionId: string; content: string }>('companion_message_chunk', (msg) => {
+      handler(msg.payload.companionId, msg.payload.content);
+    });
+  }
+
+  /**
+   * Subscribe to companion message end (group chat)
+   */
+  onCompanionMessageEnd(
+    handler: (data: {
+      companionId: string;
+      companionName: string;
+      content: string;
+      isReaction: boolean;
+      turnId: string;
+    }) => void
+  ): () => void {
+    return this.on<{
+      companionId: string;
+      companionName: string;
+      content: string;
+      isReaction: boolean;
+      turnId: string;
+    }>('companion_message_end', (msg) => {
+      handler(msg.payload);
+    });
+  }
+
   private handleMessage(message: WSMessage): void {
     // Handle internal state updates
     switch (message.type) {
@@ -332,17 +608,63 @@ export class CampfireWebSocket {
         this._isAuthenticated = false;
         console.error('[WS] Auth failed', message.payload);
         break;
-      case 'session_started':
-        this._sessionId = (message.payload as { sessionId: string }).sessionId;
-        console.log('[WS] Session started', this._sessionId);
+      case 'session_started': {
+        const payload = message.payload as {
+          sessionId: string;
+          isGroupChat?: boolean;
+          participants?: GroupParticipant[];
+        };
+        this._sessionId = payload.sessionId;
+        this._isGroupChat = payload.isGroupChat || false;
+        this._groupParticipants.clear();
+        if (payload.participants) {
+          for (const p of payload.participants) {
+            this._groupParticipants.set(p.companionId, p);
+          }
+        }
+        console.log('[WS] Session started', this._sessionId, 'isGroupChat:', this._isGroupChat);
         break;
+      }
       case 'session_ended':
         this._sessionId = null;
+        this._isGroupChat = false;
+        this._groupParticipants.clear();
         console.log('[WS] Session ended');
         break;
       case 'ping':
         this.send('pong', {});
         break;
+      // Group chat state updates
+      case 'companion_joined': {
+        const payload = message.payload as {
+          companion: GroupParticipant;
+          participants: GroupParticipant[];
+        };
+        this._groupParticipants.set(payload.companion.companionId, payload.companion);
+        this._isGroupChat = this._groupParticipants.size > 1;
+        console.log('[WS] Companion joined:', payload.companion.companionName);
+        break;
+      }
+      case 'companion_left': {
+        const payload = message.payload as {
+          companionId: string;
+          participants: GroupParticipant[];
+        };
+        this._groupParticipants.delete(payload.companionId);
+        this._isGroupChat = this._groupParticipants.size > 1;
+        console.log('[WS] Companion left:', payload.companionId);
+        break;
+      }
+      case 'group_chat_state': {
+        const payload = message.payload as GroupChatState;
+        this._isGroupChat = payload.isGroupChat;
+        this._groupParticipants.clear();
+        for (const p of payload.participants) {
+          this._groupParticipants.set(p.companionId, p);
+        }
+        console.log('[WS] Group chat state updated, participants:', payload.participants.length);
+        break;
+      }
     }
 
     // Call registered handlers

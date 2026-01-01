@@ -55,6 +55,13 @@ class EventType(str, Enum):
     PROVIDER_REQUEST_FAILED = "provider.request.failed"
     PROVIDER_FALLBACK = "provider.fallback"
 
+    # Content routing events
+    CONTENT_ROUTED = "content.routed"
+    CONTENT_INTENT_DETECTED = "content.intent.detected"
+    CONTENT_BLOCKED = "content.blocked"
+    MODEL_SWITCHED = "model.switched"
+    ABLITERATED_MODEL_USED = "model.abliterated.used"
+
 
 class BaseEvent(BaseModel):
     """Base event model with common fields."""
@@ -129,3 +136,25 @@ class ProviderEvent(BaseEvent):
     status_code: int | None = None
     error_type: str | None = None
     retry_count: int = 0
+
+
+class ContentRoutingEvent(BaseEvent):
+    """Event for content routing decisions and model selection."""
+
+    intent: str
+    confidence: float
+    detection_method: str
+    selected_model: str
+    selected_provider: str
+    routing_reason: str
+    content_blocked: bool = False
+    block_reason: str | None = None
+    latency_ms: float = 0.0
+
+
+class ContentBlockedEvent(BaseEvent):
+    """Event when content is blocked due to safety constraints."""
+
+    detected_intent: str
+    companion_safety_level: str
+    block_reason: str

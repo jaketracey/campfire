@@ -9,6 +9,7 @@ import { usersRoutes } from './users.js';
 import { adminRoutes } from './admin.js';
 import { referralsRoutes } from './referrals.js';
 import { companionsRoutes } from './companions.js';
+import { companionFriendsRoutes } from './companion-friends.js';
 import { sessionsRoutes } from './sessions.js';
 import { memoriesRoutes } from './memories.js';
 import { knowledgeGraphRoutes } from './knowledge-graph.js';
@@ -19,6 +20,7 @@ import { emailWebhookRoutes } from './email-webhooks.js';
 import { imagegenRoutes } from './imagegen.js';
 import { debugRoutes } from './debug.js';
 import { personalityProfilesRoutes } from './personality-profiles.js';
+import { tenetsRoutes } from './tenets.js';
 import { logger } from '../observability/logger.js';
 
 /**
@@ -42,6 +44,9 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
 
       // Companion routes
       await api.register(companionsRoutes, { prefix: '/companions' });
+
+      // Companion friends routes (nested under /companions)
+      await api.register(companionFriendsRoutes, { prefix: '/companions' });
 
       // Session routes
       await api.register(sessionsRoutes, { prefix: '/sessions' });
@@ -75,6 +80,10 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
 
   // Webhook routes (at root level for external services)
   await app.register(emailWebhookRoutes, { prefix: '/webhooks/email' });
+
+  // Internal routes (for service-to-service communication)
+  // Tenets routes include both /internal/companions/:id/tenets/* and /companions/:id/tenets/*
+  await app.register(tenetsRoutes);
 
   logger.info('All API routes registered');
 }

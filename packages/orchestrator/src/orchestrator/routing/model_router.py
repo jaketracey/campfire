@@ -1,0 +1,362 @@
+"""Dynamic model router for intelligent request routing.
+
+Routes requests to appropriate models based on content intent,
+companion safety settings, and provider availability.
+"""
+
+from dataclasses import dataclass
+
+import structlog
+
+from orchestrator.routing.intent_detector import ContentIntent, IntentDetector, IntentResult
+from orchestrator.routing.model_registry import (
+    MODEL_REGISTRY,
+    PROVIDER_HEALTH,
+    ContentCapability,
+    ModelSpec,
+    ModelTier,
+)
+
+logger = structlog.get_logger()
+
+
+# Safety level to content capability mapping
+SAFETY_LEVEL_TO_CAPABILITY: dict[str, ContentCapability] = {
+    "adult": ContentCapability.UNRESTRICTED,
+    "permissive": ContentCapability.NSFW_TEXT,
+    "standard": ContentCapability.SUGGESTIVE,
+    "strict": ContentCapability.SFW_ONLY,
+}
+
+# Intent to minimum required capability mapping
+INTENT_TO_MIN_CAPABILITY: dict[ContentIntent, ContentCapability] = {
+    ContentIntent.SAFE: ContentCapability.SFW_ONLY,
+    ContentIntent.FLIRTY: ContentCapability.SFW_ONLY,
+    ContentIntent.ROLEPLAY_SFW: ContentCapability.SFW_ONLY,
+    ContentIntent.SUGGESTIVE: ContentCapability.SUGGESTIVE,
+    ContentIntent.EXPLICIT: ContentCapability.NSFW_TEXT,
+    ContentIntent.ROLEPLAY_NSFW: ContentCapability.NSFW_ROLEPLAY,
+}
+
+
+@dataclass
+class RoutingDecision:
+    """Result of model routing decision."""
+
+    model_spec: ModelSpec | None
+    intent_result: IntentResult
+    routing_reason: str
+    fallback_used: bool = False
+    content_blocked: bool = False
+    block_reason: str | None = None
+
+    def __str__(self) -> str:
+        if self.content_blocked:
+            return f"BLOCKED: {self.block_reason}"
+        if self.model_spec is None:
+            return "NO MODEL AVAILABLE"
+        return f"{self.model_spec.display_name} - {self.routing_reason}"
+
+
+class ModelRouter:
+    """Routes requests to appropriate models based on content and settings."""
+
+    def __init__(
+        self,
+        intent_detector: IntentDetector,
+        prefer_local: bool = True,
+        prefer_fast: bool = False,
+    ):
+        """Initialize the model router.
+
+        Args:
+            intent_detector: Intent detector instance for content analysis.
+            prefer_local: Whether to prefer local models when suitable.
+            prefer_fast: Whether to prefer faster models over quality.
+        """
+        self._intent_detector = intent_detector
+        self._prefer_local = prefer_local
+        self._prefer_fast = prefer_fast
+
+        logger.info(
+            "model_router_initialized",
+            prefer_local=prefer_local,
+            prefer_fast=prefer_fast,
+            available_models=len(MODEL_REGISTRY),
+        )
+
+    async def route(
+        self,
+        user_message: str,
+        companion_safety_level: str,
+        require_tools: bool = False,
+        require_vision: bool = False,
+        prefer_tier: ModelTier | None = None,
+    ) -> RoutingDecision:
+        """Route a request to the most appropriate model.
+
+        Args:
+            user_message: The user's message to analyze.
+            companion_safety_level: Safety level from companion settings
+                ("adult", "permissive", "standard", "strict").
+            require_tools: Whether tool support is required.
+            require_vision: Whether vision support is required.
+            prefer_tier: Optional preferred model tier.
+
+        Returns:
+            RoutingDecision with selected model or block reason.
+        """
+        # Detect content intent
+        intent_result = await self._intent_detector.detect(user_message)
+
+        logger.debug(
+            "routing_intent_detected",
+            intent=intent_result.intent.value,
+            confidence=intent_result.confidence,
+            requires_abliterated=intent_result.requires_abliterated,
+        )
+
+        # Get capability limits
+        max_capability = SAFETY_LEVEL_TO_CAPABILITY.get(
+            companion_safety_level.lower(),
+            ContentCapability.SUGGESTIVE,
+        )
+        min_capability = INTENT_TO_MIN_CAPABILITY.get(
+            intent_result.intent,
+            ContentCapability.SFW_ONLY,
+        )
+
+        # Check if content exceeds companion's safety level
+        if min_capability > max_capability:
+            block_reason = (
+                f"Content intent '{intent_result.intent.value}' requires "
+                f"capability level {min_capability.name}, but companion safety "
+                f"level '{companion_safety_level}' only allows up to {max_capability.name}"
+            )
+            logger.warning(
+                "content_blocked_safety_level",
+                intent=intent_result.intent.value,
+                min_capability=min_capability.name,
+                max_capability=max_capability.name,
+                companion_safety_level=companion_safety_level,
+            )
+            return RoutingDecision(
+                model_spec=None,
+                intent_result=intent_result,
+                routing_reason="Content blocked due to safety level",
+                content_blocked=True,
+                block_reason=block_reason,
+            )
+
+        # Find best model matching requirements
+        prefer_abliterated = intent_result.requires_abliterated
+        selected_model = self._find_best_model(
+            max_capability=max_capability,
+            min_capability=min_capability,
+            require_tools=require_tools,
+            require_vision=require_vision,
+            prefer_tier=prefer_tier or (ModelTier.FAST if self._prefer_fast else None),
+            prefer_abliterated=prefer_abliterated,
+        )
+
+        fallback_used = False
+        if selected_model is None:
+            # Try fallback to any available model
+            logger.warning(
+                "no_ideal_model_found",
+                min_capability=min_capability.name,
+                max_capability=max_capability.name,
+                require_tools=require_tools,
+                require_vision=require_vision,
+            )
+            selected_model = self._find_any_available_model()
+            fallback_used = selected_model is not None
+
+        if selected_model is None:
+            logger.error("no_models_available")
+            return RoutingDecision(
+                model_spec=None,
+                intent_result=intent_result,
+                routing_reason="No suitable models available",
+                fallback_used=False,
+                content_blocked=False,
+            )
+
+        routing_reason = self._explain_selection(selected_model, intent_result)
+
+        logger.info(
+            "model_selected",
+            model_id=selected_model.model_id,
+            provider=selected_model.provider,
+            intent=intent_result.intent.value,
+            fallback_used=fallback_used,
+            routing_reason=routing_reason,
+        )
+
+        return RoutingDecision(
+            model_spec=selected_model,
+            intent_result=intent_result,
+            routing_reason=routing_reason,
+            fallback_used=fallback_used,
+            content_blocked=False,
+        )
+
+    def _capability_level(self, capability: ContentCapability) -> int:
+        """Get numeric level for capability comparison.
+
+        Args:
+            capability: The content capability.
+
+        Returns:
+            Integer level for comparison.
+        """
+        return capability.value
+
+    def _find_best_model(
+        self,
+        max_capability: ContentCapability,
+        min_capability: ContentCapability,
+        require_tools: bool,
+        require_vision: bool,
+        prefer_tier: ModelTier | None,
+        prefer_abliterated: bool,
+    ) -> ModelSpec | None:
+        """Find the best model matching requirements.
+
+        Args:
+            max_capability: Maximum allowed content capability.
+            min_capability: Minimum required content capability.
+            require_tools: Whether tool support is required.
+            require_vision: Whether vision support is required.
+            prefer_tier: Preferred model tier.
+            prefer_abliterated: Whether to prefer abliterated models.
+
+        Returns:
+            Best matching ModelSpec or None.
+        """
+        candidates: list[tuple[float, ModelSpec]] = []
+
+        for model in MODEL_REGISTRY.values():
+            # Check provider availability
+            provider_health = PROVIDER_HEALTH.get(model.provider)
+            if provider_health is None or not provider_health.is_available:
+                continue
+
+            # Check capability constraints
+            model_cap_level = self._capability_level(model.content_capability)
+            min_cap_level = self._capability_level(min_capability)
+            max_cap_level = self._capability_level(max_capability)
+
+            if model_cap_level < min_cap_level:
+                # Model cannot handle required content
+                continue
+            if model_cap_level > max_cap_level and not model.is_abliterated:
+                # Non-abliterated model exceeds safety level (shouldn't happen)
+                continue
+
+            # Check feature requirements
+            if require_tools and not model.supports_tools:
+                continue
+            if require_vision and not model.supports_vision:
+                continue
+
+            # Calculate score
+            score = 0.0
+
+            # Prefer abliterated models when needed (+100)
+            if prefer_abliterated and model.is_abliterated:
+                score += 100.0
+
+            # Prefer local models when configured (+50)
+            if self._prefer_local and model.is_local:
+                score += 50.0
+
+            # Prefer matching tier (+25)
+            if prefer_tier is not None and model.tier == prefer_tier:
+                score += 25.0
+
+            # Factor in latency (lower is better, normalize to ~0-20 range)
+            latency_penalty = min(model.avg_latency_ms / 100.0, 20.0)
+            score -= latency_penalty
+
+            # Factor in cost (lower is better, for non-local models)
+            if not model.is_local:
+                cost_penalty = (model.cost_per_1m_input + model.cost_per_1m_output) / 10.0
+                score -= cost_penalty
+
+            candidates.append((score, model))
+
+        if not candidates:
+            return None
+
+        # Sort by score (descending) and return best
+        candidates.sort(key=lambda x: x[0], reverse=True)
+
+        logger.debug(
+            "model_candidates_scored",
+            candidate_count=len(candidates),
+            top_score=candidates[0][0] if candidates else 0,
+            top_model=candidates[0][1].model_id if candidates else None,
+        )
+
+        return candidates[0][1]
+
+    def _find_any_available_model(self) -> ModelSpec | None:
+        """Find any available model as fallback.
+
+        Returns:
+            Any available ModelSpec or None.
+        """
+        for model in MODEL_REGISTRY.values():
+            provider_health = PROVIDER_HEALTH.get(model.provider)
+            if provider_health is not None and provider_health.is_available:
+                logger.debug(
+                    "fallback_model_selected",
+                    model_id=model.model_id,
+                    provider=model.provider,
+                )
+                return model
+        return None
+
+    def _explain_selection(
+        self,
+        model: ModelSpec,
+        intent: IntentResult,
+    ) -> str:
+        """Generate human-readable explanation for model selection.
+
+        Args:
+            model: The selected model.
+            intent: The detected intent.
+
+        Returns:
+            Explanation string.
+        """
+        reasons: list[str] = []
+
+        # Intent-based reason
+        if intent.requires_abliterated and model.is_abliterated:
+            reasons.append("abliterated model for unrestricted content")
+        elif intent.intent == ContentIntent.SAFE:
+            reasons.append("general purpose model for safe content")
+        elif intent.intent in (ContentIntent.FLIRTY, ContentIntent.SUGGESTIVE):
+            reasons.append(f"suitable for {intent.intent.value} content")
+        elif intent.intent in (ContentIntent.ROLEPLAY_SFW, ContentIntent.ROLEPLAY_NSFW):
+            reasons.append(f"roleplay-capable model")
+
+        # Model characteristics
+        if model.is_local:
+            reasons.append("local inference")
+        if model.tier == ModelTier.FAST:
+            reasons.append("fast response")
+        elif model.tier == ModelTier.FLAGSHIP:
+            reasons.append("high quality")
+        elif model.tier == ModelTier.STANDARD:
+            reasons.append("balanced quality")
+
+        if model.supports_vision:
+            reasons.append("vision-enabled")
+        if model.supports_tools:
+            reasons.append("tool-capable")
+
+        return "; ".join(reasons) if reasons else "default selection"

@@ -74,6 +74,8 @@ class Message(BaseModel):
     tool_call_id: str | None = None
     created_at: datetime = Field(default_factory=datetime.utcnow)
     metadata: dict[str, Any] = Field(default_factory=dict)
+    # Image generation prompt from companion - describes the visual scene to present
+    image_prompt: str | None = None
 
     class Config:
         frozen = True

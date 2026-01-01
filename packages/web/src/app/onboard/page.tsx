@@ -8,11 +8,8 @@ import { Step1Welcome } from '@/components/onboarding/steps/step-1-welcome';
 import { Step2Identity } from '@/components/onboarding/steps/step-2-identity';
 import { Step3Visuals } from '@/components/onboarding/steps/step-3-visuals';
 import { Step4Archetype } from '@/components/onboarding/steps/step-4-archetype';
-import { Step5Traits } from '@/components/onboarding/steps/step-5-traits';
-import { Step6Tenets } from '@/components/onboarding/steps/step-6-tenets';
-import { Step7Voice } from '@/components/onboarding/steps/step-7-voice';
-import { Step8Boundaries } from '@/components/onboarding/steps/step-8-boundaries';
-import { Step9Review } from '@/components/onboarding/steps/step-9-review';
+import { Step7Voice as Step5Voice } from '@/components/onboarding/steps/step-7-voice';
+import { Step9Review as Step6Review } from '@/components/onboarding/steps/step-9-review';
 import { Button } from '@/components/ui/button';
 import { ChevronLeft } from 'lucide-react';
 import { useAuth } from '@/hooks/use-auth';
@@ -54,21 +51,15 @@ export default function OnboardingPage() {
       case 4:
         return <Step4Archetype key="step4" />;
       case 5:
-        return <Step5Traits key="step5" />;
+        return <Step5Voice key="step5" />;
       case 6:
-        return <Step6Tenets key="step6" />;
-      case 7:
-        return <Step7Voice key="step7" />;
-      case 8:
-        return <Step8Boundaries key="step8" />;
-      case 9:
-        return <Step9Review key="step9" />;
+        return <Step6Review key="step6" />;
       default:
         return <Step1Welcome key="step1" />;
     }
   };
 
-  const progress = ((currentStep - 1) / 8) * 100;
+  const progress = ((currentStep - 1) / 5) * 100;
 
   return (
     <div className="relative min-h-screen w-full overflow-hidden text-white flex flex-col font-sans">
@@ -88,7 +79,7 @@ export default function OnboardingPage() {
           {currentStep > 1 && (
             <div className="flex flex-col gap-1.5 w-32 md:w-48">
               <span className="text-[10px] font-bold tracking-widest text-muted-foreground uppercase font-display">
-                Step {currentStep} <span className="text-vibes-cyan">/ 9</span>
+                Step {currentStep} <span className="text-vibes-cyan">/ 6</span>
               </span>
               <div className="h-1 w-full bg-white/5 rounded-full overflow-hidden border border-white/5">
                 <motion.div
