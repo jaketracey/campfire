@@ -138,7 +138,8 @@ export const DEFAULT_WELCOME_MESSAGES: ((name: string) => string)[] = [
  */
 export function getRandomDefaultWelcome(name: string): string {
   const index = Math.floor(Math.random() * DEFAULT_WELCOME_MESSAGES.length);
-  return DEFAULT_WELCOME_MESSAGES[index](name);
+  const messageFn = DEFAULT_WELCOME_MESSAGES[index];
+  return messageFn ? messageFn(name) : `Welcome back, ${name}.`;
 }
 
 /**
@@ -176,7 +177,7 @@ export function buildPersonalizedWelcome(
   companionName?: string
 ): string {
   const templates = GREETING_TEMPLATES[profile.greetingStyle];
-  const template = templates[Math.floor(Math.random() * templates.length)];
+  const template = templates[Math.floor(Math.random() * templates.length)] ?? `Welcome back, {name}!`;
   let greeting = template.replace('{name}', name);
 
   // Add custom insight if available

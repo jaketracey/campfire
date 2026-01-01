@@ -19,8 +19,22 @@ import { LogOut, MessageCircle, Plus, RotateCcw, Sparkles, Trash2, ArrowRight, C
 import { ShareCompanionDialog } from '@/components/companion/share-companion-dialog';
 import { BackstoryModal } from '@/components/companion/backstory-modal';
 import { useAuth } from '@/hooks/use-auth';
-import { listCompanions, listSessions, deleteCompanion, getInviteCode } from '@/lib/api';
-import type { Companion as APICompanion, Session as APISession, InviteCodeData, CompanionSpec } from '@/lib/api';
+import {
+  listCompanions,
+  listSessions,
+  deleteCompanion,
+  getInviteCode,
+  getPersonalityProfile,
+  getRandomDefaultWelcome,
+  buildPersonalizedWelcome,
+} from '@/lib/api';
+import type {
+  Companion as APICompanion,
+  Session as APISession,
+  InviteCodeData,
+  CompanionSpec,
+  UserPersonalityProfile,
+} from '@/lib/api';
 import Link from 'next/link';
 import type { Route } from 'next';
 
@@ -70,6 +84,8 @@ export default function DashboardPage() {
   const [copiedUrl, setCopiedUrl] = useState(false);
   // Backstory modal state
   const [backstoryCompanion, setBackstoryCompanion] = useState<Companion | null>(null);
+  // Personality profile state for personalized welcome
+  const [welcomeMessage, setWelcomeMessage] = useState<string | null>(null);
 
   // Redirect to login if not authenticated
   useEffect(() => {
@@ -86,15 +102,16 @@ export default function DashboardPage() {
   }, [isInitialized, authLoading, isAuthenticated, router]);
 
   const fetchData = useCallback(async () => {
-    if (!isAuthenticated) return;
+    if (!isAuthenticated || !user?.id) return;
 
     setLoading(true);
     try {
-      // Fetch companions, sessions, and invite code in parallel
-      const [companionsRes, sessionsRes, inviteCodeRes] = await Promise.all([
+      // Fetch companions, sessions, invite code, and personality profile in parallel
+      const [companionsRes, sessionsRes, inviteCodeRes, personalityProfile] = await Promise.all([
         listCompanions({ limit: 50 }),
         listSessions({ limit: 20, status: 'active' }),
         getInviteCode().catch(() => null),
+        getPersonalityProfile(user.id).catch(() => null),
       ]);
 
       // Set invite code if fetched successfully
@@ -135,12 +152,24 @@ export default function DashboardPage() {
 
       setCompanions(mappedCompanions);
       setSessions(mappedSessions);
+
+      // Generate personalized welcome message
+      const userName = user.email?.split('@')[0] || 'friend';
+      if (personalityProfile) {
+        // Get the most recent companion for companion-aware message
+        const recentCompanion = mappedSessions[0]?.companionName;
+        const welcome = buildPersonalizedWelcome(userName, personalityProfile, recentCompanion);
+        setWelcomeMessage(welcome);
+      } else {
+        // No profile yet - use random default message
+        setWelcomeMessage(getRandomDefaultWelcome(userName));
+      }
     } catch (error) {
       console.error('Failed to fetch dashboard data:', error);
     } finally {
       setLoading(false);
     }
-  }, [isAuthenticated]);
+  }, [isAuthenticated, user?.id, user?.email]);
 
   useEffect(() => {
     if (isInitialized && isAuthenticated) {
@@ -219,9 +248,9 @@ export default function DashboardPage() {
               Your <span className="text-transparent bg-clip-text bg-gradient-to-r from-campfire-400 via-campfire-500 to-campfire-600">Sanctuary</span>
             </h1>
             <p className="text-gray-400 text-lg max-w-xl">
-              {user?.email
+              {welcomeMessage || (user?.email
                 ? `Welcome back, ${user.email.split('@')[0]}. Your companions are waiting.`
-                : 'Manage your digital sanctuary and companions.'}
+                : 'Manage your digital sanctuary and companions.')}
             </p>
           </div>
           <div className="flex items-center gap-4">
@@ -287,7 +316,96 @@ export default function DashboardPage() {
                 Your Companions
               </h2>
             </div>
-            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
+            {/* Mobile: horizontal scroll, Desktop: grid */}
+            <div className="md:hidden -mx-4 px-4 pb-4 overflow-x-auto scrollbar-hide">
+              <div className="flex gap-4" style={{ width: 'max-content' }}>
+                {companions.map((companion, idx) => {
+                  const hasExistingSession = !!companion.latestSessionId;
+                  const anchorImageUrl = getAnchorImageUrl(companion.ethnicity);
+                  const displayImageUrl = companion.latestConversationImageUrl || anchorImageUrl || companion.avatarUrl;
+                  const hasBackstory = !!companion.backstory;
+
+                  return (
+                    <motion.div
+                      key={companion.id}
+                      initial={{ opacity: 0, x: 20 }}
+                      animate={{ opacity: 1, x: 0 }}
+                      transition={{ delay: idx * 0.1 }}
+                      className="w-[75vw] flex-shrink-0"
+                    >
+                      <Card className="group relative overflow-hidden bg-white/[0.01] backdrop-blur-3xl border border-white/5 hover:border-white/20 transition-all duration-500 shadow-2xl h-full">
+                        <div className="absolute inset-0 bg-gradient-to-br from-white/[0.02] to-transparent pointer-events-none" />
+                        <CardContent className="p-0">
+                          <div className="aspect-[2/3] relative overflow-hidden">
+                            {displayImageUrl ? (
+                              <img
+                                src={displayImageUrl}
+                                alt={companion.name}
+                                className="w-full h-full object-cover object-top"
+                              />
+                            ) : (
+                              <div className="w-full h-full bg-gradient-to-br from-campfire-500/20 via-campfire-600/10 to-campfire-700/20" />
+                            )}
+                            <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent" />
+
+                            {hasBackstory && (
+                              <button
+                                onClick={() => setBackstoryCompanion(companion)}
+                                className="absolute top-3 right-3 p-2 rounded-xl bg-amber-900/60 border border-amber-600/30 text-amber-400 shadow-lg backdrop-blur-sm"
+                                title="View Backstory"
+                              >
+                                <BookOpen className="h-4 w-4" />
+                              </button>
+                            )}
+
+                            <div className="absolute bottom-4 left-4 right-4">
+                              <h3 className="text-xl font-bold text-white truncate">{companion.name}</h3>
+                              <p className="text-white/60 text-sm truncate">
+                                {hasExistingSession ? 'Journey in progress' : 'Awaiting first encounter'}
+                              </p>
+                            </div>
+                          </div>
+
+                          <div className="p-4 space-y-3">
+                            <div className="flex gap-2">
+                              {hasExistingSession ? (
+                                <>
+                                  <Button
+                                    onClick={() => handleResumeChat(companion.latestSessionId!)}
+                                    className="flex-1 bg-white/5 hover:bg-white/10 text-white border border-white/10"
+                                  >
+                                    <RotateCcw className="h-4 w-4 mr-2" />
+                                    Resume
+                                  </Button>
+                                  <Button
+                                    onClick={() => handleNewChat(companion.id)}
+                                    className="bg-campfire-600 hover:bg-campfire-500 text-white"
+                                    size="icon"
+                                  >
+                                    <Plus className="h-4 w-4" />
+                                  </Button>
+                                </>
+                              ) : (
+                                <Button
+                                  onClick={() => handleNewChat(companion.id)}
+                                  className="flex-1 bg-campfire-600 hover:bg-campfire-500 text-white"
+                                >
+                                  <MessageCircle className="h-4 w-4 mr-2" />
+                                  Start Journey
+                                </Button>
+                              )}
+                            </div>
+                          </div>
+                        </CardContent>
+                      </Card>
+                    </motion.div>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* Desktop grid */}
+            <div className="hidden md:grid md:grid-cols-2 xl:grid-cols-3 gap-6">
               {companions.map((companion, idx) => {
                 const hasExistingSession = !!companion.latestSessionId;
                 // Priority: conversation image -> anchor image (by ethnicity) -> avatar -> gradient

@@ -1,11 +1,12 @@
 'use client';
 
-import { useState, useRef, useEffect, useCallback } from 'react';
+import { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
+import { motion, AnimatePresence } from 'framer-motion';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card } from '@/components/ui/card';
-import { X, Send, Mic, MicOff, Bug, Images, Flame, Sparkles, Gift, BookOpen } from 'lucide-react';
+import { X, Send, Mic, MicOff, Bug, Images, Flame, Sparkles, Gift, BookOpen, GripVertical, Volume2 } from 'lucide-react';
 import Link from 'next/link';
 import { getSessionTurns, getSession, getCompanion, getCompanionBackstory, type Companion, type CompanionBackstory } from '@/lib/api';
 import { CampfireWebSocket, connectWebSocket } from '@/lib/ws';
@@ -15,6 +16,8 @@ import { GiftsPanel } from '@/components/gifts';
 import { useRequireAuth } from '@/hooks/use-auth';
 import { useAuthStore } from '@/stores/auth-store';
 import { buildPromptFromCompanion, type EmotionalState } from '@/lib/api/imagegen';
+import { useVoiceRecording } from '@/hooks/use-voice-recording';
+import { useAudioPlayer } from '@/hooks/use-audio-player';
 
 interface Message {
   id: string;
@@ -91,7 +94,8 @@ export function ChatSessionContent({ sessionId }: ChatSessionContentProps) {
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
-  const [isListening, setIsListening] = useState(false);
+  const [voiceModeEnabled, setVoiceModeEnabled] = useState(false);
+  const [liveTranscription, setLiveTranscription] = useState('');
   const [wsConnected, setWsConnected] = useState(false);
   const [streamingContent, setStreamingContent] = useState('');
   const [currentEmotionalState, setCurrentEmotionalState] = useState<EmotionalState>('neutral');
@@ -107,9 +111,58 @@ export function ChatSessionContent({ sessionId }: ChatSessionContentProps) {
   // Track image generation - only generate after LLM response
   const [imageGenTrigger, setImageGenTrigger] = useState(0);
   const [sceneDescription, setSceneDescription] = useState<string | undefined>(undefined);
+  // Resizable sidebar state
+  const [sidebarWidth, setSidebarWidth] = useState(280);
+  const [isResizing, setIsResizing] = useState(false);
+  const [isNearGrabber, setIsNearGrabber] = useState(false);
+  const sidebarRef = useRef<HTMLDivElement>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const wsRef = useRef<CampfireWebSocket | null>(null);
+
+  // Voice recording hook
+  const {
+    isRecording,
+    error: voiceError,
+    startRecording,
+    stopRecording,
+  } = useVoiceRecording(wsRef);
+
+  // Audio player hook for TTS playback
+  const {
+    isPlaying: isTTSPlaying,
+    queueAudio,
+    finishQueue,
+    stop: stopTTS,
+  } = useAudioPlayer({
+    onPlaybackStart: () => {
+      console.log('[Chat] TTS playback started');
+    },
+    onPlaybackEnd: () => {
+      console.log('[Chat] TTS playback ended');
+    },
+    onError: (error) => {
+      console.error('[Chat] TTS playback error:', error);
+    },
+  });
+
+  // Refs to store stable references to audio functions for WebSocket callbacks
+  const queueAudioRef = useRef(queueAudio);
+  const finishQueueRef = useRef(finishQueue);
+  useEffect(() => {
+    queueAudioRef.current = queueAudio;
+    finishQueueRef.current = finishQueue;
+  }, [queueAudio, finishQueue]);
+
+  // Calculate avatar dimensions based on sidebar width
+  // Maintain a portrait aspect ratio (roughly 5:8) with some padding
+  const avatarDimensions = useMemo(() => {
+    const padding = 32; // 16px on each side
+    const availableWidth = sidebarWidth - padding;
+    const width = Math.max(150, availableWidth);
+    const height = Math.round(width * 1.6); // 5:8 aspect ratio
+    return { width, height };
+  }, [sidebarWidth]);
 
   // Build custom prompt from companion visual data
   const customPrompt = companion?.spec?.visual_style
@@ -132,11 +185,13 @@ export function ChatSessionContent({ sessionId }: ChatSessionContentProps) {
       try {
         // Load session to get companion ID
         const session = await getSession(sessionId);
+        console.log('[ChatSession] Session loaded:', { sessionId: session.id, companionId: session.companionId });
 
         // Load companion with full spec (including visual data)
         if (session.companionId) {
           try {
             const companionData = await getCompanion(session.companionId);
+            console.log('[ChatSession] Companion loaded:', { companionId: companionData.id, name: companionData.name });
             setCompanion(companionData);
 
             // Also fetch backstory from knowledge graph
@@ -269,6 +324,25 @@ export function ChatSessionContent({ sessionId }: ChatSessionContentProps) {
       setIsLoading(false);
     });
 
+    // Subscribe to voice transcription
+    const unsubTranscription = ws.onVoiceTranscription((text, isFinal) => {
+      if (isFinal) {
+        setLiveTranscription('');
+      } else {
+        setLiveTranscription(text);
+      }
+    });
+
+    // Subscribe to TTS audio chunks
+    const unsubTTSChunk = ws.onTTSChunk((data) => {
+      queueAudioRef.current(data, 'mp3');
+    });
+
+    // Subscribe to TTS end
+    const unsubTTSEnd = ws.onTTSEnd(() => {
+      finishQueueRef.current();
+    });
+
     // Note: connectWebSocket() already calls connect(), don't call it again
 
     return () => {
@@ -279,6 +353,9 @@ export function ChatSessionContent({ sessionId }: ChatSessionContentProps) {
       unsubChunk();
       unsubEnd();
       unsubError();
+      unsubTranscription();
+      unsubTTSChunk();
+      unsubTTSEnd();
       ws.disconnect();
     };
   }, [sessionId, authLoading, isAuthenticated]);
@@ -310,10 +387,75 @@ export function ChatSessionContent({ sessionId }: ChatSessionContentProps) {
     inputRef.current?.focus();
   }, [input, isLoading]);
 
-  const toggleVoice = () => {
-    setIsListening(!isListening);
-    // TODO: Implement voice input via WebSocket
-  };
+  // Toggle voice mode on/off
+  const toggleVoiceMode = useCallback(() => {
+    const newEnabled = !voiceModeEnabled;
+    setVoiceModeEnabled(newEnabled);
+
+    if (wsRef.current?.isConnected) {
+      if (newEnabled) {
+        wsRef.current.enableVoice();
+      } else {
+        wsRef.current.disableVoice();
+        stopTTS();
+      }
+    }
+  }, [voiceModeEnabled, stopTTS]);
+
+  // Handle push-to-talk start
+  const handleVoiceStart = useCallback(() => {
+    if (!voiceModeEnabled || isLoading) return;
+    startRecording();
+  }, [voiceModeEnabled, isLoading, startRecording]);
+
+  // Handle push-to-talk end
+  const handleVoiceEnd = useCallback(() => {
+    if (!isRecording) return;
+    stopRecording();
+    setIsLoading(true);
+  }, [isRecording, stopRecording]);
+
+  // Handle resize start
+  const handleResizeStart = useCallback((e: React.MouseEvent) => {
+    e.preventDefault();
+    setIsResizing(true);
+  }, []);
+
+  // Handle resize move
+  useEffect(() => {
+    if (!isResizing) return;
+
+    const handleMouseMove = (e: MouseEvent) => {
+      const newWidth = Math.min(Math.max(200, e.clientX), 500);
+      setSidebarWidth(newWidth);
+    };
+
+    const handleMouseUp = () => {
+      setIsResizing(false);
+    };
+
+    document.addEventListener('mousemove', handleMouseMove);
+    document.addEventListener('mouseup', handleMouseUp);
+
+    return () => {
+      document.removeEventListener('mousemove', handleMouseMove);
+      document.removeEventListener('mouseup', handleMouseUp);
+    };
+  }, [isResizing]);
+
+  // Detect when mouse is near the grabber zone
+  const handleMouseMoveNearGrabber = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
+    if (!sidebarRef.current) return;
+    const rect = sidebarRef.current.getBoundingClientRect();
+    const distanceFromEdge = Math.abs(e.clientX - rect.right);
+    setIsNearGrabber(distanceFromEdge < 20);
+  }, []);
+
+  const handleMouseLeaveGrabber = useCallback(() => {
+    if (!isResizing) {
+      setIsNearGrabber(false);
+    }
+  }, [isResizing]);
 
   // Show loading while checking auth
   if (authLoading) {
@@ -332,36 +474,48 @@ export function ChatSessionContent({ sessionId }: ChatSessionContentProps) {
   return (
     <div className="flex h-screen bg-background">
       {/* Companion Avatar Sidebar */}
-      <div className="hidden lg:flex flex-col items-center p-4 border-r bg-muted/30 w-[280px]">
-        <CompanionAvatar
-          emotionalState={currentEmotionalState}
-          style="stylized"
-          customPrompt={customPrompt}
-          width={250}
-          height={400}
-          autoRegenerate={false}
-          debounceDelay={2000}
-          className="shadow-lg"
-          userId={user?.id}
-          sessionId={sessionId}
-          companionId={companion?.id}
-          anchorImageUrl={companion?.avatarUrl || undefined}
-          generationTrigger={imageGenTrigger}
-          sceneDescription={sceneDescription}
-        />
+      <div
+        ref={sidebarRef}
+        className="hidden lg:flex flex-col items-center p-4 bg-muted/10 relative select-none"
+        style={{ width: sidebarWidth }}
+        onMouseMove={handleMouseMoveNearGrabber}
+        onMouseLeave={handleMouseLeaveGrabber}
+      >
+        {/* Only render CompanionAvatar once we have companion data with anchor image */}
+        {companion?.avatarUrl ? (
+          <button
+            onClick={() => setShowGallery(true)}
+            className="cursor-pointer hover:opacity-90 transition-opacity focus:outline-none focus:ring-2 focus:ring-campfire-500 focus:ring-offset-2 focus:ring-offset-background rounded-xl"
+            aria-label="View gallery"
+          >
+            <CompanionAvatar
+              emotionalState={currentEmotionalState}
+              style="stylized"
+              customPrompt={customPrompt}
+              width={avatarDimensions.width}
+              height={avatarDimensions.height}
+              autoRegenerate={false}
+              debounceDelay={2000}
+              className="shadow-lg"
+              userId={user?.id}
+              sessionId={sessionId}
+              companionId={companion.id}
+              anchorImageUrl={companion.avatarUrl}
+              generationTrigger={imageGenTrigger}
+              sceneDescription={sceneDescription}
+            />
+          </button>
+        ) : (
+          /* Loading placeholder while companion data loads */
+          <div
+            className="rounded-xl bg-gradient-to-b from-primary/5 to-primary/10 shadow-lg animate-pulse"
+            style={{ width: avatarDimensions.width, height: avatarDimensions.height }}
+          />
+        )}
         <p className="mt-3 text-sm text-muted-foreground">
           Feeling: <span className="font-medium text-foreground capitalize">{currentEmotionalState}</span>
         </p>
-        <div className="flex flex-wrap gap-2 mt-2">
-          <Button
-            variant="outline"
-            size="sm"
-            className="gap-1"
-            onClick={() => setShowGallery(true)}
-          >
-            <Images className="h-4 w-4" />
-            Gallery
-          </Button>
+        <div className="flex flex-wrap gap-2 mt-2 justify-center">
           <Button
             variant="outline"
             size="sm"
@@ -383,12 +537,35 @@ export function ChatSessionContent({ sessionId }: ChatSessionContentProps) {
             </Button>
           )}
         </div>
+
+        {/* Resize Grabber */}
+        <AnimatePresence>
+          {(isNearGrabber || isResizing) && (
+            <motion.div
+              initial={{ opacity: 0, x: 10 }}
+              animate={{ opacity: 1, x: 0 }}
+              exit={{ opacity: 0, x: 10 }}
+              transition={{ duration: 0.15, ease: 'easeOut' }}
+              className="absolute right-0 top-0 bottom-0 w-4 flex items-center justify-center cursor-col-resize z-10"
+              onMouseDown={handleResizeStart}
+            >
+              <motion.div
+                className="h-16 w-1.5 rounded-full bg-muted-foreground/30 flex items-center justify-center"
+                whileHover={{ scale: 1.2, backgroundColor: 'rgba(255,255,255,0.4)' }}
+                whileTap={{ scale: 1.1, backgroundColor: 'rgba(255,255,255,0.5)' }}
+                animate={isResizing ? { scale: 1.1, backgroundColor: 'rgba(255,255,255,0.5)' } : {}}
+              >
+                <GripVertical className="h-4 w-4 text-muted-foreground/50" />
+              </motion.div>
+            </motion.div>
+          )}
+        </AnimatePresence>
       </div>
 
       {/* Main Chat Area */}
       <div className="flex flex-col flex-1">
         {/* Header */}
-        <header className="border-b px-4 py-3 flex items-center gap-4">
+        <header className="px-4 py-3 flex items-center gap-4">
           <Link href="/chat" className="flex items-center gap-2">
             <Flame className="h-7 w-7 text-campfire-500" />
             <span className="text-lg font-bold">Campfire</span>
@@ -474,28 +651,91 @@ export function ChatSessionContent({ sessionId }: ChatSessionContentProps) {
         </div>
 
         {/* Input */}
-        <div className="border-t p-4">
+        <div className="p-4">
+          {/* Live transcription display */}
+          {liveTranscription && (
+            <div className="max-w-4xl mx-auto mb-2">
+              <Card className="p-2 bg-muted/50 border-dashed">
+                <p className="text-sm text-muted-foreground italic">{liveTranscription}</p>
+              </Card>
+            </div>
+          )}
+
+          {/* Voice error display */}
+          {voiceError && (
+            <div className="max-w-4xl mx-auto mb-2">
+              <Card className="p-2 bg-destructive/10 border-destructive/50">
+                <p className="text-sm text-destructive">{voiceError}</p>
+              </Card>
+            </div>
+          )}
+
           <div className="flex gap-2 max-w-4xl mx-auto">
+            {/* Voice mode toggle */}
             <Button
-              variant={isListening ? 'destructive' : 'outline'}
+              variant={voiceModeEnabled ? 'secondary' : 'outline'}
               size="icon"
-              onClick={toggleVoice}
+              onClick={toggleVoiceMode}
+              title={voiceModeEnabled ? 'Disable voice mode' : 'Enable voice mode'}
             >
-              {isListening ? <MicOff className="h-5 w-5" /> : <Mic className="h-5 w-5" />}
+              <Volume2 className={`h-5 w-5 ${voiceModeEnabled ? 'text-campfire-500' : ''}`} />
             </Button>
+
+            {/* Push-to-talk mic button */}
+            {voiceModeEnabled && (
+              <Button
+                variant={isRecording ? 'destructive' : 'outline'}
+                size="icon"
+                onMouseDown={handleVoiceStart}
+                onMouseUp={handleVoiceEnd}
+                onMouseLeave={handleVoiceEnd}
+                onTouchStart={handleVoiceStart}
+                onTouchEnd={handleVoiceEnd}
+                disabled={isLoading || isTTSPlaying}
+                title={isRecording ? 'Release to send' : 'Hold to speak'}
+                className={isRecording ? 'animate-pulse' : ''}
+              >
+                {isRecording ? <MicOff className="h-5 w-5" /> : <Mic className="h-5 w-5" />}
+              </Button>
+            )}
+
             <Input
               ref={inputRef}
               value={input}
               onChange={(e) => setInput(e.target.value)}
               onKeyDown={(e) => e.key === 'Enter' && handleSend()}
-              placeholder="Type a message..."
-              disabled={isLoading}
+              placeholder={voiceModeEnabled ? 'Type or hold mic to speak...' : 'Type a message...'}
+              disabled={isLoading || isRecording}
               className="flex-1"
             />
-            <Button onClick={handleSend} disabled={!input.trim() || isLoading}>
+            <Button onClick={handleSend} disabled={!input.trim() || isLoading || isRecording}>
               <Send className="h-5 w-5" />
             </Button>
           </div>
+
+          {/* TTS playback indicator */}
+          {isTTSPlaying && (
+            <div className="max-w-4xl mx-auto mt-2 flex items-center justify-center gap-2 text-sm text-muted-foreground">
+              <div className="flex gap-1 items-end h-4">
+                {[1, 2, 3, 4, 5].map((i) => (
+                  <motion.div
+                    key={i}
+                    className="w-1 bg-campfire-500 rounded-full"
+                    animate={{
+                      height: [4, 16, 8, 12, 4],
+                    }}
+                    transition={{
+                      duration: 0.6,
+                      repeat: Infinity,
+                      delay: i * 0.1,
+                      ease: 'easeInOut',
+                    }}
+                  />
+                ))}
+              </div>
+              <span>Speaking...</span>
+            </div>
+          )}
         </div>
 
         {/* Mobile/Tablet Floating Avatar Thumbnail */}

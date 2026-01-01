@@ -6,3 +6,4 @@ export * from './debug';
 export * from './referrals';
 export * from './gifts';
 export * from './tokens';
+export * from './personality-profile';

@@ -121,7 +121,7 @@ const CACHE_TTL_MS = 1000 * 60 * 60 * 24; // 24 hours
 /**
  * Get the identity anchor URL for a companion.
  * Priority:
- * 1. Existing identity anchor in companion_avatars table
+ * 1. Existing identity anchor in companion_avatars table (refresh presigned URL if needed)
  * 2. Pre-generated variation image based on appearance settings (from S3)
  * 3. null (no reference, generate without IP-Adapter)
  */
@@ -133,9 +133,26 @@ async function getCompanionIdentityAnchorUrl(
   try {
     // First, check if companion has a stored identity anchor
     const identityAnchor = await companionRepo.getIdentityAnchor(companionId);
-    if (identityAnchor?.asset_url) {
-      logger.debug({ companionId, anchorId: identityAnchor.id }, 'Using stored identity anchor');
-      return identityAnchor.asset_url;
+    if (identityAnchor) {
+      // If we have s3_key and s3_bucket, generate a fresh presigned URL
+      // This avoids 403 errors from expired presigned URLs
+      if (identityAnchor.s3_key && identityAnchor.s3_bucket) {
+        const freshUrl = await getSignedUrl(
+          s3Client,
+          new GetObjectCommand({
+            Bucket: identityAnchor.s3_bucket,
+            Key: identityAnchor.s3_key,
+          }),
+          { expiresIn: 3600 } // 1 hour is enough for image generation
+        );
+        logger.debug({ companionId, anchorId: identityAnchor.id, s3Key: identityAnchor.s3_key }, 'Using refreshed identity anchor URL');
+        return freshUrl;
+      }
+      // Fallback to stored URL if no s3_key
+      if (identityAnchor.asset_url) {
+        logger.debug({ companionId, anchorId: identityAnchor.id }, 'Using stored identity anchor URL (no s3_key)');
+        return identityAnchor.asset_url;
+      }
     }
 
     // If no stored anchor, try to build URL from companion's appearance settings

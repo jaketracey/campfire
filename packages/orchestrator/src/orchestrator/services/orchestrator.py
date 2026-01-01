@@ -19,7 +19,7 @@ from orchestrator.models.conversation import (
 )
 from orchestrator.models.events import BaseEvent, EventType, ProviderEvent
 from orchestrator.models.gifts import GiftMemory, GiftRecallContext
-from orchestrator.models.memory import LongTermMemory
+from orchestrator.models.memory import LongTermMemory, CompanionSelfKnowledge
 from orchestrator.models.tools import TOOL_REGISTRY, ToolCall, ToolResult
 from orchestrator.prompts.manager import PromptManager
 from orchestrator.providers.base import LLMProvider, LLMResponse
@@ -91,6 +91,7 @@ class ConversationOrchestrator:
         recent_turns: list[ConversationTurn] | None = None,
         session_summary: SessionSummary | None = None,
         long_term_memories: list[LongTermMemory] | None = None,
+        companion_self_knowledge: list[CompanionSelfKnowledge] | None = None,
         stream: bool = False,
     ) -> ConversationTurn | AsyncGenerator[str, None]:
         """Process a user message and generate a response."""
@@ -224,12 +225,13 @@ class ConversationOrchestrator:
                 policy_version=self.safety_gate.policy_version,
             )
 
-            # Build messages with gift context
+            # Build messages with gift context and companion self-knowledge
             messages = self.context_builder.build_messages(
                 context=context,
                 current_user_message=user_message,
                 gift_memories=gift_memories,
                 pending_gift_recall=pending_gift_recall,
+                companion_self_knowledge=companion_self_knowledge,
             )
 
             # Get available tools

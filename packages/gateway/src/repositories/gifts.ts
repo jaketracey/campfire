@@ -19,7 +19,7 @@ import type {
   JSONObject,
 } from '../db/types.js';
 import type { TransactionContext, PaginationOptions, PaginatedResult } from './types.js';
-import { NotFoundError, DuplicateError, isUniqueViolation, wrapDatabaseError } from './errors.js';
+import { NotFoundError, DuplicateError, isUniqueViolation, wrapDatabaseError, validateUuid } from './errors.js';
 
 // ============================================================================
 // Extended Types
@@ -160,7 +160,7 @@ export class GiftsRepository {
         ${options.stripeCheckoutSessionId ?? null},
         ${options.subscriptionId ?? null},
         ${options.description ?? null},
-        ${JSON.stringify(options.metadata ?? {})},
+        ${options.metadata ?? {}},
         ${options.idempotencyKey ?? null}
       )
     `;
@@ -394,6 +394,10 @@ export class GiftsRepository {
   // ===========================================================================
 
   async createGift(data: GiftInsert, tx?: TransactionContext): Promise<Gift> {
+    // Validate UUID formats before inserting
+    validateUuid(data.user_id, 'user_id');
+    validateUuid(data.companion_id, 'companion_id');
+
     const db = this.getSql(tx);
 
     const result = await db`
@@ -410,7 +414,7 @@ export class GiftsRepository {
         ${data.emotional_meaning ?? null},
         ${data.token_cost},
         ${data.status ?? 'generating'},
-        ${data.generation_params ? JSON.stringify(data.generation_params) : null},
+        ${data.generation_params ?? null},
         ${data.source_event_id ?? null},
         ${data.source_turn_id ?? null}
       )
@@ -592,6 +596,10 @@ export class GiftsRepository {
     filters: PaginationOptions = {},
     tx?: TransactionContext
   ): Promise<PaginatedResult<Gift>> {
+    // Validate UUID formats before querying database
+    validateUuid(userId, 'userId');
+    validateUuid(companionId, 'companionId');
+
     const db = this.getSql(tx);
     const limit = filters.limit ?? 50;
     const offset = filters.offset ?? 0;
@@ -623,6 +631,10 @@ export class GiftsRepository {
     limit: number = 5,
     tx?: TransactionContext
   ): Promise<Gift[]> {
+    // Validate UUID formats before querying database
+    validateUuid(userId, 'userId');
+    validateUuid(companionId, 'companionId');
+
     const db = this.getSql(tx);
 
     // Get gifts that have been recalled, ordered by recall count
@@ -650,6 +662,11 @@ export class GiftsRepository {
   // ===========================================================================
 
   async createGiftMemory(data: GiftMemoryInsert, tx?: TransactionContext): Promise<GiftMemory> {
+    // Validate UUID formats before inserting
+    validateUuid(data.gift_id, 'gift_id');
+    validateUuid(data.user_id, 'user_id');
+    validateUuid(data.companion_id, 'companion_id');
+
     const db = this.getSql(tx);
 
     const result = await db`

@@ -150,3 +150,19 @@ class KnowledgeGraphProposal(BaseModel):
     status: str = "pending"
     reviewed_at: datetime | None = None
     created_at: datetime = Field(default_factory=datetime.utcnow)
+
+
+class CompanionSelfKnowledge(BaseModel):
+    """A piece of self-knowledge from the companion's Knowledge Graph.
+
+    This represents facts, experiences, traits, and other information
+    that the companion knows about itself. These are retrieved from
+    the KG where the companion is the source entity.
+    """
+
+    category: str  # backstory, trait, quirk, experience, motivation, relationship
+    content: str
+    confidence: float = 1.0
+
+    class Config:
+        frozen = True

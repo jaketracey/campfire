@@ -37,6 +37,7 @@ export function Step9Review() {
   const [imagesGenerated, setImagesGenerated] = useState(false);
   const [displayedAnchorUrl, setDisplayedAnchorUrl] = useState<string | null>(null);
   const [isImageFading, setIsImageFading] = useState(false);
+  const [sessionId, setSessionId] = useState<string | null>(null);
   const backstoryRef = useRef<HTMLDivElement>(null);
 
   // Auto-scroll backstory after it appears
@@ -79,7 +80,15 @@ export function Step9Review() {
   }, [backstoryResult]);
 
   const coreTenets = state.tenets.filter((t) => t.priority === 'core');
-  const isCreating = phase !== 'idle';
+  const isCreating = phase !== 'idle' && phase !== 'complete';
+  const isReady = phase === 'complete' && sessionId;
+
+  // Handle starting the chat
+  const handleStartChat = useCallback(() => {
+    if (!sessionId) return;
+    state.reset();
+    router.push(`/chat/${sessionId}`);
+  }, [sessionId, state, router]);
 
   // Cycle through anchors with fade effect
   useEffect(() => {
@@ -155,17 +164,18 @@ export function Step9Review() {
           personality: {
             archetype: state.archetype?.id || 'companion',
             secondary_archetype: state.secondaryArchetype?.id,
+            // Store traits in 0-1 range (personality modal expects this format)
             traits: {
-              warmth: state.personality.warmth,
-              energy: state.personality.energy,
-              playfulness: state.personality.playfulness,
-              formality: state.personality.formality,
-              assertiveness: state.personality.assertiveness,
-              curiosity: state.personality.curiosity,
-              empathy: state.personality.empathy,
-              spontaneity: state.personality.spontaneity,
-              optimism: state.personality.optimism,
-              directness: state.personality.directness,
+              warmth: state.personality.warmth / 100,
+              energy: state.personality.energy / 100,
+              playfulness: state.personality.playfulness / 100,
+              formality: state.personality.formality / 100,
+              assertiveness: state.personality.assertiveness / 100,
+              curiosity: state.personality.curiosity / 100,
+              empathy: state.personality.empathy / 100,
+              spontaneity: state.personality.spontaneity / 100,
+              optimism: state.personality.optimism / 100,
+              directness: state.personality.directness / 100,
             },
           },
           voice: {
@@ -309,17 +319,8 @@ export function Step9Review() {
       });
 
       console.log('Session created:', session);
-
+      setSessionId(session.id);
       setPhase('complete');
-
-      // Brief delay to show completion state
-      await new Promise((resolve) => setTimeout(resolve, 500));
-
-      // Reset onboarding state
-      state.reset();
-
-      // Navigate to chat with new session
-      router.push(`/chat/${session.id}`);
     } catch (error) {
       console.error('Failed to create companion:', error);
       toast({
@@ -603,6 +604,33 @@ export function Step9Review() {
                       </span>
                     </div>
 
+                    {/* Backstory - shown when available */}
+                    {backstoryResult && (
+                      <div className="col-span-2 space-y-3 animate-in fade-in slide-in-from-bottom-2 duration-500">
+                        <div className="flex items-center gap-2">
+                          <BookOpen className="h-3 w-3 text-vibes-cyan" />
+                          <span className="text-[10px] font-bold tracking-widest text-gray-500 uppercase font-display">
+                            Backstory
+                          </span>
+                        </div>
+                        <p className="text-sm text-gray-300 leading-relaxed">
+                          {backstoryResult.backstory}
+                        </p>
+                        {backstoryResult.motivations && backstoryResult.motivations.length > 0 && (
+                          <div className="flex gap-2 flex-wrap pt-1">
+                            {backstoryResult.motivations.slice(0, 3).map((m, i) => (
+                              <span
+                                key={i}
+                                className="px-2 py-0.5 rounded-full bg-vibes-cyan/10 border border-vibes-cyan/20 text-vibes-cyan text-xs"
+                              >
+                                {m}
+                              </span>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    )}
+
                     <div className="col-span-2 space-y-3">
                       <span className="text-[10px] font-bold tracking-widest text-gray-500 uppercase font-display">
                         Personality Traits
@@ -759,39 +787,45 @@ export function Step9Review() {
       )}
 
       <div className="pt-6 space-y-6">
-        <Button
-          size="lg"
-          className="w-full h-20 text-2xl font-bold rounded-2xl bg-gradient-to-r from-vibes-neon via-vibes-hot to-vibes-cyan hover:shadow-[0_0_50px_rgba(168,85,247,0.5)] transition-all duration-500 hover:scale-[1.02] active:scale-[0.98] text-white"
-          onClick={handleCreate}
-          disabled={isCreating}
-        >
-          {phase === 'idle' ? (
-            <>
-              <Sparkles className="mr-3 h-8 w-8" />
-              Bring to Life
-            </>
-          ) : phase === 'creating' ? (
-            <>
-              <Loader2 className="mr-3 h-8 w-8 animate-spin" />
-              Creating {state.name}...
-            </>
-          ) : phase === 'generating-identity' ? (
-            <>
-              <Loader2 className="mr-3 h-8 w-8 animate-spin" />
-              Building Identity...
-            </>
-          ) : phase === 'creating-session' ? (
-            <>
-              <Loader2 className="mr-3 h-8 w-8 animate-spin" />
-              Preparing Chat...
-            </>
-          ) : (
-            <>
-              <CheckCircle2 className="mr-3 h-8 w-8" />
-              Ready!
-            </>
-          )}
-        </Button>
+        {isReady ? (
+          <Button
+            size="lg"
+            className="w-full h-20 text-2xl font-bold rounded-2xl bg-gradient-to-r from-vibes-cyan via-vibes-neon to-vibes-hot hover:shadow-[0_0_50px_rgba(168,85,247,0.5)] transition-all duration-500 hover:scale-[1.02] active:scale-[0.98] text-white animate-in fade-in zoom-in-95 duration-500"
+            onClick={handleStartChat}
+          >
+            <Sparkles className="mr-3 h-8 w-8" />
+            Start Chat with {state.name}
+          </Button>
+        ) : (
+          <Button
+            size="lg"
+            className="w-full h-20 text-2xl font-bold rounded-2xl bg-gradient-to-r from-vibes-neon via-vibes-hot to-vibes-cyan hover:shadow-[0_0_50px_rgba(168,85,247,0.5)] transition-all duration-500 hover:scale-[1.02] active:scale-[0.98] text-white"
+            onClick={handleCreate}
+            disabled={isCreating}
+          >
+            {phase === 'idle' ? (
+              <>
+                <Sparkles className="mr-3 h-8 w-8" />
+                Bring to Life
+              </>
+            ) : phase === 'creating' ? (
+              <>
+                <Loader2 className="mr-3 h-8 w-8 animate-spin" />
+                Creating {state.name}...
+              </>
+            ) : phase === 'generating-identity' ? (
+              <>
+                <Loader2 className="mr-3 h-8 w-8 animate-spin" />
+                Building Identity...
+              </>
+            ) : (
+              <>
+                <Loader2 className="mr-3 h-8 w-8 animate-spin" />
+                Preparing Chat...
+              </>
+            )}
+          </Button>
+        )}
         <p className="text-xs text-center text-gray-500 font-medium">
           By igniting {state.name}, you agree to our{' '}
           <span className="underline cursor-pointer">Terms of Service</span> and{' '}

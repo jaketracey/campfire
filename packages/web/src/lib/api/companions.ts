@@ -288,7 +288,7 @@ export async function generateRandomIdentity(): Promise<GeneratedIdentity> {
     pronouns: string;
     backstory: string;
     latency_ms: number;
-  }>('/companions/generate-identity');
+  }>('/companions/generate-identity', {});
 
   return {
     name: response.name,

@@ -163,6 +163,24 @@ export type {
   GiftMemorySearchResult,
 } from './gifts.js';
 
+// Personality Profiles repository
+import { getPersonalityProfilesRepository as _getPersonalityProfilesRepository } from './personality-profiles.js';
+export {
+  PersonalityProfilesRepository,
+  getPersonalityProfilesRepository,
+} from './personality-profiles.js';
+export type {
+  UserPersonalityProfile,
+  UserPersonalityProfileInsert,
+  UserPersonalityProfileUpdate,
+  ProfileListFilters,
+  UserNeedingAnalysis,
+  GreetingStyle,
+  PreferredTone,
+  VerbosityLevel,
+  PersonalityTraits,
+} from './personality-profiles.js';
+
 /**
  * Initialize all repositories
  * Call this at application startup to ensure singleton instances are created
@@ -177,6 +195,7 @@ export function initializeRepositories(): void {
   _getVaultRepository();
   _getKnowledgeGraphRepository();
   _getGiftsRepository();
+  _getPersonalityProfilesRepository();
 }
 
 /**
@@ -194,5 +213,6 @@ export function getRepositories() {
     vault: _getVaultRepository(),
     knowledgeGraph: _getKnowledgeGraphRepository(),
     gifts: _getGiftsRepository(),
+    personalityProfiles: _getPersonalityProfilesRepository(),
   };
 }

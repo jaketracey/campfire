@@ -164,12 +164,15 @@ export function Step5Visuals() {
   };
 
   return (
-    <div className="space-y-8">
-      <div className="text-center space-y-3">
+    <div className="space-y-8 2xl:space-y-0 2xl:grid 2xl:grid-cols-[280px_1fr] 2xl:gap-12 3xl:grid-cols-[320px_1fr] 3xl:gap-16">
+      {/* Title section - centered on smaller screens, left column on 2xl+ */}
+      <div className="text-center 2xl:text-left 2xl:sticky 2xl:top-8 2xl:self-start space-y-3">
         <h2 className="text-4xl md:text-5xl font-bold font-display tracking-tight text-white">Visual Identity</h2>
-        <p className="text-gray-400 max-w-md mx-auto">Design your companion's physical appearance and art style.</p>
+        <p className="text-gray-400 max-w-md mx-auto 2xl:mx-0">Design your companion's physical appearance and art style.</p>
       </div>
 
+      {/* Main content area */}
+      <div className="space-y-8">
       <div className="grid lg:grid-cols-3 gap-8">
         {/* Left: Appearance Options */}
         <div className="lg:col-span-2 space-y-6 order-2 lg:order-1">
@@ -333,14 +336,6 @@ export function Step5Visuals() {
             </div>
 
 
-            {/* Caption */}
-            <div className="absolute bottom-0 inset-x-0 p-3 bg-gradient-to-t from-black/80 to-transparent z-10">
-              <div className="text-center">
-                <span className="text-xs text-white/60 capitalize">
-                  {appearance.hairColor === 'fantasy' ? '✨ ' : ''}{appearance.hairColor} hair
-                </span>
-              </div>
-            </div>
           </div>
 
           <div className="text-center space-y-1">
@@ -363,6 +358,7 @@ export function Step5Visuals() {
           Next: Identity
           <ArrowRight className="ml-2 h-5 w-5 group-hover:translate-x-2 transition-transform duration-300" />
         </Button>
+      </div>
       </div>
     </div>
   );

@@ -4,6 +4,7 @@
  */
 
 import type { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
+import crypto from 'crypto';
 import { z } from 'zod';
 import { nanoid } from 'nanoid';
 import { requireAuth, requireInternalService } from '../middleware/auth.js';
@@ -12,6 +13,7 @@ import { withSpan } from '../observability/tracing.js';
 import { getGiftsRepository } from '../repositories/gifts.js';
 import { getCompanionsRepository } from '../repositories/companions.js';
 import { getEventStore } from '../db/event-store.js';
+import { ValidationError } from '../repositories/errors.js';
 import type { JSONObject } from '../db/types.js';
 
 // ============================================================================
@@ -207,13 +209,14 @@ export async function giftsRoutes(app: FastifyInstance): Promise<void> {
       // - Return checkout URL
 
       // Emit checkout event
+      const checkoutTraceId = crypto.randomUUID();
       await eventStore.append({
-        eventId: nanoid(),
+        eventId: crypto.randomUUID(),
         timestamp: new Date().toISOString(),
         userId: user.userId,
-        sessionId: 'gifts',
+        sessionId: null,
         turnId: null,
-        traceId: request.id,
+        traceId: checkoutTraceId,
         type: 'gifts.checkout_started',
         payload: {
           bundleId,
@@ -223,7 +226,7 @@ export async function giftsRoutes(app: FastifyInstance): Promise<void> {
         },
         version: '1.0',
         causationId: null,
-        correlationId: request.id,
+        correlationId: checkoutTraceId,
       });
 
       // Stub response - would return actual Stripe checkout URL
@@ -312,6 +315,7 @@ export async function giftsRoutes(app: FastifyInstance): Promise<void> {
       // Double-check UUID format (Zod should catch this, but be safe)
       const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
       if (!uuidRegex.test(companionId)) {
+        logger.warn({ companionId }, 'Invalid companion ID format in generate gift request');
         return reply.status(400).send({
           success: false,
           error: {
@@ -327,6 +331,18 @@ export async function giftsRoutes(app: FastifyInstance): Promise<void> {
       try {
         companion = await companionsRepo.findById(companionId);
       } catch (dbError) {
+        // Handle ValidationError from repository (invalid UUID format)
+        if (dbError instanceof ValidationError) {
+          logger.warn({ companionId, error: dbError.message }, 'Invalid companion ID format in repository');
+          return reply.status(400).send({
+            success: false,
+            error: {
+              code: 'INVALID_COMPANION_ID',
+              message: 'Invalid companion ID format',
+              timestamp: new Date().toISOString(),
+            },
+          });
+        }
         logger.error({ companionId, error: dbError }, 'Database error looking up companion');
         return reply.status(400).send({
           success: false,
@@ -372,13 +388,14 @@ export async function giftsRoutes(app: FastifyInstance): Promise<void> {
       );
 
       // Emit gift.generation_started event (workers will pick this up for AI generation)
+      const eventTraceId = crypto.randomUUID();
       await eventStore.append({
-        eventId: nanoid(),
+        eventId: crypto.randomUUID(),
         timestamp: new Date().toISOString(),
         userId: user.userId,
-        sessionId: 'gifts',
+        sessionId: null,
         turnId: null,
-        traceId: request.id,
+        traceId: eventTraceId,
         type: 'gift.generation_started',
         payload: {
           giftId: gift.id,
@@ -389,7 +406,7 @@ export async function giftsRoutes(app: FastifyInstance): Promise<void> {
         },
         version: '1.0',
         causationId: null,
-        correlationId: request.id,
+        correlationId: eventTraceId,
       });
 
       // For now, immediately mark as ready with placeholder content
@@ -545,13 +562,14 @@ export async function giftsRoutes(app: FastifyInstance): Promise<void> {
       );
 
       // Emit gift.given event
+      const giftGivenTraceId = crypto.randomUUID();
       await eventStore.append({
-        eventId: nanoid(),
+        eventId: crypto.randomUUID(),
         timestamp: new Date().toISOString(),
         userId: user.userId,
-        sessionId: 'gifts',
+        sessionId: null,
         turnId: null,
-        traceId: request.id,
+        traceId: giftGivenTraceId,
         type: 'gift.given',
         payload: {
           giftId,
@@ -563,7 +581,7 @@ export async function giftsRoutes(app: FastifyInstance): Promise<void> {
         },
         version: '1.0',
         causationId: null,
-        correlationId: request.id,
+        correlationId: giftGivenTraceId,
       });
 
       return reply.send({
@@ -598,6 +616,7 @@ export async function giftsRoutes(app: FastifyInstance): Promise<void> {
       // Validate UUID format
       const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
       if (!uuidRegex.test(companionId)) {
+        logger.warn({ companionId }, 'Invalid companion ID format in gift history request');
         return reply.status(400).send({
           success: false,
           error: {
@@ -615,6 +634,18 @@ export async function giftsRoutes(app: FastifyInstance): Promise<void> {
       try {
         companion = await companionsRepo.findById(companionId);
       } catch (dbError) {
+        // Handle ValidationError from repository (invalid UUID format)
+        if (dbError instanceof ValidationError) {
+          logger.warn({ companionId, error: dbError.message }, 'Invalid companion ID format in repository');
+          return reply.status(400).send({
+            success: false,
+            error: {
+              code: 'INVALID_COMPANION_ID',
+              message: 'Invalid companion ID format',
+              timestamp: new Date().toISOString(),
+            },
+          });
+        }
         logger.error({ companionId, error: dbError }, 'Database error looking up companion');
         return reply.status(400).send({
           success: false,

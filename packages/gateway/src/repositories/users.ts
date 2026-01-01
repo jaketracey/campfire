@@ -489,7 +489,7 @@ export class UsersRepository {
           ${data.bio ?? null},
           ${data.timezone ?? 'UTC'},
           ${data.locale ?? 'en-US'},
-          ${JSON.stringify(data.preferences ?? {})}
+          ${data.preferences ?? {}}
         )
         RETURNING
           id, user_id, display_name, avatar_url, bio,
@@ -521,7 +521,7 @@ export class UsersRepository {
         bio = COALESCE(${data.bio ?? null}, bio),
         timezone = COALESCE(${data.timezone ?? null}, timezone),
         locale = COALESCE(${data.locale ?? null}, locale),
-        preferences = COALESCE(${data.preferences ? JSON.stringify(data.preferences) : null}, preferences)
+        preferences = COALESCE(${data.preferences ?? null}, preferences)
       WHERE user_id = ${userId}
       RETURNING
         id, user_id, display_name, avatar_url, bio,
@@ -664,7 +664,7 @@ export class UsersRepository {
       ) VALUES (
         ${data.userId},
         ${data.tokenHash},
-        ${data.deviceInfo ? JSON.stringify(data.deviceInfo) : null},
+        ${data.deviceInfo ?? null},
         ${data.ipAddress ?? null},
         ${data.userAgent ?? null},
         ${data.expiresAt}
@@ -807,7 +807,7 @@ export class UsersRepository {
           ${data.accessToken ?? null},
           ${data.refreshToken ?? null},
           ${data.tokenExpiresAt ?? null},
-          ${data.profileData ? JSON.stringify(data.profileData) : null}
+          ${data.profileData ?? null}
         )
         RETURNING
           id, user_id, provider, provider_user_id, provider_email,
@@ -840,7 +840,7 @@ export class UsersRepository {
         access_token = COALESCE(${data.accessToken ?? null}, access_token),
         refresh_token = COALESCE(${data.refreshToken ?? null}, refresh_token),
         token_expires_at = COALESCE(${data.tokenExpiresAt ?? null}, token_expires_at),
-        profile_data = COALESCE(${data.profileData ? JSON.stringify(data.profileData) : null}, profile_data)
+        profile_data = COALESCE(${data.profileData ?? null}, profile_data)
       WHERE id = ${id}
       RETURNING
         id, user_id, provider, provider_user_id, provider_email,

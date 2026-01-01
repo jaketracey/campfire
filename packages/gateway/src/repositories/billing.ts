@@ -231,7 +231,7 @@ export class BillingRepository {
           ${data.cancel_at_period_end ?? false},
           ${data.trial_start ?? null},
           ${data.trial_end ?? null},
-          ${JSON.stringify(data.metadata ?? {})}
+          ${data.metadata ?? {}}
         )
         RETURNING
           id, user_id, stripe_customer_id, stripe_subscription_id, stripe_price_id,
@@ -272,7 +272,7 @@ export class BillingRepository {
         cancel_at_period_end = COALESCE(${data.cancel_at_period_end ?? null}, cancel_at_period_end),
         trial_start = COALESCE(${data.trial_start ?? null}, trial_start),
         trial_end = COALESCE(${data.trial_end ?? null}, trial_end),
-        metadata = COALESCE(${data.metadata ? JSON.stringify(data.metadata) : null}, metadata)
+        metadata = COALESCE(${data.metadata ?? null}, metadata)
       WHERE id = ${id}
       RETURNING
         id, user_id, stripe_customer_id, stripe_subscription_id, stripe_price_id,
@@ -532,7 +532,7 @@ export class BillingRepository {
           ${data.user_id ?? null},
           ${data.stripe_event_id},
           ${data.stripe_event_type},
-          ${JSON.stringify(data.payload)},
+          ${data.payload},
           ${data.processed ?? false},
           ${data.error ?? null}
         )
@@ -693,7 +693,7 @@ export class BillingRepository {
         ${data.periodEnd},
         ${data.sourceSessionId ?? null},
         ${data.sourceEventIds ?? []},
-        ${JSON.stringify(data.metadata ?? {})}
+        ${data.metadata ?? {}}
       )
       RETURNING
         id, user_id, subscription_id, usage_type, quantity, unit,

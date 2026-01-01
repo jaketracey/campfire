@@ -16,6 +16,7 @@ async function bootstrap() {
   const { EmbeddingProjectionWorker } = await import('./projections/embeddings.js');
   const { KnowledgeGraphProjectionWorker } = await import('./projections/knowledge-graph.js');
   const { SummaryProjectionWorker } = await import('./projections/summary.js');
+  const { PersonalityProfileProjectionWorker } = await import('./projections/personality-profile.js');
   const { EmailProjectionWorker } = await import('./email/worker.js');
   const { getEmailService } = await import('./email/service.js');
   const { createDbClient } = await import('./db/client.js');
@@ -66,6 +67,13 @@ async function bootstrap() {
     logger: logger.child({ worker: 'summary' }),
   });
 
+  // Personality profile projection worker - analyzes user personality from chats
+  const personalityProfileWorker = new PersonalityProfileProjectionWorker({
+    connection,
+    db,
+    logger: logger.child({ worker: 'personality-profile' }),
+  });
+
   // Initialize email service (needed by email worker)
   getEmailService({
     connection,
@@ -88,6 +96,7 @@ async function bootstrap() {
     embeddingWorker.start(),
     kgWorker.start(),
     summaryWorker.start(),
+    personalityProfileWorker.start(),
     emailWorker.start(),
   ]);
 
@@ -101,6 +110,7 @@ async function bootstrap() {
       embeddingWorker.stop(),
       kgWorker.stop(),
       summaryWorker.stop(),
+      personalityProfileWorker.stop(),
       emailWorker.stop(),
     ]);
     await connection.quit();

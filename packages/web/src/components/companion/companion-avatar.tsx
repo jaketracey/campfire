@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { cn } from '@/lib/utils';
 import {
@@ -92,10 +92,29 @@ export function CompanionAvatar({
   // Use anchor image as identity reference for IP-Adapter character consistency
   const [identityAnchorUrl, setIdentityAnchorUrl] = useState<string | null>(anchorImageUrl || externalReferenceUrl || null);
   // Track generation trigger to only generate when explicitly requested
-  const [lastGenerationTrigger, setLastGenerationTrigger] = useState(0);
+  // Using a ref instead of state to prevent re-renders from clearing the timeout
+  const lastGenerationTriggerRef = useRef(0);
+
+  // Sync anchor image when prop changes (e.g., when companion data loads)
+  useEffect(() => {
+    if (anchorImageUrl) {
+      // Only set if we don't have a current image yet (avoid overwriting generated images)
+      if (!currentImageUrl) {
+        setCurrentImageUrl(anchorImageUrl);
+      }
+      // Always update identity anchor for IP-Adapter reference
+      if (!identityAnchorUrl) {
+        setIdentityAnchorUrl(anchorImageUrl);
+      }
+    }
+  }, [anchorImageUrl, currentImageUrl, identityAnchorUrl]);
 
   const generateImage = useCallback(async () => {
-    if (isLoading) return;
+    console.log('[CompanionAvatar] generateImage called, isLoading:', isLoading);
+    if (isLoading) {
+      console.log('[CompanionAvatar] Skipping generation - already loading');
+      return;
+    }
 
     setIsLoading(true);
     setError(null);
@@ -121,12 +140,30 @@ export function CompanionAvatar({
         sessionId,
         companionId,
         saveToS3: !!(userId && sessionId),
-        // Use identity anchor for character consistency (IP-Adapter)
-        referenceImageUrl: identityAnchorUrl || undefined,
-        referenceStrength: identityAnchorUrl ? referenceStrength : undefined,
+        // Let the gateway fetch a fresh presigned URL for the identity anchor
+        // This avoids 403 errors from expired presigned URLs
+        referenceStrength: companionId ? referenceStrength : undefined,
       };
 
+      console.log('[CompanionAvatar] Generating image with request:', {
+        prompt: promptToUse.slice(0, 100) + '...',
+        emotionalState,
+        companionId,
+        referenceStrength: request.referenceStrength,
+        userId,
+        sessionId,
+      });
+
+      console.log('[CompanionAvatar] Calling generateCompanionImage API...');
+      const startTime = Date.now();
       const result = await generateCompanionImage(request);
+      console.log('[CompanionAvatar] API call completed in', Date.now() - startTime, 'ms');
+
+      console.log('[CompanionAvatar] Image generated:', {
+        imageUrl: result.imageUrl?.slice(0, 50),
+        latencyMs: result.latencyMs,
+        cached: result.cached,
+      });
 
       // If this is the first successful generation with S3, use it as identity anchor
       if (!identityAnchorUrl && result.s3Key && result.imageUrl) {
@@ -135,26 +172,38 @@ export function CompanionAvatar({
 
       // If we already have an image, do a crossfade
       if (currentImageUrl && result.imageUrl !== currentImageUrl) {
+        console.log('[CompanionAvatar] Starting crossfade transition', {
+          currentImageUrl: currentImageUrl?.slice(0, 50),
+          newImageUrl: result.imageUrl?.slice(0, 50),
+        });
         setNextImageUrl(result.imageUrl);
         setIsTransitioning(true);
 
         // After transition completes, swap the images
         setTimeout(() => {
+          console.log('[CompanionAvatar] Crossfade timeout fired, swapping images');
           setCurrentImageUrl(result.imageUrl);
           setNextImageUrl(null);
           setIsTransitioning(false);
+          console.log('[CompanionAvatar] Crossfade complete');
         }, 500); // Match the fade duration
       } else {
+        console.log('[CompanionAvatar] No crossfade needed, setting image directly', {
+          hadPreviousImage: !!currentImageUrl,
+          newImageUrl: result.imageUrl?.slice(0, 50),
+        });
         setCurrentImageUrl(result.imageUrl);
       }
 
       setCurrentCacheKey(result.cacheKey);
       onLoad?.(result.imageUrl, result.cacheKey);
     } catch (err) {
+      console.error('[CompanionAvatar] Image generation failed:', err);
       const error = err instanceof Error ? err : new Error('Failed to generate image');
       setError(error);
       onError?.(error);
     } finally {
+      console.log('[CompanionAvatar] generateImage finished, setting isLoading=false');
       setIsLoading(false);
     }
   }, [
@@ -179,27 +228,36 @@ export function CompanionAvatar({
 
   // Generate when generationTrigger increments (after LLM response)
   useEffect(() => {
-    if (generationTrigger > lastGenerationTrigger) {
-      setLastGenerationTrigger(generationTrigger);
+    // Use ref to track last trigger without causing re-renders that clear the timeout
+    if (generationTrigger > lastGenerationTriggerRef.current) {
+      console.log('[CompanionAvatar] Generation triggered:', {
+        generationTrigger,
+        lastGenerationTrigger: lastGenerationTriggerRef.current,
+        sceneDescription,
+        identityAnchorUrl: identityAnchorUrl?.slice(0, 50),
+      });
+      // Update ref immediately (doesn't cause re-render)
+      lastGenerationTriggerRef.current = generationTrigger;
       const timer = setTimeout(() => {
+        console.log('[CompanionAvatar] Starting image generation...');
         generateImage();
       }, debounceDelay);
       return () => clearTimeout(timer);
     }
-  }, [generationTrigger, lastGenerationTrigger, debounceDelay, generateImage]);
+  }, [generationTrigger, debounceDelay, generateImage, sceneDescription, identityAnchorUrl]);
 
   // Legacy: Auto-regenerate on emotional state changes (if enabled)
   useEffect(() => {
     if (!autoRegenerate) return;
     // Skip if we have an anchor and haven't started generating yet
-    if (anchorImageUrl && lastGenerationTrigger === 0) return;
+    if (anchorImageUrl && lastGenerationTriggerRef.current === 0) return;
 
     const timer = setTimeout(() => {
       generateImage();
     }, debounceDelay);
 
     return () => clearTimeout(timer);
-  }, [emotionalState, personality, style, autoRegenerate, debounceDelay, generateImage, anchorImageUrl, lastGenerationTrigger]);
+  }, [emotionalState, personality, style, autoRegenerate, debounceDelay, generateImage, anchorImageUrl]);
 
   // Initial load - only if no anchor image provided
   useEffect(() => {
@@ -226,24 +284,20 @@ export function CompanionAvatar({
         </div>
       )}
 
-      {/* Current image with fade transitions */}
-      <AnimatePresence mode="sync">
-        {currentImageUrl && (
-          <motion.img
-            key={currentImageUrl}
-            src={currentImageUrl}
-            alt="Companion Avatar"
-            className="absolute inset-0 h-full w-full object-cover"
-            initial={{ opacity: 0 }}
-            animate={{ opacity: isTransitioning ? 0.5 : 1 }}
-            exit={{ opacity: 0 }}
-            transition={{ duration: 0.5, ease: 'easeInOut' }}
-          />
-        )}
-      </AnimatePresence>
+      {/* Current image - always visible, opacity controlled by isTransitioning */}
+      {currentImageUrl && (
+        <motion.img
+          key="current-image"
+          src={currentImageUrl}
+          alt="Companion Avatar"
+          className="absolute inset-0 h-full w-full object-cover"
+          animate={{ opacity: isTransitioning ? 0 : 1 }}
+          transition={{ duration: 0.5, ease: 'easeInOut' }}
+        />
+      )}
 
-      {/* Next image (for crossfade) */}
-      <AnimatePresence mode="sync">
+      {/* Next image (for crossfade) - fades in on top, then becomes current */}
+      <AnimatePresence>
         {nextImageUrl && isTransitioning && (
           <motion.img
             key={nextImageUrl}
@@ -252,6 +306,7 @@ export function CompanionAvatar({
             className="absolute inset-0 h-full w-full object-cover"
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
             transition={{ duration: 0.5, ease: 'easeInOut' }}
           />
         )}

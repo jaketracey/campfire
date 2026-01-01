@@ -54,6 +54,9 @@ class OllamaProvider(LLMProvider):
             "options": {
                 "num_predict": max_tokens or self.max_tokens,
                 "temperature": temperature,
+                # Repetition penalty to prevent the model from repeating itself
+                "repeat_penalty": 1.2,  # Default is 1.1, higher = less repetition
+                "repeat_last_n": 128,   # Look back further for repetition (default: 64)
             },
         }
 
@@ -146,6 +149,9 @@ class OllamaProvider(LLMProvider):
             "options": {
                 "num_predict": max_tokens or self.max_tokens,
                 "temperature": temperature,
+                # Repetition penalty to prevent the model from repeating itself
+                "repeat_penalty": 1.2,
+                "repeat_last_n": 128,
             },
         }
 

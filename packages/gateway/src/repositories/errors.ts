@@ -134,6 +134,27 @@ export function isNotNullViolation(error: unknown): boolean {
 }
 
 /**
+ * UUID regex pattern for validation
+ */
+const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/**
+ * Validate that a string is a valid UUID format
+ */
+export function isValidUuid(value: string): boolean {
+  return UUID_REGEX.test(value);
+}
+
+/**
+ * Validate UUID and throw ValidationError if invalid
+ */
+export function validateUuid(value: string, fieldName: string = 'id'): void {
+  if (!isValidUuid(value)) {
+    throw new ValidationError(`Invalid UUID format for ${fieldName}: ${value}`, fieldName);
+  }
+}
+
+/**
  * Wrap a database error in an appropriate repository error
  */
 export function wrapDatabaseError(error: unknown, context: string): RepositoryError {

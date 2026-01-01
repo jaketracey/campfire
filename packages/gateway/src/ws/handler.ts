@@ -12,8 +12,10 @@ import {
   getCompanionsService,
   getSessionsService,
   getEventsService,
+  getVoiceService,
   type EventContext,
 } from '../services/index.js';
+import { getKnowledgeGraphRepository } from '../repositories/index.js';
 
 // Orchestrator base URL
 const ORCHESTRATOR_URL = process.env['ORCHESTRATOR_URL'] || 'http://localhost:8000';
@@ -38,6 +40,13 @@ export type WSMessageType =
   | 'audio_chunk'
   | 'audio_end'
   | 'transcription'
+  | 'voice_enabled'
+  | 'voice_start'
+  | 'voice_audio_chunk'
+  | 'voice_end'
+  | 'voice_transcription'
+  | 'tts_audio_chunk'
+  | 'tts_audio_end'
   | 'tool_call'
   | 'tool_result'
   | 'error';
@@ -64,6 +73,8 @@ interface ConnectedClient {
   authenticated: boolean;
   connectedAt: Date;
   lastPing: Date;
+  voiceEnabled: boolean;
+  voiceTranscription: string;
 }
 
 // Active connections
@@ -98,6 +109,8 @@ export async function registerWebSocketHandler(app: FastifyInstance): Promise<vo
       authenticated: false,
       connectedAt: new Date(),
       lastPing: new Date(),
+      voiceEnabled: false,
+      voiceTranscription: '',
     };
 
     clients.set(clientId, client);
@@ -177,6 +190,22 @@ async function handleMessage(client: ConnectedClient, message: WSMessage): Promi
 
     case 'audio_end':
       await handleAudioEnd(client);
+      break;
+
+    case 'voice_enabled':
+      await handleVoiceEnabled(client, message.payload as { enabled: boolean });
+      break;
+
+    case 'voice_start':
+      await handleVoiceStart(client);
+      break;
+
+    case 'voice_audio_chunk':
+      await handleVoiceAudioChunk(client, message.payload as { data: string });
+      break;
+
+    case 'voice_end':
+      await handleVoiceEnd(client);
       break;
 
     default:
@@ -398,10 +427,15 @@ async function handleUserMessage(
       version: companion.spec_version,
     };
 
-    // 6. Get recent turns for context
+    // 6. Fetch companion self-knowledge from KG
+    const selfKnowledge = await fetchCompanionSelfKnowledge(userId, companionId, companion.name);
+
+    // 7. Get recent turns for context
     const recentTurns = await sessionsService.getRecentTurns(userId, sessionId, 10);
+
     const formattedTurns = recentTurns
       .filter(t => t.id !== turn.id) // Exclude current turn
+      .filter(t => t.user_message && t.agent_message) // Only include COMPLETE turns
       .map(t => ({
         id: t.id,
         session_id: sessionId,
@@ -438,7 +472,7 @@ async function handleUserMessage(
         created_at: t.created_at.toISOString(),
       }));
 
-    // 7. Call orchestrator streaming endpoint
+    // 8. Call orchestrator streaming endpoint
     const orchestratorRequest = {
       session_id: sessionId,
       user_id: userId,
@@ -447,6 +481,7 @@ async function handleUserMessage(
       recent_turns: formattedTurns,
       session_summary: null,
       long_term_memories: null,
+      companion_self_knowledge: selfKnowledge.length > 0 ? selfKnowledge : null,
     };
 
     logger.debug(
@@ -547,6 +582,24 @@ async function handleUserMessage(
       },
     });
 
+    // 12. If voice is enabled, synthesize TTS for the response
+    if (client.voiceEnabled && fullContent) {
+      const voiceConfig = companion.spec?.voice as { voice_id?: string; settings?: Record<string, unknown> } | undefined;
+      const voiceId = voiceConfig?.voice_id;
+
+      if (voiceId) {
+        const voiceSettings = voiceConfig?.settings || {};
+        await sendTTSForResponse(client, fullContent, voiceId, {
+          stability: typeof voiceSettings.stability === 'number' ? voiceSettings.stability : undefined,
+          similarityBoost: typeof voiceSettings.similarity_boost === 'number' ? voiceSettings.similarity_boost : undefined,
+          style: typeof voiceSettings.style === 'number' ? voiceSettings.style : undefined,
+          useSpeakerBoost: typeof voiceSettings.use_speaker_boost === 'boolean' ? voiceSettings.use_speaker_boost : undefined,
+        });
+      } else {
+        logger.warn({ companionId }, 'Voice enabled but no voice_id configured for companion');
+      }
+    }
+
     logger.info(
       { sessionId, turnId: turn.id, latencyMs, contentLength: fullContent.length },
       'Message processed successfully'
@@ -603,6 +656,99 @@ function buildSystemPrompt(companion: { name: string; spec: Record<string, unkno
 }
 
 /**
+ * Companion self-knowledge entry from Knowledge Graph
+ */
+interface CompanionSelfKnowledge {
+  category: 'backstory' | 'trait' | 'quirk' | 'experience' | 'motivation' | 'relationship';
+  content: string;
+  confidence: number;
+}
+
+/**
+ * Fetch companion's self-knowledge from the Knowledge Graph
+ * This retrieves the companion's own entity and all its outgoing relationships
+ * (backstory, traits, quirks, experiences, motivations)
+ */
+async function fetchCompanionSelfKnowledge(
+  userId: string,
+  companionId: string,
+  companionName: string
+): Promise<CompanionSelfKnowledge[]> {
+  try {
+    const kgRepo = getKnowledgeGraphRepository();
+
+    // Find the companion's own entity in the KG
+    // The companion entity is typically stored with the companion's name as canonical_name
+    const companionEntity = await kgRepo.findEntityByCanonicalName(
+      userId,
+      companionId,
+      companionName.toLowerCase()
+    );
+
+    if (!companionEntity) {
+      logger.debug(
+        { userId, companionId, companionName },
+        'No KG entity found for companion'
+      );
+      return [];
+    }
+
+    // Get all outgoing edges from the companion entity
+    // These represent things the companion "has", "experienced", "wants", etc.
+    const edges = await kgRepo.getOutgoingEdges(companionEntity.id, { status: 'active' });
+
+    if (edges.length === 0) {
+      return [];
+    }
+
+    // Fetch target entities for each edge to get the actual content
+    const selfKnowledge: CompanionSelfKnowledge[] = [];
+
+    for (const edge of edges) {
+      const targetEntity = await kgRepo.findEntityById(edge.target_entity_id);
+      if (!targetEntity) continue;
+
+      // Map relation types to categories
+      let category: CompanionSelfKnowledge['category'] = 'trait';
+      const relationType = edge.relation_type.toLowerCase();
+
+      if (relationType === 'has_backstory' || targetEntity.name.toLowerCase().includes('backstory')) {
+        category = 'backstory';
+      } else if (relationType === 'experienced' || relationType === 'has_experience') {
+        category = 'experience';
+      } else if (relationType === 'wants' || relationType === 'desires' || relationType === 'motivated_by') {
+        category = 'motivation';
+      } else if (relationType === 'has_quirk' || targetEntity.entity_type === 'quirk') {
+        category = 'quirk';
+      } else if (relationType === 'knows' || relationType === 'related_to') {
+        category = 'relationship';
+      } else {
+        category = 'trait';
+      }
+
+      selfKnowledge.push({
+        category,
+        content: targetEntity.name,
+        confidence: edge.confidence,
+      });
+    }
+
+    logger.debug(
+      { userId, companionId, count: selfKnowledge.length },
+      'Fetched companion self-knowledge from KG'
+    );
+
+    return selfKnowledge;
+  } catch (error) {
+    logger.error(
+      { err: error, userId, companionId },
+      'Failed to fetch companion self-knowledge'
+    );
+    return [];
+  }
+}
+
+/**
  * Handle audio chunk (voice input)
  */
 async function handleAudioChunk(
@@ -637,6 +783,170 @@ async function handleAudioEnd(client: ConnectedClient): Promise<void> {
 
   // TODO: Signal transcription service to finalize
   logger.debug({ clientId: client.id, sessionId: client.sessionId }, 'Audio stream ended');
+}
+
+/**
+ * Handle voice enabled/disabled
+ */
+async function handleVoiceEnabled(
+  client: ConnectedClient,
+  payload: { enabled: boolean }
+): Promise<void> {
+  if (!client.authenticated) {
+    sendError(client, 'Authentication required');
+    return;
+  }
+
+  client.voiceEnabled = payload.enabled;
+  logger.info({ clientId: client.id, voiceEnabled: payload.enabled }, 'Voice mode updated');
+}
+
+/**
+ * Handle voice start (push-to-talk begins)
+ */
+async function handleVoiceStart(client: ConnectedClient): Promise<void> {
+  if (!client.authenticated || !client.user) {
+    sendError(client, 'Authentication required');
+    return;
+  }
+
+  if (!client.sessionId) {
+    sendError(client, 'No active session');
+    return;
+  }
+
+  const voiceService = getVoiceService();
+
+  // Clear any previous transcription
+  client.voiceTranscription = '';
+
+  // Start STT session
+  const success = await voiceService.startSTTSession(
+    client.id,
+    (text: string, isFinal: boolean) => {
+      // Accumulate transcription
+      if (isFinal) {
+        client.voiceTranscription += text + ' ';
+      }
+
+      // Send transcription to client for display
+      send(client, {
+        type: 'voice_transcription',
+        payload: { text, isFinal },
+      });
+    },
+    (error: string) => {
+      sendError(client, `Voice error: ${error}`);
+    }
+  );
+
+  if (!success) {
+    sendError(client, 'Failed to start voice session');
+  }
+
+  logger.debug({ clientId: client.id }, 'Voice recording started');
+}
+
+/**
+ * Handle voice audio chunk
+ */
+async function handleVoiceAudioChunk(
+  client: ConnectedClient,
+  payload: { data: string }
+): Promise<void> {
+  if (!client.authenticated) {
+    sendError(client, 'Authentication required');
+    return;
+  }
+
+  if (!client.sessionId) {
+    sendError(client, 'No active session');
+    return;
+  }
+
+  const voiceService = getVoiceService();
+  voiceService.sendAudioToSTT(client.id, payload.data);
+}
+
+/**
+ * Handle voice end (push-to-talk ends)
+ * Processes the transcribed text as a user message
+ */
+async function handleVoiceEnd(client: ConnectedClient): Promise<void> {
+  if (!client.authenticated || !client.user) {
+    sendError(client, 'Authentication required');
+    return;
+  }
+
+  if (!client.sessionId || !client.companionId) {
+    sendError(client, 'No active session');
+    return;
+  }
+
+  const voiceService = getVoiceService();
+
+  // Signal end of audio
+  voiceService.endSTTAudio(client.id);
+
+  // Wait a moment for final transcription
+  await new Promise((resolve) => setTimeout(resolve, 500));
+
+  // Stop STT session
+  await voiceService.stopSTTSession(client.id);
+
+  const transcription = client.voiceTranscription.trim();
+
+  if (!transcription) {
+    logger.debug({ clientId: client.id }, 'Voice ended with no transcription');
+    return;
+  }
+
+  logger.info(
+    { clientId: client.id, transcription: transcription.substring(0, 50) },
+    'Voice transcription complete'
+  );
+
+  // Process transcription as a user message (this will also trigger TTS if voice is enabled)
+  await handleUserMessage(client, { content: transcription });
+}
+
+/**
+ * Send TTS audio for agent response
+ */
+async function sendTTSForResponse(
+  client: ConnectedClient,
+  text: string,
+  voiceId: string,
+  voiceTuning: { stability?: number; similarityBoost?: number; style?: number; useSpeakerBoost?: boolean }
+): Promise<void> {
+  const voiceService = getVoiceService();
+
+  await voiceService.synthesizeTTSStream(
+    text,
+    {
+      voiceId,
+      tuning: voiceTuning,
+    },
+    (chunk: Buffer, format: string) => {
+      send(client, {
+        type: 'tts_audio_chunk',
+        payload: {
+          data: chunk.toString('base64'),
+          format,
+        },
+      });
+    },
+    () => {
+      send(client, {
+        type: 'tts_audio_end',
+        payload: {},
+      });
+    },
+    (error: string) => {
+      logger.error({ clientId: client.id, error }, 'TTS error');
+      sendError(client, `TTS error: ${error}`);
+    }
+  );
 }
 
 /**

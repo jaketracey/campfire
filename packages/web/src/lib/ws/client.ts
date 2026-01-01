@@ -22,6 +22,13 @@ export type WSMessageType =
   | 'audio_chunk'
   | 'audio_end'
   | 'transcription'
+  | 'voice_start'
+  | 'voice_audio_chunk'
+  | 'voice_end'
+  | 'voice_transcription'
+  | 'tts_audio_chunk'
+  | 'tts_audio_end'
+  | 'voice_enabled'
   | 'error';
 
 export interface WSMessage<T = unknown> {
@@ -202,6 +209,41 @@ export class CampfireWebSocket {
   }
 
   /**
+   * Enable voice mode for the current session
+   */
+  enableVoice(): void {
+    this.send('voice_enabled', { enabled: true });
+  }
+
+  /**
+   * Disable voice mode for the current session
+   */
+  disableVoice(): void {
+    this.send('voice_enabled', { enabled: false });
+  }
+
+  /**
+   * Signal start of voice recording
+   */
+  startVoice(): void {
+    this.send('voice_start', {});
+  }
+
+  /**
+   * Send a voice audio chunk (base64 encoded PCM)
+   */
+  sendVoiceChunk(data: string): void {
+    this.send('voice_audio_chunk', { data });
+  }
+
+  /**
+   * Signal end of voice recording
+   */
+  endVoice(): void {
+    this.send('voice_end', {});
+  }
+
+  /**
    * Subscribe to a specific message type
    */
   on<T = unknown>(type: WSMessageType | '*', handler: MessageHandler<T>): () => void {
@@ -249,6 +291,33 @@ export class CampfireWebSocket {
   onError(handler: (message: string) => void): () => void {
     return this.on<{ message: string }>('error', (msg) => {
       handler(msg.payload.message);
+    });
+  }
+
+  /**
+   * Subscribe to voice transcription results
+   */
+  onVoiceTranscription(handler: (text: string, isFinal: boolean) => void): () => void {
+    return this.on<{ text: string; isFinal: boolean }>('voice_transcription', (msg) => {
+      handler(msg.payload.text, msg.payload.isFinal);
+    });
+  }
+
+  /**
+   * Subscribe to TTS audio chunks
+   */
+  onTTSChunk(handler: (data: string, format: string) => void): () => void {
+    return this.on<{ data: string; format: string }>('tts_audio_chunk', (msg) => {
+      handler(msg.payload.data, msg.payload.format);
+    });
+  }
+
+  /**
+   * Subscribe to TTS audio end
+   */
+  onTTSEnd(handler: () => void): () => void {
+    return this.on('tts_audio_end', () => {
+      handler();
     });
   }
 

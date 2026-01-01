@@ -3,7 +3,7 @@
  * Handles companion image generation via FAL.ai
  */
 
-import { post, get } from './client';
+import { apiClient, get, post } from './client';
 import { getAccessToken } from '@/stores/auth-store';
 
 export interface PersonalitySliders {
@@ -96,15 +96,56 @@ export interface GenerateAnchorsResult {
 
 /**
  * Generate a companion image based on emotional state and personality
+ * Uses a 120 second timeout to allow for ComfyUI generation
  */
 export async function generateCompanionImage(
   request: ImageGenRequest
 ): Promise<ImageGenResult> {
-  return post<ImageGenResult>('/imagegen/generate', {
-    ...request,
-    width: request.width || 250,
-    height: request.height || 400,
-  });
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => {
+    console.warn('[ImageGen] Request timed out after 120s');
+    controller.abort();
+  }, 120000); // 120s timeout to match orchestrator max_wait
+
+  try {
+    console.log('[ImageGen] Calling /imagegen/generate with:', {
+      prompt: request.prompt?.slice(0, 50),
+      emotionalState: request.emotionalState,
+      companionId: request.companionId,
+      userId: request.userId,
+      sessionId: request.sessionId,
+      saveToS3: !!(request.userId && request.sessionId),
+    });
+
+    const result = await apiClient<ImageGenResult>('/imagegen/generate', {
+      method: 'POST',
+      body: JSON.stringify({
+        ...request,
+        width: request.width || 250,
+        height: request.height || 400,
+      }),
+      signal: controller.signal,
+    });
+    clearTimeout(timeoutId);
+
+    console.log('[ImageGen] Generation successful:', {
+      cached: result.cached,
+      latencyMs: result.latencyMs,
+      s3Key: result.s3Key,
+      imageId: result.imageId,
+      imageUrlPrefix: result.imageUrl?.slice(0, 50),
+    });
+
+    return result;
+  } catch (error) {
+    clearTimeout(timeoutId);
+    if (error instanceof Error && error.name === 'AbortError') {
+      console.error('[ImageGen] Request aborted (timeout)');
+      throw new Error('Image generation timed out after 120 seconds');
+    }
+    console.error('[ImageGen] Generation failed:', error);
+    throw error;
+  }
 }
 
 /**

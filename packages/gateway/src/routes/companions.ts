@@ -208,7 +208,7 @@ function mapCompanionResponse(companion: {
   is_public: boolean;
   created_at: Date;
   updated_at: Date;
-}) {
+}, avatarUrl?: string | null) {
   const spec = companion.spec;
   return {
     id: companion.id,
@@ -216,7 +216,7 @@ function mapCompanionResponse(companion: {
     description: null, // Could be stored in extended spec in the future
     personality: JSON.stringify(spec?.personality || {}),
     voiceId: spec?.voice?.voice_id || null,
-    avatarUrl: null,
+    avatarUrl: avatarUrl ?? null,
     isPublic: companion.is_public,
     isActive: companion.status === 'active',
     status: companion.status,
@@ -285,6 +285,30 @@ async function getLatestImagesForCompanions(
 }
 
 /**
+ * Get active avatar URLs for multiple companions
+ */
+async function getAvatarUrlsForCompanions(
+  companionIds: string[]
+): Promise<Map<string, string>> {
+  if (companionIds.length === 0) return new Map();
+
+  const results = await db.sql`
+    SELECT c.id as companion_id, a.asset_url
+    FROM companions c
+    JOIN companion_avatars a ON c.active_avatar_id = a.id
+    WHERE c.id = ANY(${companionIds})
+  `;
+
+  const avatarMap = new Map<string, string>();
+  for (const row of results) {
+    if (row.companion_id && row.asset_url) {
+      avatarMap.set(row.companion_id, row.asset_url);
+    }
+  }
+  return avatarMap;
+}
+
+/**
  * Register companion routes
  */
 export async function companionsRoutes(app: FastifyInstance): Promise<void> {
@@ -348,19 +372,21 @@ export async function companionsRoutes(app: FastifyInstance): Promise<void> {
     // Get companion IDs for batch queries
     const companionIds = result.data.map((c) => c.id);
 
-    // Fetch latest sessions and images in parallel
-    const [sessionMap, imageMap] = await Promise.all([
+    // Fetch latest sessions, images, and avatars in parallel
+    const [sessionMap, imageMap, avatarMap] = await Promise.all([
       getLatestSessionsForCompanions(request.user!.userId, companionIds),
       getLatestImagesForCompanions(request.user!.userId, companionIds),
+      getAvatarUrlsForCompanions(companionIds),
     ]);
 
-    // Map companions with session and image data
+    // Map companions with session, image, and avatar data
     const companions = result.data.map((companion) => {
       const latestSession = sessionMap.get(companion.id);
       const latestImageUrl = imageMap.get(companion.id);
+      const avatarUrl = avatarMap.get(companion.id);
 
       return {
-        ...mapCompanionResponse(companion),
+        ...mapCompanionResponse(companion, avatarUrl),
         latestSessionId: latestSession?.id || null,
         latestSessionUpdatedAt: latestSession?.updatedAt || null,
         latestConversationImageUrl: latestImageUrl || null,
@@ -420,7 +446,8 @@ export async function companionsRoutes(app: FastifyInstance): Promise<void> {
   app.get('/:companionId', { preHandler: requireAuth }, async (request: FastifyRequest, reply: FastifyReply) => {
     const { companionId } = request.params as { companionId: string };
 
-    const companion = await companionRepo.findById(companionId);
+    // Use findByIdWithAvatar to get the active avatar URL
+    const companion = await companionRepo.findByIdWithAvatar(companionId);
     if (!companion) {
       return reply.status(404).send({
         error: 'Not Found',
@@ -436,7 +463,7 @@ export async function companionsRoutes(app: FastifyInstance): Promise<void> {
       });
     }
 
-    return reply.send(mapCompanionResponse(companion));
+    return reply.send(mapCompanionResponse(companion, companion.activeAvatar?.asset_url));
   });
 
   /**

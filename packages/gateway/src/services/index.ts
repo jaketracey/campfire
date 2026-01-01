@@ -131,6 +131,11 @@ export type {
   InvoiceSummary,
 } from './billing.js';
 
+// Voice service
+import { getVoiceService as _getVoiceService } from './voice.js';
+export { VoiceService, getVoiceService } from './voice.js';
+export type { VoiceTuning, STTSession, TTSOptions } from './voice.js';
+
 /**
  * Initialize all services
  * Call this at application startup to ensure singleton instances are created
@@ -143,6 +148,7 @@ export function initializeServices(): void {
   _getSessionsService();
   _getMemoriesService();
   _getBillingService();
+  _getVoiceService();
 }
 
 /**
@@ -158,6 +164,7 @@ export function getServices() {
     sessions: _getSessionsService(),
     memories: _getMemoriesService(),
     billing: _getBillingService(),
+    voice: _getVoiceService(),
   };
 }
 
@@ -172,4 +179,5 @@ export interface ServiceContext {
   sessions: ReturnType<typeof _getSessionsService>;
   memories: ReturnType<typeof _getMemoriesService>;
   billing: ReturnType<typeof _getBillingService>;
+  voice: ReturnType<typeof _getVoiceService>;
 }

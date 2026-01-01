@@ -202,16 +202,16 @@ export default function AccountPage() {
                       <div>
                         <p className="text-sm text-amber-400/80 font-medium">Current Balance</p>
                         <p className="text-4xl font-bold text-white">
-                          {tokenBalance?.balance.toLocaleString() ?? 0}
+                          {tokenBalance?.balance?.toLocaleString() ?? 0}
                           <span className="text-lg text-gray-400 ml-2">tokens</span>
                         </p>
                       </div>
                     </div>
                     {tokenBalance && (
                       <div className="text-right text-sm text-gray-500 space-y-1">
-                        <p>Lifetime purchased: {tokenBalance.lifetimePurchased.toLocaleString()}</p>
-                        <p>Bonus earned: {tokenBalance.lifetimeBonus.toLocaleString()}</p>
-                        <p>Total spent: {tokenBalance.lifetimeSpent.toLocaleString()}</p>
+                        <p>Lifetime purchased: {tokenBalance.lifetimePurchased?.toLocaleString() ?? 0}</p>
+                        <p>Bonus earned: {tokenBalance.lifetimeBonus?.toLocaleString() ?? 0}</p>
+                        <p>Total spent: {tokenBalance.lifetimeSpent?.toLocaleString() ?? 0}</p>
                       </div>
                     )}
                   </div>

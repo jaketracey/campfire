@@ -223,7 +223,7 @@ export class KnowledgeGraphRepository {
           ${canonicalName},
           ${data.entity_type},
           ${data.aliases ?? []},
-          ${JSON.stringify(data.metadata ?? {})},
+          ${data.metadata ?? {}},
           ${data.source_event_id ?? null}
         )
         RETURNING
@@ -257,7 +257,7 @@ export class KnowledgeGraphRepository {
         canonical_name = COALESCE(${data.canonical_name ?? null}, canonical_name),
         entity_type = COALESCE(${data.entity_type ?? null}, entity_type),
         aliases = COALESCE(${data.aliases ?? null}, aliases),
-        metadata = COALESCE(${data.metadata ? JSON.stringify(data.metadata) : null}, metadata)
+        metadata = COALESCE(${data.metadata ?? null}, metadata)
       WHERE id = ${id}
       RETURNING
         id, user_id, companion_id, name, canonical_name,
@@ -360,7 +360,7 @@ export class KnowledgeGraphRepository {
       UPDATE kg_entities
       SET
         aliases = ${mergedAliases},
-        metadata = metadata || ${JSON.stringify(secondary.metadata)}
+        metadata = metadata || ${secondary.metadata}
       WHERE id = ${primaryId}
       RETURNING
         id, user_id, companion_id, name, canonical_name,
@@ -537,7 +537,7 @@ export class KnowledgeGraphRepository {
           ${data.confidence ?? 1.0},
           ${data.status ?? 'active'},
           ${data.source_event_id ?? null},
-          ${JSON.stringify(data.metadata ?? {})}
+          ${data.metadata ?? {}}
         )
         RETURNING
           id, user_id, companion_id, source_entity_id, target_entity_id,
@@ -577,7 +577,7 @@ export class KnowledgeGraphRepository {
         ${data.confidence ?? 1.0},
         ${data.status ?? 'active'},
         ${data.source_event_id ?? null},
-        ${JSON.stringify(data.metadata ?? {})}
+        ${data.metadata ?? {}}
       )
       ON CONFLICT (source_entity_id, target_entity_id, relation_type) DO UPDATE SET
         confidence = GREATEST(kg_edges.confidence, EXCLUDED.confidence),
@@ -610,7 +610,7 @@ export class KnowledgeGraphRepository {
       SET
         confidence = COALESCE(${data.confidence ?? null}, confidence),
         status = COALESCE(${data.status ?? null}, status),
-        metadata = COALESCE(${data.metadata ? JSON.stringify(data.metadata) : null}, metadata)
+        metadata = COALESCE(${data.metadata ?? null}, metadata)
       WHERE id = ${id}
       RETURNING
         id, user_id, companion_id, source_entity_id, target_entity_id,

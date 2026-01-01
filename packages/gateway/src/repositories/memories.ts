@@ -112,7 +112,7 @@ export class MemoriesRepository {
           ${data.importance ?? 0.5},
           ${data.source_event_id ?? null},
           ${data.source_turn_id ?? null},
-          ${JSON.stringify(data.metadata ?? {})},
+          ${data.metadata ?? {}},
           ${[] as string[]},
           ${data.expires_at ?? null}
         )
@@ -144,7 +144,7 @@ export class MemoriesRepository {
         content = COALESCE(${data.content ?? null}, content),
         content_type = COALESCE(${data.content_type ?? null}, content_type),
         importance = COALESCE(${data.importance ?? null}, importance),
-        metadata = COALESCE(${data.metadata ? JSON.stringify(data.metadata) : null}, metadata),
+        metadata = COALESCE(${data.metadata ?? null}, metadata),
         expires_at = COALESCE(${data.expires_at ?? null}, expires_at)
       WHERE id = ${id}
       RETURNING

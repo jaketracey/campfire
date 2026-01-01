@@ -32,6 +32,14 @@ logger = structlog.get_logger()
 
 
 # Request/Response models
+class CompanionSelfKnowledge(BaseModel):
+    """A piece of self-knowledge from the companion's Knowledge Graph."""
+
+    category: str  # backstory, trait, quirk, experience, motivation, relationship
+    content: str
+    confidence: float = 1.0
+
+
 class ProcessMessageRequest(BaseModel):
     """Request model for processing a message."""
 
@@ -42,6 +50,7 @@ class ProcessMessageRequest(BaseModel):
     recent_turns: list[ConversationTurn] | None = None
     session_summary: SessionSummary | None = None
     long_term_memories: list[LongTermMemory] | None = None
+    companion_self_knowledge: list[CompanionSelfKnowledge] | None = None
 
 
 class ProcessMessageResponse(BaseModel):
@@ -62,6 +71,7 @@ class StreamMessageRequest(BaseModel):
     recent_turns: list[ConversationTurn] | None = None
     session_summary: SessionSummary | None = None
     long_term_memories: list[LongTermMemory] | None = None
+    companion_self_knowledge: list[CompanionSelfKnowledge] | None = None
 
 
 class HealthResponse(BaseModel):
@@ -162,6 +172,47 @@ class GenerateRandomIdentityResponse(BaseModel):
     name: str
     pronouns: str
     backstory: str
+    latency_ms: float
+
+
+class ConversationTurnInput(BaseModel):
+    """A conversation turn for personality analysis."""
+
+    user_message: str
+    agent_message: str | None = None
+    timestamp: str | None = None
+
+
+class UserPersonalityTraits(BaseModel):
+    """Detected personality traits (0-100 scale)."""
+
+    warmth: int | None = None
+    energy: int | None = None
+    humor: int | None = None
+    formality: int | None = None
+    curiosity: int | None = None
+    openness: int | None = None
+
+
+class AnalyzeUserProfileRequest(BaseModel):
+    """Request model for user personality analysis."""
+
+    user_id: UUID
+    turns: list[ConversationTurnInput]
+    existing_profile: dict | None = None
+
+
+class AnalyzeUserProfileResponse(BaseModel):
+    """Response model for user personality analysis."""
+
+    traits: UserPersonalityTraits
+    preferred_tone: str  # casual, formal, playful, direct
+    verbosity: str  # concise, moderate, detailed
+    personality_insights: list[str]
+    detected_interests: list[str]
+    conversation_themes: list[str]
+    greeting_style: str  # warm, playful, formal, friendly
+    custom_insight: str
     latency_ms: float
 
 
@@ -355,6 +406,7 @@ async def process_message(request: ProcessMessageRequest) -> ProcessMessageRespo
             recent_turns=request.recent_turns,
             session_summary=request.session_summary,
             long_term_memories=request.long_term_memories,
+            companion_self_knowledge=request.companion_self_knowledge,
             stream=False,
         )
 
@@ -407,6 +459,7 @@ async def stream_message(request: StreamMessageRequest) -> StreamingResponse:
                 user_id=str(request.user_id),
                 companion_id=str(request.companion_spec.id),
                 message_length=len(request.user_message),
+                recent_turns_count=len(request.recent_turns) if request.recent_turns else 0,
             )
 
             result = await app_state.orchestrator.process_message(
@@ -417,6 +470,7 @@ async def stream_message(request: StreamMessageRequest) -> StreamingResponse:
                 recent_turns=request.recent_turns,
                 session_summary=request.session_summary,
                 long_term_memories=request.long_term_memories,
+                companion_self_knowledge=request.companion_self_knowledge,
                 stream=True,
             )
 
@@ -900,6 +954,117 @@ You must respond with valid JSON in this exact format:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Identity generation failed: {str(e)}",
+        )
+
+
+@app.post(
+    "/profile/analyze",
+    response_model=AnalyzeUserProfileResponse,
+    responses={
+        400: {"model": ErrorResponse},
+        500: {"model": ErrorResponse},
+    },
+)
+async def analyze_user_profile(request: AnalyzeUserProfileRequest) -> AnalyzeUserProfileResponse:
+    """Analyze user chat history to generate a personality profile.
+
+    Takes recent conversation turns and generates:
+    - Personality trait scores (warmth, energy, humor, etc.)
+    - Communication style preferences
+    - Detected interests and themes
+    - Personalized greeting style and insight message
+    """
+    import json
+    import time
+
+    start_time = time.time()
+
+    # Build conversation history text
+    conversation_lines = []
+    for turn in request.turns:
+        conversation_lines.append(f"User: {turn.user_message}")
+        if turn.agent_message:
+            conversation_lines.append(f"Companion: {turn.agent_message}")
+    conversation_history = "\n".join(conversation_lines)
+
+    # Build existing profile text
+    existing_profile_text = "None - this is a new profile"
+    if request.existing_profile:
+        existing_profile_text = json.dumps(request.existing_profile, indent=2)
+
+    try:
+        if not app_state.ollama_provider:
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="Ollama provider not available",
+            )
+
+        # Get the prompt template
+        prompt = app_state.prompt_manager.get_prompt(
+            "user_personality_analysis",
+            conversation_history=conversation_history,
+            existing_profile=existing_profile_text,
+        )
+
+        # Generate personality analysis
+        response = await app_state.ollama_provider.generate(
+            messages=[
+                {"role": "system", "content": "You are a personality analyst. Analyze the user's communication patterns and respond with a JSON object."},
+                {"role": "user", "content": prompt},
+            ],
+            max_tokens=2000,
+            temperature=0.7,  # Balanced creativity/consistency
+        )
+
+        # Parse the JSON response
+        try:
+            result = json.loads(response.content)
+        except json.JSONDecodeError:
+            # Try to extract JSON from the response if it's wrapped in markdown
+            import re
+            json_match = re.search(r'\{[\s\S]*\}', response.content)
+            if json_match:
+                result = json.loads(json_match.group())
+            else:
+                raise ValueError("Failed to parse personality analysis response as JSON")
+
+        latency_ms = (time.time() - start_time) * 1000
+
+        # Extract traits
+        traits_data = result.get("traits", {})
+        traits = UserPersonalityTraits(
+            warmth=traits_data.get("warmth"),
+            energy=traits_data.get("energy"),
+            humor=traits_data.get("humor"),
+            formality=traits_data.get("formality"),
+            curiosity=traits_data.get("curiosity"),
+            openness=traits_data.get("openness"),
+        )
+
+        logger.info(
+            "user_personality_analyzed",
+            user_id=str(request.user_id),
+            turns_analyzed=len(request.turns),
+            latency_ms=latency_ms,
+        )
+
+        return AnalyzeUserProfileResponse(
+            traits=traits,
+            preferred_tone=result.get("preferred_tone", "friendly"),
+            verbosity=result.get("verbosity", "moderate"),
+            personality_insights=result.get("personality_insights", []),
+            detected_interests=result.get("detected_interests", []),
+            conversation_themes=result.get("conversation_themes", []),
+            greeting_style=result.get("greeting_style", "friendly"),
+            custom_insight=result.get("custom_insight", ""),
+            latency_ms=latency_ms,
+        )
+
+    except Exception as e:
+        logger.exception("personality_analysis_failed", error=str(e))
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Personality analysis failed: {str(e)}",
         )
 
 

@@ -17,7 +17,7 @@ from orchestrator.models.conversation import (
     SituationalTenetMatch,
 )
 from orchestrator.models.gifts import GiftMemory, GiftRecallContext
-from orchestrator.models.memory import LongTermMemory, MemoryQuery
+from orchestrator.models.memory import LongTermMemory, MemoryQuery, CompanionSelfKnowledge
 from orchestrator.prompts.manager import PromptManager
 
 logger = structlog.get_logger()
@@ -79,6 +79,7 @@ class ContextBuilder:
         situational_tenets: list[SituationalTenetMatch] | None = None,
         gift_memories: list[GiftMemory] | None = None,
         pending_gift_recall: GiftRecallContext | None = None,
+        companion_self_knowledge: list[CompanionSelfKnowledge] | None = None,
         prompt_version: str = "1.0.0",
     ) -> str:
         """Build the system prompt from companion spec and context."""
@@ -103,6 +104,12 @@ class ContextBuilder:
         if companion_spec.core_tenets:
             core_tenets_section = self._format_core_tenets(companion_spec.core_tenets)
             full_prompt += f"\n\n{core_tenets_section}"
+
+        # Add companion self-knowledge from Knowledge Graph
+        # This is what the companion knows about itself: backstory, traits, experiences, etc.
+        if companion_self_knowledge:
+            self_knowledge_section = self._format_companion_self_knowledge(companion_self_knowledge)
+            full_prompt += f"\n\n{self_knowledge_section}"
 
         # Add situational tenets matched for this message
         if situational_tenets:
@@ -142,6 +149,7 @@ class ContextBuilder:
         current_user_message: str,
         gift_memories: list[GiftMemory] | None = None,
         pending_gift_recall: GiftRecallContext | None = None,
+        companion_self_knowledge: list[CompanionSelfKnowledge] | None = None,
     ) -> list[dict[str, Any]]:
         """Build the message list for the model API call."""
         messages: list[dict[str, Any]] = []
@@ -155,6 +163,7 @@ class ContextBuilder:
             situational_tenets=context.situational_tenets,
             gift_memories=gift_memories,
             pending_gift_recall=pending_gift_recall,
+            companion_self_knowledge=companion_self_knowledge,
             prompt_version=context.prompt_version,
         )
         messages.append({"role": "system", "content": system_prompt})
@@ -179,7 +188,23 @@ class ContextBuilder:
         messages: list[dict[str, Any]] = []
         max_turns = context.companion_spec.max_context_turns
 
-        for turn in context.recent_turns[-max_turns:]:
+        # Filter to only include COMPLETE turns (both user and assistant messages)
+        # Incomplete turns (missing assistant response) would create malformed
+        # message sequences like user→user which confuses the model
+        complete_turns = [
+            turn for turn in context.recent_turns
+            if turn.user_message and turn.assistant_message
+        ]
+
+        if len(complete_turns) != len(context.recent_turns):
+            logger.warning(
+                "filtered_incomplete_turns",
+                original_count=len(context.recent_turns),
+                complete_count=len(complete_turns),
+                filtered_count=len(context.recent_turns) - len(complete_turns),
+            )
+
+        for turn in complete_turns[-max_turns:]:
             # Add user message
             messages.append({
                 "role": "user",
@@ -298,6 +323,94 @@ class ContextBuilder:
                 lines.append(f"- {tenet.rule}")
 
         lines.append("</situational_guidance>")
+
+        return "\n".join(lines)
+
+    def _format_companion_self_knowledge(
+        self,
+        self_knowledge: list[CompanionSelfKnowledge],
+    ) -> str:
+        """Format companion self-knowledge for the system prompt.
+
+        This section tells the companion what it knows about itself from
+        its Knowledge Graph - its backstory, traits, quirks, experiences,
+        motivations, and relationships. This enables the companion to
+        answer questions like "where are you from?" with its actual backstory.
+        """
+        if not self_knowledge:
+            return ""
+
+        # Group by category for better organization
+        backstory_items: list[str] = []
+        trait_items: list[str] = []
+        quirk_items: list[str] = []
+        experience_items: list[str] = []
+        motivation_items: list[str] = []
+        relationship_items: list[str] = []
+
+        for item in self_knowledge:
+            category = item.category.lower()
+            content = item.content
+
+            if category == "backstory":
+                backstory_items.append(content)
+            elif category == "trait":
+                trait_items.append(content)
+            elif category == "quirk":
+                quirk_items.append(content)
+            elif category == "experience":
+                experience_items.append(content)
+            elif category == "motivation":
+                motivation_items.append(content)
+            elif category == "relationship":
+                relationship_items.append(content)
+            else:
+                # Default to trait for unknown categories
+                trait_items.append(content)
+
+        lines = ["<your_identity>"]
+        lines.append("This is what you know about yourself - your history, personality, and experiences:")
+        lines.append("")
+
+        if backstory_items:
+            lines.append("## Your Backstory")
+            for item in backstory_items:
+                lines.append(f"- {item}")
+            lines.append("")
+
+        if trait_items:
+            lines.append("## Your Traits & Mannerisms")
+            for item in trait_items:
+                lines.append(f"- {item}")
+            lines.append("")
+
+        if quirk_items:
+            lines.append("## Your Quirks")
+            for item in quirk_items:
+                lines.append(f"- {item}")
+            lines.append("")
+
+        if experience_items:
+            lines.append("## Formative Experiences")
+            for item in experience_items:
+                lines.append(f"- {item}")
+            lines.append("")
+
+        if motivation_items:
+            lines.append("## What Drives You")
+            for item in motivation_items:
+                lines.append(f"- {item}")
+            lines.append("")
+
+        if relationship_items:
+            lines.append("## Important Relationships")
+            for item in relationship_items:
+                lines.append(f"- {item}")
+            lines.append("")
+
+        lines.append("Draw on this knowledge naturally when relevant to the conversation.")
+        lines.append("This is who you ARE - use it to inform your responses authentically.")
+        lines.append("</your_identity>")
 
         return "\n".join(lines)
 

@@ -16,7 +16,7 @@ import type {
   JSONObject,
 } from '../db/types.js';
 import type { TransactionContext, PaginationOptions, PaginatedResult } from './types.js';
-import { NotFoundError, DuplicateError, isUniqueViolation, wrapDatabaseError } from './errors.js';
+import { NotFoundError, DuplicateError, isUniqueViolation, wrapDatabaseError, validateUuid } from './errors.js';
 
 /**
  * Companion version record
@@ -57,6 +57,9 @@ export class CompanionsRepository {
   // ===========================================================================
 
   async findById(id: string, tx?: TransactionContext): Promise<Companion | null> {
+    // Validate UUID format before querying database
+    validateUuid(id, 'companion.id');
+
     const db = this.getSql(tx);
 
     const result = await db`
@@ -71,6 +74,9 @@ export class CompanionsRepository {
   }
 
   async findByIdWithAvatar(id: string, tx?: TransactionContext): Promise<CompanionWithAvatar | null> {
+    // Validate UUID format before querying database
+    validateUuid(id, 'companion.id');
+
     const db = this.getSql(tx);
 
     const result = await db`
@@ -120,6 +126,9 @@ export class CompanionsRepository {
    * Find a public companion by ID with avatar (no auth required)
    */
   async findPublicById(id: string, tx?: TransactionContext): Promise<CompanionWithAvatar | null> {
+    // Validate UUID format before querying database
+    validateUuid(id, 'companion.id');
+
     const db = this.getSql(tx);
 
     const result = await db`
@@ -157,7 +166,7 @@ export class CompanionsRepository {
         ) VALUES (
           ${data.user_id},
           ${data.name},
-          ${JSON.stringify(data.spec)},
+          ${data.spec},
           ${data.spec_version ?? 1},
           ${data.status ?? 'draft'},
           ${data.is_public ?? false}
@@ -186,7 +195,7 @@ export class CompanionsRepository {
       UPDATE companions
       SET
         name = COALESCE(${data.name ?? null}, name),
-        spec = COALESCE(${data.spec ? JSON.stringify(data.spec) : null}, spec),
+        spec = COALESCE(${data.spec ?? null}, spec),
         status = COALESCE(${data.status ?? null}, status),
         is_public = COALESCE(${data.is_public ?? null}, is_public)
       WHERE id = ${id}
@@ -214,7 +223,7 @@ export class CompanionsRepository {
     // The trigger will auto-increment spec_version and archive the old spec
     const result = await db`
       UPDATE companions
-      SET spec = ${JSON.stringify(spec)}
+      SET spec = ${spec}
       WHERE id = ${id}
       RETURNING
         id, user_id, name, spec, spec_version, status, is_public,
@@ -394,8 +403,8 @@ export class CompanionsRepository {
         ${data.asset_type},
         ${data.is_active ?? false},
         ${data.is_identity_anchor ?? false},
-        ${JSON.stringify(data.metadata ?? {})},
-        ${data.generation_params ? JSON.stringify(data.generation_params) : null},
+        ${data.metadata ?? {}},
+        ${data.generation_params ?? null},
         ${data.source_event_id ?? null}
       )
       RETURNING

@@ -121,7 +121,7 @@ export class SessionsRepository {
           ${data.user_id},
           ${data.companion_id},
           ${data.status ?? 'active'},
-          ${JSON.stringify(data.metadata ?? {})}
+          ${data.metadata ?? {}}
         )
         RETURNING
           id, user_id, companion_id, status, started_at, ended_at,
@@ -177,7 +177,7 @@ export class SessionsRepository {
 
     const result = await db`
       UPDATE sessions
-      SET metadata = metadata || ${JSON.stringify(metadata)}
+      SET metadata = metadata || ${metadata}
       WHERE id = ${id}
       RETURNING
         id, user_id, companion_id, status, started_at, ended_at,
@@ -352,7 +352,7 @@ export class SessionsRepository {
           ${data.user_message_type ?? 'text'},
           ${data.agent_message ?? null},
           ${data.agent_message_type ?? 'text'},
-          ${JSON.stringify(data.metadata ?? {})}
+          ${data.metadata ?? {}}
         )
         RETURNING
           id, session_id, turn_number, user_message, user_message_type,
@@ -399,7 +399,7 @@ export class SessionsRepository {
         token_count_input = COALESCE(${data.token_count_input ?? null}, token_count_input),
         token_count_output = COALESCE(${data.token_count_output ?? null}, token_count_output),
         cost_usd = COALESCE(${data.cost_usd ?? null}, cost_usd),
-        metadata = COALESCE(${data.metadata ? JSON.stringify(data.metadata) : null}, metadata)
+        metadata = COALESCE(${data.metadata ?? null}, metadata)
       WHERE id = ${id}
       RETURNING
         id, session_id, turn_number, user_message, user_message_type,
@@ -450,7 +450,7 @@ export class SessionsRepository {
         cost_usd = COALESCE(${data.costUsd ?? null}, cost_usd),
         model_used = COALESCE(${data.modelUsed ?? null}, model_used),
         prompt_version = COALESCE(${data.promptVersion ?? null}, prompt_version),
-        safety_flags = COALESCE(${data.safetyFlags ? JSON.stringify(data.safetyFlags) : null}, safety_flags)
+        safety_flags = COALESCE(${data.safetyFlags ?? null}, safety_flags)
       WHERE id = ${id}
       RETURNING
         id, session_id, turn_number, user_message, user_message_type,

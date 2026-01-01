@@ -18,6 +18,7 @@ import { giftsRoutes } from './gifts.js';
 import { emailWebhookRoutes } from './email-webhooks.js';
 import { imagegenRoutes } from './imagegen.js';
 import { debugRoutes } from './debug.js';
+import { personalityProfilesRoutes } from './personality-profiles.js';
 import { logger } from '../observability/logger.js';
 
 /**
@@ -65,6 +66,9 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
 
       // Debug routes (admin/dev tools)
       await api.register(debugRoutes, { prefix: '/debug' });
+
+      // Personality profile routes (registered at root since they use /users and /admin prefixes)
+      await api.register(personalityProfilesRoutes);
     },
     { prefix: '/api/v1' }
   );

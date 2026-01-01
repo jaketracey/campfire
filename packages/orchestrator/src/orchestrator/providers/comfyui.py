@@ -89,7 +89,9 @@ class ComfyUIProvider(ImageProvider):
                         logger.warning("reference_image_failed", error=str(e))
 
                 # Build workflow (with or without IP-Adapter)
-                if reference_image_filename:
+                use_ipadapter = bool(reference_image_filename)
+
+                if use_ipadapter:
                     workflow = self._build_workflow_with_ipadapter(
                         prompt=prompt,
                         negative_prompt=negative_prompt,
@@ -117,10 +119,41 @@ class ComfyUIProvider(ImageProvider):
                 data = response.json()
                 prompt_id = data["prompt_id"]
 
-                logger.info("comfyui_queued", prompt_id=prompt_id, has_reference=bool(reference_image_filename))
+                logger.info("comfyui_queued", prompt_id=prompt_id, has_reference=use_ipadapter)
 
-                # Poll for completion
-                image_data = await self._wait_for_completion(client, prompt_id)
+                # Poll for completion - with fallback if IP-Adapter fails
+                try:
+                    image_data = await self._wait_for_completion(client, prompt_id)
+                except RuntimeError as e:
+                    if use_ipadapter and ("IPAdapter" in str(e) or "Resampler" in str(e)):
+                        # IP-Adapter failed, fallback to regular workflow
+                        logger.warning(
+                            "ipadapter_fallback",
+                            error=str(e),
+                            message="IP-Adapter failed, falling back to regular workflow"
+                        )
+
+                        # Build and queue regular workflow
+                        workflow = self._build_workflow(
+                            prompt=prompt,
+                            negative_prompt=negative_prompt,
+                            width=width,
+                            height=height,
+                            checkpoint=self.default_checkpoint,
+                        )
+
+                        response = await client.post(
+                            f"{self.base_url}/prompt",
+                            json={"prompt": workflow},
+                        )
+                        response.raise_for_status()
+                        data = response.json()
+                        prompt_id = data["prompt_id"]
+
+                        logger.info("comfyui_queued_fallback", prompt_id=prompt_id)
+                        image_data = await self._wait_for_completion(client, prompt_id)
+                    else:
+                        raise
 
                 latency_ms = (time.time() - start_time) * 1000
 
@@ -164,7 +197,7 @@ class ComfyUIProvider(ImageProvider):
         client: httpx.AsyncClient,
         prompt_id: str,
         poll_interval: float = 1.0,
-        max_wait: float = 300.0,
+        max_wait: float = 120.0,  # Reduced from 300s
     ) -> bytes:
         """Poll for completion and return image data."""
         start_time = time.time()
@@ -175,6 +208,18 @@ class ComfyUIProvider(ImageProvider):
             history = response.json()
 
             if prompt_id in history:
+                # Check for execution errors
+                status = history[prompt_id].get("status", {})
+                if status.get("status_str") == "error":
+                    # Extract error message from the last message
+                    messages = status.get("messages", [])
+                    error_msg = "Unknown error"
+                    for msg in messages:
+                        if msg[0] == "execution_error":
+                            error_msg = msg[1].get("exception_message", "Unknown error")
+                            break
+                    raise RuntimeError(f"ComfyUI execution error: {error_msg}")
+
                 outputs = history[prompt_id].get("outputs", {})
                 # Find the SaveImage node output (typically node 9)
                 for node_id, output in outputs.items():
@@ -212,7 +257,7 @@ class ComfyUIProvider(ImageProvider):
         height: int,
         checkpoint: str,
         seed: int | None = None,
-        steps: int = 25,
+        steps: int = 15,  # Reduced from 25 for faster generation
         cfg: float = 7.0,
     ) -> dict[str, Any]:
         """Build a ComfyUI workflow for image generation."""
@@ -321,7 +366,7 @@ class ComfyUIProvider(ImageProvider):
         reference_image_filename: str,
         reference_strength: float = 0.7,
         seed: int | None = None,
-        steps: int = 25,
+        steps: int = 15,  # Reduced from 25 for faster generation
         cfg: float = 7.0,
     ) -> dict[str, Any]:
         """Build a ComfyUI workflow with IP-Adapter for character consistency.
