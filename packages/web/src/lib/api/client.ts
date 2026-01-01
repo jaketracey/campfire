@@ -5,7 +5,8 @@
 
 import { getAccessToken } from '@/stores/auth-store';
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_GATEWAY_URL || 'http://localhost:3002';
+// Use env var if set, otherwise empty for relative URLs (nginx proxies /api/v1 to gateway)
+const API_BASE_URL = process.env.NEXT_PUBLIC_GATEWAY_URL || '';
 
 export class ApiError extends Error {
   constructor(

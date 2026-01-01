@@ -5,7 +5,7 @@ from typing import Any, AsyncGenerator
 
 import anthropic
 import structlog
-from tenacity import retry, stop_after_attempt, wait_exponential
+# Removed tenacity retry - was causing async issues
 
 from orchestrator.config import Settings
 from orchestrator.providers.base import LLMProvider, LLMResponse
@@ -29,10 +29,6 @@ class AnthropicProvider(LLMProvider):
     def name(self) -> str:
         return "anthropic"
 
-    @retry(
-        stop=stop_after_attempt(3),
-        wait=wait_exponential(multiplier=1, min=1, max=10),
-    )
     async def generate(
         self,
         messages: list[dict[str, Any]],
@@ -43,6 +39,10 @@ class AnthropicProvider(LLMProvider):
     ) -> LLMResponse:
         """Generate a response from Claude."""
         start_time = time.time()
+
+        # Check if API key is configured
+        if not self.settings.anthropic_api_key:
+            raise ValueError("Anthropic API key not configured")
 
         # Extract system message
         system_content = ""

@@ -17,16 +17,16 @@ export interface CompanionArchetype {
  * Personality sliders matching the shared schema (10 dimensions)
  */
 export interface PersonalitySliders {
-  warmth: number;      // Reserved (0) to Affectionate (100)
-  energy: number;      // Calm (0) to Energetic (100)
-  humor: number;       // Serious (0) to Playful (100)
-  formality: number;   // Casual (0) to Formal (100)
+  warmth: number;        // Reserved (0) to Affectionate (100)
+  energy: number;        // Calm (0) to Energetic (100)
+  playfulness: number;   // Serious (0) to Playful (100)
+  formality: number;     // Casual (0) to Formal (100)
   assertiveness: number; // Passive (0) to Assertive (100)
-  openness: number;    // Private (0) to Open (100)
-  empathy: number;     // Analytical (0) to Empathetic (100)
-  spontaneity: number; // Structured (0) to Spontaneous (100)
-  optimism: number;    // Realistic (0) to Optimistic (100)
-  directness: number;  // Subtle (0) to Direct (100)
+  curiosity: number;     // Incurious (0) to Curious (100)
+  empathy: number;       // Analytical (0) to Empathetic (100)
+  spontaneity: number;   // Structured (0) to Spontaneous (100)
+  optimism: number;      // Realistic (0) to Optimistic (100)
+  directness: number;    // Subtle (0) to Direct (100)
 }
 
 /**
@@ -123,10 +123,10 @@ export interface OnboardingState {
 const initialPersonality: PersonalitySliders = {
   warmth: 60,
   energy: 50,
-  humor: 50,
+  playfulness: 50,
   formality: 40,
   assertiveness: 50,
-  openness: 60,
+  curiosity: 60,
   empathy: 70,
   spontaneity: 50,
   optimism: 60,

@@ -210,3 +210,35 @@ export async function verifyRefreshToken(token: string): Promise<string | null> 
     return null;
   }
 }
+
+// Internal service authentication
+const INTERNAL_SERVICE_KEY = process.env['INTERNAL_SERVICE_KEY'] ?? 'dev-internal-service-key';
+
+/**
+ * Internal service middleware - for service-to-service calls (orchestrator -> gateway)
+ * Uses a shared secret key instead of JWT
+ */
+export async function requireInternalService(
+  request: FastifyRequest,
+  reply: FastifyReply
+): Promise<void> {
+  const serviceKey = request.headers['x-internal-service-key'] as string | undefined;
+
+  if (!serviceKey) {
+    return reply.status(401).send({
+      error: 'Unauthorized',
+      message: 'Missing internal service key',
+    });
+  }
+
+  if (serviceKey !== INTERNAL_SERVICE_KEY) {
+    logger.warn({ ip: request.ip }, 'Invalid internal service key attempt');
+    return reply.status(401).send({
+      error: 'Unauthorized',
+      message: 'Invalid internal service key',
+    });
+  }
+
+  // Internal services are trusted - no user context needed
+  logger.debug({ path: request.url }, 'Internal service request authenticated');
+}

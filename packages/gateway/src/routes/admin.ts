@@ -61,6 +61,8 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
           lastLoginAt: user.lastLoginAt?.toISOString() ?? null,
           loginCount: user.loginCount,
           companionCount: user.companionCount,
+          imageCount: user.imageCount,
+          totalTokens: user.totalTokens,
           createdAt: user.createdAt.toISOString(),
         })),
         hasMore: result.hasMore,

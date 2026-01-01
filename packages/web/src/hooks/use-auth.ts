@@ -2,9 +2,10 @@
 
 import { useCallback, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
+import type { Route } from 'next';
 import { useAuthStore } from '@/stores/auth-store';
 import * as authApi from '@/lib/api/auth';
-import type { LoginCredentials, SignupCredentials, GoogleAuthCredentials } from '@/lib/auth/types';
+import type { LoginCredentials, SignupCredentials, GoogleAuthCredentials, User, AuthTokens } from '@/lib/auth/types';
 
 /**
  * Main auth hook providing auth state and actions
@@ -35,12 +36,14 @@ export function useAuth() {
           throw new Error(response.error?.message || 'Login failed');
         }
 
-        if (response.data.requiresMFA) {
+        if ('requiresMFA' in response.data && response.data.requiresMFA) {
           router.push('/two-factor');
           return { requiresMFA: true, mfaMethods: response.data.mfaMethods };
         }
 
-        const { user, tokens } = response.data;
+        // After the MFA check, we know we have user and tokens
+        const data = response.data as { user: User; tokens: AuthTokens };
+        const { user, tokens } = data;
         const expiresAt = Date.now() + tokens.expiresIn * 1000;
 
         console.log('[AUTH] Login successful, writing to localStorage:', {
@@ -228,7 +231,7 @@ export function useAuth() {
  * Hook for pages that require authentication
  * Redirects to login if not authenticated
  */
-export function useRequireAuth(redirectTo: string = '/login') {
+export function useRequireAuth(redirectTo: Route = '/login' as Route) {
   const router = useRouter();
   const { isAuthenticated, isInitialized, isLoading } = useAuth();
 

@@ -3,6 +3,12 @@ import type Redis from 'ioredis';
 import type { Logger } from 'pino';
 import type { DbClient } from '../db/client.js';
 
+interface EntityData {
+  id: string;
+  name: string;
+  type: string;
+}
+
 interface KgJobData {
   type: 'propose' | 'add' | 'remove' | 'cascade_delete';
   userId: string;
@@ -15,6 +21,7 @@ interface KgJobData {
     confidence: number;
     sourceEventId: string;
   };
+  entities?: EntityData[];
   edgeId?: string;
   memoryId?: string;
 }
@@ -61,17 +68,17 @@ export class KnowledgeGraphProjectionWorker {
   }
 
   private async process(job: Job<KgJobData>): Promise<void> {
-    const { type, userId, companionId, edge, edgeId, memoryId } = job.data;
+    const { type, userId, companionId, edge, entities, edgeId, memoryId } = job.data;
 
     switch (type) {
       case 'propose':
         if (edge) {
-          await this.proposeEdge(userId, companionId, edge);
+          await this.proposeEdge(userId, companionId, edge, entities);
         }
         break;
       case 'add':
         if (edge) {
-          await this.addEdge(userId, companionId, edge);
+          await this.addEdge(userId, companionId, edge, entities);
         }
         break;
       case 'remove':
@@ -90,17 +97,21 @@ export class KnowledgeGraphProjectionWorker {
   private async proposeEdge(
     userId: string,
     companionId: string,
-    edge: NonNullable<KgJobData['edge']>
+    edge: NonNullable<KgJobData['edge']>,
+    entities?: EntityData[]
   ): Promise<void> {
-    // Ensure entities exist
-    await this.ensureEntity(userId, companionId, edge.sourceEntity);
-    await this.ensureEntity(userId, companionId, edge.targetEntity);
+    // Ensure entities exist with proper names and get their actual IDs
+    const sourceEntity = entities?.find(e => e.id === edge.sourceEntity);
+    const targetEntity = entities?.find(e => e.id === edge.targetEntity);
+
+    const sourceEntityId = await this.ensureEntityWithData(userId, companionId, edge.sourceEntity, sourceEntity);
+    const targetEntityId = await this.ensureEntityWithData(userId, companionId, edge.targetEntity, targetEntity);
 
     // Check for existing similar edges (deduplication)
     const existing = await this.config.db.sql`
       SELECT id FROM kg_edges
-      WHERE source_entity_id = ${edge.sourceEntity}
-        AND target_entity_id = ${edge.targetEntity}
+      WHERE source_entity_id = ${sourceEntityId}
+        AND target_entity_id = ${targetEntityId}
         AND relation_type = ${edge.relationType}
         AND status = 'active'
     `;
@@ -123,8 +134,10 @@ export class KnowledgeGraphProjectionWorker {
     // Insert as proposed
     await this.config.db.upsertKgEdge({
       id: edge.id,
-      sourceEntityId: edge.sourceEntity,
-      targetEntityId: edge.targetEntity,
+      userId,
+      companionId,
+      sourceEntityId,
+      targetEntityId,
       relationType: edge.relationType,
       confidence: edge.confidence,
       sourceEventId: edge.sourceEventId,
@@ -137,15 +150,21 @@ export class KnowledgeGraphProjectionWorker {
   private async addEdge(
     userId: string,
     companionId: string,
-    edge: NonNullable<KgJobData['edge']>
+    edge: NonNullable<KgJobData['edge']>,
+    entities?: EntityData[]
   ): Promise<void> {
-    await this.ensureEntity(userId, companionId, edge.sourceEntity);
-    await this.ensureEntity(userId, companionId, edge.targetEntity);
+    const sourceEntity = entities?.find(e => e.id === edge.sourceEntity);
+    const targetEntity = entities?.find(e => e.id === edge.targetEntity);
+
+    const sourceEntityId = await this.ensureEntityWithData(userId, companionId, edge.sourceEntity, sourceEntity);
+    const targetEntityId = await this.ensureEntityWithData(userId, companionId, edge.targetEntity, targetEntity);
 
     await this.config.db.upsertKgEdge({
       id: edge.id,
-      sourceEntityId: edge.sourceEntity,
-      targetEntityId: edge.targetEntity,
+      userId,
+      companionId,
+      sourceEntityId,
+      targetEntityId,
       relationType: edge.relationType,
       confidence: edge.confidence,
       sourceEventId: edge.sourceEventId,
@@ -185,10 +204,42 @@ export class KnowledgeGraphProjectionWorker {
     companionId: string,
     entityId: string
   ): Promise<void> {
+    const canonicalName = entityId.toLowerCase().trim();
     await this.config.db.sql`
-      INSERT INTO kg_entities (id, user_id, companion_id, name, type, metadata)
-      VALUES (${entityId}, ${userId}, ${companionId}, ${entityId}, 'unknown', '{}')
-      ON CONFLICT (id) DO NOTHING
+      INSERT INTO kg_entities (id, user_id, companion_id, name, canonical_name, entity_type, metadata)
+      VALUES (${entityId}, ${userId}, ${companionId}, ${entityId}, ${canonicalName}, 'unknown', '{}')
+      ON CONFLICT (user_id, companion_id, canonical_name) DO NOTHING
     `;
+  }
+
+  private async ensureEntityWithData(
+    userId: string,
+    companionId: string,
+    entityId: string,
+    entityData?: EntityData
+  ): Promise<string> {
+    const name = entityData?.name || entityId;
+    const entityType = entityData?.type || 'unknown';
+    const canonicalName = name.toLowerCase().trim();
+
+    // Use RETURNING to get the actual entity ID (handles both insert and update)
+    const result = await this.config.db.sql`
+      INSERT INTO kg_entities (id, user_id, companion_id, name, canonical_name, entity_type, metadata)
+      VALUES (${entityId}, ${userId}, ${companionId}, ${name}, ${canonicalName}, ${entityType}, '{}')
+      ON CONFLICT (user_id, companion_id, canonical_name) DO UPDATE SET
+        name = EXCLUDED.name,
+        entity_type = EXCLUDED.entity_type,
+        updated_at = NOW()
+      RETURNING id
+    `;
+
+    const actualId = result[0]?.id as string || entityId;
+
+    this.config.logger.debug(
+      { name, userId, entityId: actualId, entityType },
+      'Entity ensured'
+    );
+
+    return actualId;
   }
 }

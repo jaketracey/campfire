@@ -1,8 +1,13 @@
+// App URL - use env var if set, otherwise empty for relative URLs (nginx routes /login, /onboard, etc.)
+function getAppUrl(): string {
+  return process.env.NEXT_PUBLIC_APP_URL || '';
+}
+
 export const siteConfig = {
   name: 'Campfire',
   description: 'Your voice-first AI companion. Design your perfect companion, talk naturally, and build a relationship that remembers.',
   url: process.env.NEXT_PUBLIC_SITE_URL || 'https://campfire.dev',
-  appUrl: process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000',
+  get appUrl() { return getAppUrl(); },
   ogImage: '/og-image.png',
   links: {
     twitter: 'https://twitter.com/campfireai',
@@ -20,7 +25,6 @@ export const navigation = {
     { name: 'Community', href: '/community' },
     { name: 'Pricing', href: '/pricing' },
     { name: 'FAQ', href: '/faq' },
-    { name: 'About', href: '/about' },
   ],
   footer: {
     product: [
@@ -30,7 +34,6 @@ export const navigation = {
       { name: 'Download App', href: '/download' },
     ],
     company: [
-      { name: 'About', href: '/about' },
       { name: 'Vibes', href: '/vibes' },
       { name: 'Blog', href: '/blog' },
       { name: 'Careers', href: '/careers' },

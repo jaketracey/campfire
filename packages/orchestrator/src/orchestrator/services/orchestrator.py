@@ -1,8 +1,10 @@
 """Main conversation orchestrator service."""
 
+import asyncio
+import json
 import time
 from typing import Any, AsyncGenerator
-from uuid import UUID
+from uuid import UUID, uuid4
 
 import structlog
 
@@ -15,7 +17,7 @@ from orchestrator.models.conversation import (
     SessionSummary,
     SituationalTenetMatch,
 )
-from orchestrator.models.events import EventType, ProviderEvent
+from orchestrator.models.events import BaseEvent, EventType, ProviderEvent
 from orchestrator.models.memory import LongTermMemory
 from orchestrator.models.tools import TOOL_REGISTRY, ToolCall, ToolResult
 from orchestrator.prompts.manager import PromptManager
@@ -23,6 +25,7 @@ from orchestrator.providers.base import LLMProvider, LLMResponse
 from orchestrator.providers.anthropic import AnthropicProvider
 from orchestrator.providers.openai import OpenAIProvider
 from orchestrator.providers.ollama import OllamaProvider
+from orchestrator.queue import JobQueue
 from orchestrator.safety.gate import SafetyGate
 from orchestrator.services.context_builder import ContextBuilder
 from orchestrator.services.tenet_retriever import TenetRetriever
@@ -42,6 +45,7 @@ class ConversationOrchestrator:
         prompt_manager: PromptManager,
         safety_gate: SafetyGate,
         tool_router: ToolRouter,
+        job_queue: JobQueue | None = None,
         primary_provider: LLMProvider | None = None,
         fallback_provider: LLMProvider | None = None,
         tenet_retriever: TenetRetriever | None = None,
@@ -51,6 +55,7 @@ class ConversationOrchestrator:
         self.prompt_manager = prompt_manager
         self.safety_gate = safety_gate
         self.tool_router = tool_router
+        self.job_queue = job_queue
 
         # Initialize providers
         # Use Ollama (local abliterated model) when enabled, fallback to OpenAI/Anthropic
@@ -207,6 +212,18 @@ class ConversationOrchestrator:
                 tool_calls=[self._serialize_tool_call(tc) for tc in tool_calls],
                 tool_results=[self._serialize_tool_result(tr) for tr in tool_results],
                 safety_flags=all_safety_flags,
+            )
+
+            # Fire-and-forget KG extraction (don't block response)
+            asyncio.create_task(
+                self._extract_knowledge_graph(
+                    session_id=session_id,
+                    user_id=user_id,
+                    companion_spec=companion_spec,
+                    turn_id=turn_id,
+                    user_message=user_message,
+                    assistant_response=response.content,
+                )
             )
 
             return turn
@@ -466,3 +483,171 @@ class ConversationOrchestrator:
             "duration_ms": tool_result.duration_ms,
             "cost_usd": tool_result.cost_usd,
         }
+
+    async def _extract_knowledge_graph(
+        self,
+        session_id: UUID,
+        user_id: UUID,
+        companion_spec: CompanionSpec,
+        turn_id: UUID,
+        user_message: str,
+        assistant_response: str,
+    ) -> None:
+        """Extract entities and relationships from conversation turn.
+
+        This runs asynchronously after the turn completes to avoid
+        adding latency to the user experience.
+        """
+        # Check if KG extraction is enabled for this companion
+        if not getattr(companion_spec, 'allow_kg_extraction', True):
+            logger.debug(
+                "kg_extraction_disabled",
+                companion_id=str(companion_spec.id),
+            )
+            return
+
+        try:
+            # Build the conversation text for extraction
+            conversation_text = f"""User: {user_message}
+Assistant: {assistant_response}"""
+
+            # Get the extraction prompt
+            extraction_prompt = self.prompt_manager.get_prompt(
+                "kg_extraction",
+                text=conversation_text,
+            )
+
+            # Call LLM for extraction (use primary provider - typically OpenAI)
+            messages = [
+                {"role": "system", "content": "You are a knowledge graph extraction system. Extract entities and relationships from conversations and return valid JSON."},
+                {"role": "user", "content": extraction_prompt},
+            ]
+
+            response = await self.primary_provider.generate(
+                messages=messages,
+                tools=None,
+                max_tokens=2000,
+                temperature=0.1,  # Low temperature for consistent extraction
+            )
+
+            # Parse the JSON response
+            try:
+                # Try to extract JSON from the response
+                content = response.content.strip()
+                # Handle markdown code blocks
+                if content.startswith("```"):
+                    lines = content.split("\n")
+                    content = "\n".join(lines[1:-1])
+                
+                kg_data = json.loads(content)
+            except json.JSONDecodeError as e:
+                logger.warning(
+                    "kg_extraction_parse_failed",
+                    error=str(e),
+                    content_preview=response.content[:200],
+                )
+                return
+
+            entities = kg_data.get("entities", [])
+            relationships = kg_data.get("relationships", [])
+
+            if not entities and not relationships:
+                logger.debug(
+                    "kg_extraction_empty",
+                    session_id=str(session_id),
+                    turn_id=str(turn_id),
+                )
+                return
+
+            logger.info(
+                "kg_extraction_completed",
+                session_id=str(session_id),
+                turn_id=str(turn_id),
+                entity_count=len(entities),
+                relationship_count=len(relationships),
+            )
+
+            # Add jobs to queue for each relationship
+            for rel in relationships:
+                source_entity = rel.get("source")
+                target_entity = rel.get("target")
+                relation_type = rel.get("type", "related_to")
+
+                if not source_entity or not target_entity:
+                    continue
+
+                # Generate IDs for entities and edge
+                source_id = str(uuid4())
+                target_id = str(uuid4())
+                edge_id = str(uuid4())
+
+                edge_data = {
+                    "id": edge_id,
+                    "sourceEntity": source_id,
+                    "targetEntity": target_id,
+                    "relationType": relation_type,
+                    "confidence": rel.get("confidence", 0.8),
+                    "sourceEventId": str(turn_id),
+                }
+
+                entity_data = [
+                    {
+                        "id": source_id,
+                        "name": source_entity,
+                        "type": self._infer_entity_type(source_entity, entities),
+                    },
+                    {
+                        "id": target_id,
+                        "name": target_entity,
+                        "type": self._infer_entity_type(target_entity, entities),
+                    },
+                ]
+
+                # Add job to queue for worker processing
+                if self.job_queue:
+                    try:
+                        await self.job_queue.add_kg_proposal_job(
+                            user_id=str(user_id),
+                            companion_id=str(companion_spec.id),
+                            edge=edge_data,
+                            entities=entity_data,
+                        )
+                    except Exception as queue_error:
+                        logger.warning(
+                            "kg_queue_job_failed",
+                            error=str(queue_error),
+                            edge_id=edge_id,
+                        )
+
+                # Also emit event for audit/tracking
+                await self.event_emitter.emit(
+                    BaseEvent(
+                        type=EventType.KG_PROPOSE,
+                        session_id=session_id,
+                        user_id=user_id,
+                        companion_id=companion_spec.id,
+                        payload={
+                            "edge": edge_data,
+                            "entities": entity_data,
+                        },
+                    )
+                )
+
+        except Exception as e:
+            logger.error(
+                "kg_extraction_failed",
+                error=str(e),
+                session_id=str(session_id),
+                turn_id=str(turn_id),
+            )
+
+    def _infer_entity_type(
+        self,
+        entity_name: str,
+        entities: list[dict[str, Any]],
+    ) -> str:
+        """Infer entity type from extraction results."""
+        for entity in entities:
+            if entity.get("name") == entity_name or entity.get("id") == entity_name:
+                return entity.get("type", "unknown")
+        return "unknown"

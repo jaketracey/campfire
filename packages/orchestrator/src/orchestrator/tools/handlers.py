@@ -2,7 +2,7 @@
 
 import time
 from typing import Any
-from uuid import UUID
+from uuid import UUID, uuid4
 
 import httpx
 import structlog
@@ -119,9 +119,55 @@ class MemoryReadHandler(ToolHandler):
         query: MemoryQuery,
     ) -> list[LongTermMemory]:
         """Fetch memories from the memory service."""
-        # In production, this would call the memory service API
-        # For now, return empty list
-        return []
+        try:
+            # Use the search endpoint for semantic search
+            response = await self.http_client.post(
+                f"{self.settings.gateway_internal_url}/api/v1/memories/internal/search",
+                json={
+                    "userId": str(query.user_id),
+                    "companionId": str(query.companion_id),
+                    "query": query.query_text,
+                    "contentTypes": [t.value for t in query.memory_types] if query.memory_types else None,
+                    "limit": query.max_results,
+                    "minImportance": query.min_importance,
+                },
+                headers={
+                    "X-Internal-Service-Key": self.settings.internal_service_key,
+                    "Content-Type": "application/json",
+                },
+            )
+            response.raise_for_status()
+
+            result = response.json()
+            items = result.get("data", {}).get("items", [])
+
+            # Convert API response to LongTermMemory objects
+            memories = []
+            for item in items:
+                memories.append(
+                    LongTermMemory(
+                        id=UUID(item["id"]) if "id" in item else uuid4(),
+                        user_id=query.user_id,
+                        companion_id=query.companion_id,
+                        memory_type=MemoryType(item.get("content_type", "fact")),
+                        content=item.get("content", ""),
+                        importance_score=item.get("importance", 0.5),
+                        tags=item.get("tags", []),
+                    )
+                )
+
+            logger.debug(
+                "memories_fetched",
+                count=len(memories),
+                query=query.query_text[:50],
+            )
+
+            return memories
+
+        except Exception as e:
+            logger.warning("memory_fetch_failed", error=str(e))
+            # Return empty list on failure - don't break the conversation
+            return []
 
 
 class MemoryWriteHandler(ToolHandler):
@@ -205,8 +251,40 @@ class MemoryWriteHandler(ToolHandler):
 
     async def _store_memory(self, memory: LongTermMemory) -> UUID:
         """Store memory in the memory service."""
-        # In production, this would call the memory service API
-        return memory.id
+        try:
+            response = await self.http_client.post(
+                f"{self.settings.gateway_internal_url}/api/v1/memories/internal",
+                json={
+                    "userId": str(memory.user_id),
+                    "companionId": str(memory.companion_id),
+                    "content": memory.content,
+                    "contentType": memory.memory_type.value,
+                    "importance": memory.importance_score,
+                    "metadata": {},
+                    "tags": memory.tags,
+                    "sourceTurnId": str(memory.source_turn_id) if memory.source_turn_id else None,
+                },
+                headers={
+                    "X-Internal-Service-Key": self.settings.internal_service_key,
+                    "Content-Type": "application/json",
+                },
+            )
+            response.raise_for_status()
+
+            result = response.json()
+            memory_id = result.get("data", {}).get("id", str(memory.id))
+            logger.info(
+                "memory_stored",
+                memory_id=memory_id,
+                memory_type=memory.memory_type.value,
+            )
+
+            return UUID(memory_id) if memory_id != str(memory.id) else memory.id
+
+        except Exception as e:
+            logger.error("memory_store_failed", error=str(e))
+            # Return the memory ID anyway - we don't want to fail the conversation
+            return memory.id
 
 
 class KGProposeHandler(ToolHandler):
@@ -328,8 +406,59 @@ class KGProposeHandler(ToolHandler):
         proposal: KnowledgeGraphProposal,
     ) -> UUID:
         """Submit proposal to the knowledge graph service."""
-        # In production, this would call the KG service API
-        return proposal.id
+        try:
+            # Convert proposal to API format
+            nodes_data = [
+                {
+                    "label": node.label,
+                    "nodeType": node.node_type.value,
+                    "properties": node.properties,
+                }
+                for node in proposal.proposed_nodes
+            ]
+
+            relations_data = [
+                {
+                    "sourceLabel": rel.source_node_id,  # Using node IDs as labels for now
+                    "targetLabel": rel.target_node_id,
+                    "relationType": rel.relation_type.value,
+                    "confidence": rel.confidence,
+                }
+                for rel in proposal.proposed_relations
+            ]
+
+            response = await self.http_client.post(
+                f"{self.settings.gateway_internal_url}/api/v1/knowledge-graph/internal/proposals",
+                json={
+                    "userId": str(proposal.user_id),
+                    "companionId": str(proposal.companion_id),
+                    "nodes": nodes_data,
+                    "relations": relations_data,
+                    "reasoning": proposal.reasoning,
+                    "sourceEventId": str(proposal.turn_id) if proposal.turn_id else None,
+                    "autoApprove": True,
+                },
+                headers={
+                    "X-Internal-Service-Key": self.settings.internal_service_key,
+                    "Content-Type": "application/json",
+                },
+            )
+            response.raise_for_status()
+
+            result = response.json()
+            logger.info(
+                "kg_proposal_submitted",
+                proposal_id=str(proposal.id),
+                entities_created=result.get("data", {}).get("entitiesCreated", []),
+                edges_created=result.get("data", {}).get("edgesCreated", 0),
+            )
+
+            return proposal.id
+
+        except Exception as e:
+            logger.error("kg_proposal_submit_failed", error=str(e))
+            # Return the proposal ID anyway - we don't want to fail the conversation
+            return proposal.id
 
 
 class ImageAnalysisHandler(ToolHandler):

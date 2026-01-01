@@ -15,10 +15,12 @@ import {
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
 import { motion } from 'framer-motion';
-import { LogOut, MessageCircle, Plus, RotateCcw, Sparkles, Trash2, User, ArrowRight } from 'lucide-react';
+import { LogOut, MessageCircle, Plus, RotateCcw, Sparkles, Trash2, ArrowRight, Copy, Check, Users, Link as LinkIcon, Settings } from 'lucide-react';
 import { useAuth } from '@/hooks/use-auth';
-import { listCompanions, listSessions, deleteCompanion } from '@/lib/api';
-import type { Companion as APICompanion, Session as APISession } from '@/lib/api';
+import { listCompanions, listSessions, deleteCompanion, getInviteCode } from '@/lib/api';
+import type { Companion as APICompanion, Session as APISession, InviteCodeData } from '@/lib/api';
+import Link from 'next/link';
+import type { Route } from 'next';
 
 interface Companion {
   id: string;
@@ -47,6 +49,9 @@ export default function DashboardPage() {
   const [loading, setLoading] = useState(true);
   const [companionToDelete, setCompanionToDelete] = useState<Companion | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
+  const [inviteCode, setInviteCode] = useState<InviteCodeData | null>(null);
+  const [copiedCode, setCopiedCode] = useState(false);
+  const [copiedUrl, setCopiedUrl] = useState(false);
 
   // Redirect to login if not authenticated
   useEffect(() => {
@@ -67,11 +72,17 @@ export default function DashboardPage() {
 
     setLoading(true);
     try {
-      // Fetch companions and sessions in parallel
-      const [companionsRes, sessionsRes] = await Promise.all([
+      // Fetch companions, sessions, and invite code in parallel
+      const [companionsRes, sessionsRes, inviteCodeRes] = await Promise.all([
         listCompanions({ limit: 50 }),
         listSessions({ limit: 20, status: 'active' }),
+        getInviteCode().catch(() => null),
       ]);
+
+      // Set invite code if fetched successfully
+      if (inviteCodeRes?.data) {
+        setInviteCode(inviteCodeRes.data);
+      }
 
       // Map API companions to dashboard format
       const mappedCompanions: Companion[] = companionsRes.companions.map((c: APICompanion) => ({
@@ -139,6 +150,20 @@ export default function DashboardPage() {
       setIsDeleting(false);
       setCompanionToDelete(null);
     }
+  };
+
+  const handleCopyCode = async () => {
+    if (!inviteCode?.code) return;
+    await navigator.clipboard.writeText(inviteCode.code);
+    setCopiedCode(true);
+    setTimeout(() => setCopiedCode(false), 2000);
+  };
+
+  const handleCopyUrl = async () => {
+    if (!inviteCode?.inviteUrl) return;
+    await navigator.clipboard.writeText(inviteCode.inviteUrl);
+    setCopiedUrl(true);
+    setTimeout(() => setCopiedUrl(false), 2000);
   };
 
   // Show loading while checking auth or loading data
@@ -265,33 +290,25 @@ export default function DashboardPage() {
                               alt={companion.name}
                               className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-1000"
                             />
+                          ) : companion.avatarUrl ? (
+                            <img
+                              src={companion.avatarUrl}
+                              alt={companion.name}
+                              className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-1000"
+                            />
                           ) : (
-                            <div className="w-full h-full bg-white/[0.02] flex items-center justify-center">
-                              <User className="h-16 w-16 text-white/10" />
-                            </div>
+                            <div className="w-full h-full bg-gradient-to-br from-campfire-500/20 via-campfire-600/10 to-campfire-700/20" />
                           )}
                           <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent" />
-                          <div className="absolute bottom-4 left-4 flex items-end gap-3">
-                            <div className="relative">
-                              <div className="h-14 w-14 rounded-2xl border border-white/20 overflow-hidden bg-black/40 backdrop-blur-md">
-                                {companion.avatarUrl ? (
-                                  <img
-                                    src={companion.avatarUrl}
-                                    alt={companion.name}
-                                    className="w-full h-full object-cover"
-                                  />
-                                ) : (
-                                  <div className="w-full h-full flex items-center justify-center">
-                                    <User className="h-6 w-6 text-white/40" />
-                                  </div>
-                                )}
-                              </div>
-                              <div className="absolute -bottom-1 -right-1 h-4 w-4 rounded-full bg-green-500 border-2 border-black animate-pulse" />
-                            </div>
-                            <div className="mb-0.5">
-                              <h3 className="font-bold text-xl text-white font-display leading-none">{companion.name}</h3>
-                              <p className="text-xs text-white/60 capitalize mt-1 font-medium tracking-wide">{companion.archetype}</p>
-                            </div>
+                          <div className="absolute bottom-4 left-4 right-4">
+                            <h3 className="font-bold text-xl text-white font-display leading-none mb-2">{companion.name}</h3>
+                            <p className="text-xs text-white/60 font-medium tracking-wide">
+                              {hasExistingSession
+                                ? companion.latestConversationImageUrl
+                                  ? 'Memory captured • Ready to continue'
+                                  : 'Journey in progress'
+                                : 'Awaiting first encounter'}
+                            </p>
                           </div>
                         </div>
 
@@ -409,6 +426,91 @@ export default function DashboardPage() {
               ))}
             </div>
           )}
+        </section>
+
+        {/* Affiliate Section */}
+        <section className="space-y-6">
+          <div className="flex items-center justify-between">
+            <h2 className="text-2xl font-bold font-display text-white flex items-center gap-3">
+              <div className="h-2 w-2 rounded-full bg-campfire-500/60" />
+              Invite Friends
+            </h2>
+            {user?.role === 'admin' && (
+              <Link
+                href={'/admin' as Route}
+                className="flex items-center gap-2 px-4 py-2 rounded-full bg-campfire-500/10 border border-campfire-500/20 text-campfire-500 text-sm font-medium hover:bg-campfire-500/20 transition-colors"
+              >
+                <Settings className="h-4 w-4" />
+                Admin Panel
+              </Link>
+            )}
+          </div>
+
+          <Card className="bg-white/[0.01] border border-white/5 backdrop-blur-xl overflow-hidden">
+            <CardContent className="p-6">
+              {inviteCode ? (
+                <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                  {/* Stats */}
+                  <div className="flex items-center gap-4 p-4 rounded-2xl bg-white/[0.02] border border-white/5">
+                    <div className="h-12 w-12 rounded-xl bg-campfire-500/10 flex items-center justify-center">
+                      <Users className="h-6 w-6 text-campfire-500" />
+                    </div>
+                    <div>
+                      <p className="text-2xl font-bold text-white">{inviteCode.usesCount}</p>
+                      <p className="text-sm text-gray-500">Friends Invited</p>
+                    </div>
+                  </div>
+
+                  {/* Invite Code */}
+                  <div className="flex items-center gap-4 p-4 rounded-2xl bg-white/[0.02] border border-white/5">
+                    <div className="flex-1">
+                      <p className="text-xs text-gray-500 uppercase tracking-widest mb-1">Your Code</p>
+                      <p className="text-lg font-mono font-bold text-white">{inviteCode.code}</p>
+                    </div>
+                    <Button
+                      variant="outline"
+                      size="icon"
+                      onClick={handleCopyCode}
+                      className="h-10 w-10 rounded-xl border-white/10 hover:bg-white/10"
+                    >
+                      {copiedCode ? (
+                        <Check className="h-4 w-4 text-green-500" />
+                      ) : (
+                        <Copy className="h-4 w-4" />
+                      )}
+                    </Button>
+                  </div>
+
+                  {/* Invite URL */}
+                  <div className="flex items-center gap-4 p-4 rounded-2xl bg-white/[0.02] border border-white/5">
+                    <div className="flex-1 min-w-0">
+                      <p className="text-xs text-gray-500 uppercase tracking-widest mb-1">Share Link</p>
+                      <p className="text-sm text-gray-400 truncate">{inviteCode.inviteUrl}</p>
+                    </div>
+                    <Button
+                      variant="outline"
+                      size="icon"
+                      onClick={handleCopyUrl}
+                      className="h-10 w-10 rounded-xl border-white/10 hover:bg-white/10"
+                    >
+                      {copiedUrl ? (
+                        <Check className="h-4 w-4 text-green-500" />
+                      ) : (
+                        <LinkIcon className="h-4 w-4" />
+                      )}
+                    </Button>
+                  </div>
+                </div>
+              ) : (
+                <div className="text-center py-8">
+                  <div className="h-12 w-12 rounded-xl bg-white/5 mx-auto flex items-center justify-center mb-4">
+                    <Users className="h-6 w-6 text-white/20" />
+                  </div>
+                  <p className="text-gray-500">Your invite code will appear here</p>
+                </div>
+              )}
+            </CardContent>
+          </Card>
         </section>
       </motion.div>
 

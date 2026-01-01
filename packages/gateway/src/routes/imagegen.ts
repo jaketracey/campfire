@@ -11,6 +11,11 @@ import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { requireAuth } from '../middleware/auth.js';
 import { logger } from '../observability/logger.js';
 import { db } from '../db/index.js';
+import { getCompanionsRepository } from '../repositories/companions.js';
+import {
+  getAppearanceFromSpec,
+  getVariationUrl,
+} from '../utils/companion-assets.js';
 
 // Orchestrator configuration
 const ORCHESTRATOR_URL = process.env['ORCHESTRATOR_URL'] || 'http://localhost:8000';
@@ -43,6 +48,38 @@ interface ImageGenRequest {
   companionId?: string;
   referenceImageUrl?: string;  // Identity anchor for character consistency
   referenceStrength?: number;  // How strongly to follow reference (0.0-1.0)
+}
+
+interface GenerateAnchorsRequest {
+  companionId: string;
+  appearance: {
+    ethnicity: string;
+    bodyType: string;
+    hairColor: string;
+    breastSize?: number;
+  };
+  style: 'realistic' | 'stylized' | 'abstract' | 'minimal' | 'anime';
+  personality?: {
+    warmth?: number;
+    playfulness?: number;
+    directness?: number;
+    curiosity?: number;
+    empathy?: number;
+    assertiveness?: number;
+  };
+}
+
+interface AnchorImage {
+  id: string;
+  url: string;
+  emotionalState: string;
+  isIdentityAnchor: boolean;
+}
+
+interface GenerateAnchorsResult {
+  companionId: string;
+  anchors: AnchorImage[];
+  primaryAnchorId: string;
 }
 
 interface ImageGenResult {
@@ -79,6 +116,55 @@ interface CompanionImage {
 // In-memory cache for generated images (in production, use Redis)
 const imageCache = new Map<string, { url: string; timestamp: number }>();
 const CACHE_TTL_MS = 1000 * 60 * 60 * 24; // 24 hours
+
+/**
+ * Get the identity anchor URL for a companion.
+ * Priority:
+ * 1. Existing identity anchor in companion_avatars table
+ * 2. Pre-generated variation image based on appearance settings (from S3)
+ * 3. null (no reference, generate without IP-Adapter)
+ */
+async function getCompanionIdentityAnchorUrl(
+  companionId: string
+): Promise<string | null> {
+  const companionRepo = getCompanionsRepository();
+
+  try {
+    // First, check if companion has a stored identity anchor
+    const identityAnchor = await companionRepo.getIdentityAnchor(companionId);
+    if (identityAnchor?.asset_url) {
+      logger.debug({ companionId, anchorId: identityAnchor.id }, 'Using stored identity anchor');
+      return identityAnchor.asset_url;
+    }
+
+    // If no stored anchor, try to build URL from companion's appearance settings
+    const companion = await companionRepo.findById(companionId);
+    if (!companion?.spec) {
+      logger.debug({ companionId }, 'Companion not found or has no spec');
+      return null;
+    }
+
+    // Extract appearance from spec
+    const appearance = getAppearanceFromSpec(companion.spec);
+    if (!appearance) {
+      logger.debug({ companionId }, 'Companion has no valid appearance settings');
+      return null;
+    }
+
+    // Build S3 URL to pre-generated variation image
+    const variationUrl = getVariationUrl(appearance);
+
+    logger.debug(
+      { companionId, appearance, variationUrl },
+      'Using pre-generated variation image as anchor from S3'
+    );
+
+    return variationUrl;
+  } catch (error) {
+    logger.error({ companionId, error }, 'Failed to get identity anchor');
+    return null;
+  }
+}
 
 /**
  * Generate a cache key based on the generation parameters
@@ -405,16 +491,31 @@ export async function imagegenRoutes(app: FastifyInstance): Promise<void> {
         // Build the full prompt
         const fullPrompt = buildPrompt(params);
 
-        logger.info({ prompt: fullPrompt, width, height, saveToS3 }, 'Generating image via orchestrator');
+        // Get identity anchor for character consistency
+        // Priority: explicit referenceImageUrl > companion's anchor from DB/appearance
+        let referenceImageUrl = params.referenceImageUrl;
+        if (!referenceImageUrl && params.companionId) {
+          referenceImageUrl = await getCompanionIdentityAnchorUrl(params.companionId) || undefined;
+        }
+
+        logger.info({
+          prompt: fullPrompt,
+          width,
+          height,
+          saveToS3,
+          hasReference: !!referenceImageUrl,
+          companionId: params.companionId,
+        }, 'Generating image via orchestrator');
 
         // Generate with orchestrator (uses ComfyUI or FAL)
+        // If referenceImageUrl is provided, ComfyUI will use IP-Adapter for consistency
         const { imageBuffer, latencyMs, provider, format } = await generateWithOrchestrator(
           fullPrompt,
           emotionalState,
           style,
           width,
           height,
-          params.referenceImageUrl,
+          referenceImageUrl,
           params.referenceStrength
         );
 
@@ -545,6 +646,226 @@ export async function imagegenRoutes(app: FastifyInstance): Promise<void> {
         return reply.status(500).send({
           error: 'Failed to fetch gallery',
           message: error instanceof Error ? error.message : 'Unknown error',
+        });
+      }
+    }
+  );
+
+  // Generate anchor images for a new companion
+  // This creates a set of reference images that will be used for character consistency
+  app.post<{ Body: GenerateAnchorsRequest }>(
+    '/generate-anchors',
+    {
+      preHandler: requireAuth,
+      schema: {
+        body: {
+          type: 'object',
+          required: ['companionId', 'appearance', 'style'],
+          properties: {
+            companionId: { type: 'string' },
+            appearance: {
+              type: 'object',
+              required: ['ethnicity', 'bodyType', 'hairColor'],
+              properties: {
+                ethnicity: { type: 'string' },
+                bodyType: { type: 'string' },
+                hairColor: { type: 'string' },
+                breastSize: { type: 'number' },
+              },
+            },
+            style: { type: 'string', enum: ['realistic', 'stylized', 'abstract', 'minimal', 'anime'] },
+            personality: {
+              type: 'object',
+              properties: {
+                warmth: { type: 'number' },
+                playfulness: { type: 'number' },
+                directness: { type: 'number' },
+                curiosity: { type: 'number' },
+                empathy: { type: 'number' },
+                assertiveness: { type: 'number' },
+              },
+            },
+          },
+        },
+      },
+    },
+    async (request: FastifyRequest<{ Body: GenerateAnchorsRequest }>, reply: FastifyReply) => {
+      const userId = request.user!.userId;
+      const { companionId, appearance, style, personality } = request.body;
+
+      logger.info({ userId, companionId, appearance, style }, 'Starting anchor image generation');
+
+      const companionRepo = getCompanionsRepository();
+
+      // Verify companion exists and belongs to user
+      const companion = await companionRepo.findById(companionId);
+      if (!companion) {
+        return reply.status(404).send({ error: 'Companion not found' });
+      }
+      if (companion.user_id !== userId) {
+        return reply.status(403).send({ error: 'Not authorized to modify this companion' });
+      }
+
+      // Build base prompt from appearance
+      const basePromptParts: string[] = ['Beautiful woman'];
+
+      // Ethnicity mapping
+      const ethnicityMap: Record<string, string> = {
+        'east-asian': 'East Asian features',
+        'south-asian': 'South Asian features',
+        'black': 'Black/African features',
+        'caucasian': 'Caucasian features',
+        'latina': 'Latina features',
+        'middle-eastern': 'Middle Eastern features',
+        'mixed': 'mixed ethnicity',
+      };
+      if (appearance.ethnicity && ethnicityMap[appearance.ethnicity]) {
+        basePromptParts.push(ethnicityMap[appearance.ethnicity]);
+      }
+
+      // Body type mapping
+      const bodyTypeMap: Record<string, string> = {
+        'slim': 'slim figure',
+        'athletic': 'athletic build',
+        'curvy': 'curvy figure',
+        'plus-size': 'plus-size figure',
+      };
+      if (appearance.bodyType && bodyTypeMap[appearance.bodyType]) {
+        basePromptParts.push(bodyTypeMap[appearance.bodyType]);
+      }
+
+      // Hair color mapping
+      const hairColorMap: Record<string, string> = {
+        'black': 'black hair',
+        'brown': 'brown hair',
+        'blonde': 'blonde hair',
+        'red': 'red hair',
+        'fantasy': 'vibrant fantasy-colored hair',
+      };
+      if (appearance.hairColor && hairColorMap[appearance.hairColor]) {
+        basePromptParts.push(hairColorMap[appearance.hairColor]);
+      }
+
+      const basePrompt = basePromptParts.join(', ');
+
+      // Emotional states for anchor images - neutral is primary
+      const anchorStates = ['neutral', 'happy', 'thoughtful'] as const;
+      const generatedAnchors: AnchorImage[] = [];
+      let primaryAnchorId: string | null = null;
+      let primaryAnchorUrl: string | null = null;
+
+      try {
+        for (let i = 0; i < anchorStates.length; i++) {
+          const emotionalState = anchorStates[i];
+          const isPrimary = i === 0;
+
+          logger.info({ companionId, emotionalState, isPrimary, index: i }, 'Generating anchor image');
+
+          // Build the full prompt with emotional state
+          const fullPrompt = buildPrompt({
+            prompt: basePrompt,
+            emotionalState,
+            personality,
+            style,
+          });
+
+          // Generate with orchestrator
+          // For primary anchor (first image), no reference - let it establish the identity
+          // For subsequent images, use the primary anchor as reference for consistency
+          const { imageBuffer, latencyMs, provider, format } = await generateWithOrchestrator(
+            fullPrompt,
+            emotionalState,
+            style,
+            512,  // Higher resolution for anchors
+            768,
+            isPrimary ? undefined : primaryAnchorUrl || undefined,
+            isPrimary ? undefined : 0.85  // Strong reference for consistency
+          );
+
+          // Upload to S3 under anchors path
+          const cacheKey = `anchor-${emotionalState}-${Date.now()}`;
+          const s3Key = `companions/${userId}/anchors/${companionId}/${cacheKey}.png`;
+
+          await s3Client.send(
+            new PutObjectCommand({
+              Bucket: S3_MEDIA_BUCKET,
+              Key: s3Key,
+              Body: imageBuffer,
+              ContentType: 'image/png',
+              CacheControl: 'max-age=31536000',
+            })
+          );
+
+          // Generate presigned URL
+          const s3Url = await getSignedUrl(
+            s3Client,
+            new GetObjectCommand({ Bucket: S3_MEDIA_BUCKET, Key: s3Key }),
+            { expiresIn: 604800 }
+          );
+
+          // Create avatar record with is_identity_anchor = true
+          const avatar = await companionRepo.createAvatar({
+            companion_id: companionId,
+            asset_url: s3Url,
+            asset_type: 'identity_anchor',
+            is_active: isPrimary,  // Primary anchor is also the active avatar
+            is_identity_anchor: true,
+            metadata: {
+              emotionalState,
+              style,
+              appearance,
+              s3Key,
+              s3Bucket: S3_MEDIA_BUCKET,
+            },
+            generation_params: {
+              prompt: fullPrompt,
+              width: 512,
+              height: 768,
+              provider,
+              latencyMs,
+              referenceStrength: isPrimary ? null : 0.85,
+            },
+          });
+
+          if (isPrimary) {
+            primaryAnchorId = avatar.id;
+            primaryAnchorUrl = s3Url;
+            // Set as active avatar
+            await companionRepo.setActiveAvatar(companionId, avatar.id);
+          }
+
+          generatedAnchors.push({
+            id: avatar.id,
+            url: s3Url,
+            emotionalState,
+            isIdentityAnchor: true,
+          });
+
+          logger.info({
+            companionId,
+            avatarId: avatar.id,
+            emotionalState,
+            latencyMs,
+            provider,
+          }, 'Anchor image generated and saved');
+        }
+
+        const result: GenerateAnchorsResult = {
+          companionId,
+          anchors: generatedAnchors,
+          primaryAnchorId: primaryAnchorId!,
+        };
+
+        logger.info({ companionId, anchorCount: generatedAnchors.length, primaryAnchorId }, 'Anchor generation complete');
+
+        return reply.send(result);
+      } catch (error) {
+        logger.error({ error, companionId }, 'Anchor image generation failed');
+        return reply.status(500).send({
+          error: 'Anchor generation failed',
+          message: error instanceof Error ? error.message : 'Unknown error',
+          // Return any anchors that were successfully generated
+          partialAnchors: generatedAnchors,
         });
       }
     }

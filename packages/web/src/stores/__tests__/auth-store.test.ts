@@ -69,6 +69,7 @@ describe('Auth Store', () => {
         email: 'test@example.com',
         displayName: 'Test User',
         emailVerified: true,
+        role: 'user' as const,
         createdAt: '2024-01-01T00:00:00Z',
       };
 
@@ -96,6 +97,7 @@ describe('Auth Store', () => {
         email: 'test@example.com',
         displayName: 'Test User',
         emailVerified: true,
+        role: 'user' as const,
         createdAt: '2024-01-01T00:00:00Z',
       };
 
@@ -124,6 +126,7 @@ describe('Auth Store', () => {
           email: 'test@example.com',
           displayName: 'Test',
           emailVerified: true,
+          role: 'user',
           createdAt: '2024-01-01T00:00:00Z',
         },
         accessToken: 'access-token',

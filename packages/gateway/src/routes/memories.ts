@@ -6,10 +6,12 @@
 import type { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
 import { z } from 'zod';
 import { nanoid } from 'nanoid';
-import { requireAuth } from '../middleware/auth.js';
+import { requireAuth, requireInternalService } from '../middleware/auth.js';
 import { logger } from '../observability/logger.js';
 import { withSpan } from '../observability/tracing.js';
 import { getEventStore } from '../db/event-store.js';
+import { getMemoriesRepository } from '../repositories/memories.js';
+import { getEmbeddingService } from '../services/embeddings.js';
 
 /**
  * Request schemas
@@ -390,6 +392,201 @@ export async function memoriesRoutes(app: FastifyInstance): Promise<void> {
           count: memories.length,
         },
       });
+    });
+  });
+
+  // ===========================================================================
+  // Internal routes (for orchestrator service)
+  // ===========================================================================
+
+  const InternalCreateMemorySchema = z.object({
+    userId: z.string().uuid(),
+    companionId: z.string().uuid(),
+    content: z.string().min(1).max(10000),
+    contentType: z.enum(['fact', 'preference', 'event', 'summary', 'reflection']).default('fact'),
+    importance: z.number().min(0).max(1).optional(),
+    metadata: z.record(z.unknown()).optional(),
+    tags: z.array(z.string()).optional(),
+    sourceTurnId: z.string().uuid().nullable().optional(),
+  });
+
+  const InternalSearchMemoriesSchema = z.object({
+    userId: z.string().uuid(),
+    companionId: z.string().uuid(),
+    query: z.string().min(1).max(1000),
+    contentTypes: z.array(z.enum(['fact', 'preference', 'event', 'summary', 'reflection'])).optional(),
+    limit: z.number().int().min(1).max(100).optional(),
+    minImportance: z.number().min(0).max(1).optional(),
+  });
+
+  /**
+   * POST /memories/internal - Create memory (internal use by orchestrator)
+   */
+  app.post('/internal', { preHandler: requireInternalService }, async (request: FastifyRequest, reply: FastifyReply) => {
+    return withSpan('memories.create.internal', async (span) => {
+      const parseResult = InternalCreateMemorySchema.safeParse(request.body);
+      if (!parseResult.success) {
+        return reply.status(400).send({
+          success: false,
+          error: {
+            code: 'VALIDATION_ERROR',
+            message: 'Invalid request body',
+            details: parseResult.error.flatten(),
+          },
+        });
+      }
+
+      const { userId, companionId, content, contentType, importance, metadata, tags, sourceTurnId } = parseResult.data;
+      const repo = getMemoriesRepository();
+
+      try {
+        // Generate embedding for the memory content
+        let embedding: number[] | undefined;
+        try {
+          const embeddingService = getEmbeddingService();
+          embedding = await embeddingService.generateEmbedding(content);
+        } catch (embError) {
+          logger.warn({ error: embError }, 'Failed to generate embedding for memory');
+        }
+
+        // Create the memory
+        const memory = await repo.create({
+          user_id: userId,
+          companion_id: companionId,
+          content,
+          content_type: contentType,
+          importance: importance ?? 0.5,
+          metadata: metadata as Record<string, unknown>,
+          embedding,
+          source_turn_id: sourceTurnId ?? undefined,
+        });
+
+        logger.info(
+          { memoryId: memory.id, userId, companionId, contentType },
+          'Memory created via internal API'
+        );
+
+        // Emit event
+        const eventStore = getEventStore();
+        await eventStore.append({
+          eventId: nanoid(),
+          timestamp: new Date().toISOString(),
+          userId,
+          sessionId: null,
+          turnId: sourceTurnId ?? null,
+          traceId: request.id,
+          type: 'memory.created',
+          payload: {
+            memoryId: memory.id,
+            companionId,
+            contentType,
+            contentLength: content.length,
+            hasEmbedding: !!embedding,
+          },
+          version: '1.0',
+          causationId: null,
+          correlationId: request.id,
+        });
+
+        return reply.status(201).send({
+          success: true,
+          data: {
+            id: memory.id,
+            userId,
+            companionId,
+            content: memory.content,
+            contentType: memory.content_type,
+            importance: memory.importance,
+            createdAt: memory.created_at.toISOString(),
+          },
+        });
+      } catch (error) {
+        logger.error({ error, userId, companionId }, 'Failed to create memory');
+        throw error;
+      }
+    });
+  });
+
+  /**
+   * POST /memories/internal/search - Search memories (internal use by orchestrator)
+   */
+  app.post('/internal/search', { preHandler: requireInternalService }, async (request: FastifyRequest, reply: FastifyReply) => {
+    return withSpan('memories.search.internal', async (span) => {
+      const parseResult = InternalSearchMemoriesSchema.safeParse(request.body);
+      if (!parseResult.success) {
+        return reply.status(400).send({
+          success: false,
+          error: {
+            code: 'VALIDATION_ERROR',
+            message: 'Invalid request body',
+            details: parseResult.error.flatten(),
+          },
+        });
+      }
+
+      const { userId, companionId, query, contentTypes, limit, minImportance } = parseResult.data;
+      const repo = getMemoriesRepository();
+
+      try {
+        // Try vector search first if embedding service is available
+        let memories: Awaited<ReturnType<typeof repo.searchByVector>> = [];
+
+        try {
+          const embeddingService = getEmbeddingService();
+          const queryEmbedding = await embeddingService.generateEmbedding(query);
+
+          memories = await repo.searchByVector({
+            userId,
+            companionId,
+            embedding: queryEmbedding,
+            limit: limit ?? 10,
+            minSimilarity: 0.5,
+            contentTypes: contentTypes as Array<'fact' | 'preference' | 'event' | 'summary' | 'reflection'>,
+            minImportance,
+          });
+        } catch (embError) {
+          logger.warn({ error: embError }, 'Vector search failed, falling back to text search');
+
+          // Fall back to text search
+          const textResults = await repo.searchByText({
+            userId,
+            companionId,
+            query,
+            limit: limit ?? 10,
+            contentTypes: contentTypes as Array<'fact' | 'preference' | 'event' | 'summary' | 'reflection'>,
+          });
+
+          memories = textResults.map(m => ({ ...m, similarity: 0.5 }));
+        }
+
+        // Record access for retrieved memories
+        if (memories.length > 0) {
+          await repo.recordAccessBatch(memories.map(m => m.id));
+        }
+
+        logger.debug(
+          { userId, companionId, query: query.substring(0, 50), count: memories.length },
+          'Memories searched via internal API'
+        );
+
+        return reply.send({
+          success: true,
+          data: {
+            items: memories.map(m => ({
+              id: m.id,
+              content: m.content,
+              content_type: m.content_type,
+              importance: m.importance,
+              similarity: 'similarity' in m ? m.similarity : undefined,
+              created_at: m.created_at.toISOString(),
+            })),
+            query,
+          },
+        });
+      } catch (error) {
+        logger.error({ error, userId, companionId }, 'Failed to search memories');
+        throw error;
+      }
     });
   });
 }

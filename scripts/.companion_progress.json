@@ -473,8 +473,124 @@
     "middle-eastern-curvy-black": {
       "completed": true,
       "seed": 234783399
+    },
+    "middle-eastern-curvy-brown": {
+      "completed": true,
+      "seed": 916999331
+    },
+    "middle-eastern-curvy-blonde": {
+      "completed": true,
+      "seed": 885558093
+    },
+    "middle-eastern-curvy-red": {
+      "completed": true,
+      "seed": 378624002
+    },
+    "middle-eastern-curvy-fantasy": {
+      "completed": true,
+      "seed": 1455009105
+    },
+    "middle-eastern-plus-size-black": {
+      "completed": true,
+      "seed": 40792120
+    },
+    "middle-eastern-plus-size-brown": {
+      "completed": true,
+      "seed": 1892974603
+    },
+    "middle-eastern-plus-size-blonde": {
+      "completed": true,
+      "seed": 336212952
+    },
+    "middle-eastern-plus-size-red": {
+      "completed": true,
+      "seed": 333782617
+    },
+    "middle-eastern-plus-size-fantasy": {
+      "completed": true,
+      "seed": 1994525738
+    },
+    "mixed-slim-black": {
+      "completed": true,
+      "seed": 1772444935
+    },
+    "mixed-slim-brown": {
+      "completed": true,
+      "seed": 2002774362
+    },
+    "mixed-slim-blonde": {
+      "completed": true,
+      "seed": 582558837
+    },
+    "mixed-slim-red": {
+      "completed": true,
+      "seed": 721109203
+    },
+    "mixed-slim-fantasy": {
+      "completed": true,
+      "seed": 770043340
+    },
+    "mixed-athletic-black": {
+      "completed": true,
+      "seed": 2139418919
+    },
+    "mixed-athletic-brown": {
+      "completed": true,
+      "seed": 1065364622
+    },
+    "mixed-athletic-blonde": {
+      "completed": true,
+      "seed": 104100630
+    },
+    "mixed-athletic-red": {
+      "completed": true,
+      "seed": 1911809161
+    },
+    "mixed-athletic-fantasy": {
+      "completed": true,
+      "seed": 478794542
+    },
+    "mixed-curvy-black": {
+      "completed": true,
+      "seed": 1082712477
+    },
+    "mixed-curvy-brown": {
+      "completed": true,
+      "seed": 58747330
+    },
+    "mixed-curvy-blonde": {
+      "completed": true,
+      "seed": 1184281695
+    },
+    "mixed-curvy-red": {
+      "completed": true,
+      "seed": 66124978
+    },
+    "mixed-curvy-fantasy": {
+      "completed": true,
+      "seed": 2082502655
+    },
+    "mixed-plus-size-black": {
+      "completed": true,
+      "seed": 1331154221
+    },
+    "mixed-plus-size-brown": {
+      "completed": true,
+      "seed": 1241830270
+    },
+    "mixed-plus-size-blonde": {
+      "completed": true,
+      "seed": 858359224
+    },
+    "mixed-plus-size-red": {
+      "completed": true,
+      "seed": 1443273330
+    },
+    "mixed-plus-size-fantasy": {
+      "completed": true,
+      "seed": 1585785422
     }
   },
   "started_at": "2026-01-01 14:38:49",
-  "last_updated": "2026-01-01 15:33:54"
+  "last_updated": "2026-01-01 15:43:51"
 }

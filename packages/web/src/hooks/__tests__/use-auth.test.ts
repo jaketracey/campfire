@@ -57,6 +57,7 @@ describe('useAuth', () => {
           email: 'test@example.com',
           displayName: 'Test',
           emailVerified: true,
+          role: 'user',
           createdAt: '2024-01-01',
         },
         accessToken: 'token',
@@ -79,6 +80,7 @@ describe('useAuth', () => {
             email: 'test@example.com',
             displayName: 'Test User',
             emailVerified: true,
+            role: 'user' as const,
             createdAt: '2024-01-01',
           },
           tokens: {
@@ -111,7 +113,7 @@ describe('useAuth', () => {
       const mockMFAResponse = {
         success: true,
         data: {
-          requiresMFA: true,
+          requiresMFA: true as const,
           mfaMethods: ['totp'],
         },
       };
@@ -134,7 +136,7 @@ describe('useAuth', () => {
     it('should throw error on failed login', async () => {
       vi.mocked(authApi.login).mockResolvedValue({
         success: false,
-        error: { message: 'Invalid credentials' },
+        error: { code: 'INVALID_CREDENTIALS', message: 'Invalid credentials' },
       });
 
       const { result } = renderHook(() => useAuth());
@@ -160,6 +162,7 @@ describe('useAuth', () => {
             email: 'new@example.com',
             displayName: 'New User',
             emailVerified: false,
+            role: 'user' as const,
             createdAt: '2024-01-01',
           },
           tokens: {
@@ -193,7 +196,7 @@ describe('useAuth', () => {
     it('should throw error on failed signup', async () => {
       vi.mocked(authApi.signup).mockResolvedValue({
         success: false,
-        error: { message: 'Email already exists' },
+        error: { code: 'EMAIL_EXISTS', message: 'Email already exists' },
       });
 
       const { result } = renderHook(() => useAuth());
@@ -217,6 +220,7 @@ describe('useAuth', () => {
           email: 'test@example.com',
           displayName: 'Test',
           emailVerified: true,
+          role: 'user',
           createdAt: '2024-01-01',
         },
         accessToken: 'token',
@@ -243,6 +247,7 @@ describe('useAuth', () => {
           email: 'test@example.com',
           displayName: 'Test',
           emailVerified: true,
+          role: 'user',
           createdAt: '2024-01-01',
         },
         accessToken: 'token',
@@ -271,6 +276,7 @@ describe('useAuth', () => {
           email: 'test@example.com',
           displayName: 'Test',
           emailVerified: true,
+          role: 'user',
           createdAt: '2024-01-01',
         },
         accessToken: 'old-access',
@@ -305,6 +311,7 @@ describe('useAuth', () => {
           email: 'test@example.com',
           displayName: 'Test',
           emailVerified: true,
+          role: 'user',
           createdAt: '2024-01-01',
         },
         accessToken: 'old-access',

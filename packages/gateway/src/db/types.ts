@@ -204,6 +204,17 @@ export interface Companion {
 
 export type CompanionStatus = 'draft' | 'active' | 'archived';
 
+/**
+ * Physical appearance settings for companion image generation.
+ * These map directly to pre-generated variation images.
+ */
+export interface CompanionAppearance {
+  ethnicity: 'east-asian' | 'south-asian' | 'black' | 'caucasian' | 'latina' | 'middle-eastern' | 'mixed';
+  bodyType: 'slim' | 'athletic' | 'curvy' | 'plus-size';
+  hairColor: 'black' | 'brown' | 'blonde' | 'red' | 'fantasy';
+  breastSize?: number; // 0-100
+}
+
 export interface CompanionSpec {
   identity: {
     name: string;
@@ -212,6 +223,7 @@ export interface CompanionSpec {
   };
   personality: {
     archetype: string;
+    secondary_archetype?: string;
     traits: Record<string, number>;
   };
   voice: {
@@ -221,6 +233,7 @@ export interface CompanionSpec {
   };
   visual_style: {
     style_type: string;
+    appearance?: CompanionAppearance;
     palette?: string[];
     constraints?: string[];
     reference_assets?: string[];
@@ -228,13 +241,24 @@ export interface CompanionSpec {
   boundaries: {
     relationship_pacing: string;
     topics_avoid?: string[];
+    safe_topics?: string[];
     content_rating: string;
+    emotional_depth?: 'surface' | 'moderate' | 'deep';
   };
   memory_consent: {
     allow_long_term: boolean;
     allow_kg_extraction: boolean;
     retention_days?: number;
   };
+  tenets?: Array<{
+    id: string;
+    category: string;
+    priority: 'core' | 'situational';
+    rule: string;
+    description?: string;
+    isNegation: boolean;
+    triggerContexts?: string[];
+  }>;
 }
 
 export interface CompanionInsert {

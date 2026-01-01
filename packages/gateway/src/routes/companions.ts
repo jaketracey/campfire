@@ -12,6 +12,14 @@ import { db } from '../db/index.js';
 import { logger } from '../observability/logger.js';
 import type { CompanionSpec } from '../db/types.js';
 
+// Appearance schema for validation
+const AppearanceSchema = z.object({
+  ethnicity: z.enum(['east-asian', 'south-asian', 'black', 'caucasian', 'latina', 'middle-eastern', 'mixed']),
+  bodyType: z.enum(['slim', 'athletic', 'curvy', 'plus-size']),
+  hairColor: z.enum(['black', 'brown', 'blonde', 'red', 'fantasy']),
+  breastSize: z.number().min(0).max(100).optional(),
+});
+
 // Request schemas - simplified input for API consumers
 const CreateCompanionSchema = z.object({
   name: z.string().min(1).max(100),
@@ -20,6 +28,50 @@ const CreateCompanionSchema = z.object({
   voiceId: z.string().optional(),
   avatarUrl: z.string().url().optional(),
   isPublic: z.boolean().default(false),
+  // Full spec for detailed configuration (from onboarding)
+  spec: z.object({
+    identity: z.object({
+      name: z.string().optional(),
+      pronouns: z.string().optional(),
+      address_style: z.string().optional(),
+    }).optional(),
+    personality: z.object({
+      archetype: z.string().optional(),
+      secondary_archetype: z.string().optional(),
+      traits: z.record(z.string(), z.number()).optional(),
+    }).optional(),
+    voice: z.object({
+      provider: z.string().optional(),
+      voice_id: z.string().optional(),
+    }).optional(),
+    visual_style: z.object({
+      style_type: z.string().optional(),
+      appearance: AppearanceSchema.optional(),
+      palette: z.array(z.string()).optional(),
+      constraints: z.array(z.string()).optional(),
+    }).optional(),
+    boundaries: z.object({
+      relationship_pacing: z.string().optional(),
+      topics_avoid: z.array(z.string()).optional(),
+      safe_topics: z.array(z.string()).optional(),
+      content_rating: z.string().optional(),
+      emotional_depth: z.enum(['surface', 'moderate', 'deep']).optional(),
+    }).optional(),
+    memory_consent: z.object({
+      allow_long_term: z.boolean().optional(),
+      allow_kg_extraction: z.boolean().optional(),
+      retention_days: z.number().optional(),
+    }).optional(),
+    tenets: z.array(z.object({
+      id: z.string(),
+      category: z.string(),
+      priority: z.enum(['core', 'situational']),
+      rule: z.string(),
+      description: z.string().optional(),
+      isNegation: z.boolean(),
+      triggerContexts: z.array(z.string()).optional(),
+    })).optional(),
+  }).optional(),
 });
 
 const UpdateCompanionSchema = z.object({
@@ -38,47 +90,56 @@ const UpdateCompanionSchema = z.object({
 });
 
 /**
- * Build a CompanionSpec from simplified input
+ * Build a CompanionSpec from simplified input, merging with provided spec
  */
 function buildSpec(input: {
   name: string;
   description?: string;
   personality: string;
   voiceId?: string;
+  providedSpec?: z.infer<typeof CreateCompanionSchema>['spec'];
 }): CompanionSpec {
+  const provided = input.providedSpec || {};
+
   return {
     identity: {
-      name: input.name,
-      pronouns: 'they/them',
-      address_style: 'friendly',
+      name: provided.identity?.name || input.name,
+      pronouns: provided.identity?.pronouns || 'they/them',
+      address_style: provided.identity?.address_style || 'friendly',
     },
     personality: {
-      archetype: 'companion',
-      traits: {
+      archetype: provided.personality?.archetype || 'companion',
+      secondary_archetype: provided.personality?.secondary_archetype,
+      traits: provided.personality?.traits || {
         warmth: 0.7,
         playfulness: 0.5,
         directness: 0.5,
         empathy: 0.7,
       },
     },
-    voice: input.voiceId ? {
-      provider: 'elevenlabs',
-      voice_id: input.voiceId,
-    } : {
-      provider: 'elevenlabs',
-      voice_id: 'default',
+    voice: {
+      provider: provided.voice?.provider || 'elevenlabs',
+      voice_id: provided.voice?.voice_id || input.voiceId || 'default',
     },
     visual_style: {
-      style_type: 'default',
+      style_type: provided.visual_style?.style_type || 'default',
+      appearance: provided.visual_style?.appearance,
+      palette: provided.visual_style?.palette,
+      constraints: provided.visual_style?.constraints,
     },
     boundaries: {
-      relationship_pacing: 'moderate',
-      content_rating: 'PG-13',
+      relationship_pacing: provided.boundaries?.relationship_pacing || 'moderate',
+      topics_avoid: provided.boundaries?.topics_avoid,
+      safe_topics: provided.boundaries?.safe_topics,
+      content_rating: provided.boundaries?.content_rating || 'PG-13',
+      emotional_depth: provided.boundaries?.emotional_depth,
     },
     memory_consent: {
-      allow_long_term: true,
-      allow_kg_extraction: true,
+      allow_long_term: provided.memory_consent?.allow_long_term ?? true,
+      allow_kg_extraction: provided.memory_consent?.allow_kg_extraction ?? true,
+      retention_days: provided.memory_consent?.retention_days,
     },
+    tenets: provided.tenets,
   };
 }
 
@@ -237,12 +298,13 @@ export async function companionsRoutes(app: FastifyInstance): Promise<void> {
 
     const input = parseResult.data;
 
-    // Build the spec from simplified input
+    // Build the spec from simplified input, merging with provided spec
     const spec = buildSpec({
       name: input.name,
       description: input.description,
       personality: input.personality,
       voiceId: input.voiceId,
+      providedSpec: input.spec,
     });
 
     const companion = await companionRepo.create({

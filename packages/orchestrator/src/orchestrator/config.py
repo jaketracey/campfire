@@ -31,6 +31,10 @@ class Settings(BaseSettings):
 
     # Gateway (internal API)
     gateway_internal_url: str = "http://localhost:3001"
+    internal_service_key: str = Field(
+        default="dev-internal-service-key",
+        validation_alias="INTERNAL_SERVICE_KEY"
+    )
 
     # Database
     database_url: PostgresDsn = Field(

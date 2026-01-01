@@ -67,6 +67,32 @@ export interface GalleryResponse {
   sessionId: string;
 }
 
+// Anchor image generation types
+export interface GenerateAnchorsRequest {
+  companionId: string;
+  appearance: {
+    ethnicity: string;
+    bodyType: string;
+    hairColor: string;
+    breastSize?: number;
+  };
+  style: 'realistic' | 'stylized' | 'abstract' | 'minimal' | 'anime';
+  personality?: PersonalitySliders;
+}
+
+export interface AnchorImage {
+  id: string;
+  url: string;
+  emotionalState: string;
+  isIdentityAnchor: boolean;
+}
+
+export interface GenerateAnchorsResult {
+  companionId: string;
+  anchors: AnchorImage[];
+  primaryAnchorId: string;
+}
+
 /**
  * Generate a companion image based on emotional state and personality
  */
@@ -107,25 +133,8 @@ export const emotionalStates = [
 
 export type EmotionalState = (typeof emotionalStates)[number];
 
-/**
- * Companion visual style for prompt building
- */
-export interface CompanionVisualStyle {
-  style_type?: string;
-  physical_attributes?: {
-    apparent_age?: string;
-    hair_color?: string;
-    hair_style?: string;
-    eye_color?: string;
-    skin_tone?: string;
-    build?: string;
-    notable_features?: string[];
-    clothing_style?: string;
-    accessories?: string[];
-  };
-  style_modifiers?: string[];
-  custom_style_description?: string;
-}
+// Import CompanionVisualStyle from companions (it's exported from there)
+import type { CompanionVisualStyle } from './companions';
 
 /**
  * Generate a base companion prompt based on style
@@ -146,17 +155,21 @@ export function getBasePrompt(style: ImageGenRequest['style']): string {
 /**
  * Build a detailed prompt from companion visual data
  * This creates a consistent character prompt based on the companion's spec
+ *
+ * @throws Error if visualStyle is undefined - we want to debug missing visual data
  */
 export function buildPromptFromCompanion(
-  visualStyle: CompanionVisualStyle | undefined,
+  visualStyle: CompanionVisualStyle,
   style: ImageGenRequest['style'] = 'stylized'
 ): string {
   if (!visualStyle) {
-    return getBasePrompt(style);
+    throw new Error(
+      'buildPromptFromCompanion: visualStyle is required. ' +
+      'Check that companion.spec.visual_style is populated.'
+    );
   }
 
   const parts: string[] = [];
-  const attrs = visualStyle.physical_attributes;
 
   // Base description
   if (visualStyle.custom_style_description) {
@@ -165,7 +178,49 @@ export function buildPromptFromCompanion(
     parts.push('Beautiful woman');
   }
 
-  // Physical attributes
+  // Use appearance data (from onboarding) - this is what's actually saved
+  const appearance = visualStyle.appearance;
+  if (appearance) {
+    // Ethnicity mapping to descriptive terms
+    const ethnicityMap: Record<string, string> = {
+      'east-asian': 'East Asian features',
+      'south-asian': 'South Asian features',
+      'black': 'Black/African features',
+      'caucasian': 'Caucasian features',
+      'latina': 'Latina features',
+      'middle-eastern': 'Middle Eastern features',
+      'mixed': 'mixed ethnicity',
+    };
+    if (appearance.ethnicity && ethnicityMap[appearance.ethnicity]) {
+      parts.push(ethnicityMap[appearance.ethnicity]);
+    }
+
+    // Body type
+    const bodyTypeMap: Record<string, string> = {
+      'slim': 'slim figure',
+      'athletic': 'athletic build',
+      'curvy': 'curvy figure',
+      'plus-size': 'plus-size figure',
+    };
+    if (appearance.bodyType && bodyTypeMap[appearance.bodyType]) {
+      parts.push(bodyTypeMap[appearance.bodyType]);
+    }
+
+    // Hair color
+    const hairColorMap: Record<string, string> = {
+      'black': 'black hair',
+      'brown': 'brown hair',
+      'blonde': 'blonde hair',
+      'red': 'red hair',
+      'fantasy': 'vibrant fantasy-colored hair',
+    };
+    if (appearance.hairColor && hairColorMap[appearance.hairColor]) {
+      parts.push(hairColorMap[appearance.hairColor]);
+    }
+  }
+
+  // Fallback to physical_attributes if available (legacy/detailed specs)
+  const attrs = visualStyle.physical_attributes;
   if (attrs) {
     // Age
     if (attrs.apparent_age) {
@@ -179,8 +234,8 @@ export function buildPromptFromCompanion(
       }
     }
 
-    // Hair
-    if (attrs.hair_color || attrs.hair_style) {
+    // Hair (only if not already added from appearance)
+    if (!appearance?.hairColor && (attrs.hair_color || attrs.hair_style)) {
       const hairDesc = [attrs.hair_color, attrs.hair_style].filter(Boolean).join(' ');
       if (hairDesc) {
         parts.push(`${hairDesc} hair`);
@@ -197,8 +252,8 @@ export function buildPromptFromCompanion(
       parts.push(`${attrs.skin_tone} skin`);
     }
 
-    // Build/body
-    if (attrs.build) {
+    // Build/body (only if not already added from appearance)
+    if (!appearance?.bodyType && attrs.build) {
       parts.push(attrs.build);
     }
 
@@ -241,4 +296,18 @@ export async function getSessionGallery(
   limit = 50
 ): Promise<GalleryResponse> {
   return get<GalleryResponse>(`/imagegen/gallery/${sessionId}?limit=${limit}`);
+}
+
+/**
+ * Generate anchor images for a new companion
+ * Creates a set of reference images with different emotional states
+ * that will be used for character consistency in future image generation.
+ *
+ * This is called after companion creation during onboarding to establish
+ * the companion's visual identity.
+ */
+export async function generateAnchorImages(
+  request: GenerateAnchorsRequest
+): Promise<GenerateAnchorsResult> {
+  return post<GenerateAnchorsResult>('/imagegen/generate-anchors', request);
 }

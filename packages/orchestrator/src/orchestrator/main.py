@@ -22,6 +22,7 @@ from orchestrator.models.memory import LongTermMemory
 from orchestrator.prompts.manager import PromptManager
 from orchestrator.providers.comfyui import ComfyUIProvider
 from orchestrator.providers.fal import FalProvider
+from orchestrator.queue import JobQueue, get_job_queue
 from orchestrator.safety.gate import SafetyGate, SafetyLevel
 from orchestrator.services.orchestrator import ConversationOrchestrator
 from orchestrator.tools.router import ToolRouter
@@ -117,6 +118,7 @@ class AppState:
     safety_gate: SafetyGate
     tool_router: ToolRouter
     orchestrator: ConversationOrchestrator
+    job_queue: JobQueue
     comfyui_provider: ComfyUIProvider | None
     fal_provider: FalProvider | None
 
@@ -164,6 +166,10 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         event_emitter=app_state.event_emitter,
     )
 
+    # Initialize job queue for background workers
+    app_state.job_queue = get_job_queue(settings)
+    await app_state.job_queue.connect()
+
     # Initialize orchestrator
     app_state.orchestrator = ConversationOrchestrator(
         settings=settings,
@@ -171,6 +177,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         prompt_manager=app_state.prompt_manager,
         safety_gate=app_state.safety_gate,
         tool_router=app_state.tool_router,
+        job_queue=app_state.job_queue,
     )
 
     # Initialize image providers
@@ -205,6 +212,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     # Shutdown
     logger.info("stopping_orchestrator_service")
     await app_state.tool_router.close()
+    await app_state.job_queue.disconnect()
     await app_state.event_emitter.stop()
     logger.info("orchestrator_service_stopped")
 

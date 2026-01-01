@@ -5,7 +5,6 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { cn } from '@/lib/utils';
 import {
   generateCompanionImage,
-  getBasePrompt,
   type ImageGenRequest,
   type EmotionalState,
   type PersonalitySliders,
@@ -89,8 +88,17 @@ export function CompanionAvatar({
     setError(null);
 
     try {
+      // Require explicit prompt - no fallback to generic prompt
+      // This helps debug issues where companion visual style isn't being passed
+      if (!customPrompt) {
+        throw new Error(
+          'CompanionAvatar: customPrompt is required. ' +
+          'Check that companion.spec.visual_style exists and buildPromptFromCompanion is working.'
+        );
+      }
+
       const request: ImageGenRequest = {
-        prompt: customPrompt || getBasePrompt(style),
+        prompt: customPrompt,
         emotionalState,
         personality,
         style,

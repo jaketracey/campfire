@@ -11,6 +11,7 @@ import { referralsRoutes } from './referrals.js';
 import { companionsRoutes } from './companions.js';
 import { sessionsRoutes } from './sessions.js';
 import { memoriesRoutes } from './memories.js';
+import { knowledgeGraphRoutes } from './knowledge-graph.js';
 import { eventsRoutes } from './events.js';
 import { billingRoutes } from './billing.js';
 import { emailWebhookRoutes } from './email-webhooks.js';
@@ -45,6 +46,9 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
 
       // Memory routes
       await api.register(memoriesRoutes, { prefix: '/memories' });
+
+      // Knowledge graph routes
+      await api.register(knowledgeGraphRoutes, { prefix: '/knowledge-graph' });
 
       // Event stream routes
       await api.register(eventsRoutes, { prefix: '/events' });

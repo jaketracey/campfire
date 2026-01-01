@@ -112,6 +112,8 @@ export interface UserWithStats {
   lastLoginAt: Date | null;
   loginCount: number;
   companionCount: number;
+  imageCount: number;
+  totalTokens: number;
   createdAt: Date;
 }
 
@@ -366,7 +368,9 @@ export class UsersRepository {
         u.last_login_at,
         u.login_count,
         u.created_at,
-        COALESCE(c.companion_count, 0)::int as companion_count
+        COALESCE(c.companion_count, 0)::int as companion_count,
+        COALESCE(i.image_count, 0)::int as image_count,
+        COALESCE(s.total_tokens, 0)::bigint as total_tokens
       FROM users u
       LEFT JOIN (
         SELECT user_id, COUNT(*)::int as companion_count
@@ -374,6 +378,16 @@ export class UsersRepository {
         WHERE status != 'archived'
         GROUP BY user_id
       ) c ON c.user_id = u.id
+      LEFT JOIN (
+        SELECT user_id, COUNT(*)::int as image_count
+        FROM companion_images
+        GROUP BY user_id
+      ) i ON i.user_id = u.id::text
+      LEFT JOIN (
+        SELECT user_id, SUM(total_tokens_input + total_tokens_output)::bigint as total_tokens
+        FROM sessions
+        GROUP BY user_id
+      ) s ON s.user_id = u.id
       ${whereClause}
       ORDER BY u.created_at DESC
       LIMIT ${limit + 1}
@@ -885,6 +899,8 @@ export class UsersRepository {
       lastLoginAt: row['last_login_at'] as Date | null,
       loginCount: row['login_count'] as number,
       companionCount: row['companion_count'] as number,
+      imageCount: row['image_count'] as number,
+      totalTokens: Number(row['total_tokens']),
       createdAt: row['created_at'] as Date,
     };
   }

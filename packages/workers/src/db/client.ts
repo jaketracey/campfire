@@ -107,6 +107,8 @@ export function createDbClient(connectionString: string) {
 
     async upsertKgEdge(edge: {
       id: string;
+      userId: string;
+      companionId: string;
       sourceEntityId: string;
       targetEntityId: string;
       relationType: string;
@@ -116,16 +118,17 @@ export function createDbClient(connectionString: string) {
     }): Promise<void> {
       await sql`
         INSERT INTO kg_edges (
-          id, source_entity_id, target_entity_id, relation_type,
+          id, user_id, companion_id, source_entity_id, target_entity_id, relation_type,
           confidence, source_event_id, first_seen, last_seen, status
         ) VALUES (
-          ${edge.id}, ${edge.sourceEntityId}, ${edge.targetEntityId},
+          ${edge.id}, ${edge.userId}, ${edge.companionId}, ${edge.sourceEntityId}, ${edge.targetEntityId},
           ${edge.relationType}, ${edge.confidence}, ${edge.sourceEventId},
           NOW(), NOW(), ${edge.status}
         )
-        ON CONFLICT (id) DO UPDATE SET
+        ON CONFLICT (source_entity_id, target_entity_id, relation_type) DO UPDATE SET
           last_seen = NOW(),
-          confidence = ${edge.confidence},
+          confidence = GREATEST(kg_edges.confidence, ${edge.confidence}),
+          mention_count = kg_edges.mention_count + 1,
           status = ${edge.status}
       `;
     },

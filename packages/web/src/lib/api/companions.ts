@@ -6,10 +6,21 @@
 import { get, post, patch, del } from './client';
 
 /**
+ * Physical appearance for companion image generation
+ */
+export interface CompanionAppearance {
+  ethnicity: 'east-asian' | 'south-asian' | 'black' | 'caucasian' | 'latina' | 'middle-eastern' | 'mixed';
+  bodyType: 'slim' | 'athletic' | 'curvy' | 'plus-size';
+  hairColor: 'black' | 'brown' | 'blonde' | 'red' | 'fantasy';
+  breastSize?: number; // 0-100
+}
+
+/**
  * Companion visual style from spec
  */
 export interface CompanionVisualStyle {
   style_type?: string;
+  appearance?: CompanionAppearance;
   physical_attributes?: {
     apparent_age?: string;
     hair_color?: string;
@@ -23,6 +34,9 @@ export interface CompanionVisualStyle {
   };
   style_modifiers?: string[];
   custom_style_description?: string;
+  palette?: string[];
+  constraints?: string[];
+  reference_assets?: string[];
 }
 
 /**
@@ -81,6 +95,8 @@ export interface CreateCompanionInput {
   allowedTools?: string[];
   systemPrompt?: string;
   isPublic?: boolean;
+  /** Full companion spec for detailed configuration */
+  spec?: CompanionSpec;
 }
 
 export interface UpdateCompanionInput {

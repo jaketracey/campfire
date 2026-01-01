@@ -28,13 +28,54 @@ export function Step7Review() {
         state.identity.backstory ? `Background: ${state.identity.backstory}` : '',
       ].filter(Boolean).join('\n');
 
-      // Create companion via API
+      // Convert personality sliders to 0-1 range for spec
+      const normalizedTraits = Object.fromEntries(
+        Object.entries(state.personality).map(([key, value]) => [key, value / 100])
+      );
+
+      // Create companion via API with full spec
       const companion = await createCompanion({
         name: state.name,
         description: state.archetype?.description,
         personality: personalityDescription,
         voiceId: state.voice?.id,
         isPublic: false,
+        spec: {
+          identity: {
+            name: state.name,
+            pronouns: state.identity.pronouns || 'they/them',
+            address_style: 'friendly',
+          },
+          personality: {
+            archetype: state.archetype?.id || 'companion',
+            secondary_archetype: state.secondaryArchetype?.id,
+            traits: normalizedTraits,
+          },
+          voice: state.voice ? {
+            provider: 'elevenlabs',
+            voice_id: state.voice.id,
+          } : undefined,
+          visual_style: {
+            style_type: state.visualStyle.avatarStyle,
+            appearance: {
+              ethnicity: state.visualStyle.appearance.ethnicity,
+              bodyType: state.visualStyle.appearance.bodyType,
+              hairColor: state.visualStyle.appearance.hairColor,
+              breastSize: state.visualStyle.appearance.breastSize,
+            },
+          },
+          boundaries: {
+            relationship_pacing: state.boundaries.interactionStyle,
+            topics_avoid: state.boundaries.avoidTopics,
+            safe_topics: state.boundaries.safeTopics,
+            content_rating: 'PG-13',
+            emotional_depth: state.boundaries.emotionalDepth,
+          },
+          memory_consent: {
+            allow_long_term: state.boundaries.consentToMemory,
+            allow_kg_extraction: state.boundaries.consentToLearning,
+          },
+        },
       });
 
       console.log('Companion created:', companion);

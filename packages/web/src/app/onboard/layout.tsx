@@ -1,5 +1,6 @@
-import { Flame } from 'lucide-react';
+
 import Link from 'next/link';
+import { OnboardingLogo } from '@/components/onboarding/onboarding-logo';
 import { CompanionBackground } from '@/components/onboarding/companion-background';
 
 export default function OnboardLayout({
@@ -12,10 +13,7 @@ export default function OnboardLayout({
       <CompanionBackground />
       {/* Header */}
       <header className="fixed top-0 left-0 right-0 z-50 flex items-center justify-between p-6">
-        <Link href="/" className="flex items-center gap-2">
-          <Flame className="h-8 w-8 text-campfire-500" />
-          <span className="text-xl font-bold">Campfire</span>
-        </Link>
+        <OnboardingLogo />
       </header>
 
       {/* Main content */}

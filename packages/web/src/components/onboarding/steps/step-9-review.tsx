@@ -6,11 +6,12 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
-import { Loader2, Sparkles, Star } from 'lucide-react';
+import { Loader2, Sparkles, Star, ImageIcon, CheckCircle2 } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { useToast } from '@/hooks/use-toast';
-import { createCompanion, createSession } from '@/lib/api';
+import { createCompanion, createSession, generateAnchorImages, type AnchorImage } from '@/lib/api';
 import { cn } from '@/lib/utils';
+import Image from 'next/image';
 
 // Tenet category metadata for display
 const TENET_CATEGORY_META: Record<TenetCategory, { label: string; color: string }> = {
@@ -22,16 +23,24 @@ const TENET_CATEGORY_META: Record<TenetCategory, { label: string; color: string 
   autonomy: { label: 'Autonomy', color: 'amber' },
 };
 
+type CreationPhase = 'idle' | 'creating' | 'generating-anchors' | 'creating-session' | 'complete';
+
 export function Step9Review() {
   const router = useRouter();
   const { toast } = useToast();
   const state = useOnboardingStore();
-  const [isCreating, setIsCreating] = useState(false);
+  const [phase, setPhase] = useState<CreationPhase>('idle');
+  const [generatedAnchors, setGeneratedAnchors] = useState<AnchorImage[]>([]);
+  const [currentAnchorIndex, setCurrentAnchorIndex] = useState(0);
 
   const coreTenets = state.tenets.filter((t) => t.priority === 'core');
+  const isCreating = phase !== 'idle';
 
   const handleCreate = async () => {
-    setIsCreating(true);
+    setPhase('creating');
+    setGeneratedAnchors([]);
+    setCurrentAnchorIndex(0);
+
     try {
       // Build personality description from archetype and sliders
       const personalityDescription = [
@@ -40,7 +49,7 @@ export function Step9Review() {
           ? `Secondary archetype: ${state.secondaryArchetype.name}`
           : '',
         `Traits: ${state.archetype?.traits.join(', ') || 'friendly'}`,
-        `Warmth: ${state.personality.warmth}%, Humor: ${state.personality.humor}%`,
+        `Warmth: ${state.personality.warmth}%, Playfulness: ${state.personality.playfulness}%`,
         `Empathy: ${state.personality.empathy}%, Energy: ${state.personality.energy}%`,
         state.identity.backstory ? `Background: ${state.identity.backstory}` : '',
         coreTenets.length > 0
@@ -61,13 +70,54 @@ export function Step9Review() {
 
       console.log('Companion created:', companion);
 
+      // Generate anchor images for character consistency
+      setPhase('generating-anchors');
+
+      try {
+        const anchorsResult = await generateAnchorImages({
+          companionId: companion.id,
+          appearance: {
+            ethnicity: state.visualStyle.appearance.ethnicity,
+            bodyType: state.visualStyle.appearance.bodyType,
+            hairColor: state.visualStyle.appearance.hairColor,
+            breastSize: state.visualStyle.appearance.breastSize,
+          },
+          style: state.visualStyle.avatarStyle,
+          personality: {
+            warmth: state.personality.warmth,
+            playfulness: state.personality.playfulness,
+            directness: state.personality.directness,
+            curiosity: state.personality.curiosity,
+            empathy: state.personality.empathy,
+            assertiveness: state.personality.assertiveness,
+          },
+        });
+
+        console.log('Anchor images generated:', anchorsResult);
+        setGeneratedAnchors(anchorsResult.anchors);
+      } catch (anchorError) {
+        // Log but don't fail - anchor generation is not critical
+        console.warn('Anchor generation failed, continuing without anchors:', anchorError);
+        toast({
+          title: 'Note',
+          description: 'Could not generate anchor images. Your companion will still work normally.',
+          variant: 'default',
+        });
+      }
+
       // Create a session with the new companion
+      setPhase('creating-session');
       const session = await createSession({
         companionId: companion.id,
         title: `Chat with ${companion.name}`,
       });
 
       console.log('Session created:', session);
+
+      setPhase('complete');
+
+      // Brief delay to show completion state
+      await new Promise((resolve) => setTimeout(resolve, 500));
 
       // Reset onboarding state
       state.reset();
@@ -81,7 +131,7 @@ export function Step9Review() {
         description: 'Failed to create companion. Please try again.',
         variant: 'destructive',
       });
-      setIsCreating(false);
+      setPhase('idle');
     }
   };
 
@@ -196,6 +246,71 @@ export function Step9Review() {
         </CardContent>
       </Card>
 
+      {/* Anchor Generation Progress */}
+      {phase === 'generating-anchors' && (
+        <Card className="bg-white/[0.02] backdrop-blur-3xl border-white/10 overflow-hidden">
+          <CardContent className="p-6 space-y-4">
+            <div className="flex items-center gap-3">
+              <div className="relative">
+                <ImageIcon className="h-6 w-6 text-vibes-neon animate-pulse" />
+              </div>
+              <div>
+                <h4 className="text-lg font-bold text-white">Creating {state.name}&apos;s Identity</h4>
+                <p className="text-sm text-gray-400">
+                  Generating unique images to establish visual consistency...
+                </p>
+              </div>
+            </div>
+
+            {/* Progress indicator */}
+            <div className="flex gap-2">
+              {['neutral', 'happy', 'thoughtful'].map((emotionalState, index) => {
+                const isComplete = generatedAnchors.some((a) => a.emotionalState === emotionalState);
+                const isCurrent = index === generatedAnchors.length;
+
+                return (
+                  <div
+                    key={emotionalState}
+                    className={cn(
+                      'flex-1 h-2 rounded-full transition-all duration-500',
+                      isComplete
+                        ? 'bg-vibes-neon'
+                        : isCurrent
+                          ? 'bg-vibes-neon/50 animate-pulse'
+                          : 'bg-white/10'
+                    )}
+                  />
+                );
+              })}
+            </div>
+
+            {/* Generated anchors preview */}
+            {generatedAnchors.length > 0 && (
+              <div className="flex gap-3 justify-center pt-2">
+                {generatedAnchors.map((anchor) => (
+                  <div
+                    key={anchor.id}
+                    className="relative w-16 h-24 rounded-lg overflow-hidden border border-vibes-neon/30 shadow-[0_0_10px_rgba(168,85,247,0.2)]"
+                  >
+                    <Image
+                      src={anchor.url}
+                      alt={`${state.name} - ${anchor.emotionalState}`}
+                      fill
+                      className="object-cover"
+                    />
+                    <div className="absolute bottom-0 left-0 right-0 bg-black/60 py-0.5 px-1">
+                      <p className="text-[8px] text-center text-gray-300 capitalize">
+                        {anchor.emotionalState}
+                      </p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      )}
+
       <div className="pt-6 space-y-6">
         <Button
           size="lg"
@@ -203,15 +318,30 @@ export function Step9Review() {
           onClick={handleCreate}
           disabled={isCreating}
         >
-          {isCreating ? (
-            <>
-              <Loader2 className="mr-3 h-8 w-8 animate-spin" />
-              Igniting Companion...
-            </>
-          ) : (
+          {phase === 'idle' ? (
             <>
               <Sparkles className="mr-3 h-8 w-8" />
               Bring to Life
+            </>
+          ) : phase === 'creating' ? (
+            <>
+              <Loader2 className="mr-3 h-8 w-8 animate-spin" />
+              Creating {state.name}...
+            </>
+          ) : phase === 'generating-anchors' ? (
+            <>
+              <Loader2 className="mr-3 h-8 w-8 animate-spin" />
+              Generating Images...
+            </>
+          ) : phase === 'creating-session' ? (
+            <>
+              <Loader2 className="mr-3 h-8 w-8 animate-spin" />
+              Preparing Chat...
+            </>
+          ) : (
+            <>
+              <CheckCircle2 className="mr-3 h-8 w-8" />
+              Ready!
             </>
           )}
         </Button>

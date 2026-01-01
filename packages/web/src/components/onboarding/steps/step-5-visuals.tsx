@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect, useRef } from 'react';
 import { motion } from 'framer-motion';
 import { useOnboardingStore, AppearanceEthnicity, AppearanceBodyType, AppearanceHairColor } from '@/stores/onboarding-store';
 import { Button } from '@/components/ui/button';
@@ -9,6 +9,15 @@ import { cn } from '@/lib/utils';
 import Image from 'next/image';
 import { Slider } from '@/components/ui/slider';
 import { Label } from '@/components/ui/label';
+
+// Convert 0-100 breast size to label (xs, sm, md, lg, xl)
+function getBreastSizeLabel(value: number): string {
+  if (value <= 20) return 'xs';
+  if (value <= 40) return 'sm';
+  if (value <= 60) return 'md';
+  if (value <= 80) return 'lg';
+  return 'xl';
+}
 
 // Ethnicity options
 const ethnicityOptions: Array<{
@@ -54,8 +63,19 @@ const defaultAppearance = {
   hairColor: 'brown' as AppearanceHairColor,
 };
 
-// Build dynamic image path based on all selections
+// Build dynamic image path based on all selections including breast size
 function getPreviewImagePath(
+  ethnicity: AppearanceEthnicity,
+  bodyType: AppearanceBodyType,
+  hairColor: AppearanceHairColor,
+  breastSize: number
+): string {
+  const breastLabel = getBreastSizeLabel(breastSize);
+  return `/images/companions/${ethnicity}-${bodyType}-${hairColor}-b${breastLabel}.png`;
+}
+
+// Legacy path without breast size (for fallback)
+function getLegacyImagePath(
   ethnicity: AppearanceEthnicity,
   bodyType: AppearanceBodyType,
   hairColor: AppearanceHairColor
@@ -80,22 +100,66 @@ function getFallbackImagePath(ethnicity: AppearanceEthnicity): string {
 export function Step5Visuals() {
   const { visualStyle, setVisualStyle, setAppearance, nextStep } = useOnboardingStore();
   const [imageError, setImageError] = useState(false);
+  const [isTransitioning, setIsTransitioning] = useState(false);
+  const [displayedImage, setDisplayedImage] = useState<string | null>(null);
+  const transitionTimeout = useRef<NodeJS.Timeout | null>(null);
 
   // Handle migration from old store format without appearance
   const appearance = visualStyle.appearance || defaultAppearance;
 
-  // Dynamic preview image based on all appearance selections
+  // Dynamic preview image based on all appearance selections including breast size
   const previewImagePath = useMemo(() => {
-    return getPreviewImagePath(appearance.ethnicity, appearance.bodyType, appearance.hairColor);
+    return getPreviewImagePath(appearance.ethnicity, appearance.bodyType, appearance.hairColor, appearance.breastSize);
+  }, [appearance.ethnicity, appearance.bodyType, appearance.hairColor, appearance.breastSize]);
+
+  // Legacy fallback (without breast size)
+  const legacyImagePath = useMemo(() => {
+    return getLegacyImagePath(appearance.ethnicity, appearance.bodyType, appearance.hairColor);
   }, [appearance.ethnicity, appearance.bodyType, appearance.hairColor]);
 
   const fallbackImagePath = useMemo(() => {
     return getFallbackImagePath(appearance.ethnicity);
   }, [appearance.ethnicity]);
 
+  // Initialize displayed image
+  useEffect(() => {
+    if (!displayedImage) {
+      setDisplayedImage(previewImagePath);
+    }
+  }, [displayedImage, previewImagePath]);
+
+  // Handle image transitions with blur effect
+  useEffect(() => {
+    if (displayedImage && displayedImage !== previewImagePath) {
+      // Start blur transition
+      setIsTransitioning(true);
+
+      // Clear any existing timeout
+      if (transitionTimeout.current) {
+        clearTimeout(transitionTimeout.current);
+      }
+
+      // After blur kicks in, swap the image
+      transitionTimeout.current = setTimeout(() => {
+        setDisplayedImage(previewImagePath);
+        setImageError(false);
+
+        // Remove blur after image loads
+        setTimeout(() => {
+          setIsTransitioning(false);
+        }, 150);
+      }, 200);
+    }
+
+    return () => {
+      if (transitionTimeout.current) {
+        clearTimeout(transitionTimeout.current);
+      }
+    };
+  }, [previewImagePath, displayedImage]);
+
   // Reset error when selections change
   const handleSelectionChange = (updates: Partial<typeof appearance>) => {
-    setImageError(false);
     setAppearance(updates);
   };
 
@@ -240,22 +304,36 @@ export function Step5Visuals() {
 
         {/* Right: Preview */}
         <div className="flex flex-col items-center gap-4 order-1 lg:order-2">
-          <motion.div
-            key={`${appearance.ethnicity}-${appearance.bodyType}-${appearance.hairColor}`}
-            initial={{ opacity: 0, scale: 0.95 }}
-            animate={{ opacity: 1, scale: 1 }}
-            transition={{ duration: 0.3 }}
-            className="relative w-full aspect-[3/4] max-w-[280px] rounded-2xl overflow-hidden border border-white/10 bg-white/[0.02]"
-          >
+          <div className="relative w-full aspect-[3/4] max-w-[280px] rounded-2xl overflow-hidden border border-white/10 bg-white/[0.02]">
+            {/* Gradient overlay */}
             <div className="absolute inset-0 bg-gradient-to-br from-vibes-cyan/5 via-transparent to-vibes-neon/5 z-10 pointer-events-none" />
-            <Image
-              src={imageError ? fallbackImagePath : previewImagePath}
-              alt="Companion preview"
-              fill
-              className="object-cover transition-opacity duration-300"
-              priority
-              onError={() => setImageError(true)}
-            />
+
+            {/* Main image with blur transition */}
+            <div
+              className={cn(
+                "absolute inset-0 transition-all duration-300 ease-out",
+                isTransitioning ? "blur-md scale-105" : "blur-0 scale-100"
+              )}
+            >
+              {displayedImage && (
+                <Image
+                  src={imageError ? (legacyImagePath || fallbackImagePath) : displayedImage}
+                  alt="Companion preview"
+                  fill
+                  className="object-cover"
+                  priority
+                  onError={() => {
+                    // Try legacy path first, then fallback
+                    if (!imageError) {
+                      setImageError(true);
+                    }
+                  }}
+                />
+              )}
+            </div>
+
+
+            {/* Caption */}
             <div className="absolute bottom-0 inset-x-0 p-3 bg-gradient-to-t from-black/80 to-transparent z-10">
               <div className="text-center">
                 <span className="text-xs text-white/60 capitalize">
@@ -263,7 +341,7 @@ export function Step5Visuals() {
                 </span>
               </div>
             </div>
-          </motion.div>
+          </div>
 
           <div className="text-center space-y-1">
             <div className="text-xs text-gray-500 capitalize">
