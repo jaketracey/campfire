@@ -271,6 +271,46 @@ Return your response as JSON with these fields:
             description="Template for naturally recalling gifts in conversation",
             variables=["gift_title", "gift_description", "emotional_meaning", "gift_date", "gift_direction", "conversation_context", "trigger"],
         ),
+        "user_personality_analysis": PromptTemplate(
+            name="user_personality_analysis",
+            version="1.0.0",
+            template="""Analyze this user's conversation history to understand their personality and communication style.
+
+## Conversation History
+{conversation_history}
+
+## Previous Profile (if exists)
+{existing_profile}
+
+Analyze the user's messages carefully and return a JSON object with your assessment:
+
+{{
+  "traits": {{
+    "warmth": 0-100 (how warm/affectionate vs reserved in their communication),
+    "energy": 0-100 (how energetic/enthusiastic vs calm/measured),
+    "humor": 0-100 (how playful/humorous vs serious/straightforward),
+    "formality": 0-100 (how formal/polished vs casual/relaxed),
+    "curiosity": 0-100 (how inquisitive/exploratory vs practical/focused),
+    "openness": 0-100 (how open/sharing vs private/guarded)
+  }},
+  "preferred_tone": "casual" | "formal" | "playful" | "direct",
+  "verbosity": "concise" | "moderate" | "detailed",
+  "personality_insights": ["3-5 specific observations about their personality based on actual patterns in their messages"],
+  "detected_interests": ["topics they frequently discuss or show genuine interest in"],
+  "conversation_themes": ["recurring themes or patterns in their conversations"],
+  "greeting_style": "warm" | "playful" | "formal" | "friendly",
+  "custom_insight": "A personalized, encouraging insight message like 'Your curious spirit shines through in every conversation' - make it specific to their actual personality"
+}}
+
+Guidelines:
+- Base your analysis on actual patterns in their messages, not assumptions
+- Be insightful but positive - focus on genuine strengths
+- The custom_insight should feel personal and uplifting
+- If there's not enough data for a trait, use null instead of guessing
+- Detected interests should be specific, not generic categories""",
+            description="Template for analyzing user personality from chat history",
+            variables=["conversation_history", "existing_profile"],
+        ),
     },
 }
 

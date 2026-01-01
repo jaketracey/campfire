@@ -307,8 +307,8 @@ export default function DashboardPage() {
                     >
                       <div className="absolute inset-0 bg-gradient-to-br from-white/[0.02] to-transparent pointer-events-none" />
                       <CardContent className="p-0">
-                        {/* Status Image Area */}
-                        <div className="aspect-[16/10] relative overflow-hidden">
+                        {/* Status Image Area - matches anchor image ratio (512x768 = 2:3) */}
+                        <div className="aspect-[2/3] relative overflow-hidden">
                           {displayImageUrl ? (
                             <img
                               src={displayImageUrl}

@@ -63,6 +63,15 @@
   .text-balance {
     text-wrap: balance;
   }
+
+  /* Hide scrollbar for horizontal swipe containers */
+  .scrollbar-hide {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+  .scrollbar-hide::-webkit-scrollbar {
+    display: none;
+  }
 }
 
 /* Voice visualization styles */

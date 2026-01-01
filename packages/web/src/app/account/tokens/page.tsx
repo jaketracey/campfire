@@ -150,7 +150,7 @@ export default function TokensPage() {
                     <div className="flex items-center gap-3">
                       <Coins className="h-8 w-8 text-amber-600 dark:text-amber-400" />
                       <span className="text-4xl font-bold text-amber-900 dark:text-amber-100">
-                        {balance?.balance.toLocaleString() ?? 0}
+                        {balance?.balance?.toLocaleString() ?? 0}
                       </span>
                       <span className="text-lg text-amber-700 dark:text-amber-300">tokens</span>
                     </div>
