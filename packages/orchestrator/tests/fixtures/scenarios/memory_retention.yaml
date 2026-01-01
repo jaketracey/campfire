@@ -1,0 +1,133 @@
+# Memory Retention Test Scenarios
+# Inspired by LoCoMo benchmark structure
+# Tests the companion's ability to recall facts from earlier in conversation
+
+scenarios:
+  - id: "basic_fact_recall"
+    description: "Test recall of a simple personal fact"
+    companion: "friendly_companion"
+    turns:
+      - user: "My dog's name is Max and he's a golden retriever."
+        expect_acknowledgment: true
+      - user: "What's the weather like today?"
+        # Distractor turn
+      - user: "I'm thinking of getting another pet."
+        # Another distractor
+      - user: "What was my dog's name again?"
+        expect_recall:
+          fact: "dog named Max"
+          accuracy_threshold: 0.9
+
+  - id: "multi_fact_context"
+    description: "Test recall of multiple related facts"
+    companion: "friendly_companion"
+    turns:
+      - user: "I live in Seattle with my wife Sarah. We have two kids, Emma and Jake."
+        expect_acknowledgment: true
+      - user: "Tell me a joke."
+      - user: "What should I do this weekend?"
+      - user: "How many children do I have?"
+        expect_recall:
+          fact: "two children named Emma and Jake"
+
+  - id: "duplication_at_turn_10"
+    description: "Test for repetition at turn 10 (reported issue boundary)"
+    companion: "friendly_companion"
+    check_no_repetition: true
+    turns:
+      - user: "Hi! My name is Alex and I'm a software engineer."
+      - user: "What do you like to do for fun?"
+      - user: "That sounds interesting!"
+      - user: "I've been coding for about 10 years now."
+      - user: "Do you have any hobbies?"
+      - user: "I enjoy hiking on weekends."
+      - user: "What's your favorite type of music?"
+      - user: "I really like jazz and classical."
+      - user: "Tell me something about yourself."
+      - user: "What's my name and what do I do?"
+        expect_recall:
+          fact: "Alex, software engineer"
+
+  - id: "duplication_at_turn_15"
+    description: "Test for repetition at turn 15 (deeper into conversation)"
+    companion: "friendly_companion"
+    check_no_repetition: true
+    turns:
+      - user: "My birthday is March 15th."
+      - user: "I work as a software engineer."
+      - user: "What's your favorite color?"
+      - user: "I've been coding for 10 years."
+      - user: "Do you like music?"
+      - user: "My favorite band is Radiohead."
+      - user: "What do you think about AI?"
+      - user: "I'm learning to play guitar."
+      - user: "How's your day going?"
+      - user: "I should probably get some sleep."
+      - user: "Actually, tell me more about yourself."
+      - user: "What are your thoughts on technology?"
+      - user: "I find AI fascinating."
+      - user: "Do you have any fun facts?"
+      - user: "When is my birthday?"
+        expect_recall:
+          fact: "March 15th"
+
+  - id: "long_conversation_recall"
+    description: "Test memory retention in a 20+ turn conversation"
+    companion: "friendly_companion"
+    check_no_repetition: true
+    turns:
+      - user: "Hi! I'm starting a new job next week at Google."
+      - user: "What do you think about that?"
+      - user: "I'm a bit nervous about it."
+      - user: "Tell me a joke to lighten the mood."
+      - user: "Ha! That was funny."
+      - user: "What should I wear on my first day?"
+      - user: "Good advice."
+      - user: "I also need to find a new apartment."
+      - user: "I'm looking in the downtown area."
+      - user: "What's your favorite food?"
+      - user: "Pizza sounds great right now."
+      - user: "I should probably eat healthier though."
+      - user: "Do you have any fitness tips?"
+      - user: "I used to run marathons."
+      - user: "Not anymore though, too busy."
+      - user: "What keeps you busy?"
+      - user: "Interesting perspective."
+      - user: "Back to my job - any tips for the first week?"
+      - user: "That's helpful."
+      - user: "Where am I starting my new job again?"
+        expect_recall:
+          fact: "Google"
+      - user: "And what am I looking for in the downtown area?"
+        expect_recall:
+          fact: "apartment"
+
+  - id: "cross_session_memory"
+    description: "Test memory persistence across sessions"
+    companion: "friendly_companion"
+    sessions:
+      - turns:
+          - user: "I just got promoted to Senior Engineer!"
+            expect_acknowledgment: true
+          - user: "Thanks! I'm really excited about it."
+      - gap_hours: 48
+        turns:
+          - user: "Hey, how are you?"
+          - user: "I'm nervous about my first meeting as a senior."
+            expect_recall:
+              fact: "recent promotion to Senior Engineer"
+              context_awareness: true
+
+  - id: "emotional_continuity"
+    description: "Test emotional context retention"
+    companion: "empathetic_companion"
+    turns:
+      - user: "I've been feeling really stressed about work lately."
+        expect_acknowledgment: true
+      - user: "My boss has been very demanding."
+      - user: "Let's talk about something else."
+      - user: "What movies do you like?"
+      - user: "Actually, I want to vent more about work."
+        expect_context:
+          emotional_state: "stressed"
+          topic: "work stress"

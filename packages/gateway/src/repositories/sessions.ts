@@ -541,6 +541,52 @@ export class SessionsRepository {
     return result.map(row => this.mapTurn(row)).reverse();
   }
 
+  /**
+   * Get session summary text for context retention
+   */
+  async getSessionSummary(
+    sessionId: string,
+    tx?: TransactionContext
+  ): Promise<string | null> {
+    const db = this.getSql(tx);
+
+    const result = await db`
+      SELECT summary
+      FROM sessions
+      WHERE id = ${sessionId}
+    `;
+
+    if (result.length === 0) return null;
+    return result[0].summary as string | null;
+  }
+
+  /**
+   * Get previous session summary for context (most recent ended session)
+   */
+  async getPreviousSessionSummary(
+    userId: string,
+    companionId: string,
+    currentSessionId: string,
+    tx?: TransactionContext
+  ): Promise<string | null> {
+    const db = this.getSql(tx);
+
+    const result = await db`
+      SELECT summary
+      FROM sessions
+      WHERE user_id = ${userId}
+        AND companion_id = ${companionId}
+        AND id != ${currentSessionId}
+        AND summary IS NOT NULL
+        AND status = 'ended'
+      ORDER BY ended_at DESC
+      LIMIT 1
+    `;
+
+    if (result.length === 0) return null;
+    return result[0].summary as string | null;
+  }
+
   // ===========================================================================
   // Row Mappers
   // ===========================================================================

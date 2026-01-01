@@ -6,7 +6,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card } from '@/components/ui/card';
-import { X, Send, Mic, MicOff, Bug, Images, Flame, Sparkles, Gift, BookOpen, GripVertical, Volume2 } from 'lucide-react';
+import { X, Send, Mic, MicOff, Bug, Images, Flame, Sparkles, Gift, BookOpen, GripVertical, Volume2, Menu, User } from 'lucide-react';
 import Link from 'next/link';
 import { getSessionTurns, getSession, getCompanion, getCompanionBackstory, type Companion, type CompanionBackstory } from '@/lib/api';
 import { CampfireWebSocket, connectWebSocket } from '@/lib/ws';
@@ -15,7 +15,7 @@ import { DebugPanel } from '@/components/debug-panel';
 import { GiftsPanel } from '@/components/gifts';
 import { useRequireAuth } from '@/hooks/use-auth';
 import { useAuthStore } from '@/stores/auth-store';
-import { buildPromptFromCompanion, type EmotionalState } from '@/lib/api/imagegen';
+import { buildPromptFromCompanion, getSessionGallery, type EmotionalState, type GalleryImage } from '@/lib/api/imagegen';
 import { useVoiceRecording } from '@/hooks/use-voice-recording';
 import { useAudioPlayer } from '@/hooks/use-audio-player';
 
@@ -105,11 +105,16 @@ export function ChatSessionContent({ sessionId }: ChatSessionContentProps) {
   const [showBackstory, setShowBackstory] = useState(false);
   const [showGiftsPanel, setShowGiftsPanel] = useState(false);
   const [showMobileAvatar, setShowMobileAvatar] = useState(false);
+  const [showMobileMenu, setShowMobileMenu] = useState(false);
   const [debugRefreshTrigger, setDebugRefreshTrigger] = useState(0);
   const [companion, setCompanion] = useState<Companion | null>(null);
   const [backstoryData, setBackstoryData] = useState<CompanionBackstory | null>(null);
   // Track image generation - only generate after LLM response
   const [imageGenTrigger, setImageGenTrigger] = useState(0);
+  // Dynamic avatar URL - synced with generated images
+  const [currentAvatarUrl, setCurrentAvatarUrl] = useState<string | null>(null);
+  // Gallery images for random display on load
+  const [galleryImages, setGalleryImages] = useState<GalleryImage[]>([]);
   const [sceneDescription, setSceneDescription] = useState<string | undefined>(undefined);
   // Resizable sidebar state
   const [sidebarWidth, setSidebarWidth] = useState(280);
@@ -119,6 +124,81 @@ export function ChatSessionContent({ sessionId }: ChatSessionContentProps) {
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const wsRef = useRef<CampfireWebSocket | null>(null);
+  const inputContainerRef = useRef<HTMLDivElement>(null);
+  const [keyboardHeight, setKeyboardHeight] = useState(0);
+
+  // Handle iOS keyboard - position input above keyboard
+  useEffect(() => {
+    let rafId: number;
+
+    const updateLayout = () => {
+      if (rafId) cancelAnimationFrame(rafId);
+
+      rafId = requestAnimationFrame(() => {
+        const vv = window.visualViewport;
+        if (!vv) return;
+
+        // Calculate keyboard height: difference between window height and visual viewport
+        const kbHeight = window.innerHeight - vv.height;
+        setKeyboardHeight(kbHeight);
+
+        // Position input container fixed above keyboard
+        if (inputContainerRef.current) {
+          if (kbHeight > 0) {
+            // Keyboard is open - fix input above it
+            inputContainerRef.current.style.position = 'fixed';
+            inputContainerRef.current.style.bottom = `${kbHeight}px`;
+            inputContainerRef.current.style.left = '0';
+            inputContainerRef.current.style.right = '0';
+          } else {
+            // Keyboard closed - reset to normal flow
+            inputContainerRef.current.style.position = '';
+            inputContainerRef.current.style.bottom = '';
+            inputContainerRef.current.style.left = '';
+            inputContainerRef.current.style.right = '';
+          }
+        }
+      });
+    };
+
+    // Continuous update during keyboard animation
+    const animateUpdate = () => {
+      updateLayout();
+      const startTime = Date.now();
+      const animate = () => {
+        if (Date.now() - startTime < 400) {
+          updateLayout();
+          requestAnimationFrame(animate);
+        }
+      };
+      requestAnimationFrame(animate);
+    };
+
+    // Initial
+    updateLayout();
+
+    // Visual viewport events
+    if (window.visualViewport) {
+      window.visualViewport.addEventListener('resize', updateLayout);
+      window.visualViewport.addEventListener('scroll', updateLayout);
+    }
+
+    // Focus triggers keyboard
+    document.addEventListener('focusin', animateUpdate);
+    document.addEventListener('focusout', animateUpdate);
+    window.addEventListener('resize', updateLayout);
+
+    return () => {
+      if (rafId) cancelAnimationFrame(rafId);
+      if (window.visualViewport) {
+        window.visualViewport.removeEventListener('resize', updateLayout);
+        window.visualViewport.removeEventListener('scroll', updateLayout);
+      }
+      document.removeEventListener('focusin', animateUpdate);
+      document.removeEventListener('focusout', animateUpdate);
+      window.removeEventListener('resize', updateLayout);
+    };
+  }, []);
 
   // Voice recording hook
   const {
@@ -233,6 +313,34 @@ export function ChatSessionContent({ sessionId }: ChatSessionContentProps) {
 
     loadSessionData();
   }, [sessionId, authLoading, isAuthenticated]);
+
+  // Fetch gallery images on load and pick a random one for display
+  useEffect(() => {
+    if (authLoading || !isAuthenticated) return;
+
+    async function loadGallery() {
+      try {
+        const gallery = await getSessionGallery(sessionId, 20);
+        if (gallery.images && gallery.images.length > 0) {
+          setGalleryImages(gallery.images);
+          // Pick a random image for initial display
+          const randomIndex = Math.floor(Math.random() * gallery.images.length);
+          setCurrentAvatarUrl(gallery.images[randomIndex].s3_url);
+        }
+      } catch (err) {
+        console.warn('[Chat] Failed to load gallery:', err);
+      }
+    }
+
+    loadGallery();
+  }, [sessionId, authLoading, isAuthenticated]);
+
+  // Fallback to companion avatar if no gallery images
+  useEffect(() => {
+    if (!currentAvatarUrl && companion?.avatarUrl) {
+      setCurrentAvatarUrl(companion.avatarUrl);
+    }
+  }, [companion?.avatarUrl, currentAvatarUrl]);
 
   // Connect to WebSocket - wait for auth to be ready
   useEffect(() => {
@@ -383,8 +491,10 @@ export function ChatSessionContent({ sessionId }: ChatSessionContentProps) {
       setIsLoading(false);
     }
 
-    // Refocus the input for continued typing
-    inputRef.current?.focus();
+    // Refocus the input for continued typing (setTimeout needed for iOS)
+    setTimeout(() => {
+      inputRef.current?.focus();
+    }, 10);
   }, [input, isLoading]);
 
   // Toggle voice mode on/off
@@ -503,6 +613,10 @@ export function ChatSessionContent({ sessionId }: ChatSessionContentProps) {
               anchorImageUrl={companion.avatarUrl}
               generationTrigger={imageGenTrigger}
               sceneDescription={sceneDescription}
+              onLoad={(imageUrl) => {
+                // Sync mobile avatar with newly generated image
+                setCurrentAvatarUrl(imageUrl);
+              }}
             />
           </button>
         ) : (
@@ -564,14 +678,16 @@ export function ChatSessionContent({ sessionId }: ChatSessionContentProps) {
 
       {/* Main Chat Area */}
       <div className="flex flex-col flex-1">
-        {/* Header */}
-        <header className="px-4 py-3 flex items-center gap-4">
+        {/* Header - fixed transparent on mobile */}
+        <header className="px-4 py-3 flex items-center gap-4 lg:relative fixed top-0 left-0 right-0 z-50 lg:bg-transparent bg-transparent lg:backdrop-blur-none backdrop-blur-sm">
           <Link href="/chat" className="flex items-center gap-2">
             <Flame className="h-7 w-7 text-campfire-500" />
             <span className="text-lg font-bold">Campfire</span>
           </Link>
           <div className="flex-1" />
-          <div className="flex items-center gap-2">
+
+          {/* Desktop buttons */}
+          <div className="hidden lg:flex items-center gap-2">
             <Button
               variant="ghost"
               size="icon"
@@ -602,10 +718,100 @@ export function ChatSessionContent({ sessionId }: ChatSessionContentProps) {
               </Button>
             </Link>
           </div>
+
+          {/* Mobile hamburger menu */}
+          <div className="lg:hidden relative">
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={() => setShowMobileMenu(!showMobileMenu)}
+              title="Menu"
+            >
+              <Menu className="h-5 w-5" />
+            </Button>
+
+            {/* Mobile dropdown menu */}
+            <AnimatePresence>
+              {showMobileMenu && (
+                <motion.div
+                  initial={{ opacity: 0, y: -10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: -10 }}
+                  transition={{ duration: 0.15 }}
+                  className="absolute right-0 top-full mt-2 bg-background/95 backdrop-blur-md border rounded-lg shadow-lg p-2 min-w-[160px]"
+                >
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="w-full justify-start gap-2"
+                    onClick={() => {
+                      setShowGallery(true);
+                      setShowMobileMenu(false);
+                    }}
+                  >
+                    <Images className="h-4 w-4" />
+                    Gallery
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="w-full justify-start gap-2"
+                    onClick={() => {
+                      setShowGiftsPanel(!showGiftsPanel);
+                      setShowMobileMenu(false);
+                    }}
+                  >
+                    <Gift className="h-4 w-4" />
+                    Gifts
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="w-full justify-start gap-2"
+                    onClick={() => {
+                      setShowDebugPanel(!showDebugPanel);
+                      setShowMobileMenu(false);
+                    }}
+                  >
+                    <Bug className="h-4 w-4" />
+                    Debug
+                  </Button>
+                  <Link href="/account" className="block">
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="w-full justify-start gap-2"
+                      onClick={() => setShowMobileMenu(false)}
+                    >
+                      <User className="h-4 w-4" />
+                      Account
+                    </Button>
+                  </Link>
+                  <Link href="/dashboard" className="block">
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="w-full justify-start gap-2"
+                      onClick={() => setShowMobileMenu(false)}
+                    >
+                      <X className="h-4 w-4" />
+                      Close
+                    </Button>
+                  </Link>
+                </motion.div>
+              )}
+            </AnimatePresence>
+          </div>
         </header>
 
+        {/* Spacer for fixed header on mobile */}
+        <div className="h-14 lg:hidden" />
+
         {/* Messages */}
-        <div className="flex-1 overflow-y-auto p-4 space-y-4">
+        <div
+          className="flex-1 overflow-y-auto p-4 space-y-4"
+          style={{ paddingBottom: keyboardHeight > 0 ? `${keyboardHeight + 80}px` : undefined }}
+        >
           {messages.length === 0 && !streamingContent && (
             <div className="flex items-center justify-center h-full text-muted-foreground">
               Start a conversation with your companion
@@ -651,7 +857,7 @@ export function ChatSessionContent({ sessionId }: ChatSessionContentProps) {
         </div>
 
         {/* Input */}
-        <div className="p-4">
+        <div ref={inputContainerRef} className="p-4 bg-background z-40">
           {/* Live transcription display */}
           {liveTranscription && (
             <div className="max-w-4xl mx-auto mb-2">
@@ -703,12 +909,16 @@ export function ChatSessionContent({ sessionId }: ChatSessionContentProps) {
               ref={inputRef}
               value={input}
               onChange={(e) => setInput(e.target.value)}
-              onKeyDown={(e) => e.key === 'Enter' && handleSend()}
+              onKeyDown={(e) => e.key === 'Enter' && !isLoading && handleSend()}
               placeholder={voiceModeEnabled ? 'Type or hold mic to speak...' : 'Type a message...'}
-              disabled={isLoading || isRecording}
+              readOnly={isLoading || isRecording}
               className="flex-1"
             />
-            <Button onClick={handleSend} disabled={!input.trim() || isLoading || isRecording}>
+            <Button
+              onClick={handleSend}
+              onMouseDown={(e) => e.preventDefault()}
+              disabled={!input.trim() || isLoading || isRecording}
+            >
               <Send className="h-5 w-5" />
             </Button>
           </div>
@@ -739,17 +949,17 @@ export function ChatSessionContent({ sessionId }: ChatSessionContentProps) {
         </div>
 
         {/* Mobile/Tablet Floating Avatar Thumbnail */}
-        {companion?.avatarUrl && (
+        {currentAvatarUrl && (
           <button
             onClick={() => setShowMobileAvatar(true)}
-            className="lg:hidden fixed bottom-24 right-4 z-40 w-16 h-16 rounded-full overflow-hidden border-2 border-campfire-500 shadow-lg bg-muted/80 backdrop-blur-sm hover:scale-105 transition-transform"
+            className="lg:hidden fixed bottom-24 right-4 z-40 w-20 h-24 rounded-xl overflow-hidden border-2 border-campfire-500 shadow-lg bg-muted/80 backdrop-blur-sm hover:scale-105 transition-transform"
             aria-label="View companion"
           >
             <StaticCompanionAvatar
-              imageUrl={companion.avatarUrl}
-              width={64}
-              height={64}
-              className="w-full h-full rounded-full"
+              imageUrl={currentAvatarUrl}
+              width={80}
+              height={96}
+              className="w-full h-full"
             />
           </button>
         )}
@@ -831,9 +1041,9 @@ export function ChatSessionContent({ sessionId }: ChatSessionContentProps) {
             >
               <X className="h-5 w-5" />
             </button>
-            {companion?.avatarUrl && (
+            {currentAvatarUrl && (
               <StaticCompanionAvatar
-                imageUrl={companion.avatarUrl}
+                imageUrl={currentAvatarUrl}
                 width={280}
                 height={420}
                 className="shadow-2xl"

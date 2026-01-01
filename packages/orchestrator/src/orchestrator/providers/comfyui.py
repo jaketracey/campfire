@@ -60,12 +60,16 @@ class ComfyUIProvider(ImageProvider):
         except ValueError:
             width, height = 768, 1024
 
-        # Default negative prompt for sexy companion images
+        # Default negative prompt for high-quality companion images
         if not negative_prompt:
             negative_prompt = (
                 "ugly, deformed, blurry, low quality, bad anatomy, "
-                "watermark, text, signature, disfigured, "
-                "bad hands, bad fingers, extra limbs, mutation"
+                "watermark, text, signature, disfigured, cropped, "
+                "bad hands, bad fingers, extra limbs, mutation, "
+                "worst quality, low resolution, artifacts, noise, "
+                "poorly drawn, amateur, sketch, grainy, pixelated, "
+                "overexposed, underexposed, bad lighting, "
+                "malformed face, cross-eyed, asymmetric eyes"
             )
 
         try:
@@ -257,10 +261,15 @@ class ComfyUIProvider(ImageProvider):
         height: int,
         checkpoint: str,
         seed: int | None = None,
-        steps: int = 15,  # Reduced from 25 for faster generation
-        cfg: float = 7.0,
+        steps: int = 25,  # Increased for higher quality
+        cfg: float = 7.5,  # Slightly higher for better prompt adherence
+        sampler: str = "dpmpp_2m",  # DPM++ 2M for higher quality
+        scheduler: str = "karras",  # Karras scheduler for smoother results
     ) -> dict[str, Any]:
-        """Build a ComfyUI workflow for image generation."""
+        """Build a ComfyUI workflow for image generation.
+
+        Uses DPM++ 2M sampler with Karras scheduler for high-quality output.
+        """
         if seed is None:
             seed = int(time.time() * 1000) % (2**31)
 
@@ -271,8 +280,8 @@ class ComfyUIProvider(ImageProvider):
                     "seed": seed,
                     "steps": steps,
                     "cfg": cfg,
-                    "sampler_name": "euler",
-                    "scheduler": "normal",
+                    "sampler_name": sampler,
+                    "scheduler": scheduler,
                     "denoise": 1.0,
                     "model": ["4", 0],
                     "positive": ["6", 0],
@@ -366,13 +375,16 @@ class ComfyUIProvider(ImageProvider):
         reference_image_filename: str,
         reference_strength: float = 0.7,
         seed: int | None = None,
-        steps: int = 15,  # Reduced from 25 for faster generation
-        cfg: float = 7.0,
+        steps: int = 25,  # Increased for higher quality
+        cfg: float = 7.5,  # Slightly higher for better prompt adherence
+        sampler: str = "dpmpp_2m",  # DPM++ 2M for higher quality
+        scheduler: str = "karras",  # Karras scheduler for smoother results
     ) -> dict[str, Any]:
         """Build a ComfyUI workflow with IP-Adapter for character consistency.
 
         Uses reference image to maintain visual consistency across generations.
         The reference_image_filename should be uploaded first via _upload_reference_image.
+        Uses DPM++ 2M sampler with Karras scheduler for high-quality output.
         """
         if seed is None:
             seed = int(time.time() * 1000) % (2**31)
@@ -448,8 +460,8 @@ class ComfyUIProvider(ImageProvider):
                     "seed": seed,
                     "steps": steps,
                     "cfg": cfg,
-                    "sampler_name": "euler",
-                    "scheduler": "normal",
+                    "sampler_name": sampler,
+                    "scheduler": scheduler,
                     "denoise": 1.0,
                     "model": ["13", 0],  # Use IP-Adapter enhanced model
                     "positive": ["6", 0],

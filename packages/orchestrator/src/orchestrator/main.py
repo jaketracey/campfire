@@ -1,6 +1,7 @@
 """FastAPI server for the orchestrator service."""
 
 import asyncio
+import random
 from contextlib import asynccontextmanager
 from typing import Any, AsyncGenerator
 from uuid import UUID
@@ -884,28 +885,55 @@ async def generate_random_identity() -> GenerateRandomIdentityResponse:
 
     start_time = time.time()
 
-    system_prompt = """You are a creative writer creating unique AI companion identities.
-Generate a compelling, memorable companion identity that feels intimate and personal.
+    # Random category selection for maximum variety
+    categories = [
+        "a realistic contemporary person with an everyday profession (barista, nurse, mechanic, teacher, accountant, librarian, chef, firefighter, etc.)",
+        "someone from a specific cultural background with a culturally appropriate name (Japanese, Nigerian, Brazilian, Indian, Irish, Korean, Mexican, Russian, etc.)",
+        "an artist or creative type (painter, musician, writer, dancer, sculptor, photographer, poet, filmmaker)",
+        "a scientist or academic (physicist, marine biologist, archaeologist, psychologist, historian, astronomer)",
+        "an adventurer or traveler (backpacker, mountain guide, sailor, pilot, travel writer, anthropologist)",
+        "someone with an unusual or niche hobby that defines them (beekeeper, storm chaser, vintage radio collector, urban forager, competitive puzzle solver)",
+        "a warm and nurturing personality (grandparent figure, community volunteer, hospice worker, kindergarten teacher)",
+        "a witty and sardonic personality (stand-up comedian, film critic, jaded journalist, cynical bartender)",
+        "a calm and philosophical personality (meditation teacher, park ranger, lighthouse keeper, night security guard with deep thoughts)",
+        "a high-energy enthusiastic personality (fitness instructor, event planner, sports commentator, theme park performer)",
+        "someone defined by their passion (obsessive gardener, vinyl record collector, amateur astronomer, home brewer, bird watcher)",
+        "a blue-collar worker with hidden depth (truck driver who writes poetry, construction worker who paints, janitor finishing a novel)",
+        "someone going through a life transition (recent retiree, new parent, career changer, starting over in a new city)",
+        "an older person with life experience (someone 60-80 with fascinating stories, retired professional, wise grandparent figure)",
+        "a young person finding their way (recent graduate, gap year traveler, aspiring artist, first-generation college student)",
+        "someone with a mysterious or interesting past they've moved on from",
+        "a sports or fitness enthusiast (marathon runner, yoga instructor, retired athlete, boxing coach, rock climber)",
+        "a foodie or culinary type (sommelier, food truck owner, fermentation enthusiast, home cook with secret family recipes)",
+        "a tech-adjacent person (indie game developer, repair cafe volunteer, retro computing enthusiast)",
+        "someone from a performing arts background (retired theater actor, circus performer, voice actor, backup dancer turned choreographer)",
+        "a healthcare worker (ER nurse, physical therapist, veterinarian, midwife, EMT with stories)",
+        "someone who works with their hands (carpenter, ceramicist, tattoo artist, clockmaker, blacksmith)",
+        "a small business owner (bookshop proprietor, cafe owner, florist, vintage store curator)",
+        "an educator of some kind (elementary school teacher, museum docent, driving instructor, swimming coach)",
+    ]
+    selected_category = random.choice(categories)
 
-The name should be:
-- Unique and memorable (not common names like "Alex" or "Sam")
-- Can be fantastical, mythological, celestial, or nature-inspired
-- Easy to pronounce and remember
-- Examples: Luna, Kira, Zephyr, Nova, Orion, Sage, Echo, Ember, Aria, Phoenix
+    system_prompt = f"""You are creating a unique AI companion identity. Generate someone who feels real, grounded, and genuinely interesting to talk to.
 
-The backstory should be:
-- 1-2 sentences that hint at mystery and depth
-- Evocative and intriguing
-- Personal and intimate in tone
+THIS TIME, create: {selected_category}
+
+Guidelines:
+- Use a realistic name appropriate to the character (common names are great! Sarah, Marcus, Kenji, Fatima, Devon, etc.)
+- The pronouns should fit the character naturally
+- The backstory should be grounded and relatable, 1-2 sentences that make you want to know more
+- Focus on what makes this person interesting as a conversational companion
+- NO sci-fi, fantasy, mythology, or supernatural elements
+- Make them feel like someone you could actually meet and have a fascinating conversation with
 
 You must respond with valid JSON in this exact format:
-{
-  "name": "A unique companion name",
+{{
+  "name": "A realistic name appropriate to the character",
   "pronouns": "she/her or he/him or they/them",
-  "backstory": "A brief, intriguing backstory (1-2 sentences)"
-}"""
+  "backstory": "A brief, grounded backstory (1-2 sentences)"
+}}"""
 
-    user_prompt = """Generate a unique, captivating companion identity. Be creative and make the character feel special and memorable."""
+    user_prompt = """Generate a unique companion identity based on the category. Make them feel like a real, interesting person with genuine depth and warmth."""
 
     try:
         if not app_state.ollama_provider:

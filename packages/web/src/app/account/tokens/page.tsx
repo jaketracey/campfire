@@ -157,9 +157,9 @@ export default function TokensPage() {
                   </div>
                   {balance && (
                     <div className="text-right text-sm text-amber-700 dark:text-amber-300">
-                      <p>Lifetime purchased: {balance.lifetimePurchased.toLocaleString()}</p>
-                      <p>Bonus earned: {balance.lifetimeBonus.toLocaleString()}</p>
-                      <p>Total spent: {balance.lifetimeSpent.toLocaleString()}</p>
+                      <p>Lifetime purchased: {(balance.lifetimePurchased ?? 0).toLocaleString()}</p>
+                      <p>Bonus earned: {(balance.lifetimeBonus ?? 0).toLocaleString()}</p>
+                      <p>Total spent: {(balance.lifetimeSpent ?? 0).toLocaleString()}</p>
                     </div>
                   )}
                 </div>

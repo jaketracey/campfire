@@ -30,6 +30,7 @@ export interface AuthState {
   setSession: (user: User, tokens: AuthTokens) => void;
   clearSession: () => void;
   updateTokens: (accessToken: string, refreshToken: string, expiresIn: number) => void;
+  updateUser: (updates: Partial<User>) => void;
   setLoading: (loading: boolean) => void;
   setInitialized: (initialized: boolean) => void;
 }
@@ -79,6 +80,12 @@ export const useAuthStore = create<AuthState>()(
         });
         // Refresh the cookie expiry
         setAuthCookie();
+      },
+
+      updateUser: (updates) => {
+        set((state) => ({
+          user: state.user ? { ...state.user, ...updates } : null,
+        }));
       },
 
       setLoading: (loading) => {

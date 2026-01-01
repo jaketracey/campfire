@@ -373,6 +373,26 @@ export class SessionsService {
   }
 
   /**
+   * Get session summary for context retention.
+   * Returns current session summary if available, otherwise previous session summary.
+   */
+  async getContextSummary(
+    userId: string,
+    sessionId: string,
+    companionId: string,
+    tx?: TransactionContext
+  ): Promise<string | null> {
+    // First try current session summary
+    const currentSummary = await this.sessions.getSessionSummary(sessionId, tx);
+    if (currentSummary) {
+      return currentSummary;
+    }
+
+    // Fall back to most recent previous session summary
+    return this.sessions.getPreviousSessionSummary(userId, companionId, sessionId, tx);
+  }
+
+  /**
    * Pause a session
    */
   async pause(

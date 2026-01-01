@@ -74,7 +74,7 @@ export default function OnboardingPage() {
     <div className="relative min-h-screen w-full overflow-hidden text-white flex flex-col font-sans">
       {/* Header / Nav */}
       <header className="relative z-10 flex items-center justify-between p-6 pt-20">
-        <div className="flex items-center gap-4">
+        <div className="flex items-center gap-4" data-hides-logo>
           {currentStep > 1 && (
             <Button
               variant="ghost"
@@ -86,7 +86,7 @@ export default function OnboardingPage() {
             </Button>
           )}
           {currentStep > 1 && (
-            <div id="step-indicator" className="flex flex-col gap-1.5 w-32 md:w-48">
+            <div className="flex flex-col gap-1.5 w-32 md:w-48">
               <span className="text-[10px] font-bold tracking-widest text-muted-foreground uppercase font-display">
                 Step {currentStep} <span className="text-vibes-cyan">/ 9</span>
               </span>
@@ -116,6 +116,7 @@ export default function OnboardingPage() {
               opacity: { duration: 0.4 }
             }}
             className="w-full max-w-4xl relative z-20"
+            data-hides-logo
           >
             {renderStep()}
           </motion.div>

@@ -16,6 +16,7 @@ import {
   type EventContext,
 } from '../services/index.js';
 import { getKnowledgeGraphRepository } from '../repositories/index.js';
+import { enqueueSummaryJob } from '../utils/queue.js';
 
 // Orchestrator base URL
 const ORCHESTRATOR_URL = process.env['ORCHESTRATOR_URL'] || 'http://localhost:8000';
@@ -430,8 +431,8 @@ async function handleUserMessage(
     // 6. Fetch companion self-knowledge from KG
     const selfKnowledge = await fetchCompanionSelfKnowledge(userId, companionId, companion.name);
 
-    // 7. Get recent turns for context
-    const recentTurns = await sessionsService.getRecentTurns(userId, sessionId, 10);
+    // 7. Get recent turns for context (match max_context_turns in companion spec)
+    const recentTurns = await sessionsService.getRecentTurns(userId, sessionId, 20);
 
     const formattedTurns = recentTurns
       .filter(t => t.id !== turn.id) // Exclude current turn
@@ -472,14 +473,17 @@ async function handleUserMessage(
         created_at: t.created_at.toISOString(),
       }));
 
-    // 8. Call orchestrator streaming endpoint
+    // 8. Fetch session summary for context retention
+    const sessionSummary = await sessionsService.getContextSummary(userId, sessionId, companionId);
+
+    // 9. Call orchestrator streaming endpoint
     const orchestratorRequest = {
       session_id: sessionId,
       user_id: userId,
       companion_spec: companionSpec,
       user_message: payload.content,
       recent_turns: formattedTurns,
-      session_summary: null,
+      session_summary: sessionSummary,
       long_term_memories: null,
       companion_self_knowledge: selfKnowledge.length > 0 ? selfKnowledge : null,
     };
@@ -558,7 +562,7 @@ async function handleUserMessage(
     const estimatedCostUsd = (estimatedInputTokens * 0.003 + estimatedOutputTokens * 0.015) / 1000;
 
     // 10. Complete the turn in database
-    await sessionsService.completeTurn(
+    const completedTurn = await sessionsService.completeTurn(
       userId,
       sessionId,
       turn.id,
@@ -571,6 +575,13 @@ async function handleUserMessage(
         costUsd: estimatedCostUsd,
       }
     );
+
+    // 10a. Trigger summary generation every 10 turns for context retention
+    if (completedTurn.turn_number % 10 === 0) {
+      enqueueSummaryJob(userId, companionId, sessionId).catch(err => {
+        logger.warn({ err, sessionId }, 'Failed to enqueue summary job');
+      });
+    }
 
     // 11. Send completion message
     send(client, {

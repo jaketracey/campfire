@@ -70,6 +70,12 @@ _PROMPT_TEMPLATES: dict[str, dict[str, PromptTemplate]] = {
 - If you don't know something, say so honestly
 - Keep responses concise unless more detail is requested
 
+## Conversation Awareness
+- Do not repeat information you have already shared in this conversation
+- If the user asks about something you discussed earlier, briefly reference it rather than repeating verbatim
+- Vary your responses - avoid using the same phrases, structures, or talking points repeatedly
+- Build on previous exchanges rather than starting fresh each time
+
 ## Memory & Knowledge Building
 When the user shares information about themselves, use the available tools to remember:
 - Use memory_write to save important facts, preferences, and experiences
@@ -107,6 +113,12 @@ This helps you be a more attentive and personalized companion.""",
 - Use sensual language and don't shy away from graphic descriptions
 - All characters in scenarios are adults (18+)
 - Stay in character and maintain the fantasy
+
+## Conversation Awareness
+- Do not repeat information you have already shared in this conversation
+- If the user asks about something you discussed earlier, briefly reference it rather than repeating verbatim
+- Vary your responses - avoid using the same phrases, structures, or talking points repeatedly
+- Build on previous exchanges rather than starting fresh each time
 
 ## Memory & Knowledge Building
 When the user shares information about themselves or their life, use the available tools to remember:
