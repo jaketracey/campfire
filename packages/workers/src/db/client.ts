@@ -1,5 +1,5 @@
 import postgres from 'postgres';
-import type { CampfireEvent } from '@campfire/shared';
+import type { EventEnvelope } from '@campfire/shared';
 
 export function createDbClient(connectionString: string) {
   const sql = postgres(connectionString, {
@@ -11,48 +11,48 @@ export function createDbClient(connectionString: string) {
   return {
     sql,
 
-    async appendEvent(event: CampfireEvent): Promise<void> {
+    async appendEvent(event: EventEnvelope): Promise<void> {
       await sql`
         INSERT INTO events (
           event_id, timestamp, user_id, session_id, turn_id, trace_id,
           type, payload, version, causation_id, correlation_id, cost
         ) VALUES (
-          ${event.event_id}, ${event.timestamp}, ${event.user_id},
-          ${event.session_id}, ${event.turn_id}, ${event.trace_id},
+          ${event.eventId}, ${event.timestamp}, ${event.userId},
+          ${event.sessionId}, ${event.turnId}, ${event.traceId},
           ${event.type}, ${JSON.stringify(event.payload)}, ${event.version},
-          ${event.causation_id}, ${event.correlation_id}, ${JSON.stringify(event.cost)}
+          ${event.causationId}, ${event.correlationId}, ${JSON.stringify(event.cost)}
         )
         ON CONFLICT (event_id) DO NOTHING
       `;
     },
 
-    async getEventsBySession(sessionId: string): Promise<CampfireEvent[]> {
+    async getEventsBySession(sessionId: string): Promise<EventEnvelope[]> {
       const rows = await sql`
         SELECT * FROM events WHERE session_id = ${sessionId} ORDER BY timestamp
       `;
-      return rows as unknown as CampfireEvent[];
+      return rows as unknown as EventEnvelope[];
     },
 
-    async getEventsByUser(userId: string, limit = 100): Promise<CampfireEvent[]> {
+    async getEventsByUser(userId: string, limit = 100): Promise<EventEnvelope[]> {
       const rows = await sql`
         SELECT * FROM events WHERE user_id = ${userId}
         ORDER BY timestamp DESC LIMIT ${limit}
       `;
-      return rows as unknown as CampfireEvent[];
+      return rows as unknown as EventEnvelope[];
     },
 
-    async getEventsByType(type: string, since?: Date): Promise<CampfireEvent[]> {
+    async getEventsByType(type: string, since?: Date): Promise<EventEnvelope[]> {
       if (since) {
         const rows = await sql`
           SELECT * FROM events WHERE type = ${type} AND timestamp > ${since.toISOString()}
           ORDER BY timestamp
         `;
-        return rows as unknown as CampfireEvent[];
+        return rows as unknown as EventEnvelope[];
       }
       const rows = await sql`
         SELECT * FROM events WHERE type = ${type} ORDER BY timestamp
       `;
-      return rows as unknown as CampfireEvent[];
+      return rows as unknown as EventEnvelope[];
     },
 
     async getMemory(memoryId: string) {

@@ -1,5 +1,5 @@
 import { Worker, Job } from 'bullmq';
-import type Redis from 'ioredis';
+import type { Redis } from 'ioredis';
 import type { Logger } from 'pino';
 import type { DbClient } from '../db/client.js';
 
@@ -199,19 +199,6 @@ export class KnowledgeGraphProjectionWorker {
       { userId, memoryId, edgesRemoved: edges.length },
       'KG edges cascade deleted from memory'
     );
-  }
-
-  private async ensureEntity(
-    userId: string,
-    companionId: string,
-    entityId: string
-  ): Promise<void> {
-    const canonicalName = entityId.toLowerCase().trim();
-    await this.config.db.sql`
-      INSERT INTO kg_entities (id, user_id, companion_id, name, canonical_name, entity_type, metadata)
-      VALUES (${entityId}, ${userId}, ${companionId}, ${entityId}, ${canonicalName}, 'unknown', '{}')
-      ON CONFLICT (user_id, companion_id, canonical_name) DO NOTHING
-    `;
   }
 
   private async ensureEntityWithData(

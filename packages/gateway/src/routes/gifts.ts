@@ -309,29 +309,40 @@ export async function giftsRoutes(app: FastifyInstance): Promise<void> {
       const { companionId, preferredCost = 'medium' } = parseResult.data;
       const tokenCost = GIFT_COST_TIERS[preferredCost];
 
+      // Double-check UUID format (Zod should catch this, but be safe)
+      const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+      if (!uuidRegex.test(companionId)) {
+        return reply.status(400).send({
+          success: false,
+          error: {
+            code: 'INVALID_COMPANION_ID',
+            message: 'Invalid companion ID format',
+            timestamp: new Date().toISOString(),
+          },
+        });
+      }
+
       // Verify companion ownership
-      const companion = await companionsRepo.findById(companionId);
+      let companion;
+      try {
+        companion = await companionsRepo.findById(companionId);
+      } catch (dbError) {
+        logger.error({ companionId, error: dbError }, 'Database error looking up companion');
+        return reply.status(400).send({
+          success: false,
+          error: {
+            code: 'INVALID_COMPANION_ID',
+            message: 'Invalid companion ID',
+            timestamp: new Date().toISOString(),
+          },
+        });
+      }
       if (!companion || companion.user_id !== user.userId) {
         return reply.status(404).send({
           success: false,
           error: {
             code: 'COMPANION_NOT_FOUND',
             message: 'Companion not found',
-            timestamp: new Date().toISOString(),
-          },
-        });
-      }
-
-      // Check token balance
-      const balance = await giftsRepo.getOrCreateTokenBalance(user.userId);
-      if (balance.balance < tokenCost) {
-        return reply.status(400).send({
-          success: false,
-          error: {
-            code: 'INSUFFICIENT_TOKENS',
-            message: 'Insufficient token balance',
-            currentBalance: balance.balance,
-            required: tokenCost,
             timestamp: new Date().toISOString(),
           },
         });
@@ -584,10 +595,36 @@ export async function giftsRoutes(app: FastifyInstance): Promise<void> {
       const { companionId } = request.params as { companionId: string };
       span.setAttributes({ 'user.id': user.userId, 'companion.id': companionId });
 
+      // Validate UUID format
+      const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+      if (!uuidRegex.test(companionId)) {
+        return reply.status(400).send({
+          success: false,
+          error: {
+            code: 'INVALID_COMPANION_ID',
+            message: 'Invalid companion ID format',
+            timestamp: new Date().toISOString(),
+          },
+        });
+      }
+
       const { limit = '50', offset = '0' } = request.query as { limit?: string; offset?: string };
 
       // Verify companion ownership
-      const companion = await companionsRepo.findById(companionId);
+      let companion;
+      try {
+        companion = await companionsRepo.findById(companionId);
+      } catch (dbError) {
+        logger.error({ companionId, error: dbError }, 'Database error looking up companion');
+        return reply.status(400).send({
+          success: false,
+          error: {
+            code: 'INVALID_COMPANION_ID',
+            message: 'Invalid companion ID',
+            timestamp: new Date().toISOString(),
+          },
+        });
+      }
       if (!companion || companion.user_id !== user.userId) {
         return reply.status(404).send({
           success: false,

@@ -30,6 +30,7 @@ export type {
 } from './types.js';
 
 // Users repository
+import { getUsersRepository as _getUsersRepository } from './users.js';
 export {
   UsersRepository,
   getUsersRepository,
@@ -46,6 +47,7 @@ export type {
 } from './users.js';
 
 // Referrals repository
+import { getReferralsRepository as _getReferralsRepository } from './referrals.js';
 export {
   ReferralsRepository,
   getReferralsRepository,
@@ -56,6 +58,7 @@ export type {
 } from './referrals.js';
 
 // Companions repository
+import { getCompanionsRepository as _getCompanionsRepository } from './companions.js';
 export {
   CompanionsRepository,
   getCompanionsRepository,
@@ -66,28 +69,33 @@ export type {
 } from './companions.js';
 
 // Sessions repository
+import { getSessionsRepository as _getSessionsRepository } from './sessions.js';
 export {
   SessionsRepository,
   getSessionsRepository,
 } from './sessions.js';
 export type {
   SessionWithStats,
-  TurnWithMetrics,
   SessionListFilters,
+  TurnListFilters,
 } from './sessions.js';
 
 // Memories repository
+import { getMemoriesRepository as _getMemoriesRepository } from './memories.js';
 export {
   MemoriesRepository,
   getMemoriesRepository,
 } from './memories.js';
 export type {
-  MemorySearchResult,
+  MemoryWithSimilarity,
   MemoryListFilters,
-  MemoryStats,
+  MemoryStatus,
+  VectorSearchOptions,
+  TextSearchOptions,
 } from './memories.js';
 
 // Billing repository
+import { getBillingRepository as _getBillingRepository } from './billing.js';
 export {
   BillingRepository,
   getBillingRepository,
@@ -104,6 +112,7 @@ export type {
 } from './billing.js';
 
 // Vault repository
+import { getVaultRepository as _getVaultRepository } from './vault.js';
 export {
   VaultRepository,
   getVaultRepository,
@@ -122,6 +131,7 @@ export type {
 } from './vault.js';
 
 // Knowledge Graph repository
+import { getKnowledgeGraphRepository as _getKnowledgeGraphRepository } from './knowledge-graph.js';
 export {
   KnowledgeGraphRepository,
   getKnowledgeGraphRepository,
@@ -137,6 +147,7 @@ export type {
 } from './knowledge-graph.js';
 
 // Gifts repository
+import { getGiftsRepository as _getGiftsRepository } from './gifts.js';
 export {
   GiftsRepository,
   getGiftsRepository,
@@ -157,15 +168,15 @@ export type {
  * Call this at application startup to ensure singleton instances are created
  */
 export function initializeRepositories(): void {
-  getUsersRepository();
-  getReferralsRepository();
-  getCompanionsRepository();
-  getSessionsRepository();
-  getMemoriesRepository();
-  getBillingRepository();
-  getVaultRepository();
-  getKnowledgeGraphRepository();
-  getGiftsRepository();
+  _getUsersRepository();
+  _getReferralsRepository();
+  _getCompanionsRepository();
+  _getSessionsRepository();
+  _getMemoriesRepository();
+  _getBillingRepository();
+  _getVaultRepository();
+  _getKnowledgeGraphRepository();
+  _getGiftsRepository();
 }
 
 /**
@@ -174,14 +185,14 @@ export function initializeRepositories(): void {
  */
 export function getRepositories() {
   return {
-    users: getUsersRepository(),
-    referrals: getReferralsRepository(),
-    companions: getCompanionsRepository(),
-    sessions: getSessionsRepository(),
-    memories: getMemoriesRepository(),
-    billing: getBillingRepository(),
-    vault: getVaultRepository(),
-    knowledgeGraph: getKnowledgeGraphRepository(),
-    gifts: getGiftsRepository(),
+    users: _getUsersRepository(),
+    referrals: _getReferralsRepository(),
+    companions: _getCompanionsRepository(),
+    sessions: _getSessionsRepository(),
+    memories: _getMemoriesRepository(),
+    billing: _getBillingRepository(),
+    vault: _getVaultRepository(),
+    knowledgeGraph: _getKnowledgeGraphRepository(),
+    gifts: _getGiftsRepository(),
   };
 }

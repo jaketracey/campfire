@@ -1,5 +1,5 @@
 import { Worker, Job } from 'bullmq';
-import type Redis from 'ioredis';
+import type { Redis } from 'ioredis';
 import type { Logger } from 'pino';
 import { EmailJobDataSchema, type EmailJobData, getEmailService } from './service.js';
 import type { DbClient } from '../db/client.js';

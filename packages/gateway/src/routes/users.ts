@@ -31,20 +31,20 @@ export async function usersRoutes(app: FastifyInstance): Promise<void> {
   app.get('/', { preHandler: requireAdmin }, async (request: FastifyRequest, reply: FastifyReply) => {
     const { limit = '50', offset = '0' } = request.query as { limit?: string; offset?: string };
 
-    const users = await userRepo.list({
+    const result = await userRepo.list({
       limit: parseInt(limit, 10),
       offset: parseInt(offset, 10),
     });
 
     return reply.send({
-      users: users.map((user) => ({
+      users: result.data.map((user) => ({
         id: user.id,
         email: user.email,
-        displayName: user.displayName,
         role: user.role,
-        createdAt: user.createdAt,
-        lastLoginAt: user.lastLoginAt,
+        createdAt: user.created_at,
+        lastLoginAt: user.last_login_at,
       })),
+      total: result.total,
       limit: parseInt(limit, 10),
       offset: parseInt(offset, 10),
     });
@@ -72,13 +72,15 @@ export async function usersRoutes(app: FastifyInstance): Promise<void> {
       });
     }
 
+    const profile = await userRepo.findProfileByUserId(userId);
+
     return reply.send({
       id: user.id,
       email: user.email,
-      displayName: user.displayName,
+      displayName: profile?.display_name ?? null,
       role: user.role,
-      createdAt: user.createdAt,
-      preferences: user.preferences,
+      createdAt: user.created_at,
+      preferences: profile?.preferences ?? {},
     });
   });
 
@@ -105,7 +107,8 @@ export async function usersRoutes(app: FastifyInstance): Promise<void> {
       });
     }
 
-    const user = await userRepo.update(userId, result.data);
+    // Check if user exists
+    const user = await userRepo.findById(userId);
     if (!user) {
       return reply.status(404).send({
         error: 'Not Found',
@@ -113,14 +116,20 @@ export async function usersRoutes(app: FastifyInstance): Promise<void> {
       });
     }
 
+    // Update the user profile
+    const profile = await userRepo.updateProfile(userId, {
+      display_name: result.data.displayName,
+      preferences: result.data.preferences,
+    });
+
     logger.info({ userId }, 'User profile updated');
 
     return reply.send({
       id: user.id,
       email: user.email,
-      displayName: user.displayName,
+      displayName: profile.display_name,
       role: user.role,
-      preferences: user.preferences,
+      preferences: profile.preferences,
     });
   });
 
@@ -146,7 +155,8 @@ export async function usersRoutes(app: FastifyInstance): Promise<void> {
       });
     }
 
-    const user = await userRepo.updatePreferences(userId, result.data.preferences);
+    // Check if user exists
+    const user = await userRepo.findById(userId);
     if (!user) {
       return reply.status(404).send({
         error: 'Not Found',
@@ -154,8 +164,12 @@ export async function usersRoutes(app: FastifyInstance): Promise<void> {
       });
     }
 
+    const profile = await userRepo.updateProfile(userId, {
+      preferences: result.data.preferences,
+    });
+
     return reply.send({
-      preferences: user.preferences,
+      preferences: profile.preferences,
     });
   });
 
@@ -173,13 +187,16 @@ export async function usersRoutes(app: FastifyInstance): Promise<void> {
       });
     }
 
-    const deleted = await userRepo.delete(userId);
-    if (!deleted) {
+    // Check if user exists before attempting delete
+    const user = await userRepo.findById(userId);
+    if (!user) {
       return reply.status(404).send({
         error: 'Not Found',
         message: 'User not found',
       });
     }
+
+    await userRepo.delete(userId);
 
     logger.info({ userId, deletedBy: request.user?.userId }, 'User deleted');
 

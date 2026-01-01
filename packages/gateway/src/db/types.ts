@@ -9,8 +9,8 @@
 
 export type UUID = string;
 export type Timestamp = Date;
-export type JSONValue = string | number | boolean | null | JSONObject | JSONArray;
-export interface JSONObject { [key: string]: JSONValue }
+export type JSONValue = string | number | boolean | null | undefined | JSONObject | JSONArray;
+export type JSONObject = Record<string, unknown>;
 export type JSONArray = JSONValue[];
 
 // ============================================================================

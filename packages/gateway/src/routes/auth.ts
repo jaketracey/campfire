@@ -171,9 +171,10 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
 
       try {
         const authService = getAuthService();
+        const userAgent = request.headers['user-agent'];
         const result = await authService.login(
           { email, password },
-          { ipAddress: request.ip, userAgent: request.headers['user-agent'] }
+          { ipAddress: request.ip, ...(userAgent && { userAgent }) }
         );
 
         // Check if MFA is required
@@ -391,9 +392,10 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
 
       try {
         const authService = getAuthService();
+        const userAgent = request.headers['user-agent'];
         const result = await authService.authenticateWithGoogle(
           { idToken },
-          { ipAddress: request.ip, userAgent: request.headers['user-agent'] }
+          { ipAddress: request.ip, ...(userAgent && { userAgent }) }
         );
 
         span.setAttributes({ 'auth.userId': result.user.id });

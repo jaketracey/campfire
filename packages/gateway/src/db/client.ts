@@ -114,5 +114,5 @@ export async function withTransaction<T>(
   const sql = getDatabase();
   return sql.begin(async (tx) => {
     return fn(tx as ReturnType<typeof createDatabaseClient>);
-  });
+  }) as Promise<T>;
 }

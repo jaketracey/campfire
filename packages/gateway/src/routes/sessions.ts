@@ -65,8 +65,8 @@ export async function sessionsRoutes(app: FastifyInstance): Promise<void> {
         status: s.status,
         startedAt: s.started_at,
         endedAt: s.ended_at,
-        turnCount: s.turn_count,
-        lastActivityAt: s.last_activity_at,
+        turnCount: s.turnCount,
+        lastActivityAt: s.lastActivityAt,
       })),
       total: result.total,
       limit: result.limit,
@@ -138,7 +138,7 @@ export async function sessionsRoutes(app: FastifyInstance): Promise<void> {
   app.get('/:sessionId', { preHandler: requireAuth }, async (request: FastifyRequest, reply: FastifyReply) => {
     const { sessionId } = request.params as { sessionId: string };
 
-    const session = await sessionRepo.findById(sessionId);
+    const session = await sessionRepo.findByIdWithStats(sessionId);
     if (!session) {
       return reply.status(404).send({
         error: 'Not Found',
@@ -159,8 +159,8 @@ export async function sessionsRoutes(app: FastifyInstance): Promise<void> {
       status: session.status,
       startedAt: session.started_at,
       endedAt: session.ended_at,
-      turnCount: session.turn_count,
-      lastActivityAt: session.last_activity_at,
+      turnCount: session.turnCount,
+      lastActivityAt: session.lastActivityAt,
       metadata: session.metadata,
     });
   });

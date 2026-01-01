@@ -6,18 +6,20 @@ import Link from 'next/link';
 import type { Route } from 'next';
 
 interface TokenBalanceDisplayProps {
-  balance: number;
+  balance?: number;
   showPurchaseLink?: boolean;
   compact?: boolean;
   className?: string;
 }
 
 export function TokenBalanceDisplay({
-  balance,
+  balance = 0,
   showPurchaseLink = false,
   compact = false,
   className,
 }: TokenBalanceDisplayProps) {
+  const displayBalance = balance ?? 0;
+
   return (
     <div
       className={cn(
@@ -33,7 +35,7 @@ export function TokenBalanceDisplay({
         )}
       >
         <Coins className={cn(compact ? 'h-3 w-3' : 'h-4 w-4')} />
-        <span className="font-semibold">{balance.toLocaleString()}</span>
+        <span className="font-semibold">{displayBalance.toLocaleString()}</span>
       </div>
 
       {showPurchaseLink && (

@@ -62,16 +62,17 @@ export async function eventsRoutes(app: FastifyInstance): Promise<void> {
       } = parseResult.data;
 
       // Query events for this user
-      const events = await eventStore.query({
+      const queryOptions: Parameters<typeof eventStore.query>[0] = {
         userId: user.userId,
-        sessionId,
-        types: types?.split(',').map((t) => t.trim()),
-        afterSequence: afterSequence ? BigInt(afterSequence) : undefined,
-        fromTimestamp: fromTimestamp ? new Date(fromTimestamp) : undefined,
-        toTimestamp: toTimestamp ? new Date(toTimestamp) : undefined,
         limit,
         order,
-      });
+      };
+      if (sessionId) queryOptions.sessionId = sessionId;
+      if (types) queryOptions.types = types.split(',').map((t) => t.trim());
+      if (afterSequence) queryOptions.afterSequence = BigInt(afterSequence);
+      if (fromTimestamp) queryOptions.fromTimestamp = new Date(fromTimestamp);
+      if (toTimestamp) queryOptions.toTimestamp = new Date(toTimestamp);
+      const events = await eventStore.query(queryOptions);
 
       logger.debug(
         { userId: user.userId, count: events.length, sessionId, types },
@@ -105,7 +106,7 @@ export async function eventsRoutes(app: FastifyInstance): Promise<void> {
   /**
    * GET /events/:eventId - Get a specific event
    */
-  app.get('/:eventId', { preHandler: requireAuth }, async (request: FastifyRequest<{ Params: { eventId: string } }>, reply: FastifyReply) => {
+  app.get<{ Params: { eventId: string } }>('/:eventId', { preHandler: requireAuth }, async (request, reply) => {
     return withSpan('events.get', async (span) => {
       const user = request.user!;
       const { eventId } = request.params;
@@ -161,7 +162,7 @@ export async function eventsRoutes(app: FastifyInstance): Promise<void> {
   /**
    * GET /events/session/:sessionId - Get all events for a session
    */
-  app.get('/session/:sessionId', { preHandler: requireAuth }, async (request: FastifyRequest<{ Params: { sessionId: string } }>, reply: FastifyReply) => {
+  app.get<{ Params: { sessionId: string } }>('/session/:sessionId', { preHandler: requireAuth }, async (request, reply) => {
     return withSpan('events.listBySession', async (span) => {
       const user = request.user!;
       const { sessionId } = request.params;

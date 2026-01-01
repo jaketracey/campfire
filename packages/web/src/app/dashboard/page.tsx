@@ -15,11 +15,12 @@ import {
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
 import { motion } from 'framer-motion';
-import { LogOut, MessageCircle, Plus, RotateCcw, Sparkles, Trash2, ArrowRight, Copy, Check, Users, Link as LinkIcon, Settings, Share2 } from 'lucide-react';
+import { LogOut, MessageCircle, Plus, RotateCcw, Sparkles, Trash2, ArrowRight, Copy, Check, Users, Link as LinkIcon, Settings, Share2, BookOpen } from 'lucide-react';
 import { ShareCompanionDialog } from '@/components/companion/share-companion-dialog';
+import { BackstoryModal } from '@/components/companion/backstory-modal';
 import { useAuth } from '@/hooks/use-auth';
 import { listCompanions, listSessions, deleteCompanion, getInviteCode } from '@/lib/api';
-import type { Companion as APICompanion, Session as APISession, InviteCodeData } from '@/lib/api';
+import type { Companion as APICompanion, Session as APISession, InviteCodeData, CompanionSpec } from '@/lib/api';
 import Link from 'next/link';
 import type { Route } from 'next';
 
@@ -32,6 +33,19 @@ interface Companion {
   isPublic: boolean;
   latestSessionId: string | null;
   latestConversationImageUrl: string | null;
+  // New fields for anchor image and backstory
+  ethnicity: string | null;
+  backstory: string | null;
+}
+
+// Get anchor image path based on ethnicity
+function getAnchorImageUrl(ethnicity: string | null): string | null {
+  if (!ethnicity) return null;
+  const validEthnicities = ['east-asian', 'south-asian', 'black', 'caucasian', 'latina', 'middle-eastern', 'mixed'];
+  if (validEthnicities.includes(ethnicity)) {
+    return `/images/companions/anchors/${ethnicity}.png`;
+  }
+  return null;
 }
 
 interface Session {
@@ -54,6 +68,8 @@ export default function DashboardPage() {
   const [inviteCode, setInviteCode] = useState<InviteCodeData | null>(null);
   const [copiedCode, setCopiedCode] = useState(false);
   const [copiedUrl, setCopiedUrl] = useState(false);
+  // Backstory modal state
+  const [backstoryCompanion, setBackstoryCompanion] = useState<Companion | null>(null);
 
   // Redirect to login if not authenticated
   useEffect(() => {
@@ -90,12 +106,15 @@ export default function DashboardPage() {
       const mappedCompanions: Companion[] = companionsRes.companions.map((c: APICompanion) => ({
         id: c.id,
         name: c.name,
-        archetype: c.description || 'Custom',
+        archetype: c.spec?.personality?.archetype || c.description || 'Custom',
         avatarUrl: c.avatarUrl,
         createdAt: c.createdAt,
         isPublic: c.isPublic,
         latestSessionId: c.latestSessionId || null,
         latestConversationImageUrl: c.latestConversationImageUrl || null,
+        // Extract ethnicity and backstory from spec
+        ethnicity: c.spec?.visual_style?.appearance?.ethnicity || null,
+        backstory: c.spec?.identity?.backstory || null,
       }));
 
       // Create lookup maps for companion names and avatars
@@ -271,7 +290,10 @@ export default function DashboardPage() {
             <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
               {companions.map((companion, idx) => {
                 const hasExistingSession = !!companion.latestSessionId;
-                const displayImageUrl = companion.latestConversationImageUrl || companion.avatarUrl;
+                // Priority: conversation image -> anchor image (by ethnicity) -> avatar -> gradient
+                const anchorImageUrl = getAnchorImageUrl(companion.ethnicity);
+                const displayImageUrl = companion.latestConversationImageUrl || anchorImageUrl || companion.avatarUrl;
+                const hasBackstory = !!companion.backstory;
 
                 return (
                   <motion.div
@@ -291,18 +313,24 @@ export default function DashboardPage() {
                             <img
                               src={displayImageUrl}
                               alt={companion.name}
-                              className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-1000"
-                            />
-                          ) : companion.avatarUrl ? (
-                            <img
-                              src={companion.avatarUrl}
-                              alt={companion.name}
-                              className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-1000"
+                              className="w-full h-full object-cover object-top group-hover:scale-110 transition-transform duration-1000"
                             />
                           ) : (
                             <div className="w-full h-full bg-gradient-to-br from-campfire-500/20 via-campfire-600/10 to-campfire-700/20" />
                           )}
                           <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent" />
+
+                          {/* Backstory button - top right corner */}
+                          {hasBackstory && (
+                            <button
+                              onClick={() => setBackstoryCompanion(companion)}
+                              className="absolute top-3 right-3 p-2 rounded-xl bg-amber-900/60 hover:bg-amber-800/80 border border-amber-600/30 text-amber-400 hover:text-amber-300 transition-all opacity-0 group-hover:opacity-100 shadow-lg backdrop-blur-sm"
+                              title="View Backstory"
+                            >
+                              <BookOpen className="h-4 w-4" />
+                            </button>
+                          )}
+
                           <div className="absolute bottom-4 left-4 right-4">
                             <h3 className="font-bold text-xl text-white font-display leading-none mb-2">{companion.name}</h3>
                             <p className="text-xs text-white/60 font-medium tracking-wide">
@@ -341,6 +369,16 @@ export default function DashboardPage() {
                               >
                                 <MessageCircle className="mr-2 h-5 w-5" />
                                 Start Journey
+                              </Button>
+                            )}
+                            {/* Backstory button in action bar */}
+                            {hasBackstory && (
+                              <Button
+                                className="aspect-square h-12 md:h-14 rounded-xl bg-amber-900/20 border border-amber-700/30 hover:bg-amber-900/40 hover:border-amber-600/50 text-amber-500 hover:text-amber-400 transition-all"
+                                onClick={() => setBackstoryCompanion(companion)}
+                                title="View Backstory"
+                              >
+                                <BookOpen className="h-5 w-5" />
                               </Button>
                             )}
                             <ShareCompanionDialog
@@ -566,6 +604,20 @@ export default function DashboardPage() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {/* Backstory Modal - Oblivion style reveal */}
+      <BackstoryModal
+        isOpen={!!backstoryCompanion}
+        onClose={() => setBackstoryCompanion(null)}
+        companionName={backstoryCompanion?.name || ''}
+        backstory={backstoryCompanion?.backstory || ''}
+        archetype={backstoryCompanion?.archetype}
+        avatarUrl={
+          backstoryCompanion
+            ? getAnchorImageUrl(backstoryCompanion.ethnicity) || backstoryCompanion.avatarUrl || undefined
+            : undefined
+        }
+      />
     </div>
   );
 }

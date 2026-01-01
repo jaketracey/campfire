@@ -30,6 +30,10 @@ export interface PaginatedResult<T> {
   total?: number;
   /** Whether there are more results */
   hasMore: boolean;
+  /** Limit used for query */
+  limit?: number;
+  /** Offset used for query */
+  offset?: number;
 }
 
 /**

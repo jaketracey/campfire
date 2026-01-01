@@ -245,3 +245,55 @@ export async function generateBackstory(
   );
   return response.data;
 }
+
+/**
+ * Backstory data fetched from knowledge graph
+ */
+export interface CompanionBackstory {
+  hasBackstory: boolean;
+  backstory: string | null;
+  motivations: string[];
+  keyMemories: string[];
+  personalityQuirks: string[];
+}
+
+/**
+ * Fetch the generated backstory for a companion from the knowledge graph
+ */
+export async function getCompanionBackstory(
+  companionId: string
+): Promise<CompanionBackstory> {
+  const response = await get<{ success: boolean; data: CompanionBackstory }>(
+    `/companions/${companionId}/backstory`
+  );
+  return response.data;
+}
+
+/**
+ * Generated random identity for companion creation
+ */
+export interface GeneratedIdentity {
+  name: string;
+  pronouns: string;
+  backstory: string;
+  latencyMs: number;
+}
+
+/**
+ * Generate a random companion identity using LLM
+ */
+export async function generateRandomIdentity(): Promise<GeneratedIdentity> {
+  const response = await post<{
+    name: string;
+    pronouns: string;
+    backstory: string;
+    latency_ms: number;
+  }>('/companions/generate-identity');
+
+  return {
+    name: response.name,
+    pronouns: response.pronouns,
+    backstory: response.backstory,
+    latencyMs: response.latency_ms,
+  };
+}

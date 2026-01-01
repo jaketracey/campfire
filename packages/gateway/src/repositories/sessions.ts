@@ -22,6 +22,7 @@ import { NotFoundError, wrapDatabaseError } from './errors.js';
  */
 export interface SessionWithStats extends Session {
   turnCount: number;
+  lastActivityAt: Date | null;
   totalTokensInput: number;
   totalTokensOutput: number;
   totalCostUsd: number;
@@ -203,6 +204,22 @@ export class SessionsRepository {
 
   async end(id: string, tx?: TransactionContext): Promise<Session> {
     return this.updateStatus(id, 'ended', tx);
+  }
+
+  async delete(id: string, tx?: TransactionContext): Promise<void> {
+    const db = this.getSql(tx);
+
+    // First delete all turns for the session
+    await db`DELETE FROM turns WHERE session_id = ${id}`;
+
+    // Then delete the session
+    const result = await db`DELETE FROM sessions WHERE id = ${id} RETURNING id`;
+
+    if (!result[0]) {
+      throw new NotFoundError('Session', id);
+    }
+
+    logger.debug({ sessionId: id }, 'Session deleted');
   }
 
   async list(
@@ -546,6 +563,7 @@ export class SessionsRepository {
     return {
       ...this.mapSession(row),
       turnCount: row['turn_count'] as number,
+      lastActivityAt: row['last_activity_at'] as Date | null,
       totalTokensInput: row['total_tokens_input'] as number,
       totalTokensOutput: row['total_tokens_output'] as number,
       totalCostUsd: parseFloat(row['total_cost_usd'] as string),

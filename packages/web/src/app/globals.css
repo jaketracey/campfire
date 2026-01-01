@@ -83,6 +83,24 @@
   @apply bg-muted-foreground/30 rounded-full hover:bg-muted-foreground/50;
 }
 
+/* Subtle scrollbar for dark backgrounds */
+.scrollbar-subtle::-webkit-scrollbar {
+  width: 4px;
+}
+
+.scrollbar-subtle::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.scrollbar-subtle::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 9999px;
+}
+
+.scrollbar-subtle::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.2);
+}
+
 /* Gradient backgrounds */
 .gradient-campfire {
   background: linear-gradient(135deg, hsl(var(--primary)) 0%, hsl(24 95% 40%) 100%);

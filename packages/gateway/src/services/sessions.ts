@@ -210,7 +210,7 @@ export class SessionsService {
     const sessionsWithInfo = await Promise.all(
       result.data.map(async session => {
         const companion = await this.companions.findById(session.companion_id, tx);
-        const turnCount = await this.sessions.listTurns(session.id, { limit: 1 }, tx);
+        const turnCount = await this.sessions.listTurns({ sessionId: session.id, limit: 1 }, tx);
 
         return {
           session,
@@ -352,7 +352,7 @@ export class SessionsService {
       throw new Error('Session not found');
     }
 
-    return this.sessions.listTurns(sessionId, options, tx);
+    return this.sessions.listTurns({ sessionId, ...options }, tx);
   }
 
   /**
@@ -480,10 +480,11 @@ export class SessionsService {
    */
   async getRecentSessions(
     userId: string,
+    companionId: string,
     limit: number = 10,
     tx?: TransactionContext
   ): Promise<SessionWithStats[]> {
-    return this.sessions.getRecentSessions(userId, limit, tx);
+    return this.sessions.getRecentSessions(userId, companionId, limit, tx);
   }
 
   /**
@@ -506,8 +507,8 @@ export class SessionsService {
    * End stale sessions (background job)
    */
   async endStaleSessions(tx?: TransactionContext): Promise<number> {
-    const cutoffTime = new Date(Date.now() - this.SESSION_TIMEOUT_MS);
-    const count = await this.sessions.endStaleSessions(cutoffTime, tx);
+    const maxInactiveMinutes = this.SESSION_TIMEOUT_MS / (60 * 1000);
+    const count = await this.sessions.endStaleSessions(maxInactiveMinutes, tx);
 
     if (count > 0) {
       logger.info({ count }, 'Ended stale sessions');

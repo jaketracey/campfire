@@ -15,6 +15,7 @@ export interface RequestContext {
   requestId?: string;
   userId?: string;
   sessionId?: string;
+  correlationId?: string;
 }
 
 /**
@@ -102,16 +103,16 @@ const baseLogger = pino({
     ],
     censor: '[REDACTED]',
   },
-  transport: isPretty
-    ? {
-        target: 'pino-pretty',
-        options: {
-          colorize: true,
-          translateTime: 'SYS:standard',
-          ignore: 'pid,hostname,service',
-        },
-      }
-    : undefined,
+  ...(isPretty && {
+    transport: {
+      target: 'pino-pretty',
+      options: {
+        colorize: true,
+        translateTime: 'SYS:standard',
+        ignore: 'pid,hostname,service',
+      },
+    },
+  }),
 });
 
 /**

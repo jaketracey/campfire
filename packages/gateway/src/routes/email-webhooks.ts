@@ -181,7 +181,7 @@ export async function emailWebhookRoutes(app: FastifyInstance): Promise<void> {
     {
       config: {
         rawBody: true,
-      },
+      } as Record<string, unknown>,
     },
     async (request: FastifyRequest, reply: FastifyReply) => {
       return withSpan('email.handleSNSWebhook', async (span) => {

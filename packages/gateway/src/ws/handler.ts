@@ -376,21 +376,22 @@ async function handleUserMessage(
     });
 
     // 5. Build CompanionSpec for orchestrator
-    const spec = companion.spec || {};
+    const spec = companion.spec;
     const companionSpec = {
       id: companion.id,
       name: companion.name,
-      description: spec.identity?.backstory || `An AI companion named ${companion.name}`,
-      personality_traits: spec.personality?.traits
+      description: (spec?.identity as Record<string, unknown> | undefined)?.['selfDescription'] as string | undefined
+        || `An AI companion named ${companion.name}`,
+      personality_traits: spec?.personality?.traits
         ? Object.entries(spec.personality.traits)
             .filter(([_, v]) => (v as number) > 0.5)
             .map(([k]) => k)
         : ['friendly', 'helpful'],
-      communication_style: spec.personality?.archetype || 'friendly and supportive',
-      voice_id: spec.voice?.voice_id || null,
+      communication_style: spec?.personality?.archetype || 'friendly and supportive',
+      voice_id: spec?.voice?.voice_id || null,
       avatar_url: null,
-      system_prompt: buildSystemPrompt(companion),
-      safety_level: spec.boundaries?.content_rating === 'G' ? 'strict' : 'standard',
+      system_prompt: buildSystemPrompt(companion as unknown as { name: string; spec: Record<string, unknown> | null }),
+      safety_level: spec?.boundaries?.content_rating === 'G' ? 'strict' : 'standard',
       allowed_tools: [],
       max_context_turns: 20,
       temperature: 0.7,

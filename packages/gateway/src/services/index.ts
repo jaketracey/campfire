@@ -4,6 +4,7 @@
  */
 
 // Events service
+import { getEventsService as _getEventsService } from './events.js';
 export {
   EventsService,
   getEventsService,
@@ -15,6 +16,7 @@ export type {
 } from './events.js';
 
 // Auth service
+import { getAuthService as _getAuthService } from './auth.js';
 export {
   AuthService,
   getAuthService,
@@ -34,6 +36,7 @@ export type {
 } from './auth.js';
 
 // Users service
+import { getUsersService as _getUsersService } from './users.js';
 export {
   UsersService,
   getUsersService,
@@ -52,6 +55,7 @@ export type {
 } from './users.js';
 
 // Companions service
+import { getCompanionsService as _getCompanionsService } from './companions.js';
 export {
   CompanionsService,
   getCompanionsService,
@@ -74,6 +78,7 @@ export type {
 } from './companions.js';
 
 // Sessions service
+import { getSessionsService as _getSessionsService } from './sessions.js';
 export {
   SessionsService,
   getSessionsService,
@@ -91,6 +96,7 @@ export type {
 } from './sessions.js';
 
 // Memories service
+import { getMemoriesService as _getMemoriesService } from './memories.js';
 export {
   MemoriesService,
   getMemoriesService,
@@ -108,6 +114,7 @@ export type {
 } from './memories.js';
 
 // Billing service
+import { getBillingService as _getBillingService } from './billing.js';
 export {
   BillingService,
   getBillingService,
@@ -129,13 +136,13 @@ export type {
  * Call this at application startup to ensure singleton instances are created
  */
 export function initializeServices(): void {
-  getEventsService();
-  getAuthService();
-  getUsersService();
-  getCompanionsService();
-  getSessionsService();
-  getMemoriesService();
-  getBillingService();
+  _getEventsService();
+  _getAuthService();
+  _getUsersService();
+  _getCompanionsService();
+  _getSessionsService();
+  _getMemoriesService();
+  _getBillingService();
 }
 
 /**
@@ -144,13 +151,13 @@ export function initializeServices(): void {
  */
 export function getServices() {
   return {
-    events: getEventsService(),
-    auth: getAuthService(),
-    users: getUsersService(),
-    companions: getCompanionsService(),
-    sessions: getSessionsService(),
-    memories: getMemoriesService(),
-    billing: getBillingService(),
+    events: _getEventsService(),
+    auth: _getAuthService(),
+    users: _getUsersService(),
+    companions: _getCompanionsService(),
+    sessions: _getSessionsService(),
+    memories: _getMemoriesService(),
+    billing: _getBillingService(),
   };
 }
 
@@ -158,11 +165,11 @@ export function getServices() {
  * Service context type for dependency injection
  */
 export interface ServiceContext {
-  events: ReturnType<typeof getEventsService>;
-  auth: ReturnType<typeof getAuthService>;
-  users: ReturnType<typeof getUsersService>;
-  companions: ReturnType<typeof getCompanionsService>;
-  sessions: ReturnType<typeof getSessionsService>;
-  memories: ReturnType<typeof getMemoriesService>;
-  billing: ReturnType<typeof getBillingService>;
+  events: ReturnType<typeof _getEventsService>;
+  auth: ReturnType<typeof _getAuthService>;
+  users: ReturnType<typeof _getUsersService>;
+  companions: ReturnType<typeof _getCompanionsService>;
+  sessions: ReturnType<typeof _getSessionsService>;
+  memories: ReturnType<typeof _getMemoriesService>;
+  billing: ReturnType<typeof _getBillingService>;
 }

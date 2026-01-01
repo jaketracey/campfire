@@ -4,6 +4,7 @@
  */
 
 import { post, get } from './client';
+import { getAccessToken } from '@/stores/auth-store';
 
 export interface PersonalitySliders {
   warmth?: number;
@@ -327,13 +328,20 @@ export function streamAnchorImages(
   request: GenerateAnchorsRequest,
   callbacks: AnchorStreamCallbacks
 ): () => void {
-  // Get the access token
-  const token = typeof window !== 'undefined'
-    ? localStorage.getItem('campfire_access_token')
-    : null;
+  console.log('[SSE] streamAnchorImages called with:', {
+    companionId: request.companionId,
+    style: request.style,
+    appearance: request.appearance,
+  });
+
+  // Get the access token from auth store (same as other API calls)
+  const token = getAccessToken();
+
+  console.log('[SSE] Token found:', !!token, token ? `${token.slice(0, 20)}...` : 'none');
 
   if (!token) {
-    callbacks.onError?.({ message: 'Not authenticated' });
+    console.error('[SSE] No token found');
+    callbacks.onError?.({ message: 'Not authenticated - no token found' });
     return () => {};
   }
 
@@ -353,12 +361,15 @@ export function streamAnchorImages(
   }
 
   const url = `${baseUrl}/api/v1/imagegen/generate-anchors-stream?${params.toString()}`;
+  console.log('[SSE] URL:', url);
 
   // Create EventSource with auth header via fetch
   let aborted = false;
 
   const connectSSE = async () => {
     try {
+      console.log('[SSE] Connecting to:', url);
+
       const response = await fetch(url, {
         method: 'GET',
         headers: {
@@ -367,8 +378,27 @@ export function streamAnchorImages(
         },
       });
 
+      console.log('[SSE] Response status:', response.status, 'Content-Type:', response.headers.get('content-type'));
+
       if (!response.ok) {
-        throw new Error(`SSE connection failed: ${response.status}`);
+        let errorBody = '';
+        let errorMessage = response.statusText;
+        try {
+          errorBody = await response.text();
+          // Try to parse as JSON for better error messages
+          const errorJson = JSON.parse(errorBody);
+          errorMessage = errorJson.message || errorJson.error || errorBody;
+        } catch {
+          if (errorBody) errorMessage = errorBody;
+        }
+        console.error('[SSE] Connection failed:', response.status, errorMessage);
+        throw new Error(errorMessage || `SSE connection failed: ${response.status}`);
+      }
+
+      // Verify we got an SSE response
+      const contentType = response.headers.get('content-type');
+      if (!contentType?.includes('text/event-stream')) {
+        console.warn('[SSE] Unexpected content type:', contentType);
       }
 
       const reader = response.body?.getReader();
@@ -391,6 +421,11 @@ export function streamAnchorImages(
         let currentData = '';
 
         for (const line of lines) {
+          // Skip empty lines and comment lines (heartbeats)
+          if (line === '' || line.startsWith(':')) {
+            continue;
+          }
+
           if (line.startsWith('event: ')) {
             currentEvent = line.slice(7);
           } else if (line.startsWith('data: ')) {
@@ -398,23 +433,29 @@ export function streamAnchorImages(
 
             try {
               const data = JSON.parse(currentData);
+              console.log(`[SSE] Event: ${currentEvent}`, data);
 
               switch (currentEvent) {
                 case 'progress':
                   callbacks.onProgress?.(data);
                   break;
                 case 'anchor':
+                  console.log('[SSE] Anchor received, calling onAnchor callback');
                   callbacks.onAnchor?.(data);
                   break;
                 case 'complete':
+                  console.log('[SSE] Complete received');
                   callbacks.onComplete?.(data);
                   break;
                 case 'error':
+                  console.error('[SSE] Error event received:', data);
                   callbacks.onError?.(data);
                   break;
+                default:
+                  console.warn('[SSE] Unknown event type:', currentEvent);
               }
             } catch (e) {
-              console.error('Failed to parse SSE data:', currentData);
+              console.error('[SSE] Failed to parse SSE data:', currentData, e);
             }
 
             currentEvent = '';
@@ -423,8 +464,28 @@ export function streamAnchorImages(
         }
       }
     } catch (error) {
+      console.error('[SSE] Error:', error);
       if (!aborted) {
-        callbacks.onError?.({ message: error instanceof Error ? error.message : 'Unknown error' });
+        let message = 'Unknown error';
+        if (error instanceof Error) {
+          message = error.message;
+        } else if (typeof error === 'string') {
+          message = error;
+        } else if (error && typeof error === 'object') {
+          // Check for common error properties
+          const errObj = error as Record<string, unknown>;
+          if (typeof errObj.message === 'string') {
+            message = errObj.message;
+          } else if (typeof errObj.error === 'string') {
+            message = errObj.error;
+          } else {
+            const json = JSON.stringify(error);
+            if (json && json !== '{}') {
+              message = json;
+            }
+          }
+        }
+        callbacks.onError?.({ message });
       }
     }
   };

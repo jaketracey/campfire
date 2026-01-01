@@ -903,10 +903,12 @@ export class KnowledgeGraphRepository {
       LIMIT 1
     `;
 
-    if (!result[0]) return null;
+    const pathResult = result[0];
+    if (!pathResult) return null;
 
     // Build the full path with entities
-    const pathIds = result[0].path as string[];
+    const pathIds = pathResult.path as string[];
+    const relations = pathResult.relations as string[];
     const entities = await Promise.all(
       pathIds.map(id => this.findEntityById(id, tx))
     );
@@ -915,7 +917,7 @@ export class KnowledgeGraphRepository {
       entity: entity!,
       depth: index,
       path: pathIds.slice(0, index + 1),
-      relationPath: (result[0].relations as string[]).slice(0, index),
+      relationPath: relations.slice(0, index),
     }));
   }
 

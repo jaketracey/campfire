@@ -21,8 +21,8 @@ import type {
   CompanionStatus,
   CompanionAvatar,
   CompanionAvatarInsert,
-  AvatarAssetType,
 } from '../db/types.js';
+import type { CompanionVersion } from '../repositories/companions.js';
 import type { TransactionContext } from '../repositories/types.js';
 
 // ============================================================================
@@ -163,7 +163,7 @@ export class CompanionsService {
     await this.events.emitCompanionCreated(context, {
       companionId: companion.id,
       name: companion.name,
-      spec: companion.spec as Record<string, unknown>,
+      spec: companion.spec as unknown as Record<string, unknown>,
     });
 
     logger.info({ userId, companionId: companion.id, name: companion.name }, 'Companion created');
@@ -258,7 +258,7 @@ export class CompanionsService {
       ...specUpdates,
     } as CompanionSpec;
 
-    const updated = await this.companions.updateSpec(companionId, newSpec, tx);
+    const updated = await this.companions.updateSpec(companionId, newSpec, undefined, undefined, tx);
 
     // Emit spec updated event
     const context: EventContext = {
@@ -310,15 +310,14 @@ export class CompanionsService {
     userId: string,
     companionId: string,
     tx?: TransactionContext
-  ): Promise<Companion> {
+  ): Promise<void> {
     const companion = await this.getById(userId, companionId, tx);
     if (!companion) {
       throw new Error('Companion not found');
     }
 
-    const updated = await this.companions.archive(companionId, tx);
+    await this.companions.archive(companionId, tx);
     logger.info({ userId, companionId }, 'Companion archived');
-    return updated;
   }
 
   /**
@@ -406,15 +405,14 @@ export class CompanionsService {
     companionId: string,
     avatarId: string,
     tx?: TransactionContext
-  ): Promise<CompanionAvatar> {
+  ): Promise<void> {
     const companion = await this.getById(userId, companionId, tx);
     if (!companion) {
       throw new Error('Companion not found');
     }
 
-    const avatar = await this.companions.setActiveAvatar(avatarId, tx);
+    await this.companions.setActiveAvatar(companionId, avatarId, tx);
     logger.debug({ userId, companionId, avatarId }, 'Active avatar set');
-    return avatar;
   }
 
   /**
@@ -440,13 +438,13 @@ export class CompanionsService {
     userId: string,
     companionId: string,
     tx?: TransactionContext
-  ): Promise<CompanionAvatar[]> {
+  ): Promise<PaginatedResult<CompanionAvatar>> {
     const companion = await this.getById(userId, companionId, tx);
     if (!companion) {
       throw new Error('Companion not found');
     }
 
-    return this.companions.listAvatars(companionId, tx);
+    return this.companions.listAvatars(companionId, {}, tx);
   }
 
   /**
@@ -479,13 +477,13 @@ export class CompanionsService {
     companionId: string,
     limit: number = 10,
     tx?: TransactionContext
-  ): Promise<Array<{ version: number; spec: CompanionSpec; createdAt: Date }>> {
+  ): Promise<PaginatedResult<CompanionVersion>> {
     const companion = await this.getById(userId, companionId, tx);
     if (!companion) {
       throw new Error('Companion not found');
     }
 
-    return this.companions.getVersionHistory(companionId, limit, tx);
+    return this.companions.getVersionHistory(companionId, { limit }, tx);
   }
 
   /**

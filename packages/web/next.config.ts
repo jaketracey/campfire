@@ -12,6 +12,18 @@ const nextConfig: NextConfig = {
         protocol: 'https',
         hostname: '**.campfire.app',
       },
+      {
+        protocol: 'https',
+        hostname: 'campfire-dev-media.s3.us-east-1.amazonaws.com',
+      },
+      {
+        protocol: 'https',
+        hostname: 'campfire-staging-media.s3.us-east-1.amazonaws.com',
+      },
+      {
+        protocol: 'https',
+        hostname: 'campfire-prod-media.s3.us-east-1.amazonaws.com',
+      },
     ],
   },
   experimental: {

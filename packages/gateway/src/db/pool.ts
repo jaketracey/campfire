@@ -46,7 +46,7 @@ export function createPool(config?: DatabaseConfig): postgres.Sql {
     database: cfg.database,
     username: cfg.username,
     password: cfg.password,
-    ssl: cfg.ssl,
+    ssl: cfg.ssl ?? false,
     max: cfg.max ?? 20,
     idle_timeout: cfg.idle_timeout ?? 20,
     connect_timeout: cfg.connect_timeout ?? 10,
@@ -65,14 +65,14 @@ export function createPool(config?: DatabaseConfig): postgres.Sql {
     },
 
     // Debug mode for development
-    debug: process.env['DATABASE_DEBUG'] === 'true'
-      ? (connection, query, params) => {
-          console.log('[DB Query]', query);
-          if (params.length > 0) {
-            console.log('[DB Params]', params);
-          }
+    ...(process.env['DATABASE_DEBUG'] === 'true' && {
+      debug: (connection: number, query: string, params: unknown[]) => {
+        console.log('[DB Query]', query);
+        if (params.length > 0) {
+          console.log('[DB Params]', params);
         }
-      : undefined,
+      },
+    }),
   });
 
   _sql = sql;
@@ -96,7 +96,7 @@ export const db = {
   async transaction<T>(
     fn: (sql: postgres.TransactionSql) => Promise<T>
   ): Promise<T> {
-    return sql().begin(fn);
+    return sql().begin(fn) as Promise<T>;
   },
 
   async healthCheck(): Promise<{ ok: boolean; latency_ms: number; error?: string }> {

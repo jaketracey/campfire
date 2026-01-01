@@ -71,7 +71,7 @@ export function Step1Welcome() {
               {"Companion".split('').map((char, i) => (
                 <span
                   key={`l2-${i}`}
-                  className="inline-block origin-bottom will-change-transform text-transparent bg-clip-text bg-gradient-to-r from-vibes-neon via-vibes-hot to-vibes-cyan animate-gradient-x char-companion"
+                  className="inline-block origin-bottom will-change-transform text-transparent bg-clip-text bg-gradient-to-r from-vibes-neon to-vibes-electric char-companion"
                 >
                   {char}
                 </span>

@@ -102,7 +102,7 @@ export async function billingRoutes(app: FastifyInstance): Promise<void> {
   app.post('/webhook', {
     config: {
       rawBody: true, // Need raw body for signature verification
-    },
+    } as Record<string, unknown>,
   }, async (request: FastifyRequest, reply: FastifyReply) => {
     return withSpan('billing.handleWebhook', async (span) => {
       // Verify Stripe signature

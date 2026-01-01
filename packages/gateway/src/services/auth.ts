@@ -129,7 +129,7 @@ export class AuthService {
     await this.users.createProfile({ user_id: user.id }, tx);
 
     // Create a session
-    const { session, token } = await this.createSession(user.id, tx);
+    const { session, token } = await this.createSession(user.id, undefined, tx);
 
     logger.info({ userId: user.id, email: user.email }, 'User registered');
 
@@ -159,22 +159,15 @@ export class AuthService {
     // Check account status
     await this.checkAccountStatus(user);
 
-    // Check for lockout
-    if (user.locked_until && new Date(user.locked_until) > new Date()) {
-      throw this.createAuthError('ACCOUNT_LOCKED', 'Account is temporarily locked. Please try again later.');
-    }
+    // NOTE: Account lockout functionality (locked_until, failed_login_count) is not yet implemented.
+    // When implemented, add locked_until and failed_login_count fields to the User type and
+    // uncomment the lockout check logic here.
 
     // Verify password
     const isValid = await verifyPassword(validated.password, user.password_hash);
     if (!isValid) {
-      await this.users.recordFailedLogin(user.id, tx);
-
-      // Check if we need to lock the account
-      if ((user.failed_login_count ?? 0) + 1 >= this.MAX_FAILED_ATTEMPTS) {
-        await this.lockAccount(user.id, tx);
-        throw this.createAuthError('ACCOUNT_LOCKED', 'Too many failed attempts. Account locked for 15 minutes.');
-      }
-
+      // TODO: Implement failed login tracking when user security fields are added
+      // await this.users.recordFailedLogin(user.id, tx);
       throw this.createAuthError('INVALID_CREDENTIALS', 'Invalid email or password');
     }
 

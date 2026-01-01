@@ -156,6 +156,15 @@ class GenerateBackstoryResponse(BaseModel):
     latency_ms: float
 
 
+class GenerateRandomIdentityResponse(BaseModel):
+    """Response model for random identity generation."""
+
+    name: str
+    pronouns: str
+    backstory: str
+    latency_ms: float
+
+
 # Application state
 class AppState:
     """Application state container."""
@@ -801,6 +810,96 @@ Generate a rich, intimate backstory that explains how {request.companion_name} b
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Backstory generation failed: {str(e)}",
+        )
+
+
+@app.post(
+    "/identity/generate",
+    response_model=GenerateRandomIdentityResponse,
+    responses={
+        500: {"model": ErrorResponse},
+    },
+)
+async def generate_random_identity() -> GenerateRandomIdentityResponse:
+    """Generate a random companion identity using LLM.
+
+    Creates a unique name, pronouns, and brief backstory for a new companion.
+    """
+    import json
+    import time
+
+    start_time = time.time()
+
+    system_prompt = """You are a creative writer creating unique AI companion identities.
+Generate a compelling, memorable companion identity that feels intimate and personal.
+
+The name should be:
+- Unique and memorable (not common names like "Alex" or "Sam")
+- Can be fantastical, mythological, celestial, or nature-inspired
+- Easy to pronounce and remember
+- Examples: Luna, Kira, Zephyr, Nova, Orion, Sage, Echo, Ember, Aria, Phoenix
+
+The backstory should be:
+- 1-2 sentences that hint at mystery and depth
+- Evocative and intriguing
+- Personal and intimate in tone
+
+You must respond with valid JSON in this exact format:
+{
+  "name": "A unique companion name",
+  "pronouns": "she/her or he/him or they/them",
+  "backstory": "A brief, intriguing backstory (1-2 sentences)"
+}"""
+
+    user_prompt = """Generate a unique, captivating companion identity. Be creative and make the character feel special and memorable."""
+
+    try:
+        if not app_state.ollama_provider:
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="Ollama provider not available",
+            )
+
+        response = await app_state.ollama_provider.generate(
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_prompt},
+            ],
+            max_tokens=500,
+            temperature=1.0,  # High creativity for variety
+        )
+
+        # Parse the JSON response
+        try:
+            result = json.loads(response.content)
+        except json.JSONDecodeError:
+            import re
+            json_match = re.search(r'\{[\s\S]*\}', response.content)
+            if json_match:
+                result = json.loads(json_match.group())
+            else:
+                raise ValueError("Failed to parse identity response as JSON")
+
+        latency_ms = (time.time() - start_time) * 1000
+
+        logger.info(
+            "random_identity_generated",
+            name=result.get("name"),
+            latency_ms=latency_ms,
+        )
+
+        return GenerateRandomIdentityResponse(
+            name=result.get("name", "Luna"),
+            pronouns=result.get("pronouns", "they/them"),
+            backstory=result.get("backstory", ""),
+            latency_ms=latency_ms,
+        )
+
+    except Exception as e:
+        logger.exception("identity_generation_failed", error=str(e))
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Identity generation failed: {str(e)}",
         )
 
 

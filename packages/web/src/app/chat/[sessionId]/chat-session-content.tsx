@@ -5,11 +5,11 @@ import { useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card } from '@/components/ui/card';
-import { X, Send, Mic, MicOff, Bug, Images, Flame, Sparkles, Gift } from 'lucide-react';
+import { X, Send, Mic, MicOff, Bug, Images, Flame, Sparkles, Gift, BookOpen } from 'lucide-react';
 import Link from 'next/link';
-import { getSessionTurns, getSession, getCompanion, type Companion } from '@/lib/api';
+import { getSessionTurns, getSession, getCompanion, getCompanionBackstory, type Companion, type CompanionBackstory } from '@/lib/api';
 import { CampfireWebSocket, connectWebSocket } from '@/lib/ws';
-import { CompanionAvatar, CompanionGallery, PersonalityModal } from '@/components/companion';
+import { CompanionAvatar, StaticCompanionAvatar, CompanionGallery, PersonalityModal, BackstoryModal } from '@/components/companion';
 import { DebugPanel } from '@/components/debug-panel';
 import { GiftsPanel } from '@/components/gifts';
 import { useRequireAuth } from '@/hooks/use-auth';
@@ -57,6 +57,33 @@ function detectEmotionalState(content: string): EmotionalState {
   return 'neutral';
 }
 
+// Extract scene/action description from LLM response for image generation
+function extractSceneDescription(content: string): string | undefined {
+  // Look for action markers like *action* or (action)
+  const actionMatch = content.match(/\*([^*]+)\*/);
+  if (actionMatch) {
+    return actionMatch[1];
+  }
+
+  // Look for parenthetical descriptions
+  const parenMatch = content.match(/\(([^)]+)\)/);
+  if (parenMatch) {
+    return parenMatch[1];
+  }
+
+  // Take the first sentence and extract key visual elements
+  const firstSentence = content.split(/[.!?]/)[0];
+  if (firstSentence && firstSentence.length < 100) {
+    // Look for visual/action verbs
+    const visualMatch = firstSentence.match(/\b(smil|laugh|grin|look|gaz|lean|sit|stand|walk|danc|hug|wav|wink|blush|sigh)\w*/i);
+    if (visualMatch) {
+      return firstSentence.trim();
+    }
+  }
+
+  return undefined;
+}
+
 export function ChatSessionContent({ sessionId }: ChatSessionContentProps) {
   const router = useRouter();
   const { isAuthenticated, isLoading: authLoading } = useRequireAuth('/login');
@@ -68,13 +95,18 @@ export function ChatSessionContent({ sessionId }: ChatSessionContentProps) {
   const [wsConnected, setWsConnected] = useState(false);
   const [streamingContent, setStreamingContent] = useState('');
   const [currentEmotionalState, setCurrentEmotionalState] = useState<EmotionalState>('neutral');
-  const [showAvatar, setShowAvatar] = useState(true);
   const [showDebugPanel, setShowDebugPanel] = useState(false);
   const [showGallery, setShowGallery] = useState(false);
   const [showPersonality, setShowPersonality] = useState(false);
+  const [showBackstory, setShowBackstory] = useState(false);
   const [showGiftsPanel, setShowGiftsPanel] = useState(false);
+  const [showMobileAvatar, setShowMobileAvatar] = useState(false);
   const [debugRefreshTrigger, setDebugRefreshTrigger] = useState(0);
   const [companion, setCompanion] = useState<Companion | null>(null);
+  const [backstoryData, setBackstoryData] = useState<CompanionBackstory | null>(null);
+  // Track image generation - only generate after LLM response
+  const [imageGenTrigger, setImageGenTrigger] = useState(0);
+  const [sceneDescription, setSceneDescription] = useState<string | undefined>(undefined);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const wsRef = useRef<CampfireWebSocket | null>(null);
@@ -106,6 +138,14 @@ export function ChatSessionContent({ sessionId }: ChatSessionContentProps) {
           try {
             const companionData = await getCompanion(session.companionId);
             setCompanion(companionData);
+
+            // Also fetch backstory from knowledge graph
+            try {
+              const backstory = await getCompanionBackstory(session.companionId);
+              setBackstoryData(backstory);
+            } catch (err) {
+              console.warn('Failed to load backstory:', err);
+            }
           } catch (err) {
             console.warn('Failed to load companion:', err);
           }
@@ -186,6 +226,10 @@ export function ChatSessionContent({ sessionId }: ChatSessionContentProps) {
           emotionalState,
         },
       ]);
+      // Extract scene description and trigger image generation
+      const scene = extractSceneDescription(content);
+      setSceneDescription(scene);
+      setImageGenTrigger((prev) => prev + 1);
       // Trigger debug panel refresh
       setDebugRefreshTrigger((prev) => prev + 1);
     });
@@ -211,6 +255,10 @@ export function ChatSessionContent({ sessionId }: ChatSessionContentProps) {
           emotionalState,
         },
       ]);
+      // Extract scene description and trigger image generation
+      const scene = extractSceneDescription(content);
+      setSceneDescription(scene);
+      setImageGenTrigger((prev) => prev + 1);
       // Trigger debug panel refresh
       setDebugRefreshTrigger((prev) => prev + 1);
     });
@@ -284,53 +332,58 @@ export function ChatSessionContent({ sessionId }: ChatSessionContentProps) {
   return (
     <div className="flex h-screen bg-background">
       {/* Companion Avatar Sidebar */}
-      {showAvatar && (
-        <div className="hidden lg:flex flex-col items-center p-4 border-r bg-muted/30 w-[280px]">
-          <CompanionAvatar
-            emotionalState={currentEmotionalState}
-            style="stylized"
-            customPrompt={customPrompt}
-            width={250}
-            height={400}
-            autoRegenerate={true}
-            debounceDelay={2000}
-            className="shadow-lg"
-            userId={user?.id}
-            sessionId={sessionId}
-            companionId={companion?.id}
-          />
-          <p className="mt-3 text-sm text-muted-foreground">
-            Feeling: <span className="font-medium text-foreground capitalize">{currentEmotionalState}</span>
-          </p>
-          <div className="flex flex-wrap gap-2 mt-2">
+      <div className="hidden lg:flex flex-col items-center p-4 border-r bg-muted/30 w-[280px]">
+        <CompanionAvatar
+          emotionalState={currentEmotionalState}
+          style="stylized"
+          customPrompt={customPrompt}
+          width={250}
+          height={400}
+          autoRegenerate={false}
+          debounceDelay={2000}
+          className="shadow-lg"
+          userId={user?.id}
+          sessionId={sessionId}
+          companionId={companion?.id}
+          anchorImageUrl={companion?.avatarUrl || undefined}
+          generationTrigger={imageGenTrigger}
+          sceneDescription={sceneDescription}
+        />
+        <p className="mt-3 text-sm text-muted-foreground">
+          Feeling: <span className="font-medium text-foreground capitalize">{currentEmotionalState}</span>
+        </p>
+        <div className="flex flex-wrap gap-2 mt-2">
+          <Button
+            variant="outline"
+            size="sm"
+            className="gap-1"
+            onClick={() => setShowGallery(true)}
+          >
+            <Images className="h-4 w-4" />
+            Gallery
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            className="gap-1"
+            onClick={() => setShowPersonality(true)}
+          >
+            <Sparkles className="h-4 w-4" />
+            Personality
+          </Button>
+          {backstoryData?.hasBackstory && (
             <Button
               variant="outline"
               size="sm"
-              className="gap-1"
-              onClick={() => setShowGallery(true)}
+              className="gap-1 border-amber-700/30 text-amber-500 hover:bg-amber-900/20 hover:text-amber-400"
+              onClick={() => setShowBackstory(true)}
             >
-              <Images className="h-4 w-4" />
-              Gallery
+              <BookOpen className="h-4 w-4" />
+              Backstory
             </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              className="gap-1"
-              onClick={() => setShowPersonality(true)}
-            >
-              <Sparkles className="h-4 w-4" />
-              Personality
-            </Button>
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => setShowAvatar(false)}
-            >
-              Hide
-            </Button>
-          </div>
+          )}
         </div>
-      )}
+      </div>
 
       {/* Main Chat Area */}
       <div className="flex flex-col flex-1">
@@ -340,19 +393,8 @@ export function ChatSessionContent({ sessionId }: ChatSessionContentProps) {
             <Flame className="h-7 w-7 text-campfire-500" />
             <span className="text-lg font-bold">Campfire</span>
           </Link>
-          <div className="flex-1">
-            <div className="flex items-center gap-2 text-xs text-muted-foreground">
-              <span>Session: {sessionId.slice(0, 8)}...</span>
-              <span className={`w-2 h-2 rounded-full ${wsConnected ? 'bg-green-500' : 'bg-yellow-500'}`} />
-              <span>{wsConnected ? 'Connected' : 'Connecting...'}</span>
-            </div>
-          </div>
+          <div className="flex-1" />
           <div className="flex items-center gap-2">
-            {!showAvatar && (
-              <Button variant="outline" size="sm" onClick={() => setShowAvatar(true)}>
-                Show Avatar
-              </Button>
-            )}
             <Button
               variant="ghost"
               size="icon"
@@ -455,6 +497,22 @@ export function ChatSessionContent({ sessionId }: ChatSessionContentProps) {
             </Button>
           </div>
         </div>
+
+        {/* Mobile/Tablet Floating Avatar Thumbnail */}
+        {companion?.avatarUrl && (
+          <button
+            onClick={() => setShowMobileAvatar(true)}
+            className="lg:hidden fixed bottom-24 right-4 z-40 w-16 h-16 rounded-full overflow-hidden border-2 border-campfire-500 shadow-lg bg-muted/80 backdrop-blur-sm hover:scale-105 transition-transform"
+            aria-label="View companion"
+          >
+            <StaticCompanionAvatar
+              imageUrl={companion.avatarUrl}
+              width={64}
+              height={64}
+              className="w-full h-full rounded-full"
+            />
+          </button>
+        )}
       </div>
 
       {/* Debug Panel */}
@@ -492,6 +550,16 @@ export function ChatSessionContent({ sessionId }: ChatSessionContentProps) {
         }}
       />
 
+      {/* Backstory Modal - Oblivion style reveal */}
+      <BackstoryModal
+        isOpen={showBackstory}
+        onClose={() => setShowBackstory(false)}
+        companionName={companion?.name || ''}
+        backstory={backstoryData?.backstory || ''}
+        archetype={companion?.spec?.personality?.archetype}
+        avatarUrl={companion?.avatarUrl || undefined}
+      />
+
       {/* Gifts Panel */}
       {companion && (
         <GiftsPanel
@@ -504,6 +572,78 @@ export function ChatSessionContent({ sessionId }: ChatSessionContentProps) {
             console.log('Gift sent:', gift.name);
           }}
         />
+      )}
+
+      {/* Mobile Avatar Enlarged Modal */}
+      {showMobileAvatar && (
+        <div
+          className="lg:hidden fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm"
+          onClick={() => setShowMobileAvatar(false)}
+        >
+          <div
+            className="relative flex flex-col items-center p-4"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <button
+              onClick={() => setShowMobileAvatar(false)}
+              className="absolute top-2 right-2 z-10 p-2 rounded-full bg-black/50 text-white hover:bg-black/70"
+              aria-label="Close"
+            >
+              <X className="h-5 w-5" />
+            </button>
+            {companion?.avatarUrl && (
+              <StaticCompanionAvatar
+                imageUrl={companion.avatarUrl}
+                width={280}
+                height={420}
+                className="shadow-2xl"
+              />
+            )}
+            <p className="mt-3 text-sm text-white/80">
+              {companion?.name}
+            </p>
+            <div className="flex flex-wrap gap-2 mt-3">
+              <Button
+                variant="secondary"
+                size="sm"
+                className="gap-1"
+                onClick={() => {
+                  setShowMobileAvatar(false);
+                  setShowGallery(true);
+                }}
+              >
+                <Images className="h-4 w-4" />
+                Gallery
+              </Button>
+              <Button
+                variant="secondary"
+                size="sm"
+                className="gap-1"
+                onClick={() => {
+                  setShowMobileAvatar(false);
+                  setShowPersonality(true);
+                }}
+              >
+                <Sparkles className="h-4 w-4" />
+                Personality
+              </Button>
+              {backstoryData?.hasBackstory && (
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  className="gap-1 bg-amber-900/30 hover:bg-amber-900/50 text-amber-400 border-amber-700/30"
+                  onClick={() => {
+                    setShowMobileAvatar(false);
+                    setShowBackstory(true);
+                  }}
+                >
+                  <BookOpen className="h-4 w-4" />
+                  Backstory
+                </Button>
+              )}
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

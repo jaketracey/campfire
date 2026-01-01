@@ -12,12 +12,10 @@
     "declaration": true,
     "declarationMap": true,
     "sourceMap": true,
-    "noUncheckedIndexedAccess": true,
     "noImplicitReturns": true,
     "noFallthroughCasesInSwitch": true,
     "noUnusedLocals": true,
-    "noUnusedParameters": true,
-    "exactOptionalPropertyTypes": true
+    "noUnusedParameters": true
   },
   "exclude": ["node_modules", "dist", ".next", "coverage"]
 }

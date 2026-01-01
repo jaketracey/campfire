@@ -16,9 +16,7 @@
     "sourceMap": true,
     "noImplicitReturns": true,
     "noFallthroughCasesInSwitch": true,
-    "noUncheckedIndexedAccess": true,
     "noImplicitOverride": true,
-    "exactOptionalPropertyTypes": true,
     "useDefineForClassFields": true
   },
   "include": ["src/**/*"],

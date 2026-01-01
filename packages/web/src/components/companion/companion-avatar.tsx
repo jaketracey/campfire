@@ -50,6 +50,12 @@ interface CompanionAvatarProps {
   referenceImageUrl?: string;
   /** How strongly to follow the reference (0.0-1.0, default 0.7) */
   referenceStrength?: number;
+  /** Anchor image URL to show initially (skips initial generation) */
+  anchorImageUrl?: string;
+  /** Generation counter - increment to trigger new generation */
+  generationTrigger?: number;
+  /** Scene/action description from LLM for contextual image generation */
+  sceneDescription?: string;
 }
 
 export function CompanionAvatar({
@@ -65,22 +71,28 @@ export function CompanionAvatar({
   onError,
   cacheKey: initialCacheKey,
   fallbackUrl,
-  autoRegenerate = true,
+  autoRegenerate = false, // Default to false - only generate when explicitly triggered
   debounceDelay = 1000,
   userId,
   sessionId,
   companionId,
   referenceImageUrl: externalReferenceUrl,
-  referenceStrength = 0.7,
+  referenceStrength = 0.85,
+  anchorImageUrl,
+  generationTrigger = 0,
+  sceneDescription,
 }: CompanionAvatarProps) {
-  const [currentImageUrl, setCurrentImageUrl] = useState<string | null>(fallbackUrl || null);
+  // Use anchor image as initial display (no generation needed on mount)
+  const [currentImageUrl, setCurrentImageUrl] = useState<string | null>(anchorImageUrl || fallbackUrl || null);
   const [nextImageUrl, setNextImageUrl] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [isTransitioning, setIsTransitioning] = useState(false);
   const [error, setError] = useState<Error | null>(null);
   const [currentCacheKey, setCurrentCacheKey] = useState<string | null>(initialCacheKey || null);
-  // Store the first generated S3 URL as identity anchor for character consistency
-  const [identityAnchorUrl, setIdentityAnchorUrl] = useState<string | null>(externalReferenceUrl || null);
+  // Use anchor image as identity reference for IP-Adapter character consistency
+  const [identityAnchorUrl, setIdentityAnchorUrl] = useState<string | null>(anchorImageUrl || externalReferenceUrl || null);
+  // Track generation trigger to only generate when explicitly requested
+  const [lastGenerationTrigger, setLastGenerationTrigger] = useState(0);
 
   const generateImage = useCallback(async () => {
     if (isLoading) return;
@@ -89,8 +101,13 @@ export function CompanionAvatar({
     setError(null);
 
     try {
-      // Use provided prompt or fall back to base prompt for the style
-      const promptToUse = customPrompt || getBasePrompt(style);
+      // Build prompt: base character + scene description from LLM
+      let promptToUse = customPrompt || getBasePrompt(style);
+
+      // Add scene/action description from LLM response if provided
+      if (sceneDescription) {
+        promptToUse = `${promptToUse}, ${sceneDescription}`;
+      }
 
       const request: ImageGenRequest = {
         prompt: promptToUse,
@@ -157,24 +174,39 @@ export function CompanionAvatar({
     companionId,
     identityAnchorUrl,
     referenceStrength,
+    sceneDescription,
   ]);
 
-  // Auto-regenerate when emotional state or personality changes
+  // Generate when generationTrigger increments (after LLM response)
+  useEffect(() => {
+    if (generationTrigger > lastGenerationTrigger) {
+      setLastGenerationTrigger(generationTrigger);
+      const timer = setTimeout(() => {
+        generateImage();
+      }, debounceDelay);
+      return () => clearTimeout(timer);
+    }
+  }, [generationTrigger, lastGenerationTrigger, debounceDelay, generateImage]);
+
+  // Legacy: Auto-regenerate on emotional state changes (if enabled)
   useEffect(() => {
     if (!autoRegenerate) return;
+    // Skip if we have an anchor and haven't started generating yet
+    if (anchorImageUrl && lastGenerationTrigger === 0) return;
 
     const timer = setTimeout(() => {
       generateImage();
     }, debounceDelay);
 
     return () => clearTimeout(timer);
-  }, [emotionalState, personality, style, autoRegenerate, debounceDelay, generateImage]);
+  }, [emotionalState, personality, style, autoRegenerate, debounceDelay, generateImage, anchorImageUrl, lastGenerationTrigger]);
 
-  // Initial load
+  // Initial load - only if no anchor image provided
   useEffect(() => {
-    if (!currentImageUrl && !isLoading) {
+    if (!currentImageUrl && !isLoading && !anchorImageUrl) {
       generateImage();
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []); // Only run once on mount
 
   return (
@@ -252,17 +284,6 @@ export function CompanionAvatar({
         </div>
       )}
 
-      {/* Emotional state indicator */}
-      <div className="absolute bottom-2 left-2 right-2 flex items-center justify-between">
-        <span className="rounded-full bg-black/50 px-2 py-0.5 text-xs text-white backdrop-blur-sm">
-          {emotionalState}
-        </span>
-        {currentCacheKey && (
-          <span className="rounded-full bg-black/30 px-2 py-0.5 text-[10px] text-white/70 backdrop-blur-sm">
-            {currentCacheKey.slice(0, 8)}
-          </span>
-        )}
-      </div>
     </div>
   );
 }
@@ -276,13 +297,11 @@ export function StaticCompanionAvatar({
   width = 250,
   height = 400,
   className,
-  emotionalState,
 }: {
   imageUrl: string;
   width?: number;
   height?: number;
   className?: string;
-  emotionalState?: string;
 }) {
   return (
     <div
@@ -300,13 +319,6 @@ export function StaticCompanionAvatar({
         animate={{ opacity: 1 }}
         transition={{ duration: 0.5, ease: 'easeInOut' }}
       />
-      {emotionalState && (
-        <div className="absolute bottom-2 left-2">
-          <span className="rounded-full bg-black/50 px-2 py-0.5 text-xs text-white backdrop-blur-sm">
-            {emotionalState}
-          </span>
-        </div>
-      )}
     </div>
   );
 }

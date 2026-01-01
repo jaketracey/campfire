@@ -8,9 +8,8 @@ import { nanoid } from 'nanoid';
 import {
   getMemoriesRepository,
   getCompanionsRepository,
-  type MemorySearchResult,
+  type MemoryWithSimilarity,
   type MemoryListFilters,
-  type MemoryStats,
   type PaginatedResult,
 } from '../repositories/index.js';
 import { getEventsService, type EventContext } from './events.js';
@@ -221,7 +220,14 @@ export class MemoriesService {
       throw new Error(`Embedding must have ${this.EMBEDDING_DIMENSION} dimensions`);
     }
 
-    return this.memories.updateEmbedding(memoryId, embedding, tx);
+    await this.memories.updateEmbedding(memoryId, embedding, tx);
+
+    // Fetch and return the updated memory
+    const updated = await this.memories.findById(memoryId, tx);
+    if (!updated) {
+      throw new Error('Memory not found after update');
+    }
+    return updated;
   }
 
   /**
@@ -291,7 +297,7 @@ export class MemoriesService {
     userId: string,
     input: SearchMemoriesInput,
     tx?: TransactionContext
-  ): Promise<MemorySearchResult[]> {
+  ): Promise<MemoryWithSimilarity[]> {
     const validated = SearchMemoriesInputSchema.parse(input);
 
     if (!validated.embedding) {
@@ -305,10 +311,10 @@ export class MemoriesService {
     }
 
     const results = await this.memories.searchByVector(
-      userId,
-      validated.companionId,
-      validated.embedding,
       {
+        userId,
+        companionId: validated.companionId,
+        embedding: validated.embedding,
         limit: validated.limit ?? 20,
         minImportance: validated.minImportance,
         contentTypes: validated.contentTypes,
@@ -319,7 +325,7 @@ export class MemoriesService {
     // Record access for returned memories
     if (results.length > 0) {
       await this.memories.recordAccessBatch(
-        results.map(r => r.memory.id),
+        results.map(r => r.id),
         tx
       );
     }
@@ -344,10 +350,12 @@ export class MemoriesService {
     }
 
     return this.memories.searchByText(
-      userId,
-      companionId,
-      query,
-      options.limit ?? 20,
+      {
+        userId,
+        companionId,
+        query,
+        limit: options.limit ?? 20,
+      },
       tx
     );
   }
@@ -371,10 +379,13 @@ export class MemoriesService {
 
     // Get vector search results
     const searchResults = await this.memories.searchByVector(
-      userId,
-      companionId,
-      queryEmbedding,
-      { limit, minImportance: options.minImportance },
+      {
+        userId,
+        companionId,
+        embedding: queryEmbedding,
+        limit,
+        minImportance: options.minImportance,
+      },
       tx
     );
 
@@ -388,10 +399,9 @@ export class MemoriesService {
     const memoryMap = new Map<string, MemoryWithRelevance>();
 
     for (const result of searchResults) {
-      memoryMap.set(result.memory.id, {
-        ...result.memory,
+      memoryMap.set(result.id, {
+        ...result,
         relevanceScore: result.similarity,
-        distance: result.distance,
       });
     }
 
@@ -448,11 +458,13 @@ export class MemoriesService {
   async getImportantMemories(
     userId: string,
     companionId: string,
-    minImportance: number = 0.7,
+    _minImportance: number = 0.7,
     limit: number = 20,
     tx?: TransactionContext
   ): Promise<Memory[]> {
-    return this.memories.getImportantMemories(userId, companionId, minImportance, limit, tx);
+    // Note: The repository method doesn't support minImportance filter directly,
+    // it returns memories ordered by importance DESC
+    return this.memories.getImportantMemories(userId, companionId, limit, tx);
   }
 
   /**
@@ -469,14 +481,25 @@ export class MemoriesService {
       throw new Error('Memory not found');
     }
 
-    return this.memories.reinforceMemory(memoryId, amount, tx);
+    await this.memories.reinforceMemory(memoryId, amount, tx);
+
+    // Fetch and return the updated memory
+    const updated = await this.memories.findById(memoryId, tx);
+    if (!updated) {
+      throw new Error('Memory not found after reinforcement');
+    }
+    return updated;
   }
 
   /**
    * Apply decay to old memories (background job)
    */
-  async applyDecay(tx?: TransactionContext): Promise<number> {
-    const count = await this.memories.applyDecay(this.DECAY_RATE, tx);
+  async applyDecay(
+    userId: string,
+    companionId: string,
+    tx?: TransactionContext
+  ): Promise<number> {
+    const count = await this.memories.applyDecay(userId, companionId, this.DECAY_RATE, tx);
 
     if (count > 0) {
       logger.debug({ count, decayRate: this.DECAY_RATE }, 'Applied memory decay');
@@ -505,7 +528,7 @@ export class MemoriesService {
     userId: string,
     companionId: string,
     tx?: TransactionContext
-  ): Promise<MemoryStats[]> {
+  ): Promise<Record<MemoryContentType, number>> {
     return this.memories.getStatsByType(userId, companionId, tx);
   }
 
@@ -514,7 +537,7 @@ export class MemoriesService {
    */
   async count(
     userId: string,
-    companionId?: string,
+    companionId: string,
     tx?: TransactionContext
   ): Promise<number> {
     return this.memories.countByUser(userId, companionId, tx);

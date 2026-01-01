@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import { nanoid } from 'nanoid';
 import { Queue } from 'bullmq';
-import type Redis from 'ioredis';
+import type { Redis } from 'ioredis';
 import type { Logger } from 'pino';
 import { createSESClient, type SESClient } from './ses-client.js';
 import {

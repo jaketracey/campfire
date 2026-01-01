@@ -12,6 +12,7 @@ import { requireAuth } from '../middleware/auth.js';
 import { logger } from '../observability/logger.js';
 import { db } from '../db/index.js';
 import { getCompanionsRepository } from '../repositories/companions.js';
+import { getSessionsRepository } from '../repositories/sessions.js';
 import {
   getAppearanceFromSpec,
   getVariationUrl,
@@ -412,6 +413,34 @@ async function getSessionImages(
 }
 
 /**
+ * Get images for a session including anchor images for the companion
+ */
+async function getSessionImagesWithAnchors(
+  userId: string,
+  sessionId: string,
+  companionId: string | null,
+  limit = 50
+): Promise<CompanionImage[]> {
+  // If we have a companion_id, also include anchor images
+  if (companionId) {
+    const anchorSessionId = `anchors-${companionId}`;
+    const results = await db.sql<CompanionImage[]>`
+      SELECT * FROM companion_images
+      WHERE user_id = ${userId}
+        AND (session_id = ${sessionId} OR session_id = ${anchorSessionId})
+      ORDER BY
+        CASE WHEN session_id = ${anchorSessionId} THEN 0 ELSE 1 END,
+        created_at DESC
+      LIMIT ${limit}
+    `;
+    return results;
+  }
+
+  // Fallback to just session images
+  return getSessionImages(userId, sessionId, limit);
+}
+
+/**
  * Refresh presigned URL for an image
  */
 async function refreshPresignedUrl(s3Key: string): Promise<string> {
@@ -611,6 +640,7 @@ export async function imagegenRoutes(app: FastifyInstance): Promise<void> {
   );
 
   // List images for a session (gallery endpoint)
+  // Includes anchor images for the companion so they appear in the gallery
   app.get<{ Params: { sessionId: string }; Querystring: { limit?: string } }>(
     '/gallery/:sessionId',
     { preHandler: requireAuth },
@@ -622,7 +652,13 @@ export async function imagegenRoutes(app: FastifyInstance): Promise<void> {
       const userId = request.user!.userId;
 
       try {
-        const images = await getSessionImages(userId, sessionId, limit);
+        // Get the session to find the companion_id (for including anchor images)
+        const sessionRepo = getSessionsRepository();
+        const session = await sessionRepo.findById(sessionId);
+        const companionId = session?.companion_id || null;
+
+        // Get session images including anchor images for the companion
+        const images = await getSessionImagesWithAnchors(userId, sessionId, companionId, limit);
 
         // Refresh presigned URLs for images (they may have expired)
         const refreshedImages = await Promise.all(
@@ -719,8 +755,8 @@ export async function imagegenRoutes(app: FastifyInstance): Promise<void> {
         'middle-eastern': 'Middle Eastern features',
         'mixed': 'mixed ethnicity',
       };
-      if (appearance.ethnicity && ethnicityMap[appearance.ethnicity]) {
-        basePromptParts.push(ethnicityMap[appearance.ethnicity]);
+      if (appearance.ethnicity && appearance.ethnicity in ethnicityMap) {
+        basePromptParts.push(ethnicityMap[appearance.ethnicity]!);
       }
 
       // Body type mapping
@@ -730,8 +766,8 @@ export async function imagegenRoutes(app: FastifyInstance): Promise<void> {
         'curvy': 'curvy figure',
         'plus-size': 'plus-size figure',
       };
-      if (appearance.bodyType && bodyTypeMap[appearance.bodyType]) {
-        basePromptParts.push(bodyTypeMap[appearance.bodyType]);
+      if (appearance.bodyType && appearance.bodyType in bodyTypeMap) {
+        basePromptParts.push(bodyTypeMap[appearance.bodyType]!);
       }
 
       // Hair color mapping
@@ -742,8 +778,8 @@ export async function imagegenRoutes(app: FastifyInstance): Promise<void> {
         'red': 'red hair',
         'fantasy': 'vibrant fantasy-colored hair',
       };
-      if (appearance.hairColor && hairColorMap[appearance.hairColor]) {
-        basePromptParts.push(hairColorMap[appearance.hairColor]);
+      if (appearance.hairColor && appearance.hairColor in hairColorMap) {
+        basePromptParts.push(hairColorMap[appearance.hairColor]!);
       }
 
       const basePrompt = basePromptParts.join(', ');
@@ -756,7 +792,7 @@ export async function imagegenRoutes(app: FastifyInstance): Promise<void> {
 
       try {
         for (let i = 0; i < anchorStates.length; i++) {
-          const emotionalState = anchorStates[i];
+          const emotionalState = anchorStates[i]!;
           const isPrimary = i === 0;
 
           logger.info({ companionId, emotionalState, isPrimary, index: i }, 'Generating anchor image');
@@ -833,6 +869,25 @@ export async function imagegenRoutes(app: FastifyInstance): Promise<void> {
             // Set as active avatar
             await companionRepo.setActiveAvatar(companionId, avatar.id);
           }
+
+          // Also save to companion_images table for gallery display
+          const anchorSessionId = `anchors-${companionId}`;
+          await saveImageMetadata(
+            userId,
+            anchorSessionId,
+            companionId,
+            s3Key,
+            s3Url,
+            512, // width
+            768, // height
+            imageBuffer.length,
+            emotionalState,
+            style,
+            fullPrompt,
+            cacheKey,
+            latencyMs,
+            provider
+          );
 
           generatedAnchors.push({
             id: avatar.id,
@@ -932,6 +987,10 @@ export async function imagegenRoutes(app: FastifyInstance): Promise<void> {
       const sendSSE = (event: string, data: unknown) => {
         reply.raw.write(`event: ${event}\n`);
         reply.raw.write(`data: ${JSON.stringify(data)}\n\n`);
+        // Force flush to prevent buffering
+        if (typeof (reply.raw as NodeJS.WritableStream & { flush?: () => void }).flush === 'function') {
+          (reply.raw as NodeJS.WritableStream & { flush?: () => void }).flush!();
+        }
       };
 
       // Build base prompt from appearance
@@ -983,6 +1042,16 @@ export async function imagegenRoutes(app: FastifyInstance): Promise<void> {
       // Send initial progress
       sendSSE('progress', { phase: 'starting', total: anchorStates.length, completed: 0 });
 
+      // Start keepalive heartbeat to prevent connection timeout during long image generation
+      const heartbeatInterval = setInterval(() => {
+        try {
+          reply.raw.write(': heartbeat\n\n');
+        } catch {
+          // Connection might be closed
+          clearInterval(heartbeatInterval);
+        }
+      }, 15000); // Every 15 seconds
+
       try {
         for (let i = 0; i < anchorStates.length; i++) {
           const emotionalState: string = anchorStates[i]!;  // We know it exists because we check length
@@ -998,92 +1067,131 @@ export async function imagegenRoutes(app: FastifyInstance): Promise<void> {
 
           logger.info({ companionId, emotionalState, isPrimary, index: i }, 'Generating anchor image (SSE)');
 
-          const fullPrompt = buildPrompt({
-            prompt: basePrompt,
-            emotionalState,
-            personality,
-            style,
-          });
-
-          const { imageBuffer, latencyMs, provider } = await generateWithOrchestrator(
-            fullPrompt,
-            emotionalState,
-            style,
-            512,
-            768,
-            isPrimary ? undefined : primaryAnchorUrl || undefined,
-            isPrimary ? undefined : 0.85
-          );
-
-          const cacheKey = `anchor-${emotionalState}-${Date.now()}`;
-          const s3Key = `companions/${userId}/anchors/${companionId}/${cacheKey}.png`;
-
-          await s3Client.send(
-            new PutObjectCommand({
-              Bucket: S3_MEDIA_BUCKET,
-              Key: s3Key,
-              Body: imageBuffer,
-              ContentType: 'image/png',
-              CacheControl: 'max-age=31536000',
-            })
-          );
-
-          const s3Url = await getSignedUrl(
-            s3Client,
-            new GetObjectCommand({ Bucket: S3_MEDIA_BUCKET, Key: s3Key }),
-            { expiresIn: 604800 }
-          );
-
-          const avatar = await companionRepo.createAvatar({
-            companion_id: companionId,
-            asset_url: s3Url,
-            asset_type: 'identity_anchor',
-            is_active: isPrimary,
-            is_identity_anchor: true,
-            metadata: {
-              emotionalState: emotionalState as string,
+          try {
+            const fullPrompt = buildPrompt({
+              prompt: basePrompt,
+              emotionalState,
+              personality,
               style,
-              appearance,
+            });
+
+            const { imageBuffer, latencyMs, provider } = await generateWithOrchestrator(
+              fullPrompt,
+              emotionalState,
+              style,
+              512,
+              768,
+              isPrimary ? undefined : primaryAnchorUrl || undefined,
+              isPrimary ? undefined : 0.85
+            );
+
+            const cacheKey = `anchor-${emotionalState}-${Date.now()}`;
+            const s3Key = `companions/${userId}/anchors/${companionId}/${cacheKey}.png`;
+
+            await s3Client.send(
+              new PutObjectCommand({
+                Bucket: S3_MEDIA_BUCKET,
+                Key: s3Key,
+                Body: imageBuffer,
+                ContentType: 'image/png',
+                CacheControl: 'max-age=31536000',
+              })
+            );
+
+            const s3Url = await getSignedUrl(
+              s3Client,
+              new GetObjectCommand({ Bucket: S3_MEDIA_BUCKET, Key: s3Key }),
+              { expiresIn: 604800 }
+            );
+
+            const avatar = await companionRepo.createAvatar({
+              companion_id: companionId,
+              asset_url: s3Url,
+              asset_type: 'identity_anchor',
+              is_active: isPrimary,
+              is_identity_anchor: true,
+              metadata: {
+                emotionalState: emotionalState as string,
+                style,
+                appearance,
+                s3Key,
+                s3Bucket: S3_MEDIA_BUCKET,
+              },
+              generation_params: {
+                prompt: fullPrompt,
+                width: 512,
+                height: 768,
+                provider,
+                latencyMs,
+                referenceStrength: isPrimary ? null : 0.85,
+              },
+            });
+
+            if (isPrimary) {
+              primaryAnchorId = avatar.id;
+              primaryAnchorUrl = s3Url;
+              await companionRepo.setActiveAvatar(companionId, avatar.id);
+            }
+
+            // Also save to companion_images table for gallery display
+            // Use a special session_id format for anchor images
+            const anchorSessionId = `anchors-${companionId}`;
+            await saveImageMetadata(
+              userId,
+              anchorSessionId,
+              companionId,
               s3Key,
-              s3Bucket: S3_MEDIA_BUCKET,
-            },
-            generation_params: {
-              prompt: fullPrompt,
-              width: 512,
-              height: 768,
-              provider,
+              s3Url,
+              512, // width
+              768, // height
+              imageBuffer.length,
+              emotionalState,
+              style,
+              fullPrompt,
+              cacheKey,
               latencyMs,
-              referenceStrength: isPrimary ? null : 0.85,
-            },
-          });
+              provider
+            );
 
-          if (isPrimary) {
-            primaryAnchorId = avatar.id;
-            primaryAnchorUrl = s3Url;
-            await companionRepo.setActiveAvatar(companionId, avatar.id);
+            const anchor: AnchorImage = {
+              id: avatar.id,
+              url: s3Url,
+              emotionalState: emotionalState as string,
+              isIdentityAnchor: true,
+            };
+            generatedAnchors.push(anchor);
+
+            // Send the generated anchor immediately
+            sendSSE('anchor', anchor);
+
+            logger.info({
+              companionId,
+              avatarId: avatar.id,
+              emotionalState,
+              latencyMs,
+              provider,
+            }, 'Anchor image generated and streamed');
+          } catch (imageError) {
+            // Log and report individual image failure but continue with others
+            const errorMessage = imageError instanceof Error ? imageError.message : String(imageError);
+            logger.error({ companionId, emotionalState, error: errorMessage }, 'Failed to generate individual anchor image');
+            sendSSE('progress', {
+              phase: 'image_failed',
+              emotionalState,
+              index: i,
+              total: anchorStates.length,
+              completed: generatedAnchors.length,
+              error: errorMessage,
+            });
+            // For primary image failure, we need to stop as we need it for reference
+            if (isPrimary) {
+              throw imageError;
+            }
+            // For non-primary, continue to next image
           }
-
-          const anchor: AnchorImage = {
-            id: avatar.id,
-            url: s3Url,
-            emotionalState: emotionalState as string,
-            isIdentityAnchor: true,
-          };
-          generatedAnchors.push(anchor);
-
-          // Send the generated anchor immediately
-          sendSSE('anchor', anchor);
-
-          logger.info({
-            companionId,
-            avatarId: avatar.id,
-            emotionalState,
-            latencyMs,
-            provider,
-          }, 'Anchor image generated and streamed');
         }
 
-        // Send completion
+        // Send completion (even if some images failed)
         sendSSE('complete', {
           companionId,
           anchors: generatedAnchors,
@@ -1098,6 +1206,9 @@ export async function imagegenRoutes(app: FastifyInstance): Promise<void> {
           message: error instanceof Error ? error.message : 'Unknown error',
           partialAnchors: generatedAnchors,
         });
+      } finally {
+        // Clean up heartbeat
+        clearInterval(heartbeatInterval);
       }
 
       reply.raw.end();

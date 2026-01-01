@@ -1,5 +1,5 @@
 import { Worker, Job } from 'bullmq';
-import type Redis from 'ioredis';
+import type { Redis } from 'ioredis';
 import type { Logger } from 'pino';
 import { format } from 'date-fns';
 import crypto from 'crypto';

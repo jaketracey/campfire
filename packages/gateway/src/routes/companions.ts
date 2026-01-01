@@ -106,46 +106,93 @@ function buildSpec(input: {
 }): CompanionSpec {
   const provided = input.providedSpec || {};
 
-  return {
+  const personality: CompanionSpec['personality'] = {
+    archetype: provided.personality?.archetype || 'companion',
+    traits: provided.personality?.traits || {
+      warmth: 0.7,
+      playfulness: 0.5,
+      directness: 0.5,
+      empathy: 0.7,
+    },
+  };
+  if (provided.personality?.secondary_archetype) {
+    personality.secondary_archetype = provided.personality.secondary_archetype;
+  }
+
+  const visual_style: CompanionSpec['visual_style'] = {
+    style_type: provided.visual_style?.style_type || 'default',
+  };
+  if (provided.visual_style?.appearance) {
+    const app = provided.visual_style.appearance;
+    const appearance: CompanionSpec['visual_style']['appearance'] = {
+      ethnicity: app.ethnicity,
+      bodyType: app.bodyType,
+      hairColor: app.hairColor,
+    };
+    if (app.breastSize !== undefined) appearance.breastSize = app.breastSize;
+    visual_style.appearance = appearance;
+  }
+  if (provided.visual_style?.palette) {
+    visual_style.palette = provided.visual_style.palette;
+  }
+  if (provided.visual_style?.constraints) {
+    visual_style.constraints = provided.visual_style.constraints;
+  }
+
+  const boundaries: CompanionSpec['boundaries'] = {
+    relationship_pacing: provided.boundaries?.relationship_pacing || 'moderate',
+    content_rating: provided.boundaries?.content_rating || 'PG-13',
+  };
+  if (provided.boundaries?.topics_avoid) {
+    boundaries.topics_avoid = provided.boundaries.topics_avoid;
+  }
+  if (provided.boundaries?.safe_topics) {
+    boundaries.safe_topics = provided.boundaries.safe_topics;
+  }
+  if (provided.boundaries?.emotional_depth) {
+    boundaries.emotional_depth = provided.boundaries.emotional_depth;
+  }
+
+  const memory_consent: CompanionSpec['memory_consent'] = {
+    allow_long_term: provided.memory_consent?.allow_long_term ?? true,
+    allow_kg_extraction: provided.memory_consent?.allow_kg_extraction ?? true,
+  };
+  if (provided.memory_consent?.retention_days !== undefined) {
+    memory_consent.retention_days = provided.memory_consent.retention_days;
+  }
+
+  const result: CompanionSpec = {
     identity: {
       name: provided.identity?.name || input.name,
       pronouns: provided.identity?.pronouns || 'they/them',
       address_style: provided.identity?.address_style || 'friendly',
     },
-    personality: {
-      archetype: provided.personality?.archetype || 'companion',
-      secondary_archetype: provided.personality?.secondary_archetype,
-      traits: provided.personality?.traits || {
-        warmth: 0.7,
-        playfulness: 0.5,
-        directness: 0.5,
-        empathy: 0.7,
-      },
-    },
+    personality,
     voice: {
       provider: provided.voice?.provider || 'elevenlabs',
       voice_id: provided.voice?.voice_id || input.voiceId || 'default',
     },
-    visual_style: {
-      style_type: provided.visual_style?.style_type || 'default',
-      appearance: provided.visual_style?.appearance,
-      palette: provided.visual_style?.palette,
-      constraints: provided.visual_style?.constraints,
-    },
-    boundaries: {
-      relationship_pacing: provided.boundaries?.relationship_pacing || 'moderate',
-      topics_avoid: provided.boundaries?.topics_avoid,
-      safe_topics: provided.boundaries?.safe_topics,
-      content_rating: provided.boundaries?.content_rating || 'PG-13',
-      emotional_depth: provided.boundaries?.emotional_depth,
-    },
-    memory_consent: {
-      allow_long_term: provided.memory_consent?.allow_long_term ?? true,
-      allow_kg_extraction: provided.memory_consent?.allow_kg_extraction ?? true,
-      retention_days: provided.memory_consent?.retention_days,
-    },
-    tenets: provided.tenets,
+    visual_style,
+    boundaries,
+    memory_consent,
   };
+
+  if (provided.tenets) {
+    result.tenets = provided.tenets.map((t) => {
+      const tenet: NonNullable<CompanionSpec['tenets']>[number] = {
+        id: t.id,
+        category: t.category,
+        priority: t.priority,
+        rule: t.rule,
+        isNegation: t.isNegation,
+      };
+      if (t.description) tenet.description = t.description;
+      if (t.triggerContexts) tenet.triggerContexts = t.triggerContexts;
+      return tenet;
+    });
+  }
+
+  return result;
 }
 
 /**
@@ -162,13 +209,13 @@ function mapCompanionResponse(companion: {
   created_at: Date;
   updated_at: Date;
 }) {
-  const spec = companion.spec || {};
+  const spec = companion.spec;
   return {
     id: companion.id,
     name: companion.name,
     description: null, // Could be stored in extended spec in the future
-    personality: JSON.stringify(spec.personality || {}),
-    voiceId: spec.voice?.voice_id || null,
+    personality: JSON.stringify(spec?.personality || {}),
+    voiceId: spec?.voice?.voice_id || null,
     avatarUrl: null,
     isPublic: companion.is_public,
     isActive: companion.status === 'active',
@@ -323,8 +370,8 @@ export async function companionsRoutes(app: FastifyInstance): Promise<void> {
     return reply.send({
       companions,
       total: result.total,
-      limit: result.limit,
-      offset: result.offset,
+      limit: parseInt(limit, 10),
+      offset: parseInt(offset, 10),
     });
   });
 
@@ -345,13 +392,14 @@ export async function companionsRoutes(app: FastifyInstance): Promise<void> {
     const input = parseResult.data;
 
     // Build the spec from simplified input, merging with provided spec
-    const spec = buildSpec({
+    const buildSpecInput: Parameters<typeof buildSpec>[0] = {
       name: input.name,
-      description: input.description,
       personality: input.personality,
-      voiceId: input.voiceId,
-      providedSpec: input.spec,
-    });
+    };
+    if (input.description) buildSpecInput.description = input.description;
+    if (input.voiceId) buildSpecInput.voiceId = input.voiceId;
+    if (input.spec) buildSpecInput.providedSpec = input.spec;
+    const spec = buildSpec(buildSpecInput);
 
     const companion = await companionRepo.create({
       user_id: request.user!.userId,
@@ -425,11 +473,11 @@ export async function companionsRoutes(app: FastifyInstance): Promise<void> {
     const input = parseResult.data;
 
     // Update name, status, and isPublic through repository
-    const companion = await companionRepo.update(companionId, {
-      name: input.name,
-      status: input.status as 'draft' | 'active' | 'archived' | undefined,
-      is_public: input.isPublic,
-    });
+    const updateData: Partial<{ name: string; status: 'draft' | 'active' | 'archived'; is_public: boolean }> = {};
+    if (input.name) updateData.name = input.name;
+    if (input.status) updateData.status = input.status;
+    if (input.isPublic !== undefined) updateData.is_public = input.isPublic;
+    const companion = await companionRepo.update(companionId, updateData);
 
     // Track if spec needs updating
     let specUpdated = false;
@@ -445,7 +493,7 @@ export async function companionsRoutes(app: FastifyInstance): Promise<void> {
     if (input.spec?.personality?.traits) {
       newSpec.personality = {
         ...newSpec.personality,
-        traits: { ...newSpec.personality.traits, ...input.spec.personality.traits },
+        traits: { ...newSpec.personality?.traits, ...input.spec.personality.traits },
       };
       specUpdated = true;
     }
@@ -755,6 +803,146 @@ export async function companionsRoutes(app: FastifyInstance): Promise<void> {
       logger.error({ error, companionId }, 'Failed to generate backstory');
       return reply.status(500).send({
         error: 'Backstory generation failed',
+        message: error instanceof Error ? error.message : 'Unknown error',
+      });
+    }
+  });
+
+  /**
+   * GET /companions/:companionId/backstory - Get backstory for companion
+   * Fetches the generated backstory from the knowledge graph
+   */
+  app.get('/:companionId/backstory', { preHandler: requireAuth }, async (request: FastifyRequest, reply: FastifyReply) => {
+    const { companionId } = request.params as { companionId: string };
+    const userId = request.user!.userId;
+
+    try {
+      // Verify companion exists and belongs to user
+      const companion = await companionRepo.findById(companionId);
+      if (!companion) {
+        return reply.status(404).send({ error: 'Companion not found' });
+      }
+      if (companion.user_id !== userId && !companion.is_public) {
+        return reply.status(403).send({ error: 'Access denied' });
+      }
+
+      const _kgRepo = getKnowledgeGraphRepository();
+
+      // Find the backstory entity - it has name 'My Backstory' and metadata.backstory
+      const entities = await db.sql`
+        SELECT * FROM kg_entities
+        WHERE companion_id = ${companionId}
+          AND name = 'My Backstory'
+          AND entity_type = 'concept'
+        ORDER BY created_at DESC
+        LIMIT 1
+      `;
+
+      if (entities.length === 0) {
+        return reply.send({
+          success: true,
+          data: {
+            hasBackstory: false,
+            backstory: null,
+            motivations: [],
+            keyMemories: [],
+            personalityQuirks: [],
+          },
+        });
+      }
+
+      const backstoryEntity = entities[0];
+      const metadata = backstoryEntity.metadata as {
+        backstory?: string;
+        motivations?: string[];
+        key_memories?: string[];
+        personality_quirks?: string[];
+      } | null;
+
+      // Also fetch related entities (motivations, memories, quirks)
+      const relatedEdges = await db.sql`
+        SELECT * FROM kg_edges
+        WHERE source_entity_id = ${backstoryEntity.id}
+      `;
+
+      const relatedEntityIds = relatedEdges.map((e: Record<string, unknown>) => e['target_entity_id'] as string);
+
+      let motivations: string[] = [];
+      let keyMemories: string[] = [];
+      let personalityQuirks: string[] = [];
+
+      if (relatedEntityIds.length > 0) {
+        const relatedEntities = await db.sql`
+          SELECT * FROM kg_entities
+          WHERE id = ANY(${relatedEntityIds})
+        `;
+
+        for (const entity of relatedEntities) {
+          const entityMeta = entity.metadata as { description?: string } | null;
+          const description = entityMeta?.description || entity.name;
+
+          if (entity.entity_type === 'motivation') {
+            motivations.push(description);
+          } else if (entity.entity_type === 'memory') {
+            keyMemories.push(description);
+          } else if (entity.entity_type === 'trait') {
+            personalityQuirks.push(description);
+          }
+        }
+      }
+
+      return reply.send({
+        success: true,
+        data: {
+          hasBackstory: true,
+          backstory: metadata?.backstory || null,
+          motivations,
+          keyMemories,
+          personalityQuirks,
+        },
+      });
+    } catch (error) {
+      logger.error({ error, companionId }, 'Failed to fetch backstory');
+      return reply.status(500).send({
+        error: 'Failed to fetch backstory',
+        message: error instanceof Error ? error.message : 'Unknown error',
+      });
+    }
+  });
+
+  /**
+   * POST /companions/generate-identity - Generate random companion identity
+   * Uses LLM to generate a creative name, pronouns, and backstory
+   */
+  app.post('/generate-identity', { preHandler: requireAuth }, async (request: FastifyRequest, reply: FastifyReply) => {
+    logger.info({ userId: request.user!.userId }, 'Generating random companion identity');
+
+    try {
+      const orchestratorResponse = await fetch(`${ORCHESTRATOR_URL}/identity/generate`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+      });
+
+      if (!orchestratorResponse.ok) {
+        const errorText = await orchestratorResponse.text();
+        logger.error({ status: orchestratorResponse.status, error: errorText }, 'Orchestrator identity generation failed');
+        throw new Error(`Orchestrator error: ${orchestratorResponse.status}`);
+      }
+
+      const result = await orchestratorResponse.json() as {
+        name: string;
+        pronouns: string;
+        backstory: string;
+        latency_ms: number;
+      };
+
+      logger.info({ name: result.name, latencyMs: result.latency_ms }, 'Random identity generated');
+
+      return reply.send(result);
+    } catch (error) {
+      logger.error({ error }, 'Failed to generate random identity');
+      return reply.status(500).send({
+        error: 'Failed to generate identity',
         message: error instanceof Error ? error.message : 'Unknown error',
       });
     }

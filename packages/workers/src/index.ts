@@ -9,7 +9,7 @@ dotenv.config({ path: resolve(__dirname, '../../../.env') });
 
 // Dynamic import to ensure env vars are loaded first
 async function bootstrap() {
-  const { Worker } = await import('bullmq');
+  const { Worker: _Worker } = await import('bullmq');
   const Redis = (await import('ioredis')).default;
   const pino = (await import('pino')).default;
   const { VaultProjectionWorker } = await import('./projections/vault.js');

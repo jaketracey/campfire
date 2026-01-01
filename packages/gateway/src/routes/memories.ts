@@ -472,7 +472,7 @@ export async function memoriesRoutes(app: FastifyInstance): Promise<void> {
           eventId: nanoid(),
           timestamp: new Date().toISOString(),
           userId,
-          sessionId: null,
+          sessionId: 'system',
           turnId: sourceTurnId ?? null,
           traceId: request.id,
           type: 'memory.created',

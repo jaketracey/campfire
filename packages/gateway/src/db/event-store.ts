@@ -369,7 +369,7 @@ export class EventStore {
     const pollIntervalMs = options.pollIntervalMs ?? 1000;
     let lastSequence = options.afterSequence ?? BigInt(0);
 
-    const subscription = { active: true, timer: undefined as NodeJS.Timeout | undefined };
+    const subscription: { active: boolean; timer?: NodeJS.Timeout } = { active: true };
     this.subscriptions.set(subscriptionId, subscription);
 
     const poll = async () => {

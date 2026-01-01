@@ -101,7 +101,7 @@ app.addHook('onResponse', async (request, reply) => {
 });
 
 // Error handler
-app.setErrorHandler((error, request, reply) => {
+app.setErrorHandler((error: Error & { statusCode?: number }, request, reply) => {
   logger.error(
     {
       err: error,

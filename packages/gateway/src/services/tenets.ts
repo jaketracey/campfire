@@ -4,9 +4,14 @@
  */
 
 import { z } from 'zod';
-import { getDb } from '../db/client.js';
+import type postgres from 'postgres';
+import { getDatabase } from '../db/client.js';
 import { logger } from '../observability/logger.js';
 import type { TransactionContext } from '../repositories/types.js';
+
+// Type alias for SQL client that works with both regular queries and transactions
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type SqlClient = postgres.Sql<any>;
 
 // ============================================================================
 // Validation Schemas
@@ -86,7 +91,7 @@ export interface SituationalTenetMatch {
 // ============================================================================
 
 export class TenetsService {
-  private db = getDb();
+  private db: SqlClient = getDatabase();
 
   /**
    * Create a new behavioral tenet
@@ -98,7 +103,7 @@ export class TenetsService {
     tx?: TransactionContext
   ): Promise<Tenet> {
     const validated = CreateTenetInputSchema.parse(input);
-    const sql = tx ?? this.db;
+    const sql = (tx ?? this.db) as SqlClient;
 
     // Enforce max 5 core tenets
     if (validated.priority === 'core') {
@@ -156,7 +161,7 @@ export class TenetsService {
     companionId: string,
     tx?: TransactionContext
   ): Promise<Tenet[]> {
-    const sql = tx ?? this.db;
+    const sql = (tx ?? this.db) as SqlClient;
 
     const result = await sql`
       SELECT * FROM behavioral_tenets
@@ -176,7 +181,7 @@ export class TenetsService {
     companionId: string,
     tx?: TransactionContext
   ): Promise<CoreTenet[]> {
-    const sql = tx ?? this.db;
+    const sql = (tx ?? this.db) as SqlClient;
 
     const result = await sql`
       SELECT id, category, rule, is_negation
@@ -187,11 +192,11 @@ export class TenetsService {
       ORDER BY category, created_at
     `;
 
-    return result.map((row) => ({
-      id: row.id,
+    return result.map((row: Record<string, unknown>) => ({
+      id: row.id as string,
       category: row.category as TenetCategory,
-      rule: row.rule,
-      isNegation: row.is_negation,
+      rule: row.rule as string,
+      isNegation: row.is_negation as boolean,
     }));
   }
 
@@ -205,7 +210,7 @@ export class TenetsService {
     limit: number = 5,
     tx?: TransactionContext
   ): Promise<SituationalTenetMatch[]> {
-    const sql = tx ?? this.db;
+    const sql = (tx ?? this.db) as SqlClient;
 
     // If we have an embedding, use the full search function
     if (queryEmbedding) {
@@ -218,13 +223,13 @@ export class TenetsService {
         )
       `;
 
-      return result.map((row) => ({
-        id: row.id,
+      return result.map((row: Record<string, unknown>) => ({
+        id: row.id as string,
         category: row.category as TenetCategory,
-        rule: row.rule,
-        isNegation: row.is_negation,
+        rule: row.rule as string,
+        isNegation: row.is_negation as boolean,
         matchType: row.match_type as 'context' | 'semantic',
-        similarity: row.similarity,
+        similarity: row.similarity as number,
       }));
     }
 
@@ -244,12 +249,12 @@ export class TenetsService {
       LIMIT ${limit}
     `;
 
-    return result.map((row) => ({
-      id: row.id,
+    return result.map((row: Record<string, unknown>) => ({
+      id: row.id as string,
       category: row.category as TenetCategory,
-      rule: row.rule,
-      isNegation: row.is_negation,
-      matchType: 'context',
+      rule: row.rule as string,
+      isNegation: row.is_negation as boolean,
+      matchType: 'context' as const,
       similarity: 1.0,
     }));
   }
@@ -265,7 +270,7 @@ export class TenetsService {
     tx?: TransactionContext
   ): Promise<Tenet> {
     const validated = UpdateTenetInputSchema.parse(input);
-    const sql = tx ?? this.db;
+    const sql = (tx ?? this.db) as SqlClient;
 
     // Check ownership
     const existing = await sql`
@@ -340,7 +345,7 @@ export class TenetsService {
     tenetId: string,
     tx?: TransactionContext
   ): Promise<void> {
-    const sql = tx ?? this.db;
+    const sql = (tx ?? this.db) as SqlClient;
 
     const result = await sql`
       UPDATE behavioral_tenets
@@ -368,7 +373,7 @@ export class TenetsService {
     tenets: CreateTenetInput[],
     tx?: TransactionContext
   ): Promise<Tenet[]> {
-    const sql = tx ?? this.db;
+    const sql = (tx ?? this.db) as SqlClient;
 
     // Validate all inputs first
     const validatedTenets = tenets.map((t) => CreateTenetInputSchema.parse(t));

@@ -1,5 +1,5 @@
 import { Worker, Job } from 'bullmq';
-import type Redis from 'ioredis';
+import type { Redis } from 'ioredis';
 import type { Logger } from 'pino';
 import Anthropic from '@anthropic-ai/sdk';
 import type { DbClient } from '../db/client.js';
@@ -75,7 +75,7 @@ export class SummaryProjectionWorker {
 
   private async summarizeSession(
     userId: string,
-    companionId: string,
+    _companionId: string,
     sessionId: string
   ): Promise<void> {
     const session = await this.config.db.getSession(sessionId);
@@ -160,7 +160,7 @@ export class SummaryProjectionWorker {
 
   private async summarizeWeekly(
     userId: string,
-    companionId: string,
+    _companionId: string,
     weekStartDate: string
   ): Promise<void> {
     // Similar to daily but aggregates a week's worth of summaries

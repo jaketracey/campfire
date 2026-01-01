@@ -87,6 +87,13 @@ export function GiftsPanel({
   }, [setTokenBalance]);
 
   const fetchGiftHistory = useCallback(async () => {
+    // Validate companionId is a valid UUID
+    const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+    if (!companionId || !uuidRegex.test(companionId)) {
+      console.warn('Invalid companion ID for gift history:', companionId);
+      return;
+    }
+
     setLoadingHistory(true);
     try {
       const history = await getGiftHistory(companionId, 20);
@@ -99,6 +106,13 @@ export function GiftsPanel({
   }, [companionId]);
 
   const handleGenerateGift = useCallback(async () => {
+    // Validate companionId is a valid UUID
+    const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+    if (!companionId || !uuidRegex.test(companionId)) {
+      setError('Invalid companion ID');
+      return;
+    }
+
     setIsLoadingGifts(true);
     setError(null);
     selectGift(null);
@@ -152,7 +166,27 @@ export function GiftsPanel({
 
   const canAffordGift = selectedGift ? tokenBalance >= selectedGift.tokenCost : false;
 
+  // Validate companionId is a valid UUID
+  const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+  const isValidCompanionId = companionId && uuidRegex.test(companionId);
+
   if (!isOpen) return null;
+
+  if (!isValidCompanionId) {
+    return (
+      <div className="fixed bottom-4 right-4 w-[400px] z-50 shadow-2xl rounded-lg border bg-background p-4">
+        <div className="flex items-center justify-between mb-2">
+          <span className="font-semibold text-sm">Gifts</span>
+          <Button variant="ghost" size="icon" className="h-7 w-7" onClick={onClose}>
+            <X className="h-4 w-4" />
+          </Button>
+        </div>
+        <p className="text-sm text-muted-foreground">
+          Unable to load gifts. Please refresh the page.
+        </p>
+      </div>
+    );
+  }
 
   return (
     <div className="fixed bottom-4 right-4 w-[400px] max-h-[500px] z-50 shadow-2xl rounded-lg border bg-background">

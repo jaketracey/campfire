@@ -125,10 +125,7 @@ export async function knowledgeGraphRoutes(app: FastifyInstance): Promise<void> 
   /**
    * GET /knowledge-graph/entities/:entityId - Get a specific entity
    */
-  app.get('/entities/:entityId', { preHandler: requireAuth }, async (
-    request: FastifyRequest<{ Params: { entityId: string } }>,
-    reply: FastifyReply
-  ) => {
+  app.get<{ Params: { entityId: string } }>('/entities/:entityId', { preHandler: requireAuth }, async (request, reply) => {
     return withSpan('kg.getEntity', async (span) => {
       const user = request.user!;
       const { entityId } = request.params;
@@ -254,9 +251,9 @@ export async function knowledgeGraphRoutes(app: FastifyInstance): Promise<void> 
   /**
    * GET /knowledge-graph/subgraph/:entityId - Get subgraph around an entity
    */
-  app.get('/subgraph/:entityId', { preHandler: requireAuth }, async (
-    request: FastifyRequest<{ Params: { entityId: string } }>,
-    reply: FastifyReply
+  app.get<{ Params: { entityId: string } }>('/subgraph/:entityId', { preHandler: requireAuth }, async (
+    request,
+    reply
   ) => {
     return withSpan('kg.getSubgraph', async (span) => {
       const user = request.user!;
@@ -459,7 +456,7 @@ export async function knowledgeGraphRoutes(app: FastifyInstance): Promise<void> 
           eventId: nanoid(),
           timestamp: new Date().toISOString(),
           userId,
-          sessionId: null,
+          sessionId: 'system',
           turnId: null,
           traceId: request.id,
           type: 'kg.proposal.processed',
