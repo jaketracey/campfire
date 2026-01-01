@@ -7,12 +7,14 @@ from uuid import UUID
 import structlog
 
 from orchestrator.models.conversation import (
+    BehavioralTenet,
     CompanionSpec,
     ConversationContext,
     ConversationTurn,
     Message,
     MessageRole,
     SessionSummary,
+    SituationalTenetMatch,
 )
 from orchestrator.models.memory import LongTermMemory, MemoryQuery
 from orchestrator.prompts.manager import PromptManager
@@ -48,6 +50,7 @@ class ContextBuilder:
         long_term_memories: list[LongTermMemory] | None = None,
         safety_constraints: list[str] | None = None,
         active_tools: list[str] | None = None,
+        situational_tenets: list[SituationalTenetMatch] | None = None,
         prompt_version: str = "1.0.0",
         policy_version: str = "1.0.0",
     ) -> ConversationContext:
@@ -61,6 +64,7 @@ class ContextBuilder:
             long_term_memories=long_term_memories or [],
             safety_constraints=safety_constraints or [],
             active_tools=active_tools or companion_spec.allowed_tools,
+            situational_tenets=situational_tenets or [],
             prompt_version=prompt_version,
             policy_version=policy_version,
         )
@@ -71,12 +75,17 @@ class ContextBuilder:
         session_summary: SessionSummary | None = None,
         long_term_memories: list[LongTermMemory] | None = None,
         safety_constraints: list[str] | None = None,
+        situational_tenets: list[SituationalTenetMatch] | None = None,
         prompt_version: str = "1.0.0",
     ) -> str:
         """Build the system prompt from companion spec and context."""
+        # Use adult template for adult safety level
+        is_adult = companion_spec.safety_level == "adult"
+        template_name = "system_base_adult" if is_adult else "system_base"
+
         # Get base prompt template
         base_prompt = self.prompt_manager.get_prompt(
-            "system_base",
+            template_name,
             version=prompt_version,
             companion_name=companion_spec.name,
             personality_traits=", ".join(companion_spec.personality_traits),
@@ -86,6 +95,16 @@ class ContextBuilder:
 
         # Add custom companion system prompt
         full_prompt = f"{base_prompt}\n\n{companion_spec.system_prompt}"
+
+        # Add core behavioral tenets from companion spec
+        if companion_spec.core_tenets:
+            core_tenets_section = self._format_core_tenets(companion_spec.core_tenets)
+            full_prompt += f"\n\n{core_tenets_section}"
+
+        # Add situational tenets matched for this message
+        if situational_tenets:
+            situational_section = self._format_situational_tenets(situational_tenets)
+            full_prompt += f"\n\n{situational_section}"
 
         # Add session context if available
         if session_summary:
@@ -118,6 +137,7 @@ class ContextBuilder:
             session_summary=context.session_summary,
             long_term_memories=context.long_term_memories,
             safety_constraints=context.safety_constraints,
+            situational_tenets=context.situational_tenets,
             prompt_version=context.prompt_version,
         )
         messages.append({"role": "system", "content": system_prompt})
@@ -212,6 +232,55 @@ class ContextBuilder:
         for constraint in constraints:
             lines.append(f"- {constraint}")
         lines.append("</safety_constraints>")
+
+        return "\n".join(lines)
+
+    def _format_core_tenets(self, tenets: list[BehavioralTenet]) -> str:
+        """Format core behavioral tenets for the system prompt.
+
+        Core tenets are always included in the prompt and represent the
+        fundamental behavioral rules the companion must follow.
+        """
+        if not tenets:
+            return ""
+
+        lines = ["<behavioral_rules>"]
+        lines.append("These are your core behavioral rules. Follow them in all interactions:")
+        lines.append("")
+
+        for tenet in tenets:
+            prefix = "NEVER:" if tenet.is_negation else ""
+            category_label = tenet.category.value.upper()
+            if prefix:
+                lines.append(f"- [{category_label}] {prefix} {tenet.rule}")
+            else:
+                lines.append(f"- [{category_label}] {tenet.rule}")
+
+        lines.append("</behavioral_rules>")
+
+        return "\n".join(lines)
+
+    def _format_situational_tenets(self, tenets: list[SituationalTenetMatch]) -> str:
+        """Format situational tenets matched for the current context.
+
+        Situational tenets are dynamically retrieved based on the conversation
+        context and provide guidance specific to the current interaction.
+        """
+        if not tenets:
+            return ""
+
+        lines = ["<situational_guidance>"]
+        lines.append("Based on this conversation's context, also consider:")
+        lines.append("")
+
+        for tenet in tenets:
+            prefix = "Avoid:" if tenet.is_negation else ""
+            if prefix:
+                lines.append(f"- {prefix} {tenet.rule}")
+            else:
+                lines.append(f"- {tenet.rule}")
+
+        lines.append("</situational_guidance>")
 
         return "\n".join(lines)
 

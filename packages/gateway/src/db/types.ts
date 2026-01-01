@@ -52,6 +52,9 @@ export interface EventInsert {
 // User Types
 // ============================================================================
 
+export type UserRole = 'user' | 'admin';
+export type UserStatus = 'active' | 'suspended' | 'deleted';
+
 export interface User {
   id: UUID;
   email: string;
@@ -59,11 +62,12 @@ export interface User {
   email_verified: boolean;
   email_verified_at: Timestamp | null;
   status: UserStatus;
+  role: UserRole;
+  last_login_at: Timestamp | null;
+  login_count: number;
   created_at: Timestamp;
   updated_at: Timestamp;
 }
-
-export type UserStatus = 'active' | 'suspended' | 'deleted';
 
 export interface UserInsert {
   id?: UUID;
@@ -71,6 +75,7 @@ export interface UserInsert {
   password_hash: string;
   email_verified?: boolean;
   status?: UserStatus;
+  role?: UserRole;
 }
 
 export interface UserProfile {
@@ -116,6 +121,70 @@ export interface UserMFAInsert {
   secret_encrypted: string;
   enabled?: boolean;
   backup_codes_hash?: string[] | null;
+}
+
+// ============================================================================
+// Referral Types
+// ============================================================================
+
+export type InviteStatus = 'pending' | 'accepted' | 'expired' | 'revoked';
+
+export interface InviteCode {
+  id: UUID;
+  user_id: UUID;
+  code: string;
+  uses_count: number;
+  max_uses: number | null;
+  is_active: boolean;
+  created_at: Timestamp;
+  updated_at: Timestamp;
+  expires_at: Timestamp | null;
+}
+
+export interface InviteCodeInsert {
+  user_id: UUID;
+  code?: string;
+  max_uses?: number | null;
+  expires_at?: Timestamp | null;
+}
+
+export interface UserReferral {
+  id: UUID;
+  referred_user_id: UUID;
+  referrer_user_id: UUID;
+  invite_code_id: UUID;
+  code_used: string;
+  converted_at: Timestamp | null;
+  created_at: Timestamp;
+}
+
+export interface UserReferralInsert {
+  referred_user_id: UUID;
+  referrer_user_id: UUID;
+  invite_code_id: UUID;
+  code_used: string;
+}
+
+export interface PendingInvite {
+  id: UUID;
+  email: string;
+  email_normalized: string;
+  token: string;
+  invited_by_user_id: UUID | null;
+  status: InviteStatus;
+  message: string | null;
+  created_at: Timestamp;
+  expires_at: Timestamp;
+  accepted_at: Timestamp | null;
+  accepted_by_user_id: UUID | null;
+}
+
+export interface PendingInviteInsert {
+  email: string;
+  token: string;
+  invited_by_user_id?: UUID | null;
+  message?: string | null;
+  expires_at?: Timestamp;
 }
 
 // ============================================================================

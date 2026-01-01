@@ -6,6 +6,8 @@
 import type { FastifyInstance } from 'fastify';
 import { authRoutes } from './auth.js';
 import { usersRoutes } from './users.js';
+import { adminRoutes } from './admin.js';
+import { referralsRoutes } from './referrals.js';
 import { companionsRoutes } from './companions.js';
 import { sessionsRoutes } from './sessions.js';
 import { memoriesRoutes } from './memories.js';
@@ -28,6 +30,12 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
 
       // User management routes
       await api.register(usersRoutes, { prefix: '/users' });
+
+      // Admin routes
+      await api.register(adminRoutes, { prefix: '/admin' });
+
+      // Referral routes
+      await api.register(referralsRoutes, { prefix: '/referrals' });
 
       // Companion routes
       await api.register(companionsRoutes, { prefix: '/companions' });

@@ -1,5 +1,6 @@
 import { Flame } from 'lucide-react';
 import Link from 'next/link';
+import { CompanionBackground } from '@/components/onboarding/companion-background';
 
 export default function OnboardLayout({
   children,
@@ -7,9 +8,10 @@ export default function OnboardLayout({
   children: React.ReactNode;
 }) {
   return (
-    <div className="min-h-screen flex flex-col">
+    <div className="min-h-screen flex flex-col relative">
+      <CompanionBackground />
       {/* Header */}
-      <header className="flex items-center justify-between p-6">
+      <header className="fixed top-0 left-0 right-0 z-50 flex items-center justify-between p-6">
         <Link href="/" className="flex items-center gap-2">
           <Flame className="h-8 w-8 text-campfire-500" />
           <span className="text-xl font-bold">Campfire</span>
@@ -17,15 +19,9 @@ export default function OnboardLayout({
       </header>
 
       {/* Main content */}
-      <main className="flex-1 flex flex-col items-center justify-center px-4 pb-12">
-        <div className="w-full max-w-2xl">{children}</div>
+      <main className="flex-1 flex flex-col items-center justify-center pb-12 w-full z-10">
+        <div className="w-full">{children}</div>
       </main>
-
-      {/* Decorative background */}
-      <div className="fixed inset-0 -z-10 overflow-hidden">
-        <div className="absolute top-1/4 -left-1/4 w-1/2 h-1/2 bg-campfire-500/10 rounded-full blur-3xl" />
-        <div className="absolute bottom-1/4 -right-1/4 w-1/2 h-1/2 bg-ember-500/10 rounded-full blur-3xl" />
-      </div>
     </div>
   );
 }

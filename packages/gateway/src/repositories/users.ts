@@ -13,9 +13,46 @@ import type {
   UserMFA,
   UserMFAInsert,
   UserStatus,
+  UserRole,
   MFAMethod,
   JSONObject,
 } from '../db/types.js';
+
+/**
+ * OAuth provider type
+ */
+export type OAuthProvider = 'google' | 'github' | 'apple';
+
+/**
+ * User OAuth account record
+ */
+export interface UserOAuthAccount {
+  id: string;
+  userId: string;
+  provider: OAuthProvider;
+  providerUserId: string;
+  providerEmail: string | null;
+  accessToken: string | null;
+  refreshToken: string | null;
+  tokenExpiresAt: Date | null;
+  profileData: JSONObject | null;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+/**
+ * User OAuth account insert
+ */
+export interface UserOAuthAccountInsert {
+  userId: string;
+  provider: OAuthProvider;
+  providerUserId: string;
+  providerEmail?: string | null;
+  accessToken?: string | null;
+  refreshToken?: string | null;
+  tokenExpiresAt?: Date | null;
+  profileData?: JSONObject | null;
+}
 import type { TransactionContext, PaginationOptions, PaginatedResult } from './types.js';
 import { NotFoundError, DuplicateError, isUniqueViolation, wrapDatabaseError } from './errors.js';
 
@@ -60,6 +97,22 @@ export interface UserListFilters extends PaginationOptions {
   status?: UserStatus;
   emailVerified?: boolean;
   search?: string;
+  role?: UserRole;
+}
+
+/**
+ * User with companion stats for admin listing
+ */
+export interface UserWithStats {
+  id: string;
+  email: string;
+  role: UserRole;
+  status: UserStatus;
+  emailVerified: boolean;
+  lastLoginAt: Date | null;
+  loginCount: number;
+  companionCount: number;
+  createdAt: Date;
 }
 
 export class UsersRepository {
@@ -76,7 +129,7 @@ export class UsersRepository {
     const result = await db`
       SELECT
         id, email, email_normalized, password_hash, email_verified,
-        email_verified_at, status, last_login_at, login_count,
+        email_verified_at, status, role, last_login_at, login_count,
         failed_login_count, locked_until, created_at, updated_at
       FROM users
       WHERE id = ${id}
@@ -92,7 +145,7 @@ export class UsersRepository {
     const result = await db`
       SELECT
         id, email, email_normalized, password_hash, email_verified,
-        email_verified_at, status, last_login_at, login_count,
+        email_verified_at, status, role, last_login_at, login_count,
         failed_login_count, locked_until, created_at, updated_at
       FROM users
       WHERE email_normalized = ${normalizedEmail}
@@ -107,16 +160,17 @@ export class UsersRepository {
     try {
       const result = await db`
         INSERT INTO users (
-          email, password_hash, email_verified, status
+          email, password_hash, email_verified, status, role
         ) VALUES (
           ${data.email},
           ${data.password_hash},
           ${data.email_verified ?? false},
-          ${data.status ?? 'active'}
+          ${data.status ?? 'active'},
+          ${data.role ?? 'user'}
         )
         RETURNING
           id, email, email_normalized, password_hash, email_verified,
-          email_verified_at, status, last_login_at, login_count,
+          email_verified_at, status, role, last_login_at, login_count,
           failed_login_count, locked_until, created_at, updated_at
       `;
 
@@ -143,11 +197,12 @@ export class UsersRepository {
       SET
         password_hash = COALESCE(${data.password_hash ?? null}, password_hash),
         email_verified = COALESCE(${data.email_verified ?? null}, email_verified),
-        status = COALESCE(${data.status ?? null}, status)
+        status = COALESCE(${data.status ?? null}, status),
+        role = COALESCE(${data.role ?? null}, role)
       WHERE id = ${id}
       RETURNING
         id, email, email_normalized, password_hash, email_verified,
-        email_verified_at, status, last_login_at, login_count,
+        email_verified_at, status, role, last_login_at, login_count,
         failed_login_count, locked_until, created_at, updated_at
     `;
 
@@ -184,7 +239,7 @@ export class UsersRepository {
       WHERE id = ${id}
       RETURNING
         id, email, email_normalized, password_hash, email_verified,
-        email_verified_at, status, last_login_at, login_count,
+        email_verified_at, status, role, last_login_at, login_count,
         failed_login_count, locked_until, created_at, updated_at
     `;
 
@@ -258,7 +313,7 @@ export class UsersRepository {
     const result = await db`
       SELECT
         id, email, email_normalized, password_hash, email_verified,
-        email_verified_at, status, last_login_at, login_count,
+        email_verified_at, status, role, last_login_at, login_count,
         failed_login_count, locked_until, created_at, updated_at
       FROM users
       ${whereClause}
@@ -271,6 +326,120 @@ export class UsersRepository {
     const data = result.slice(0, limit).map(row => this.mapUser(row));
 
     return { data, hasMore };
+  }
+
+  /**
+   * List users with companion count stats (for admin panel)
+   */
+  async listWithStats(
+    filters: UserListFilters = {},
+    tx?: TransactionContext
+  ): Promise<PaginatedResult<UserWithStats>> {
+    const db = this.getSql(tx);
+    const limit = filters.limit ?? 50;
+    const offset = filters.offset ?? 0;
+
+    const conditions: ReturnType<typeof db>[] = [db`u.status != 'deleted'`];
+
+    if (filters.status) {
+      conditions.push(db`u.status = ${filters.status}`);
+    }
+    if (filters.role) {
+      conditions.push(db`u.role = ${filters.role}`);
+    }
+    if (filters.emailVerified !== undefined) {
+      conditions.push(db`u.email_verified = ${filters.emailVerified}`);
+    }
+    if (filters.search) {
+      conditions.push(db`u.email ILIKE ${'%' + filters.search + '%'}`);
+    }
+
+    const whereClause = db`WHERE ${conditions.reduce((acc, cond, i) => (i === 0 ? cond : db`${acc} AND ${cond}`))}`;
+
+    const result = await db`
+      SELECT
+        u.id,
+        u.email,
+        u.role,
+        u.status,
+        u.email_verified,
+        u.last_login_at,
+        u.login_count,
+        u.created_at,
+        COALESCE(c.companion_count, 0)::int as companion_count
+      FROM users u
+      LEFT JOIN (
+        SELECT user_id, COUNT(*)::int as companion_count
+        FROM companions
+        WHERE status != 'archived'
+        GROUP BY user_id
+      ) c ON c.user_id = u.id
+      ${whereClause}
+      ORDER BY u.created_at DESC
+      LIMIT ${limit + 1}
+      OFFSET ${offset}
+    `;
+
+    const hasMore = result.length > limit;
+    const data = result.slice(0, limit).map(row => this.mapUserWithStats(row));
+
+    return { data, hasMore };
+  }
+
+  /**
+   * Update user role
+   */
+  async updateRole(
+    id: string,
+    role: UserRole,
+    tx?: TransactionContext
+  ): Promise<User> {
+    const db = this.getSql(tx);
+
+    const result = await db`
+      UPDATE users
+      SET role = ${role}
+      WHERE id = ${id}
+      RETURNING
+        id, email, email_normalized, password_hash, email_verified,
+        email_verified_at, status, role, last_login_at, login_count,
+        failed_login_count, locked_until, created_at, updated_at
+    `;
+
+    if (!result[0]) {
+      throw new NotFoundError('User', id);
+    }
+
+    logger.info({ userId: id, role }, 'User role updated');
+    return this.mapUser(result[0]);
+  }
+
+  /**
+   * Update user status (for suspend/unsuspend)
+   */
+  async updateStatus(
+    id: string,
+    status: UserStatus,
+    tx?: TransactionContext
+  ): Promise<User> {
+    const db = this.getSql(tx);
+
+    const result = await db`
+      UPDATE users
+      SET status = ${status}
+      WHERE id = ${id}
+      RETURNING
+        id, email, email_normalized, password_hash, email_verified,
+        email_verified_at, status, role, last_login_at, login_count,
+        failed_login_count, locked_until, created_at, updated_at
+    `;
+
+    if (!result[0]) {
+      throw new NotFoundError('User', id);
+    }
+
+    logger.info({ userId: id, status }, 'User status updated');
+    return this.mapUser(result[0]);
   }
 
   // ===========================================================================
@@ -552,6 +721,141 @@ export class UsersRepository {
   }
 
   // ===========================================================================
+  // User OAuth Accounts
+  // ===========================================================================
+
+  async findOAuthAccount(
+    provider: OAuthProvider,
+    providerUserId: string,
+    tx?: TransactionContext
+  ): Promise<UserOAuthAccount | null> {
+    const db = this.getSql(tx);
+
+    const result = await db`
+      SELECT
+        id, user_id, provider, provider_user_id, provider_email,
+        access_token, refresh_token, token_expires_at, profile_data,
+        created_at, updated_at
+      FROM user_oauth_accounts
+      WHERE provider = ${provider} AND provider_user_id = ${providerUserId}
+    `;
+
+    return result[0] ? this.mapUserOAuthAccount(result[0]) : null;
+  }
+
+  async findOAuthAccountByUserAndProvider(
+    userId: string,
+    provider: OAuthProvider,
+    tx?: TransactionContext
+  ): Promise<UserOAuthAccount | null> {
+    const db = this.getSql(tx);
+
+    const result = await db`
+      SELECT
+        id, user_id, provider, provider_user_id, provider_email,
+        access_token, refresh_token, token_expires_at, profile_data,
+        created_at, updated_at
+      FROM user_oauth_accounts
+      WHERE user_id = ${userId} AND provider = ${provider}
+    `;
+
+    return result[0] ? this.mapUserOAuthAccount(result[0]) : null;
+  }
+
+  async findOAuthAccountsByUserId(userId: string, tx?: TransactionContext): Promise<UserOAuthAccount[]> {
+    const db = this.getSql(tx);
+
+    const result = await db`
+      SELECT
+        id, user_id, provider, provider_user_id, provider_email,
+        access_token, refresh_token, token_expires_at, profile_data,
+        created_at, updated_at
+      FROM user_oauth_accounts
+      WHERE user_id = ${userId}
+    `;
+
+    return result.map(row => this.mapUserOAuthAccount(row));
+  }
+
+  async createOAuthAccount(data: UserOAuthAccountInsert, tx?: TransactionContext): Promise<UserOAuthAccount> {
+    const db = this.getSql(tx);
+
+    try {
+      const result = await db`
+        INSERT INTO user_oauth_accounts (
+          user_id, provider, provider_user_id, provider_email,
+          access_token, refresh_token, token_expires_at, profile_data
+        ) VALUES (
+          ${data.userId},
+          ${data.provider},
+          ${data.providerUserId},
+          ${data.providerEmail ?? null},
+          ${data.accessToken ?? null},
+          ${data.refreshToken ?? null},
+          ${data.tokenExpiresAt ?? null},
+          ${data.profileData ? JSON.stringify(data.profileData) : null}
+        )
+        RETURNING
+          id, user_id, provider, provider_user_id, provider_email,
+          access_token, refresh_token, token_expires_at, profile_data,
+          created_at, updated_at
+      `;
+
+      const account = this.mapUserOAuthAccount(result[0]!);
+      logger.debug({ userId: data.userId, provider: data.provider }, 'OAuth account created');
+      return account;
+    } catch (error) {
+      if (isUniqueViolation(error)) {
+        throw new DuplicateError('UserOAuthAccount', 'provider', `${data.provider}:${data.providerUserId}`);
+      }
+      throw wrapDatabaseError(error, 'userOAuthAccounts.create');
+    }
+  }
+
+  async updateOAuthAccount(
+    id: string,
+    data: Partial<Omit<UserOAuthAccountInsert, 'userId' | 'provider' | 'providerUserId'>>,
+    tx?: TransactionContext
+  ): Promise<UserOAuthAccount> {
+    const db = this.getSql(tx);
+
+    const result = await db`
+      UPDATE user_oauth_accounts
+      SET
+        provider_email = COALESCE(${data.providerEmail ?? null}, provider_email),
+        access_token = COALESCE(${data.accessToken ?? null}, access_token),
+        refresh_token = COALESCE(${data.refreshToken ?? null}, refresh_token),
+        token_expires_at = COALESCE(${data.tokenExpiresAt ?? null}, token_expires_at),
+        profile_data = COALESCE(${data.profileData ? JSON.stringify(data.profileData) : null}, profile_data)
+      WHERE id = ${id}
+      RETURNING
+        id, user_id, provider, provider_user_id, provider_email,
+        access_token, refresh_token, token_expires_at, profile_data,
+        created_at, updated_at
+    `;
+
+    if (!result[0]) {
+      throw new NotFoundError('UserOAuthAccount', id);
+    }
+
+    return this.mapUserOAuthAccount(result[0]);
+  }
+
+  async deleteOAuthAccount(id: string, tx?: TransactionContext): Promise<void> {
+    const db = this.getSql(tx);
+
+    const result = await db`
+      DELETE FROM user_oauth_accounts
+      WHERE id = ${id}
+      RETURNING id
+    `;
+
+    if (!result[0]) {
+      throw new NotFoundError('UserOAuthAccount', id);
+    }
+  }
+
+  // ===========================================================================
   // Row Mappers
   // ===========================================================================
 
@@ -563,8 +867,25 @@ export class UsersRepository {
       email_verified: row['email_verified'] as boolean,
       email_verified_at: row['email_verified_at'] as Date | null,
       status: row['status'] as UserStatus,
+      role: row['role'] as UserRole,
+      last_login_at: row['last_login_at'] as Date | null,
+      login_count: row['login_count'] as number,
       created_at: row['created_at'] as Date,
       updated_at: row['updated_at'] as Date,
+    };
+  }
+
+  private mapUserWithStats(row: Record<string, unknown>): UserWithStats {
+    return {
+      id: row['id'] as string,
+      email: row['email'] as string,
+      role: row['role'] as UserRole,
+      status: row['status'] as UserStatus,
+      emailVerified: row['email_verified'] as boolean,
+      lastLoginAt: row['last_login_at'] as Date | null,
+      loginCount: row['login_count'] as number,
+      companionCount: row['companion_count'] as number,
+      createdAt: row['created_at'] as Date,
     };
   }
 
@@ -608,6 +929,22 @@ export class UsersRepository {
       expiresAt: row['expires_at'] as Date,
       revokedAt: row['revoked_at'] as Date | null,
       createdAt: row['created_at'] as Date,
+    };
+  }
+
+  private mapUserOAuthAccount(row: Record<string, unknown>): UserOAuthAccount {
+    return {
+      id: row['id'] as string,
+      userId: row['user_id'] as string,
+      provider: row['provider'] as OAuthProvider,
+      providerUserId: row['provider_user_id'] as string,
+      providerEmail: row['provider_email'] as string | null,
+      accessToken: row['access_token'] as string | null,
+      refreshToken: row['refresh_token'] as string | null,
+      tokenExpiresAt: row['token_expires_at'] as Date | null,
+      profileData: row['profile_data'] as JSONObject | null,
+      createdAt: row['created_at'] as Date,
+      updatedAt: row['updated_at'] as Date,
     };
   }
 }

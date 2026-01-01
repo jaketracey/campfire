@@ -1,8 +1,7 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useCallback } from 'react';
 import Link from 'next/link';
-import { useRouter } from 'next/navigation';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
@@ -19,6 +18,8 @@ import {
   CardTitle,
 } from '@/components/ui/card';
 import { useToast } from '@/hooks/use-toast';
+import { useAuth } from '@/hooks/use-auth';
+import { GoogleSignInButton } from '@/components/auth/google-sign-in-button';
 
 const loginSchema = z.object({
   email: z.string().email('Please enter a valid email address'),
@@ -28,10 +29,48 @@ const loginSchema = z.object({
 type LoginFormData = z.infer<typeof loginSchema>;
 
 export default function LoginPage() {
-  const router = useRouter();
   const { toast } = useToast();
+  const { login, loginWithGoogle, isLoading: authLoading } = useAuth();
   const [showPassword, setShowPassword] = useState(false);
-  const [isLoading, setIsLoading] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isGoogleLoading, setIsGoogleLoading] = useState(false);
+
+  const isLoading = authLoading || isSubmitting || isGoogleLoading;
+
+  const handleGoogleSuccess = useCallback(
+    async (idToken: string) => {
+      setIsGoogleLoading(true);
+      try {
+        await loginWithGoogle({ idToken }, false);
+        toast({
+          title: 'Welcome back!',
+          description: 'You have successfully signed in with Google.',
+        });
+      } catch (error) {
+        const message =
+          error instanceof Error ? error.message : 'Google sign-in failed. Please try again.';
+        toast({
+          title: 'Sign-in failed',
+          description: message,
+          variant: 'destructive',
+        });
+      } finally {
+        setIsGoogleLoading(false);
+      }
+    },
+    [loginWithGoogle, toast]
+  );
+
+  const handleGoogleError = useCallback(
+    (error: Error) => {
+      toast({
+        title: 'Sign-in failed',
+        description: error.message || 'Google sign-in failed. Please try again.',
+        variant: 'destructive',
+      });
+    },
+    [toast]
+  );
 
   const {
     register,
@@ -42,28 +81,32 @@ export default function LoginPage() {
   });
 
   const onSubmit = async (data: LoginFormData) => {
-    setIsLoading(true);
+    setIsSubmitting(true);
     try {
-      // TODO: Implement actual login API call
-      console.log('Login data:', data);
+      const result = await login(data);
 
-      // Simulate API call
-      await new Promise((resolve) => setTimeout(resolve, 1000));
+      if (result.requiresMFA) {
+        toast({
+          title: 'Two-factor authentication required',
+          description: 'Please enter your verification code.',
+        });
+        return;
+      }
 
       toast({
         title: 'Welcome back!',
         description: 'You have successfully logged in.',
       });
-
-      router.push('/dashboard');
     } catch (error) {
+      const message =
+        error instanceof Error ? error.message : 'Please check your credentials and try again.';
       toast({
         title: 'Login failed',
-        description: 'Please check your credentials and try again.',
+        description: message,
         variant: 'destructive',
       });
     } finally {
-      setIsLoading(false);
+      setIsSubmitting(false);
     }
   };
 
@@ -137,9 +180,28 @@ export default function LoginPage() {
             size="lg"
             disabled={isLoading}
           >
-            {isLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+            {isSubmitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
             Sign in
           </Button>
+
+          <div className="relative w-full">
+            <div className="absolute inset-0 flex items-center">
+              <span className="w-full border-t" />
+            </div>
+            <div className="relative flex justify-center text-xs uppercase">
+              <span className="bg-card px-2 text-muted-foreground">
+                Or continue with
+              </span>
+            </div>
+          </div>
+
+          <GoogleSignInButton
+            onSuccess={handleGoogleSuccess}
+            onError={handleGoogleError}
+            text="signin"
+            disabled={isLoading}
+          />
+
           <p className="text-sm text-muted-foreground text-center">
             Don&apos;t have an account?{' '}
             <Link href="/signup" className="text-primary hover:underline">

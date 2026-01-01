@@ -36,10 +36,24 @@ export {
 } from './users.js';
 export type {
   UserWithProfile,
+  UserWithStats,
   UserSession,
   UserSessionInsert,
   UserListFilters,
+  OAuthProvider,
+  UserOAuthAccount,
+  UserOAuthAccountInsert,
 } from './users.js';
+
+// Referrals repository
+export {
+  ReferralsRepository,
+  getReferralsRepository,
+} from './referrals.js';
+export type {
+  ReferralStats,
+  ReferralWithUser,
+} from './referrals.js';
 
 // Companions repository
 export {
@@ -128,6 +142,7 @@ export type {
  */
 export function initializeRepositories(): void {
   getUsersRepository();
+  getReferralsRepository();
   getCompanionsRepository();
   getSessionsRepository();
   getMemoriesRepository();
@@ -143,6 +158,7 @@ export function initializeRepositories(): void {
 export function getRepositories() {
   return {
     users: getUsersRepository(),
+    referrals: getReferralsRepository(),
     companions: getCompanionsRepository(),
     sessions: getSessionsRepository(),
     memories: getMemoriesRepository(),

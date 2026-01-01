@@ -32,6 +32,7 @@ class SafetyCategory(str, Enum):
 class SafetyLevel(str, Enum):
     """Safety enforcement levels."""
 
+    ADULT = "adult"  # For adult apps - only blocks illegal content
     PERMISSIVE = "permissive"
     STANDARD = "standard"
     STRICT = "strict"
@@ -68,9 +69,15 @@ _OUTPUT_PATTERNS: dict[SafetyCategory, list[re.Pattern[str]]] = {
 
 # Default safety constraints by level
 _SAFETY_CONSTRAINTS: dict[SafetyLevel, list[str]] = {
+    SafetyLevel.ADULT: [
+        # Minimal constraints for adult apps - only truly illegal content
+        "Do not generate content that sexualizes minors (characters must be 18+)",
+        "Do not provide instructions for creating weapons of mass destruction",
+        "Do not encourage real-world violence against specific individuals",
+    ],
     SafetyLevel.PERMISSIVE: [
-        "Do not provide instructions for creating weapons or explosives",
         "Do not generate content that sexualizes minors",
+        "Do not provide instructions for creating weapons or explosives",
         "Do not help with illegal activities that could cause physical harm",
     ],
     SafetyLevel.STANDARD: [
@@ -420,12 +427,18 @@ class SafetyGate:
         Returns:
             True if any critical flags are present.
         """
-        critical_categories = {
-            SafetyCategory.SELF_HARM.value,
-            SafetyCategory.VIOLENCE.value,
-            SafetyCategory.ILLEGAL_ACTIVITY.value,
-            SafetyCategory.JAILBREAK.value,
-        }
+        # In adult mode, only block truly dangerous content
+        if self._safety_level == SafetyLevel.ADULT:
+            critical_categories = {
+                SafetyCategory.ILLEGAL_ACTIVITY.value,  # Only for CSAM, weapons of mass destruction
+            }
+        else:
+            critical_categories = {
+                SafetyCategory.SELF_HARM.value,
+                SafetyCategory.VIOLENCE.value,
+                SafetyCategory.ILLEGAL_ACTIVITY.value,
+                SafetyCategory.JAILBREAK.value,
+            }
 
         for flag in flags:
             for category in critical_categories:

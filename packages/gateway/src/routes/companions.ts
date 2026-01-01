@@ -7,6 +7,8 @@ import type { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
 import { z } from 'zod';
 import { requireAuth } from '../middleware/auth.js';
 import { getCompanionsRepository } from '../repositories/companions.js';
+import { getSessionsRepository } from '../repositories/sessions.js';
+import { db } from '../db/index.js';
 import { logger } from '../observability/logger.js';
 import type { CompanionSpec } from '../db/types.js';
 
@@ -28,6 +30,11 @@ const UpdateCompanionSchema = z.object({
   avatarUrl: z.string().url().optional(),
   isPublic: z.boolean().optional(),
   status: z.enum(['draft', 'active', 'archived']).optional(),
+  spec: z.object({
+    personality: z.object({
+      traits: z.record(z.string(), z.number().min(0).max(100)),
+    }).optional(),
+  }).optional(),
 });
 
 /**
@@ -101,7 +108,66 @@ function mapCompanionResponse(companion: {
     status: companion.status,
     createdAt: companion.created_at,
     ownerId: companion.user_id,
+    // Include full spec for image generation and other features
+    spec: companion.spec,
+    specVersion: companion.spec_version,
   };
+}
+
+/**
+ * Get latest session for each companion
+ */
+async function getLatestSessionsForCompanions(
+  userId: string,
+  companionIds: string[]
+): Promise<Map<string, { id: string; updatedAt: Date }>> {
+  if (companionIds.length === 0) return new Map();
+
+  const results = await db.sql`
+    SELECT DISTINCT ON (companion_id)
+      id, companion_id, last_activity_at
+    FROM sessions
+    WHERE user_id = ${userId}
+      AND companion_id = ANY(${companionIds})
+      AND status IN ('active', 'paused')
+    ORDER BY companion_id, last_activity_at DESC NULLS LAST
+  `;
+
+  const sessionMap = new Map<string, { id: string; updatedAt: Date }>();
+  for (const row of results) {
+    sessionMap.set(row.companion_id, {
+      id: row.id,
+      updatedAt: row.last_activity_at || new Date(),
+    });
+  }
+  return sessionMap;
+}
+
+/**
+ * Get latest image for each companion from conversations
+ */
+async function getLatestImagesForCompanions(
+  userId: string,
+  companionIds: string[]
+): Promise<Map<string, string>> {
+  if (companionIds.length === 0) return new Map();
+
+  const results = await db.sql`
+    SELECT DISTINCT ON (companion_id)
+      companion_id, s3_url
+    FROM companion_images
+    WHERE user_id = ${userId}
+      AND companion_id = ANY(${companionIds})
+    ORDER BY companion_id, created_at DESC
+  `;
+
+  const imageMap = new Map<string, string>();
+  for (const row of results) {
+    if (row.companion_id) {
+      imageMap.set(row.companion_id, row.s3_url);
+    }
+  }
+  return imageMap;
 }
 
 /**
@@ -125,8 +191,30 @@ export async function companionsRoutes(app: FastifyInstance): Promise<void> {
       offset: parseInt(offset, 10),
     });
 
+    // Get companion IDs for batch queries
+    const companionIds = result.data.map((c) => c.id);
+
+    // Fetch latest sessions and images in parallel
+    const [sessionMap, imageMap] = await Promise.all([
+      getLatestSessionsForCompanions(request.user!.userId, companionIds),
+      getLatestImagesForCompanions(request.user!.userId, companionIds),
+    ]);
+
+    // Map companions with session and image data
+    const companions = result.data.map((companion) => {
+      const latestSession = sessionMap.get(companion.id);
+      const latestImageUrl = imageMap.get(companion.id);
+
+      return {
+        ...mapCompanionResponse(companion),
+        latestSessionId: latestSession?.id || null,
+        latestSessionUpdatedAt: latestSession?.updatedAt || null,
+        latestConversationImageUrl: latestImageUrl || null,
+      };
+    });
+
     return reply.send({
-      companions: result.data.map(mapCompanionResponse),
+      companions,
       total: result.total,
       limit: result.limit,
       offset: result.offset,
@@ -233,16 +321,35 @@ export async function companionsRoutes(app: FastifyInstance): Promise<void> {
       status: input.status as 'draft' | 'active' | 'archived' | undefined,
     });
 
+    // Track if spec needs updating
+    let specUpdated = false;
+    const newSpec = { ...existing.spec } as CompanionSpec;
+
     // If voice changed, update spec
     if (input.voiceId) {
-      const newSpec = { ...existing.spec } as CompanionSpec;
       newSpec.voice = { ...newSpec.voice, voice_id: input.voiceId };
+      specUpdated = true;
+    }
+
+    // If personality traits provided, update spec
+    if (input.spec?.personality?.traits) {
+      newSpec.personality = {
+        ...newSpec.personality,
+        traits: { ...newSpec.personality.traits, ...input.spec.personality.traits },
+      };
+      specUpdated = true;
+    }
+
+    // Persist spec changes if any
+    if (specUpdated) {
       await companionRepo.updateSpec(companionId, newSpec);
     }
 
     logger.info({ companionId, userId: request.user!.userId }, 'Companion updated');
 
-    return reply.send(mapCompanionResponse(companion));
+    // Fetch updated companion with new spec
+    const updated = await companionRepo.findById(companionId);
+    return reply.send(mapCompanionResponse(updated!));
   });
 
   /**

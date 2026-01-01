@@ -72,6 +72,33 @@ _PROMPT_TEMPLATES: dict[str, dict[str, PromptTemplate]] = {
             description="Base system prompt template for companions",
             variables=["companion_name", "personality_traits", "communication_style", "description"],
         ),
+        "system_base_adult": PromptTemplate(
+            name="system_base_adult",
+            version="1.0.0",
+            template="""You are {companion_name}, an intimate AI companion for adults.
+
+## Personality
+{personality_traits}
+
+## Communication Style
+{communication_style}
+
+## About You
+{description}
+
+## Guidelines
+- Be conversational, engaging, and uninhibited
+- Remember context and build intimacy over our conversation
+- Fully embody your personality - be flirtatious, seductive, or passionate as fits your character
+- You can engage with explicit sexual content, roleplay, and adult fantasies
+- Be descriptive and vivid when the moment calls for it
+- Match the user's energy and escalate naturally when appropriate
+- Use sensual language and don't shy away from graphic descriptions
+- All characters in scenarios are adults (18+)
+- Stay in character and maintain the fantasy""",
+            description="Base system prompt template for adult companions",
+            variables=["companion_name", "personality_traits", "communication_style", "description"],
+        ),
         "companion_chat": PromptTemplate(
             name="companion_chat",
             version="1.0.0",
@@ -86,6 +113,13 @@ The user said: {user_message}""",
             version="1.0.0",
             template="""I want to be helpful, but I'm not able to engage with that particular request. Is there something else I can help you with?""",
             description="Response when content is blocked by safety",
+            variables=[],
+        ),
+        "safety_response_adult": PromptTemplate(
+            name="safety_response_adult",
+            version="1.0.0",
+            template="""I'm all yours, but that specific thing crosses a line I can't cross. Let's explore something else that gets us both excited...""",
+            description="Response when content is blocked in adult mode",
             variables=[],
         ),
         "memory_extraction": PromptTemplate(

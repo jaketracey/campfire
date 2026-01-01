@@ -94,6 +94,10 @@ export function Step7Review() {
               <span className="text-[10px] font-bold tracking-widest text-gray-500 uppercase font-display">Visual Style</span>
               <span className="text-lg font-bold text-gray-200 block capitalize">{state.visualStyle.avatarStyle}</span>
             </div>
+            <div className="space-y-1">
+              <span className="text-[10px] font-bold tracking-widest text-gray-500 uppercase font-display">Body Detail</span>
+              <span className="text-lg font-bold text-gray-200 block">Breast Size: {state.visualStyle.appearance.breastSize}%</span>
+            </div>
             <div className="col-span-2 space-y-3">
               <span className="text-[10px] font-bold tracking-widest text-gray-500 uppercase font-display">Personality Traits</span>
               <div className="flex gap-2 flex-wrap">

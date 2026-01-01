@@ -1,0 +1,480 @@
+{
+  "anchors": {
+    "east-asian": {
+      "completed": true,
+      "seed": 2073780967
+    },
+    "south-asian": {
+      "completed": true,
+      "seed": 965341257
+    },
+    "black": {
+      "completed": true,
+      "seed": 1523008729
+    },
+    "caucasian": {
+      "completed": true,
+      "seed": 1704967610
+    },
+    "latina": {
+      "completed": true,
+      "seed": 1878008862
+    },
+    "middle-eastern": {
+      "completed": true,
+      "seed": 1680090241
+    },
+    "mixed": {
+      "completed": true,
+      "seed": 1961053237
+    }
+  },
+  "variations": {
+    "east-asian-slim-black": {
+      "completed": true,
+      "seed": 1520284280
+    },
+    "east-asian-slim-brown": {
+      "completed": true,
+      "seed": 18493535
+    },
+    "east-asian-slim-blonde": {
+      "completed": true,
+      "seed": 1039980599
+    },
+    "east-asian-slim-red": {
+      "completed": true,
+      "seed": 953513050
+    },
+    "east-asian-slim-fantasy": {
+      "completed": true,
+      "seed": 538464275
+    },
+    "east-asian-athletic-black": {
+      "completed": true,
+      "seed": 1196497930
+    },
+    "east-asian-athletic-brown": {
+      "completed": true,
+      "seed": 1279755531
+    },
+    "east-asian-athletic-blonde": {
+      "completed": true,
+      "seed": 21076563
+    },
+    "east-asian-athletic-red": {
+      "completed": true,
+      "seed": 635843771
+    },
+    "east-asian-athletic-fantasy": {
+      "completed": true,
+      "seed": 1728177082
+    },
+    "east-asian-curvy-black": {
+      "completed": true,
+      "seed": 1471775223
+    },
+    "east-asian-curvy-brown": {
+      "completed": true,
+      "seed": 957370216
+    },
+    "east-asian-curvy-blonde": {
+      "completed": true,
+      "seed": 996337399
+    },
+    "east-asian-curvy-red": {
+      "completed": true,
+      "seed": 75727268
+    },
+    "east-asian-curvy-fantasy": {
+      "completed": true,
+      "seed": 187565737
+    },
+    "east-asian-plus-size-black": {
+      "completed": true,
+      "seed": 476440532
+    },
+    "east-asian-plus-size-brown": {
+      "completed": true,
+      "seed": 302873163
+    },
+    "east-asian-plus-size-blonde": {
+      "completed": true,
+      "seed": 1007639352
+    },
+    "east-asian-plus-size-red": {
+      "completed": true,
+      "seed": 599582822
+    },
+    "east-asian-plus-size-fantasy": {
+      "completed": true,
+      "seed": 1764794177
+    },
+    "south-asian-slim-black": {
+      "completed": true,
+      "seed": 1586639197
+    },
+    "south-asian-slim-brown": {
+      "completed": true,
+      "seed": 1847772036
+    },
+    "south-asian-slim-blonde": {
+      "completed": true,
+      "seed": 653334657
+    },
+    "south-asian-slim-red": {
+      "completed": true,
+      "seed": 1347519850
+    },
+    "south-asian-slim-fantasy": {
+      "completed": true,
+      "seed": 1211399628
+    },
+    "south-asian-athletic-black": {
+      "completed": true,
+      "seed": 803328576
+    },
+    "south-asian-athletic-brown": {
+      "completed": true,
+      "seed": 680176413
+    },
+    "south-asian-athletic-blonde": {
+      "completed": true,
+      "seed": 1357166665
+    },
+    "south-asian-athletic-red": {
+      "completed": true,
+      "seed": 1605758005
+    },
+    "south-asian-athletic-fantasy": {
+      "completed": true,
+      "seed": 1755967975
+    },
+    "south-asian-curvy-black": {
+      "completed": true,
+      "seed": 1628575881
+    },
+    "south-asian-curvy-brown": {
+      "completed": true,
+      "seed": 385530761
+    },
+    "south-asian-curvy-blonde": {
+      "completed": true,
+      "seed": 2054609826
+    },
+    "south-asian-curvy-red": {
+      "completed": true,
+      "seed": 1453974874
+    },
+    "south-asian-curvy-fantasy": {
+      "completed": true,
+      "seed": 819561717
+    },
+    "south-asian-plus-size-black": {
+      "completed": true,
+      "seed": 287371966
+    },
+    "south-asian-plus-size-brown": {
+      "completed": true,
+      "seed": 2077640255
+    },
+    "south-asian-plus-size-blonde": {
+      "completed": true,
+      "seed": 276340527
+    },
+    "south-asian-plus-size-red": {
+      "completed": true,
+      "seed": 1016229104
+    },
+    "south-asian-plus-size-fantasy": {
+      "completed": true,
+      "seed": 104955575
+    },
+    "black-slim-black": {
+      "completed": true,
+      "seed": 1743744685
+    },
+    "black-slim-brown": {
+      "completed": true,
+      "seed": 1708015227
+    },
+    "black-slim-blonde": {
+      "completed": true,
+      "seed": 1179040164
+    },
+    "black-slim-red": {
+      "completed": true,
+      "seed": 1548267086
+    },
+    "black-slim-fantasy": {
+      "completed": true,
+      "seed": 801972530
+    },
+    "black-athletic-black": {
+      "completed": true,
+      "seed": 31996099
+    },
+    "black-athletic-brown": {
+      "completed": true,
+      "seed": 854303070
+    },
+    "black-athletic-blonde": {
+      "completed": true,
+      "seed": 84258027
+    },
+    "black-athletic-red": {
+      "completed": true,
+      "seed": 1223957218
+    },
+    "black-athletic-fantasy": {
+      "completed": true,
+      "seed": 319256470
+    },
+    "black-curvy-black": {
+      "completed": true,
+      "seed": 1080866958
+    },
+    "black-curvy-brown": {
+      "completed": true,
+      "seed": 1485387391
+    },
+    "black-curvy-blonde": {
+      "completed": true,
+      "seed": 2105021203
+    },
+    "black-curvy-red": {
+      "completed": true,
+      "seed": 2008143440
+    },
+    "black-curvy-fantasy": {
+      "completed": true,
+      "seed": 403127455
+    },
+    "black-plus-size-black": {
+      "completed": true,
+      "seed": 327910740
+    },
+    "black-plus-size-brown": {
+      "completed": true,
+      "seed": 1262095183
+    },
+    "black-plus-size-blonde": {
+      "completed": true,
+      "seed": 1057697649
+    },
+    "black-plus-size-red": {
+      "completed": true,
+      "seed": 1651314520
+    },
+    "black-plus-size-fantasy": {
+      "completed": true,
+      "seed": 652855601
+    },
+    "caucasian-slim-black": {
+      "completed": true,
+      "seed": 296174835
+    },
+    "caucasian-slim-brown": {
+      "completed": true,
+      "seed": 1806179521
+    },
+    "caucasian-slim-blonde": {
+      "completed": true,
+      "seed": 892236491
+    },
+    "caucasian-slim-red": {
+      "completed": true,
+      "seed": 918860976
+    },
+    "caucasian-slim-fantasy": {
+      "completed": true,
+      "seed": 1803329875
+    },
+    "caucasian-athletic-black": {
+      "completed": true,
+      "seed": 1631332094
+    },
+    "caucasian-athletic-brown": {
+      "completed": true,
+      "seed": 1410403627
+    },
+    "caucasian-athletic-blonde": {
+      "completed": true,
+      "seed": 1907771228
+    },
+    "caucasian-athletic-red": {
+      "completed": true,
+      "seed": 1262387652
+    },
+    "caucasian-athletic-fantasy": {
+      "completed": true,
+      "seed": 1245026400
+    },
+    "caucasian-curvy-black": {
+      "completed": true,
+      "seed": 128722907
+    },
+    "caucasian-curvy-brown": {
+      "completed": true,
+      "seed": 1962704415
+    },
+    "caucasian-curvy-blonde": {
+      "completed": true,
+      "seed": 2016096395
+    },
+    "caucasian-curvy-red": {
+      "completed": true,
+      "seed": 1194873247
+    },
+    "caucasian-curvy-fantasy": {
+      "completed": true,
+      "seed": 615610212
+    },
+    "caucasian-plus-size-black": {
+      "completed": true,
+      "seed": 487816132
+    },
+    "caucasian-plus-size-brown": {
+      "completed": true,
+      "seed": 1331874442
+    },
+    "caucasian-plus-size-blonde": {
+      "completed": true,
+      "seed": 215199218
+    },
+    "caucasian-plus-size-red": {
+      "completed": true,
+      "seed": 778355503
+    },
+    "caucasian-plus-size-fantasy": {
+      "completed": true,
+      "seed": 1084398476
+    },
+    "latina-slim-black": {
+      "completed": true,
+      "seed": 2744659
+    },
+    "latina-slim-brown": {
+      "completed": true,
+      "seed": 1788352551
+    },
+    "latina-slim-blonde": {
+      "completed": true,
+      "seed": 1026208330
+    },
+    "latina-slim-red": {
+      "completed": true,
+      "seed": 933175839
+    },
+    "latina-slim-fantasy": {
+      "completed": true,
+      "seed": 1490150958
+    },
+    "latina-athletic-black": {
+      "completed": true,
+      "seed": 1575135086
+    },
+    "latina-athletic-brown": {
+      "completed": true,
+      "seed": 782856739
+    },
+    "latina-athletic-blonde": {
+      "completed": true,
+      "seed": 2055111579
+    },
+    "latina-athletic-red": {
+      "completed": true,
+      "seed": 629104283
+    },
+    "latina-athletic-fantasy": {
+      "completed": true,
+      "seed": 155702923
+    },
+    "latina-curvy-black": {
+      "completed": true,
+      "seed": 501732546
+    },
+    "latina-curvy-brown": {
+      "completed": true,
+      "seed": 1792702192
+    },
+    "latina-curvy-blonde": {
+      "completed": true,
+      "seed": 1465339048
+    },
+    "latina-curvy-red": {
+      "completed": true,
+      "seed": 1471289635
+    },
+    "latina-curvy-fantasy": {
+      "completed": true,
+      "seed": 928570630
+    },
+    "latina-plus-size-black": {
+      "completed": true,
+      "seed": 933286901
+    },
+    "latina-plus-size-brown": {
+      "completed": true,
+      "seed": 113696116
+    },
+    "latina-plus-size-blonde": {
+      "completed": true,
+      "seed": 1070171349
+    },
+    "latina-plus-size-red": {
+      "completed": true,
+      "seed": 1175569671
+    },
+    "latina-plus-size-fantasy": {
+      "completed": true,
+      "seed": 545228350
+    },
+    "middle-eastern-slim-black": {
+      "completed": true,
+      "seed": 1662846920
+    },
+    "middle-eastern-slim-brown": {
+      "completed": true,
+      "seed": 1526751549
+    },
+    "middle-eastern-slim-blonde": {
+      "completed": true,
+      "seed": 1698802314
+    },
+    "middle-eastern-slim-red": {
+      "completed": true,
+      "seed": 1467580984
+    },
+    "middle-eastern-slim-fantasy": {
+      "completed": true,
+      "seed": 1694855743
+    },
+    "middle-eastern-athletic-black": {
+      "completed": true,
+      "seed": 1886075693
+    },
+    "middle-eastern-athletic-brown": {
+      "completed": true,
+      "seed": 201391791
+    },
+    "middle-eastern-athletic-blonde": {
+      "completed": true,
+      "seed": 221812578
+    },
+    "middle-eastern-athletic-red": {
+      "completed": true,
+      "seed": 984494618
+    },
+    "middle-eastern-athletic-fantasy": {
+      "completed": true,
+      "seed": 1196102186
+    },
+    "middle-eastern-curvy-black": {
+      "completed": true,
+      "seed": 234783399
+    }
+  },
+  "started_at": "2026-01-01 14:38:49",
+  "last_updated": "2026-01-01 15:33:54"
+}

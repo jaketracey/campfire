@@ -1,16 +1,19 @@
 'use client';
 
 import { useState, useRef, useEffect, useCallback } from 'react';
+import { useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card } from '@/components/ui/card';
-import { ArrowLeft, Send, Mic, MicOff, Bug } from 'lucide-react';
+import { X, Send, Mic, MicOff, Bug, Images, Flame, Sparkles } from 'lucide-react';
 import Link from 'next/link';
-import { getSessionTurns } from '@/lib/api';
+import { getSessionTurns, getSession, getCompanion, type Companion } from '@/lib/api';
 import { CampfireWebSocket, connectWebSocket } from '@/lib/ws';
-import { CompanionAvatar } from '@/components/companion';
+import { CompanionAvatar, CompanionGallery, PersonalityModal } from '@/components/companion';
 import { DebugPanel } from '@/components/debug-panel';
-import type { EmotionalState } from '@/lib/api/imagegen';
+import { useRequireAuth } from '@/hooks/use-auth';
+import { useAuthStore } from '@/stores/auth-store';
+import { buildPromptFromCompanion, type EmotionalState } from '@/lib/api/imagegen';
 
 interface Message {
   id: string;
@@ -54,6 +57,9 @@ function detectEmotionalState(content: string): EmotionalState {
 }
 
 export function ChatSessionContent({ sessionId }: ChatSessionContentProps) {
+  const router = useRouter();
+  const { isAuthenticated, isLoading: authLoading } = useRequireAuth('/login');
+  const user = useAuthStore((state) => state.user);
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
@@ -63,9 +69,18 @@ export function ChatSessionContent({ sessionId }: ChatSessionContentProps) {
   const [currentEmotionalState, setCurrentEmotionalState] = useState<EmotionalState>('neutral');
   const [showAvatar, setShowAvatar] = useState(true);
   const [showDebugPanel, setShowDebugPanel] = useState(false);
+  const [showGallery, setShowGallery] = useState(false);
+  const [showPersonality, setShowPersonality] = useState(false);
   const [debugRefreshTrigger, setDebugRefreshTrigger] = useState(0);
+  const [companion, setCompanion] = useState<Companion | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
   const wsRef = useRef<CampfireWebSocket | null>(null);
+
+  // Build custom prompt from companion visual data
+  const customPrompt = companion?.spec?.visual_style
+    ? buildPromptFromCompanion(companion.spec.visual_style, 'stylized')
+    : undefined;
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -75,10 +90,26 @@ export function ChatSessionContent({ sessionId }: ChatSessionContentProps) {
     scrollToBottom();
   }, [messages, streamingContent]);
 
-  // Load existing turns from API
+  // Load session, companion, and existing turns from API - wait for auth to be ready
   useEffect(() => {
-    async function loadHistory() {
+    if (authLoading || !isAuthenticated) return;
+
+    async function loadSessionData() {
       try {
+        // Load session to get companion ID
+        const session = await getSession(sessionId);
+
+        // Load companion with full spec (including visual data)
+        if (session.companionId) {
+          try {
+            const companionData = await getCompanion(session.companionId);
+            setCompanion(companionData);
+          } catch (err) {
+            console.warn('Failed to load companion:', err);
+          }
+        }
+
+        // Load conversation history
         const response = await getSessionTurns(sessionId);
         const historicalMessages: Message[] = [];
 
@@ -99,17 +130,31 @@ export function ChatSessionContent({ sessionId }: ChatSessionContentProps) {
 
         setMessages(historicalMessages);
       } catch (error) {
-        console.error('Failed to load history:', error);
+        console.error('Failed to load session data:', error);
       }
     }
 
-    loadHistory();
-  }, [sessionId]);
+    loadSessionData();
+  }, [sessionId, authLoading, isAuthenticated]);
 
-  // Connect to WebSocket
+  // Connect to WebSocket - wait for auth to be ready
   useEffect(() => {
+    if (authLoading || !isAuthenticated) return;
+
+    const accessToken = useAuthStore.getState().accessToken;
+    if (!accessToken) {
+      console.error('[Chat] No access token available for WebSocket auth');
+      return;
+    }
+
     const ws = connectWebSocket();
     wsRef.current = ws;
+
+    // Subscribe to ping (connection established) - then authenticate
+    const unsubPing = ws.on('ping', () => {
+      console.log('[Chat] WebSocket connected, authenticating...');
+      ws.authenticate(accessToken);
+    });
 
     // Subscribe to auth success - then resume session
     const unsubAuth = ws.on('auth_success', () => {
@@ -121,11 +166,6 @@ export function ChatSessionContent({ sessionId }: ChatSessionContentProps) {
     const unsubSessionStarted = ws.on('session_started', () => {
       setWsConnected(true);
       console.log('[Chat] Session resumed via WebSocket');
-    });
-
-    // Subscribe to connection state
-    const unsubConnected = ws.on('ping', () => {
-      setWsConnected(true);
     });
 
     // Subscribe to agent messages (non-streaming)
@@ -179,19 +219,19 @@ export function ChatSessionContent({ sessionId }: ChatSessionContentProps) {
       setIsLoading(false);
     });
 
-    ws.connect();
+    // Note: connectWebSocket() already calls connect(), don't call it again
 
     return () => {
+      unsubPing();
       unsubAuth();
       unsubSessionStarted();
-      unsubConnected();
       unsubAgent();
       unsubChunk();
       unsubEnd();
       unsubError();
       ws.disconnect();
     };
-  }, [sessionId]);
+  }, [sessionId, authLoading, isAuthenticated]);
 
   const handleSend = useCallback(() => {
     if (!input.trim() || isLoading) return;
@@ -215,12 +255,29 @@ export function ChatSessionContent({ sessionId }: ChatSessionContentProps) {
       console.error('WebSocket not connected');
       setIsLoading(false);
     }
+
+    // Refocus the input for continued typing
+    inputRef.current?.focus();
   }, [input, isLoading]);
 
   const toggleVoice = () => {
     setIsListening(!isListening);
     // TODO: Implement voice input via WebSocket
   };
+
+  // Show loading while checking auth
+  if (authLoading) {
+    return (
+      <div className="flex items-center justify-center h-screen bg-background">
+        <div className="animate-pulse text-muted-foreground">Loading...</div>
+      </div>
+    );
+  }
+
+  // Don't render if not authenticated (will redirect)
+  if (!isAuthenticated) {
+    return null;
+  }
 
   return (
     <div className="flex h-screen bg-background">
@@ -230,23 +287,46 @@ export function ChatSessionContent({ sessionId }: ChatSessionContentProps) {
           <CompanionAvatar
             emotionalState={currentEmotionalState}
             style="stylized"
+            customPrompt={customPrompt}
             width={250}
             height={400}
             autoRegenerate={true}
             debounceDelay={2000}
             className="shadow-lg"
+            userId={user?.id}
+            sessionId={sessionId}
+            companionId={companion?.id}
           />
           <p className="mt-3 text-sm text-muted-foreground">
             Feeling: <span className="font-medium text-foreground capitalize">{currentEmotionalState}</span>
           </p>
-          <Button
-            variant="ghost"
-            size="sm"
-            className="mt-2"
-            onClick={() => setShowAvatar(false)}
-          >
-            Hide Avatar
-          </Button>
+          <div className="flex flex-wrap gap-2 mt-2">
+            <Button
+              variant="outline"
+              size="sm"
+              className="gap-1"
+              onClick={() => setShowGallery(true)}
+            >
+              <Images className="h-4 w-4" />
+              Gallery
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              className="gap-1"
+              onClick={() => setShowPersonality(true)}
+            >
+              <Sparkles className="h-4 w-4" />
+              Personality
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => setShowAvatar(false)}
+            >
+              Hide
+            </Button>
+          </div>
         </div>
       )}
 
@@ -254,13 +334,11 @@ export function ChatSessionContent({ sessionId }: ChatSessionContentProps) {
       <div className="flex flex-col flex-1">
         {/* Header */}
         <header className="border-b px-4 py-3 flex items-center gap-4">
-          <Link href="/chat">
-            <Button variant="ghost" size="icon">
-              <ArrowLeft className="h-5 w-5" />
-            </Button>
+          <Link href="/chat" className="flex items-center gap-2">
+            <Flame className="h-7 w-7 text-campfire-500" />
+            <span className="text-lg font-bold">Campfire</span>
           </Link>
           <div className="flex-1">
-            <h1 className="font-semibold">Companion Chat</h1>
             <div className="flex items-center gap-2 text-xs text-muted-foreground">
               <span>Session: {sessionId.slice(0, 8)}...</span>
               <span className={`w-2 h-2 rounded-full ${wsConnected ? 'bg-green-500' : 'bg-yellow-500'}`} />
@@ -274,6 +352,14 @@ export function ChatSessionContent({ sessionId }: ChatSessionContentProps) {
               </Button>
             )}
             <Button
+              variant="ghost"
+              size="icon"
+              onClick={() => setShowGallery(true)}
+              title="View Gallery"
+            >
+              <Images className="h-4 w-4" />
+            </Button>
+            <Button
               variant={showDebugPanel ? 'secondary' : 'ghost'}
               size="icon"
               onClick={() => setShowDebugPanel(!showDebugPanel)}
@@ -281,6 +367,11 @@ export function ChatSessionContent({ sessionId }: ChatSessionContentProps) {
             >
               <Bug className="h-4 w-4" />
             </Button>
+            <Link href="/dashboard">
+              <Button variant="ghost" size="icon" title="Close">
+                <X className="h-4 w-4" />
+              </Button>
+            </Link>
           </div>
         </header>
 
@@ -341,6 +432,7 @@ export function ChatSessionContent({ sessionId }: ChatSessionContentProps) {
               {isListening ? <MicOff className="h-5 w-5" /> : <Mic className="h-5 w-5" />}
             </Button>
             <Input
+              ref={inputRef}
               value={input}
               onChange={(e) => setInput(e.target.value)}
               onKeyDown={(e) => e.key === 'Enter' && handleSend()}
@@ -361,6 +453,33 @@ export function ChatSessionContent({ sessionId }: ChatSessionContentProps) {
         isOpen={showDebugPanel}
         onClose={() => setShowDebugPanel(false)}
         refreshTrigger={debugRefreshTrigger}
+      />
+
+      {/* Companion Gallery */}
+      <CompanionGallery
+        sessionId={sessionId}
+        isOpen={showGallery}
+        onClose={() => setShowGallery(false)}
+      />
+
+      {/* Personality Modal */}
+      <PersonalityModal
+        companion={companion}
+        isOpen={showPersonality}
+        onClose={() => setShowPersonality(false)}
+        onSave={(updatedCompanion, traits) => {
+          setCompanion(updatedCompanion);
+          // Send a message to notify the model of personality changes
+          if (wsRef.current?.isConnected) {
+            const traitSummary = Object.entries(traits)
+              .map(([key, value]) => `${key}: ${value}%`)
+              .join(', ');
+            wsRef.current.sendMessage(
+              `[System: My personality settings have been updated. New traits: ${traitSummary}. Please acknowledge this change and respond naturally with your updated personality.]`
+            );
+            setIsLoading(true);
+          }
+        }}
       />
     </div>
   );

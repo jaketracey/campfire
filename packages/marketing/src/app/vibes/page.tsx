@@ -3,6 +3,7 @@
 import { motion, useScroll, useTransform } from "framer-motion";
 import { useRef } from "react";
 import { ArrowRight, Sparkles, Zap, Music, Heart } from "lucide-react";
+import { VibeWaves } from "@/components/sections/vibe-waves";
 
 export default function VibesPage() {
     const containerRef = useRef<HTMLDivElement>(null);
@@ -16,12 +17,8 @@ export default function VibesPage() {
 
     return (
         <div ref={containerRef} className="min-h-screen bg-black text-white overflow-hidden selection:bg-vibes-neon selection:text-white">
-            {/* Dynamic Background */}
-            <div className="fixed inset-0 z-0">
-                <div className="absolute top-[-20%] left-[-10%] w-[50%] h-[50%] bg-vibes-neon/20 rounded-full blur-[120px] animate-float" />
-                <div className="absolute bottom-[-20%] right-[-10%] w-[50%] h-[50%] bg-vibes-electric/20 rounded-full blur-[120px] animate-float-fast" />
-                <div className="absolute top-[40%] left-[40%] w-[30%] h-[30%] bg-vibes-hot/10 rounded-full blur-[100px] animate-pulse-slow" />
-            </div>
+            {/* Dynamic Three.js Background */}
+            <VibeWaves />
 
             {/* Hero Section */}
             <section className="relative z-10 h-screen flex flex-col items-center justify-center px-6">

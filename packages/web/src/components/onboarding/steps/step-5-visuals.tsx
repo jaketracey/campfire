@@ -1,138 +1,277 @@
 'use client';
 
-import { useState, useCallback } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
-import { useOnboardingStore } from '@/stores/onboarding-store';
+import { useState, useMemo } from 'react';
+import { motion } from 'framer-motion';
+import { useOnboardingStore, AppearanceEthnicity, AppearanceBodyType, AppearanceHairColor } from '@/stores/onboarding-store';
 import { Button } from '@/components/ui/button';
-import { Card, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
-import { ArrowRight, Sparkles, RefreshCw } from 'lucide-react';
+import { ArrowRight, Check, Sparkles } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { CompanionAvatar } from '@/components/companion';
+import Image from 'next/image';
+import { Slider } from '@/components/ui/slider';
+import { Label } from '@/components/ui/label';
 
-const styles = [
-  {
-    id: 'realistic',
-    name: 'Realistic',
-    description: 'Lifelike 3D rendering.',
-    previewColor: 'bg-zinc-800',
-  },
-  {
-    id: 'stylized',
-    name: 'Stylized 3D',
-    description: 'Pixar/Disney style animation.',
-    previewColor: 'bg-blue-600',
-  },
-  {
-    id: 'abstract',
-    name: 'Abstract',
-    description: 'Geometric shapes and light.',
-    previewColor: 'bg-purple-600',
-  },
-  {
-    id: 'minimal',
-    name: 'Minimal',
-    description: 'Clean lines and flat colors.',
-    previewColor: 'bg-emerald-600',
-  },
+// Ethnicity options
+const ethnicityOptions: Array<{
+  id: AppearanceEthnicity;
+  name: string;
+  description: string;
+}> = [
+    { id: 'east-asian', name: 'East Asian', description: 'Korean, Japanese, Chinese' },
+    { id: 'south-asian', name: 'South Asian', description: 'Indian, Pakistani, Bengali' },
+    { id: 'black', name: 'Black', description: 'African, African American' },
+    { id: 'caucasian', name: 'Caucasian', description: 'European' },
+    { id: 'latina', name: 'Latina', description: 'Hispanic, Latin American' },
+    { id: 'middle-eastern', name: 'Middle Eastern', description: 'Persian, Arab' },
+    { id: 'mixed', name: 'Mixed', description: 'Diverse heritage' },
+  ];
+
+const bodyTypeOptions: Array<{ id: AppearanceBodyType; name: string }> = [
+  { id: 'slim', name: 'Slim' },
+  { id: 'athletic', name: 'Athletic' },
+  { id: 'curvy', name: 'Curvy' },
+  { id: 'plus-size', name: 'Plus Size' },
 ];
 
+const hairColorOptions: Array<{ id: AppearanceHairColor; name: string; color: string }> = [
+  { id: 'black', name: 'Black', color: 'bg-gray-900' },
+  { id: 'brown', name: 'Brown', color: 'bg-amber-800' },
+  { id: 'blonde', name: 'Blonde', color: 'bg-amber-300' },
+  { id: 'red', name: 'Red', color: 'bg-red-600' },
+  { id: 'fantasy', name: 'Fantasy', color: 'bg-gradient-to-r from-pink-500 via-purple-500 to-blue-500' },
+];
+
+const artStyles = [
+  { id: 'realistic', name: 'Realistic', description: 'Lifelike rendering' },
+  { id: 'anime', name: 'Anime', description: 'Hand-drawn aesthetic' },
+  { id: 'stylized', name: 'Stylized', description: 'Artistic interpretation' },
+  { id: 'abstract', name: 'Abstract', description: 'Geometric shapes' },
+  { id: 'minimal', name: 'Minimal', description: 'Clean lines' },
+];
+
+const defaultAppearance = {
+  ethnicity: 'mixed' as AppearanceEthnicity,
+  bodyType: 'athletic' as AppearanceBodyType,
+  hairColor: 'brown' as AppearanceHairColor,
+};
+
+// Build dynamic image path based on all selections
+function getPreviewImagePath(
+  ethnicity: AppearanceEthnicity,
+  bodyType: AppearanceBodyType,
+  hairColor: AppearanceHairColor
+): string {
+  return `/images/companions/${ethnicity}-${bodyType}-${hairColor}.png`;
+}
+
+// Fallback images for each ethnicity (used when specific combo doesn't exist)
+function getFallbackImagePath(ethnicity: AppearanceEthnicity): string {
+  const fallbacks: Record<AppearanceEthnicity, string> = {
+    'east-asian': '/images/companions/east-asian-slim-black.png',
+    'south-asian': '/images/companions/south-asian-slim-black.png',
+    'black': '/images/companions/black-slim-black.png',
+    'caucasian': '/images/companions/caucasian-slim-black.png',
+    'latina': '/images/companions/latina-slim-black.png',
+    'middle-eastern': '/images/companions/middle-eastern-slim-black.png',
+    'mixed': '/images/companions/black-athletic-black.png',
+  };
+  return fallbacks[ethnicity];
+}
+
 export function Step5Visuals() {
-  const { visualStyle, setVisualStyle, personality, nextStep } = useOnboardingStore();
-  const [generatedImageUrl, setGeneratedImageUrl] = useState<string | null>(null);
-  const [imageCacheKey, setImageCacheKey] = useState<string | null>(null);
-  const [regenerateKey, setRegenerateKey] = useState(0);
+  const { visualStyle, setVisualStyle, setAppearance, nextStep } = useOnboardingStore();
+  const [imageError, setImageError] = useState(false);
 
-  const handleImageLoad = useCallback((url: string, cacheKey: string) => {
-    setGeneratedImageUrl(url);
-    setImageCacheKey(cacheKey);
-  }, []);
+  // Handle migration from old store format without appearance
+  const appearance = visualStyle.appearance || defaultAppearance;
 
-  const handleRegenerate = useCallback(() => {
-    setRegenerateKey((k) => k + 1);
-  }, []);
+  // Dynamic preview image based on all appearance selections
+  const previewImagePath = useMemo(() => {
+    return getPreviewImagePath(appearance.ethnicity, appearance.bodyType, appearance.hairColor);
+  }, [appearance.ethnicity, appearance.bodyType, appearance.hairColor]);
+
+  const fallbackImagePath = useMemo(() => {
+    return getFallbackImagePath(appearance.ethnicity);
+  }, [appearance.ethnicity]);
+
+  // Reset error when selections change
+  const handleSelectionChange = (updates: Partial<typeof appearance>) => {
+    setImageError(false);
+    setAppearance(updates);
+  };
 
   return (
     <div className="space-y-8">
       <div className="text-center space-y-3">
-        <h2 className="text-4xl font-bold font-display tracking-tight text-white">Visual Identity</h2>
-        <p className="text-gray-400 max-w-md mx-auto">Choose the physical manifestation of your companion.</p>
+        <h2 className="text-4xl md:text-5xl font-bold font-display tracking-tight text-white">Visual Identity</h2>
+        <p className="text-gray-400 max-w-md mx-auto">Design your companion's physical appearance and art style.</p>
       </div>
 
-      <div className="flex flex-col md:flex-row gap-8 items-start">
-        {/* Style Selection */}
-        <div className="flex-1 w-full">
-          <div className="grid grid-cols-2 gap-4">
-            {styles.map((style) => (
-              <motion.div
-                key={style.id}
-                whileHover={{ scale: 1.02 }}
-                whileTap={{ scale: 0.98 }}
-              >
-                <Card
+      <div className="grid lg:grid-cols-3 gap-8">
+        {/* Left: Appearance Options */}
+        <div className="lg:col-span-2 space-y-6 order-2 lg:order-1">
+          {/* Ethnicity Selection */}
+          <div className="space-y-3">
+            <h3 className="text-sm font-bold tracking-widest uppercase text-gray-500">Ethnicity</h3>
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+              {ethnicityOptions.map((option) => (
+                <motion.button
+                  key={option.id}
+                  whileHover={{ scale: 1.02 }}
+                  whileTap={{ scale: 0.98 }}
+                  onClick={() => handleSelectionChange({ ethnicity: option.id })}
                   className={cn(
-                    'group relative overflow-hidden cursor-pointer transition-all border-white/10 bg-white/[0.02]',
-                    visualStyle.avatarStyle === style.id ? 'ring-2 ring-vibes-cyan border-vibes-cyan/50 shadow-[0_0_20px_rgba(6,182,212,0.2)]' : 'hover:border-white/20 hover:bg-white/[0.05]'
+                    'relative p-3 rounded-xl border text-left transition-all',
+                    appearance.ethnicity === option.id
+                      ? 'border-vibes-cyan bg-vibes-cyan/10 shadow-[0_0_20px_rgba(6,182,212,0.2)]'
+                      : 'border-white/10 bg-white/[0.02] hover:border-white/20'
                   )}
-                  onClick={() => setVisualStyle({ avatarStyle: style.id as any })}
                 >
-                  <div className={cn('h-20 w-full transition-all duration-500 relative overflow-hidden', style.previewColor)}>
-                    {visualStyle.avatarStyle === style.id && (
-                      <motion.div
-                        layoutId="style-glow"
-                        className="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent"
-                      />
-                    )}
-                    <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity bg-black/20">
-                      <Sparkles className="text-white h-8 w-8 drop-shadow-lg animate-pulse" />
+                  {appearance.ethnicity === option.id && (
+                    <div className="absolute top-2 right-2">
+                      <Check className="h-4 w-4 text-vibes-cyan" />
                     </div>
-                  </div>
-                  <CardHeader className="p-4 space-y-1">
-                    <CardTitle className="text-base font-display font-bold text-white group-hover:text-vibes-cyan transition-colors">{style.name}</CardTitle>
-                    <CardDescription className="text-xs text-gray-500">{style.description}</CardDescription>
-                  </CardHeader>
-                </Card>
-              </motion.div>
-            ))}
+                  )}
+                  <div className="font-medium text-white text-sm">{option.name}</div>
+                  <div className="text-xs text-gray-500 mt-0.5">{option.description}</div>
+                </motion.button>
+              ))}
+            </div>
+          </div>
+
+          {/* Body Type Selection */}
+          <div className="space-y-3">
+            <h3 className="text-sm font-bold tracking-widest uppercase text-gray-500">Body Type</h3>
+            <div className="flex flex-wrap gap-2">
+              {bodyTypeOptions.map((option) => (
+                <motion.button
+                  key={option.id}
+                  whileHover={{ scale: 1.02 }}
+                  whileTap={{ scale: 0.98 }}
+                  onClick={() => handleSelectionChange({ bodyType: option.id })}
+                  className={cn(
+                    'px-4 py-2 rounded-full border text-sm font-medium transition-all',
+                    appearance.bodyType === option.id
+                      ? 'border-vibes-cyan bg-vibes-cyan/10 text-vibes-cyan'
+                      : 'border-white/10 bg-white/[0.02] text-gray-400 hover:border-white/20 hover:text-white'
+                  )}
+                >
+                  {option.name}
+                </motion.button>
+              ))}
+            </div>
+          </div>
+
+          {/* Hair Color Selection */}
+          <div className="space-y-3">
+            <h3 className="text-sm font-bold tracking-widest uppercase text-gray-500">Hair Color</h3>
+            <div className="flex flex-wrap gap-3">
+              {hairColorOptions.map((option) => (
+                <motion.button
+                  key={option.id}
+                  whileHover={{ scale: 1.05 }}
+                  whileTap={{ scale: 0.95 }}
+                  onClick={() => handleSelectionChange({ hairColor: option.id })}
+                  className={cn(
+                    'flex items-center gap-2 px-3 py-2 rounded-full border transition-all',
+                    appearance.hairColor === option.id
+                      ? 'border-vibes-cyan bg-vibes-cyan/10'
+                      : 'border-white/10 bg-white/[0.02] hover:border-white/20'
+                  )}
+                >
+                  <div className={cn('w-5 h-5 rounded-full', option.color)} />
+                  <span className={cn(
+                    'text-sm font-medium',
+                    appearance.hairColor === option.id ? 'text-vibes-cyan' : 'text-gray-400'
+                  )}>
+                    {option.name}
+                  </span>
+                </motion.button>
+              ))}
+            </div>
+          </div>
+
+          {/* Art Style Selection */}
+          <div className="space-y-4">
+            <h3 className="text-sm font-bold tracking-widest uppercase text-gray-500 font-display">Art Style</h3>
+            <div className="flex flex-wrap gap-3">
+              {artStyles.map((style) => (
+                <motion.button
+                  key={style.id}
+                  whileHover={{ scale: 1.02 }}
+                  whileTap={{ scale: 0.98 }}
+                  onClick={() => setVisualStyle({ avatarStyle: style.id as any })}
+                  className={cn(
+                    'px-5 py-2.5 rounded-full border text-sm font-bold transition-all flex items-center gap-2',
+                    visualStyle.avatarStyle === style.id
+                      ? 'border-vibes-electric bg-vibes-electric/10 text-vibes-electric shadow-[0_0_15px_rgba(59,130,246,0.3)]'
+                      : 'border-white/10 bg-white/[0.02] text-gray-400 hover:border-white/20 hover:text-white'
+                  )}
+                >
+                  {style.id === 'anime' && <Sparkles className="h-3.5 w-3.5" />}
+                  {style.name}
+                </motion.button>
+              ))}
+            </div>
+          </div>
+
+          {/* Body Measurements */}
+          <div className="space-y-4 pt-4 border-t border-white/5">
+            <div className="flex items-center gap-2">
+              <h3 className="text-sm font-bold tracking-widest uppercase text-gray-500 font-display">Body Measurements</h3>
+              <span className="px-2 py-0.5 rounded text-[10px] bg-vibes-hot/10 text-vibes-hot font-bold border border-vibes-hot/20">NEW</span>
+            </div>
+            <div className="p-6 rounded-2xl bg-white/[0.01] border border-white/5 space-y-6">
+              <div className="space-y-4">
+                <div className="flex justify-between items-center">
+                  <Label className="text-xs font-bold tracking-widest uppercase text-gray-400 font-display">Breast Size</Label>
+                  <span className="text-sm font-mono text-vibes-hot font-bold">{appearance.breastSize}%</span>
+                </div>
+                <Slider
+                  value={[appearance.breastSize]}
+                  onValueChange={(val) => handleSelectionChange({ breastSize: val[0] })}
+                  max={100}
+                  step={1}
+                  className="[&_[role=slider]]:bg-vibes-hot [&_[role=slider]]:border-vibes-hot [&_.relative]:bg-white/5"
+                />
+              </div>
+            </div>
           </div>
         </div>
 
-        {/* Avatar Preview Area */}
-        <div className="flex flex-col items-center gap-6 p-6 rounded-3xl bg-white/[0.02] border border-white/10 backdrop-blur-xl relative overflow-hidden group">
-          <div className="absolute inset-0 bg-gradient-to-br from-vibes-cyan/5 via-transparent to-vibes-neon/5 opacity-50" />
-
-          <div className="relative z-10 w-full max-w-[280px]">
-            <CompanionAvatar
-              key={regenerateKey}
-              style={visualStyle.avatarStyle as 'realistic' | 'stylized' | 'abstract' | 'minimal'}
-              personality={personality}
-              emotionalState="neutral"
-              width={280}
-              height={420}
-              onLoad={handleImageLoad}
-              autoRegenerate={true}
-              debounceDelay={1500}
-              className="shadow-[0_20px_50px_rgba(0,0,0,0.5)] rounded-2xl border border-white/10 animate-fade-in"
+        {/* Right: Preview */}
+        <div className="flex flex-col items-center gap-4 order-1 lg:order-2">
+          <motion.div
+            key={`${appearance.ethnicity}-${appearance.bodyType}-${appearance.hairColor}`}
+            initial={{ opacity: 0, scale: 0.95 }}
+            animate={{ opacity: 1, scale: 1 }}
+            transition={{ duration: 0.3 }}
+            className="relative w-full aspect-[3/4] max-w-[280px] rounded-2xl overflow-hidden border border-white/10 bg-white/[0.02]"
+          >
+            <div className="absolute inset-0 bg-gradient-to-br from-vibes-cyan/5 via-transparent to-vibes-neon/5 z-10 pointer-events-none" />
+            <Image
+              src={imageError ? fallbackImagePath : previewImagePath}
+              alt="Companion preview"
+              fill
+              className="object-cover transition-opacity duration-300"
+              priority
+              onError={() => setImageError(true)}
             />
-          </div>
-
-          <div className="flex flex-col items-center gap-2 z-10 w-full">
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={handleRegenerate}
-              className="gap-2 text-gray-400 hover:text-white hover:bg-white/5 transition-all w-full"
-            >
-              <RefreshCw className="h-4 w-4" />
-              Regenerate Appearance
-            </Button>
-            {imageCacheKey && (
-              <div className="flex items-center gap-2 px-3 py-1 rounded-full bg-black/40 border border-white/5">
-                <div className="w-1.5 h-1.5 rounded-full bg-vibes-cyan animate-pulse" />
-                <span className="text-[10px] font-mono text-gray-500 tracking-wider">
-                  SAVED: {imageCacheKey.slice(0, 8).toUpperCase()}
+            <div className="absolute bottom-0 inset-x-0 p-3 bg-gradient-to-t from-black/80 to-transparent z-10">
+              <div className="text-center">
+                <span className="text-xs text-white/60 capitalize">
+                  {appearance.hairColor === 'fantasy' ? '✨ ' : ''}{appearance.hairColor} hair
                 </span>
               </div>
-            )}
+            </div>
+          </motion.div>
+
+          <div className="text-center space-y-1">
+            <div className="text-xs text-gray-500 capitalize">
+              {appearance.ethnicity.replace('-', ' ')} · {appearance.bodyType} · {appearance.hairColor} hair
+            </div>
+            <div className="text-xs text-gray-600">
+              Art style: {visualStyle.avatarStyle}
+            </div>
           </div>
         </div>
       </div>
@@ -143,7 +282,7 @@ export function Step5Visuals() {
           onClick={nextStep}
           className="group h-14 px-12 rounded-full bg-gradient-to-r from-vibes-cyan to-vibes-electric hover:shadow-[0_0_30px_rgba(6,182,212,0.3)] transition-all font-bold text-lg"
         >
-          Next: Boundaries
+          Next: Identity
           <ArrowRight className="ml-2 h-5 w-5 group-hover:translate-x-2 transition-transform duration-300" />
         </Button>
       </div>

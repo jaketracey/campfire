@@ -13,6 +13,7 @@ from orchestrator.models.conversation import (
     ConversationContext,
     ConversationTurn,
     SessionSummary,
+    SituationalTenetMatch,
 )
 from orchestrator.models.events import EventType, ProviderEvent
 from orchestrator.models.memory import LongTermMemory
@@ -21,8 +22,10 @@ from orchestrator.prompts.manager import PromptManager
 from orchestrator.providers.base import LLMProvider, LLMResponse
 from orchestrator.providers.anthropic import AnthropicProvider
 from orchestrator.providers.openai import OpenAIProvider
+from orchestrator.providers.ollama import OllamaProvider
 from orchestrator.safety.gate import SafetyGate
 from orchestrator.services.context_builder import ContextBuilder
+from orchestrator.services.tenet_retriever import TenetRetriever
 from orchestrator.services.turn_manager import TurnManager
 from orchestrator.tools.router import ToolRouter
 
@@ -41,6 +44,7 @@ class ConversationOrchestrator:
         tool_router: ToolRouter,
         primary_provider: LLMProvider | None = None,
         fallback_provider: LLMProvider | None = None,
+        tenet_retriever: TenetRetriever | None = None,
     ):
         self.settings = settings
         self.event_emitter = event_emitter
@@ -48,8 +52,16 @@ class ConversationOrchestrator:
         self.safety_gate = safety_gate
         self.tool_router = tool_router
 
-        # Initialize providers (OpenAI primary, Anthropic fallback)
-        self.primary_provider = primary_provider or OpenAIProvider(settings)
+        # Initialize providers
+        # Use Ollama (local abliterated model) when enabled, fallback to OpenAI/Anthropic
+        if primary_provider:
+            self.primary_provider = primary_provider
+        elif settings.ollama_enabled:
+            self.primary_provider = OllamaProvider(settings)
+            logger.info("using_ollama_provider", model=settings.ollama_model)
+        else:
+            self.primary_provider = OpenAIProvider(settings)
+
         self.fallback_provider = fallback_provider or AnthropicProvider(settings)
 
         # Initialize services
@@ -59,6 +71,7 @@ class ConversationOrchestrator:
             default_turn_window=settings.default_turn_window,
         )
         self.turn_manager = TurnManager(event_emitter)
+        self.tenet_retriever = tenet_retriever or TenetRetriever(settings)
 
     async def process_message(
         self,
@@ -108,7 +121,29 @@ class ConversationOrchestrator:
         )
 
         try:
-            # Build context
+            # Retrieve situational tenets based on message context
+            situational_tenets: list[SituationalTenetMatch] = []
+            if self.tenet_retriever:
+                try:
+                    situational_tenets = await self.tenet_retriever.search_situational_tenets(
+                        companion_id=str(companion_spec.id),
+                        user_message=user_message,
+                        limit=5,
+                    )
+                    if situational_tenets:
+                        logger.debug(
+                            "situational_tenets_retrieved",
+                            companion_id=str(companion_spec.id),
+                            count=len(situational_tenets),
+                        )
+                except Exception as e:
+                    logger.warning(
+                        "tenet_retrieval_failed",
+                        error=str(e),
+                        companion_id=str(companion_spec.id),
+                    )
+
+            # Build context with situational tenets
             context = self.context_builder.build_context(
                 session_id=session_id,
                 user_id=user_id,
@@ -118,6 +153,7 @@ class ConversationOrchestrator:
                 long_term_memories=long_term_memories,
                 safety_constraints=self.safety_gate.get_constraints(),
                 active_tools=companion_spec.allowed_tools,
+                situational_tenets=situational_tenets,
                 prompt_version=self.prompt_manager.current_version,
                 policy_version=self.safety_gate.policy_version,
             )
@@ -252,6 +288,7 @@ class ConversationOrchestrator:
         tools: list[dict[str, Any]] | None = None,
     ) -> LLMResponse:
         """Call primary LLM with fallback to secondary."""
+        provider_name = self.primary_provider.name
         try:
             # Emit provider request event
             await self.event_emitter.emit(
@@ -260,8 +297,8 @@ class ConversationOrchestrator:
                     session_id=UUID(int=0),
                     user_id=UUID(int=0),
                     companion_id=UUID(int=0),
-                    provider="anthropic",
-                    model=self.settings.anthropic_model,
+                    provider=provider_name,
+                    model=self._get_model_for_provider(provider_name),
                     operation="chat_completion",
                 )
             )
@@ -269,7 +306,7 @@ class ConversationOrchestrator:
             response = await self.primary_provider.generate(
                 messages=messages,
                 tools=tools,
-                max_tokens=self.settings.anthropic_max_tokens,
+                max_tokens=self._get_max_tokens_for_provider(provider_name),
                 temperature=0.7,
             )
 
@@ -279,8 +316,8 @@ class ConversationOrchestrator:
                     session_id=UUID(int=0),
                     user_id=UUID(int=0),
                     companion_id=UUID(int=0),
-                    provider="anthropic",
-                    model=self.settings.anthropic_model,
+                    provider=provider_name,
+                    model=self._get_model_for_provider(provider_name),
                     operation="chat_completion",
                     latency_ms=response.latency_ms,
                 )
@@ -289,10 +326,12 @@ class ConversationOrchestrator:
             return response
 
         except Exception as primary_error:
+            fallback_name = self.fallback_provider.name
             logger.warning(
                 "primary_provider_failed",
+                provider=provider_name,
                 error=str(primary_error),
-                fallback="openai",
+                fallback=fallback_name,
             )
 
             # Emit fallback event
@@ -302,8 +341,8 @@ class ConversationOrchestrator:
                     session_id=UUID(int=0),
                     user_id=UUID(int=0),
                     companion_id=UUID(int=0),
-                    provider="openai",
-                    model=self.settings.openai_model,
+                    provider=fallback_name,
+                    model=self._get_model_for_provider(fallback_name),
                     operation="chat_completion",
                     error_type=type(primary_error).__name__,
                 )
@@ -313,9 +352,29 @@ class ConversationOrchestrator:
             return await self.fallback_provider.generate(
                 messages=messages,
                 tools=tools,
-                max_tokens=self.settings.openai_max_tokens,
+                max_tokens=self._get_max_tokens_for_provider(fallback_name),
                 temperature=0.7,
             )
+
+    def _get_model_for_provider(self, provider: str) -> str:
+        """Get the model name for a provider."""
+        if provider == "ollama":
+            return self.settings.ollama_model
+        elif provider == "anthropic":
+            return self.settings.anthropic_model
+        elif provider == "openai":
+            return self.settings.openai_model
+        return "unknown"
+
+    def _get_max_tokens_for_provider(self, provider: str) -> int:
+        """Get max tokens for a provider."""
+        if provider == "ollama":
+            return self.settings.ollama_max_tokens
+        elif provider == "anthropic":
+            return self.settings.anthropic_max_tokens
+        elif provider == "openai":
+            return self.settings.openai_max_tokens
+        return 4096
 
     async def _create_safety_response(
         self,
@@ -336,8 +395,12 @@ class ConversationOrchestrator:
             policy_version=self.safety_gate.policy_version,
         )
 
+        # Use adult-appropriate safety response when in adult mode
+        is_adult = companion_spec.safety_level == "adult"
+        template_name = "safety_response_adult" if is_adult else "safety_response"
+
         safety_response = self.prompt_manager.get_prompt(
-            "safety_response",
+            template_name,
             version=self.prompt_manager.current_version,
         )
 

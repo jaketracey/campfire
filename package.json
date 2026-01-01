@@ -6,7 +6,8 @@
     "packages/*"
   ],
   "scripts": {
-    "dev": "turbo run dev",
+    "dev": "turbo run dev --ui tui",
+    "dev:stream": "turbo run dev",
     "build": "turbo run build",
     "test": "turbo run test",
     "test:unit": "turbo run test:unit",

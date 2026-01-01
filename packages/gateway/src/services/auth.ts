@@ -5,11 +5,12 @@
 
 import { nanoid } from 'nanoid';
 import { z } from 'zod';
-import { getUsersRepository, type UserSession, type UserSessionInsert } from '../repositories/index.js';
+import { getUsersRepository, type UserSession, type UserSessionInsert, type OAuthProvider, type UserOAuthAccount } from '../repositories/index.js';
 import { getEventsService, type EventContext } from './events.js';
 import { logger } from '../observability/logger.js';
 import type { User, UserStatus, MFAMethod } from '../db/types.js';
 import type { TransactionContext } from '../repositories/types.js';
+import { hashPassword, verifyPassword } from '../utils/password.js';
 
 // ============================================================================
 // Validation Schemas
@@ -36,6 +37,10 @@ export const ResetPasswordInputSchema = z.object({
   newPassword: z.string().min(8).max(128),
 });
 
+export const GoogleOAuthInputSchema = z.object({
+  idToken: z.string(),
+});
+
 // ============================================================================
 // Types
 // ============================================================================
@@ -44,6 +49,17 @@ export type RegisterInput = z.infer<typeof RegisterInputSchema>;
 export type LoginInput = z.infer<typeof LoginInputSchema>;
 export type ChangePasswordInput = z.infer<typeof ChangePasswordInputSchema>;
 export type ResetPasswordInput = z.infer<typeof ResetPasswordInputSchema>;
+export type GoogleOAuthInput = z.infer<typeof GoogleOAuthInputSchema>;
+
+export interface GoogleUserInfo {
+  sub: string;        // Google user ID
+  email: string;
+  email_verified: boolean;
+  name?: string;
+  given_name?: string;
+  family_name?: string;
+  picture?: string;
+}
 
 export interface AuthResult {
   user: User;
@@ -65,7 +81,9 @@ export interface TokenPayload {
 export interface AuthError {
   code: 'INVALID_CREDENTIALS' | 'EMAIL_NOT_VERIFIED' | 'ACCOUNT_LOCKED' |
         'ACCOUNT_SUSPENDED' | 'MFA_REQUIRED' | 'INVALID_MFA_CODE' |
-        'SESSION_EXPIRED' | 'TOKEN_INVALID' | 'EMAIL_EXISTS';
+        'SESSION_EXPIRED' | 'TOKEN_INVALID' | 'EMAIL_EXISTS' |
+        'OAUTH_INVALID_TOKEN' | 'OAUTH_EMAIL_MISMATCH' | 'OAUTH_ACCOUNT_EXISTS' |
+        'OAUTH_NOT_LINKED' | 'PASSWORD_REQUIRED_FOR_OAUTH';
   message: string;
 }
 
@@ -97,7 +115,7 @@ export class AuthService {
     }
 
     // Hash the password
-    const passwordHash = await this.hashPassword(validated.password);
+    const passwordHash = await hashPassword(validated.password);
 
     // Create the user
     const user = await this.users.create({
@@ -147,7 +165,7 @@ export class AuthService {
     }
 
     // Verify password
-    const isValid = await this.verifyPassword(validated.password, user.password_hash);
+    const isValid = await verifyPassword(validated.password, user.password_hash);
     if (!isValid) {
       await this.users.recordFailedLogin(user.id, tx);
 
@@ -288,13 +306,13 @@ export class AuthService {
     }
 
     // Verify current password
-    const isValid = await this.verifyPassword(validated.currentPassword, user.password_hash);
+    const isValid = await verifyPassword(validated.currentPassword, user.password_hash);
     if (!isValid) {
       throw this.createAuthError('INVALID_CREDENTIALS', 'Current password is incorrect');
     }
 
     // Hash and update new password
-    const passwordHash = await this.hashPassword(validated.newPassword);
+    const passwordHash = await hashPassword(validated.newPassword);
     await this.users.update(userId, { password_hash: passwordHash }, tx);
 
     // Revoke all other sessions for security
@@ -397,8 +415,240 @@ export class AuthService {
   }
 
   // ===========================================================================
+  // Google OAuth Authentication
+  // ===========================================================================
+
+  /**
+   * Authenticate with Google OAuth
+   * Handles both signup (new users) and login (existing users)
+   */
+  async authenticateWithGoogle(
+    input: GoogleOAuthInput,
+    deviceInfo?: { ipAddress?: string; userAgent?: string },
+    tx?: TransactionContext
+  ): Promise<AuthResult> {
+    const validated = GoogleOAuthInputSchema.parse(input);
+
+    // Verify the Google ID token and get user info
+    const googleUser = await this.verifyGoogleToken(validated.idToken);
+    if (!googleUser) {
+      throw this.createAuthError('OAUTH_INVALID_TOKEN', 'Invalid or expired Google token');
+    }
+
+    if (!googleUser.email_verified) {
+      throw this.createAuthError('OAUTH_INVALID_TOKEN', 'Google account email is not verified');
+    }
+
+    // Check if this Google account is already linked to a user
+    const existingOAuth = await this.users.findOAuthAccount('google', googleUser.sub, tx);
+
+    if (existingOAuth) {
+      // User has linked their Google account before - log them in
+      const user = await this.users.findById(existingOAuth.userId, tx);
+      if (!user) {
+        throw this.createAuthError('INVALID_CREDENTIALS', 'User account not found');
+      }
+
+      // Check account status
+      await this.checkAccountStatus(user);
+
+      // Update OAuth tokens if needed
+      await this.users.updateOAuthAccount(existingOAuth.id, {
+        providerEmail: googleUser.email,
+        profileData: {
+          name: googleUser.name,
+          picture: googleUser.picture,
+        },
+      }, tx);
+
+      // Record login
+      await this.users.recordLogin(user.id, tx);
+
+      // Create session
+      const { session, token } = await this.createSession(user.id, deviceInfo, tx);
+
+      logger.info({ userId: user.id, provider: 'google' }, 'User logged in with Google');
+
+      return {
+        user,
+        session,
+        token,
+        expiresAt: session.expiresAt,
+      };
+    }
+
+    // Check if a user exists with this email
+    const existingUser = await this.users.findByEmail(googleUser.email, tx);
+
+    if (existingUser) {
+      // User exists with this email but hasn't linked Google
+      // Check account status first
+      await this.checkAccountStatus(existingUser);
+
+      // Link the Google account to the existing user
+      await this.users.createOAuthAccount({
+        userId: existingUser.id,
+        provider: 'google',
+        providerUserId: googleUser.sub,
+        providerEmail: googleUser.email,
+        profileData: {
+          name: googleUser.name,
+          picture: googleUser.picture,
+        },
+      }, tx);
+
+      // Mark email as verified since Google verified it
+      if (!existingUser.email_verified) {
+        await this.users.verifyEmail(existingUser.id, tx);
+      }
+
+      // Record login
+      await this.users.recordLogin(existingUser.id, tx);
+
+      // Create session
+      const { session, token } = await this.createSession(existingUser.id, deviceInfo, tx);
+
+      logger.info({ userId: existingUser.id, provider: 'google' }, 'Existing user linked Google account');
+
+      return {
+        user: existingUser,
+        session,
+        token,
+        expiresAt: session.expiresAt,
+      };
+    }
+
+    // New user - create account
+    // Generate a random password hash for OAuth-only users (they can't use password login)
+    const randomPassword = nanoid(32);
+    const passwordHash = await hashPassword(randomPassword);
+
+    const user = await this.users.create({
+      email: googleUser.email,
+      password_hash: passwordHash,
+      email_verified: true, // Google verified the email
+      status: 'active',
+    }, tx);
+
+    // Create user profile with Google data
+    await this.users.createProfile({
+      user_id: user.id,
+      display_name: googleUser.name || googleUser.given_name || undefined,
+      avatar_url: googleUser.picture || undefined,
+    }, tx);
+
+    // Link the Google account
+    await this.users.createOAuthAccount({
+      userId: user.id,
+      provider: 'google',
+      providerUserId: googleUser.sub,
+      providerEmail: googleUser.email,
+      profileData: {
+        name: googleUser.name,
+        given_name: googleUser.given_name,
+        family_name: googleUser.family_name,
+        picture: googleUser.picture,
+      },
+    }, tx);
+
+    // Create session
+    const { session, token } = await this.createSession(user.id, deviceInfo, tx);
+
+    logger.info({ userId: user.id, provider: 'google' }, 'New user registered with Google');
+
+    return {
+      user,
+      session,
+      token,
+      expiresAt: session.expiresAt,
+    };
+  }
+
+  /**
+   * Get OAuth accounts linked to a user
+   */
+  async getLinkedOAuthAccounts(userId: string, tx?: TransactionContext): Promise<UserOAuthAccount[]> {
+    return this.users.findOAuthAccountsByUserId(userId, tx);
+  }
+
+  /**
+   * Unlink an OAuth account from a user
+   * Requires the user to have a password set or another OAuth account linked
+   */
+  async unlinkOAuthAccount(
+    userId: string,
+    provider: OAuthProvider,
+    tx?: TransactionContext
+  ): Promise<void> {
+    const oauthAccount = await this.users.findOAuthAccountByUserAndProvider(userId, provider, tx);
+    if (!oauthAccount) {
+      throw this.createAuthError('OAUTH_NOT_LINKED', `No ${provider} account linked`);
+    }
+
+    // Check if user has other authentication methods
+    const allOAuthAccounts = await this.users.findOAuthAccountsByUserId(userId, tx);
+
+    // If this is the only OAuth account, don't allow unlinking
+    // (In a real app, you'd check if they have a password set too)
+    if (allOAuthAccounts.length <= 1) {
+      throw this.createAuthError(
+        'PASSWORD_REQUIRED_FOR_OAUTH',
+        'Cannot unlink the only authentication method. Please set a password first.'
+      );
+    }
+
+    await this.users.deleteOAuthAccount(oauthAccount.id, tx);
+    logger.info({ userId, provider }, 'OAuth account unlinked');
+  }
+
+  // ===========================================================================
   // Internal Helpers
   // ===========================================================================
+
+  /**
+   * Verify a Google ID token and extract user info
+   */
+  private async verifyGoogleToken(idToken: string): Promise<GoogleUserInfo | null> {
+    try {
+      // Verify the token with Google's tokeninfo endpoint
+      const response = await fetch(
+        `https://oauth2.googleapis.com/tokeninfo?id_token=${encodeURIComponent(idToken)}`
+      );
+
+      if (!response.ok) {
+        logger.warn({ status: response.status }, 'Google token verification failed');
+        return null;
+      }
+
+      const data = await response.json() as Record<string, unknown>;
+
+      // Verify the audience (client ID)
+      const expectedClientId = process.env.GOOGLE_OAUTH_CLIENT_ID;
+      if (expectedClientId && data['aud'] !== expectedClientId) {
+        logger.warn({ expected: expectedClientId, got: data['aud'] }, 'Google token audience mismatch');
+        return null;
+      }
+
+      // Ensure required fields are present
+      if (!data['sub'] || !data['email']) {
+        logger.warn('Google token missing required fields');
+        return null;
+      }
+
+      return {
+        sub: data['sub'] as string,
+        email: data['email'] as string,
+        email_verified: data['email_verified'] === 'true' || data['email_verified'] === true,
+        name: data['name'] as string | undefined,
+        given_name: data['given_name'] as string | undefined,
+        family_name: data['family_name'] as string | undefined,
+        picture: data['picture'] as string | undefined,
+      };
+    } catch (error) {
+      logger.error({ error }, 'Failed to verify Google token');
+      return null;
+    }
+  }
 
   private async createSession(
     userId: string,
@@ -450,18 +700,6 @@ export class AuthService {
     // For TOTP, use a library like 'otplib'
     // For now, just check if code is provided
     return code.length === 6 && /^\d+$/.test(code);
-  }
-
-  private async hashPassword(password: string): Promise<string> {
-    // In production, use bcrypt or argon2
-    // For now, using a placeholder
-    const crypto = await import('crypto');
-    return crypto.createHash('sha256').update(password).digest('hex');
-  }
-
-  private async verifyPassword(password: string, hash: string): Promise<boolean> {
-    const passwordHash = await this.hashPassword(password);
-    return passwordHash === hash;
   }
 
   private async hashToken(token: string): Promise<string> {

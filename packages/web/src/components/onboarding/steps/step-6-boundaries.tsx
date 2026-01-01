@@ -25,7 +25,7 @@ export function Step6Boundaries() {
         <p className="text-gray-400 max-w-md mx-auto">You are in full control of your companion's memory and growth.</p>
       </div>
 
-      <Card className="bg-white/[0.02] backdrop-blur-3xl border-white/10 shadow-2xl overflow-hidden relative">
+      <Card className="bg-white/[0.01] backdrop-blur-3xl border-white/10 shadow-2xl overflow-hidden relative">
         <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-vibes-acid to-vibes-cyan" />
         <CardHeader className="pb-4">
           <CardTitle className="text-xl font-bold font-display text-white">Security & Memory</CardTitle>

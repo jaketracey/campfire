@@ -50,7 +50,7 @@ export function Step4Voice() {
             <Card
               className={cn(
                 'flex items-center p-5 transition-all border-white/10 cursor-pointer overflow-hidden relative group',
-                voice?.id === v.id ? 'bg-white/[0.08] border-vibes-cyan/50 ring-1 ring-vibes-cyan/20' : 'bg-white/[0.02] hover:bg-white/[0.05]'
+                voice?.id === v.id ? 'bg-white/[0.08] border-vibes-cyan/50 ring-1 ring-vibes-cyan/30 backdrop-blur-xl' : 'bg-white/[0.01] hover:bg-white/[0.03] backdrop-blur-md'
               )}
               onClick={() => setVoice(v)}
             >
@@ -118,7 +118,7 @@ export function Step4Voice() {
           onClick={nextStep}
           className="group h-14 px-12 rounded-full bg-gradient-to-r from-vibes-cyan to-vibes-electric hover:shadow-[0_0_30px_rgba(6,182,212,0.3)] transition-all font-bold text-lg"
         >
-          Next: Visuals
+          Next: Boundaries
           <ArrowRight className="ml-2 h-5 w-5 group-hover:translate-x-2 transition-transform duration-300" />
         </Button>
       </div>

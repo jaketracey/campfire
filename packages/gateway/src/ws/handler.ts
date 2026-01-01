@@ -7,7 +7,7 @@ import type { FastifyInstance } from 'fastify';
 import type { WebSocket } from 'ws';
 import { nanoid } from 'nanoid';
 import { logger } from '../observability/logger.js';
-import { verifyToken, DEV_USER, type AuthenticatedUser } from '../middleware/auth.js';
+import { verifyToken, type AuthenticatedUser } from '../middleware/auth.js';
 import {
   getCompanionsService,
   getSessionsService,
@@ -17,8 +17,6 @@ import {
 
 // Orchestrator base URL
 const ORCHESTRATOR_URL = process.env['ORCHESTRATOR_URL'] || 'http://localhost:8000';
-
-const IS_DEV = process.env['NODE_ENV'] === 'development';
 
 /**
  * WebSocket message types
@@ -104,13 +102,6 @@ export async function registerWebSocketHandler(app: FastifyInstance): Promise<vo
 
     clients.set(clientId, client);
 
-    // Auto-authenticate in development mode
-    if (IS_DEV) {
-      client.user = DEV_USER;
-      client.authenticated = true;
-      logger.info({ clientId, userId: DEV_USER.userId }, 'WebSocket client auto-authenticated (dev mode)');
-    }
-
     logger.info(
       { clientId, ip: request.ip },
       'WebSocket client connected'
@@ -146,14 +137,6 @@ export async function registerWebSocketHandler(app: FastifyInstance): Promise<vo
       type: 'ping',
       payload: { clientId },
     });
-
-    // Send auth success in dev mode
-    if (IS_DEV) {
-      send(client, {
-        type: 'auth_success',
-        payload: { userId: DEV_USER.userId },
-      });
-    }
   });
 }
 

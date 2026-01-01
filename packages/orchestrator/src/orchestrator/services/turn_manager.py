@@ -253,7 +253,14 @@ class TurnManager:
             "gpt-4-turbo-preview": {"input": 10.0, "output": 30.0},
             "gpt-4o": {"input": 5.0, "output": 15.0},
             "gpt-3.5-turbo": {"input": 0.5, "output": 1.5},
+            # Ollama models are free (self-hosted)
+            "mannix/llama3.1-8b-abliterated": {"input": 0.0, "output": 0.0},
+            "dolphin-llama3:8b": {"input": 0.0, "output": 0.0},
         }
+
+        # Ollama models are free
+        if "ollama" in model.lower() or "abliterated" in model.lower() or "dolphin" in model.lower():
+            return 0.0
 
         model_pricing = pricing.get(model, {"input": 3.0, "output": 15.0})
 
@@ -268,6 +275,8 @@ class TurnManager:
             return "anthropic"
         elif model.startswith("gpt"):
             return "openai"
+        elif "abliterated" in model.lower() or "dolphin" in model.lower() or "llama" in model.lower():
+            return "ollama"
         else:
             return "unknown"
 

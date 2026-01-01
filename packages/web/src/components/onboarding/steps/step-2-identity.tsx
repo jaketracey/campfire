@@ -46,7 +46,7 @@ export function Step2Identity() {
   };
 
   return (
-    <Card className="w-full bg-white/[0.02] backdrop-blur-3xl border-white/10 shadow-[0_0_50px_rgba(0,0,0,0.5)] overflow-hidden">
+    <Card className="w-full bg-white/[0.01] backdrop-blur-3xl border-white/10 shadow-[0_0_50px_rgba(0,0,0,0.5)] overflow-hidden">
       <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-vibes-neon via-vibes-hot to-vibes-cyan" />
       <CardHeader className="space-y-2 pb-8">
         <CardTitle className="text-3xl font-bold font-display tracking-tight text-white">Identity</CardTitle>
@@ -105,7 +105,7 @@ export function Step2Identity() {
               disabled={!isValid}
               className="group h-14 px-10 rounded-full bg-gradient-to-r from-vibes-electric to-vibes-cyan hover:shadow-[0_0_30px_rgba(6,182,212,0.3)] transition-all font-bold text-lg"
             >
-              Next Step
+              Next: Visuals
               <ArrowRight className="ml-2 h-5 w-5 group-hover:translate-x-2 transition-transform duration-300" />
             </Button>
           </div>

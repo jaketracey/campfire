@@ -71,8 +71,8 @@ export function Step3Personality() {
               className={cn(
                 'cursor-pointer transition-all border-white/10 overflow-hidden relative group',
                 archetype?.id === type.id
-                  ? 'bg-white/[0.08] border-vibes-neon/50 ring-1 ring-vibes-neon/20 shadow-[0_0_20px_rgba(168,85,247,0.1)]'
-                  : 'bg-white/[0.02] hover:bg-white/[0.05] hover:border-white/20'
+                  ? 'bg-white/[0.06] border-vibes-neon/50 ring-1 ring-vibes-neon/30 shadow-[0_0_20px_rgba(168,85,247,0.1)] backdrop-blur-xl'
+                  : 'bg-white/[0.01] hover:bg-white/[0.03] hover:border-white/20 backdrop-blur-md'
               )}
               onClick={() => setArchetype(type as any)}
             >
@@ -102,7 +102,7 @@ export function Step3Personality() {
           animate={{ opacity: 1, y: 0 }}
           className="space-y-8 pt-4"
         >
-          <Card className="bg-white/[0.02] backdrop-blur-3xl border-white/10 shadow-xl">
+          <Card className="bg-white/[0.01] backdrop-blur-3xl border-white/10 shadow-2xl">
             <CardContent className="pt-8 space-y-8">
               <div className="space-y-4">
                 <div className="flex justify-between items-end">

@@ -1,8 +1,7 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useCallback } from 'react';
 import Link from 'next/link';
-import { useRouter } from 'next/navigation';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
@@ -20,6 +19,8 @@ import {
   CardTitle,
 } from '@/components/ui/card';
 import { useToast } from '@/hooks/use-toast';
+import { useAuth } from '@/hooks/use-auth';
+import { GoogleSignInButton } from '@/components/auth/google-sign-in-button';
 
 const signupSchema = z
   .object({
@@ -51,11 +52,49 @@ const passwordRequirements = [
 ];
 
 export default function SignupPage() {
-  const router = useRouter();
   const { toast } = useToast();
+  const { signup, loginWithGoogle, isLoading: authLoading } = useAuth();
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
-  const [isLoading, setIsLoading] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isGoogleLoading, setIsGoogleLoading] = useState(false);
+
+  const isLoading = authLoading || isSubmitting || isGoogleLoading;
+
+  const handleGoogleSuccess = useCallback(
+    async (idToken: string) => {
+      setIsGoogleLoading(true);
+      try {
+        await loginWithGoogle({ idToken }, true);
+        toast({
+          title: 'Account created!',
+          description: 'Welcome to Campfire.',
+        });
+      } catch (error) {
+        const message =
+          error instanceof Error ? error.message : 'Google sign-up failed. Please try again.';
+        toast({
+          title: 'Sign-up failed',
+          description: message,
+          variant: 'destructive',
+        });
+      } finally {
+        setIsGoogleLoading(false);
+      }
+    },
+    [loginWithGoogle, toast]
+  );
+
+  const handleGoogleError = useCallback(
+    (error: Error) => {
+      toast({
+        title: 'Sign-up failed',
+        description: error.message || 'Google sign-up failed. Please try again.',
+        variant: 'destructive',
+      });
+    },
+    [toast]
+  );
 
   const {
     register,
@@ -74,28 +113,28 @@ export default function SignupPage() {
   const acceptTerms = watch('acceptTerms');
 
   const onSubmit = async (data: SignupFormData) => {
-    setIsLoading(true);
+    setIsSubmitting(true);
     try {
-      // TODO: Implement actual signup API call
-      console.log('Signup data:', data);
-
-      // Simulate API call
-      await new Promise((resolve) => setTimeout(resolve, 1000));
+      await signup({
+        email: data.email,
+        password: data.password,
+        displayName: data.name,
+      });
 
       toast({
         title: 'Account created!',
-        description: 'Please check your email to verify your account.',
+        description: 'Welcome to Campfire.',
       });
-
-      router.push('/onboard');
     } catch (error) {
+      const message =
+        error instanceof Error ? error.message : 'Please try again later.';
       toast({
         title: 'Signup failed',
-        description: 'Please try again later.',
+        description: message,
         variant: 'destructive',
       });
     } finally {
-      setIsLoading(false);
+      setIsSubmitting(false);
     }
   };
 
@@ -273,9 +312,28 @@ export default function SignupPage() {
             size="lg"
             disabled={isLoading}
           >
-            {isLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+            {isSubmitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
             Create account
           </Button>
+
+          <div className="relative w-full">
+            <div className="absolute inset-0 flex items-center">
+              <span className="w-full border-t" />
+            </div>
+            <div className="relative flex justify-center text-xs uppercase">
+              <span className="bg-card px-2 text-muted-foreground">
+                Or continue with
+              </span>
+            </div>
+          </div>
+
+          <GoogleSignInButton
+            onSuccess={handleGoogleSuccess}
+            onError={handleGoogleError}
+            text="signup"
+            disabled={isLoading}
+          />
+
           <p className="text-sm text-muted-foreground text-center">
             Already have an account?{' '}
             <Link href="/login" className="text-primary hover:underline">

@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { MessageCircle, Plus } from 'lucide-react';
+import { useRequireAuth } from '@/hooks/use-auth';
 
 interface Session {
   id: string;
@@ -16,6 +17,7 @@ interface Session {
 
 export default function ChatPage() {
   const router = useRouter();
+  const { isAuthenticated, isLoading: authLoading } = useRequireAuth('/login');
   const [sessions, setSessions] = useState<Session[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -25,12 +27,18 @@ export default function ChatPage() {
     setLoading(false);
   }, []);
 
-  if (loading) {
+  // Show loading while checking auth
+  if (authLoading || loading) {
     return (
       <div className="flex items-center justify-center min-h-screen">
         <div className="animate-pulse text-muted-foreground">Loading...</div>
       </div>
     );
+  }
+
+  // Don't render if not authenticated (will redirect)
+  if (!isAuthenticated) {
+    return null;
   }
 
   return (

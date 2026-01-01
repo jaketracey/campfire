@@ -5,11 +5,12 @@
 
 import type { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
 import { z } from 'zod';
-import { nanoid } from 'nanoid';
 import { logger } from '../observability/logger.js';
 import { withSpan } from '../observability/tracing.js';
-import { getEventStore } from '../db/event-store.js';
 import { requireAuth, createToken, createRefreshToken, verifyRefreshToken } from '../middleware/auth.js';
+import { getAuthService } from '../services/auth.js';
+import { getReferralsService } from '../services/referrals.js';
+import { getUsersRepository, getReferralsRepository } from '../repositories/index.js';
 
 /**
  * Request schemas
@@ -18,6 +19,8 @@ const SignupBodySchema = z.object({
   email: z.string().email('Invalid email format'),
   password: z.string().min(8, 'Password must be at least 8 characters'),
   displayName: z.string().min(1).max(100).optional(),
+  referralCode: z.string().max(20).optional(),
+  inviteToken: z.string().optional(),
 });
 
 const LoginBodySchema = z.object({
@@ -27,6 +30,10 @@ const LoginBodySchema = z.object({
 
 const RefreshBodySchema = z.object({
   refreshToken: z.string().min(1, 'Refresh token is required'),
+});
+
+const GoogleAuthBodySchema = z.object({
+  idToken: z.string().min(1, 'Google ID token is required'),
 });
 
 /**
@@ -53,63 +60,89 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
         });
       }
 
-      const { email, password, displayName } = parseResult.data;
+      const { email, password, displayName, referralCode, inviteToken } = parseResult.data;
       span.setAttributes({ 'auth.email': email });
 
-      // TODO: Implement user service call
-      // - Check if email already exists
-      // - Hash password
-      // - Create user record
-      // - Create user profile
+      try {
+        const authService = getAuthService();
+        const referralsService = getReferralsService();
+        const referralsRepo = getReferralsRepository();
+        const result = await authService.register({ email, password });
 
-      // Stub: Simulate user creation
-      const userId = nanoid();
-      logger.info({ userId, email }, 'User signup initiated');
+        // Update profile with display name if provided
+        if (displayName) {
+          const usersRepo = getUsersRepository();
+          await usersRepo.updateProfile(result.user.id, { display_name: displayName });
+        }
 
-      // Emit user.created event
-      const eventStore = getEventStore();
-      await eventStore.append({
-        eventId: nanoid(),
-        timestamp: new Date().toISOString(),
-        userId,
-        sessionId: 'signup',
-        turnId: null,
-        traceId: request.id,
-        type: 'user.created',
-        payload: {
-          email,
-          displayName: displayName ?? null,
-        },
-        version: '1.0',
-        causationId: null,
-        correlationId: request.id,
-      });
+        // Record referral if referral code was provided
+        if (referralCode) {
+          try {
+            await referralsService.recordReferral(result.user.id, referralCode);
+            logger.info({ userId: result.user.id, referralCode }, 'Referral recorded during signup');
+          } catch (refError) {
+            // Don't fail signup if referral recording fails
+            logger.warn({ userId: result.user.id, referralCode, error: refError }, 'Failed to record referral');
+          }
+        }
 
-      // Generate tokens
-      const accessToken = await createToken({
-        userId,
-        email,
-        role: 'user',
-      });
-      const refreshToken = await createRefreshToken(userId);
+        // Accept invite if invite token was provided
+        if (inviteToken) {
+          try {
+            const invite = await referralsRepo.findPendingInviteByToken(inviteToken);
+            if (invite && invite.status === 'pending' && invite.email.toLowerCase() === email.toLowerCase()) {
+              await referralsRepo.acceptPendingInvite(inviteToken, result.user.id);
+              logger.info({ userId: result.user.id, inviteToken }, 'Invite accepted during signup');
+            }
+          } catch (invError) {
+            // Don't fail signup if invite acceptance fails
+            logger.warn({ userId: result.user.id, inviteToken, error: invError }, 'Failed to accept invite');
+          }
+        }
 
-      return reply.status(201).send({
-        success: true,
-        data: {
-          user: {
-            id: userId,
-            email,
-            displayName: displayName ?? null,
-            createdAt: new Date().toISOString(),
+        // Generate JWT tokens with user's role
+        const accessToken = await createToken({
+          userId: result.user.id,
+          email: result.user.email,
+          role: result.user.role,
+        });
+        const refreshToken = await createRefreshToken(result.user.id);
+
+        logger.info({ userId: result.user.id, email }, 'User signup successful');
+
+        return reply.status(201).send({
+          success: true,
+          data: {
+            user: {
+              id: result.user.id,
+              email: result.user.email,
+              displayName: displayName ?? null,
+              emailVerified: result.user.email_verified,
+              role: result.user.role,
+              createdAt: result.user.created_at.toISOString(),
+            },
+            tokens: {
+              accessToken,
+              refreshToken,
+              tokenType: 'Bearer',
+              expiresIn: 86400,
+            },
           },
-          tokens: {
-            accessToken,
-            refreshToken,
-            tokenType: 'Bearer',
-            expiresIn: 86400, // 24 hours
-          },
-        },
-      });
+        });
+      } catch (error) {
+        const authError = error as { code?: string; message?: string };
+        if (authError.code === 'EMAIL_EXISTS') {
+          return reply.status(409).send({
+            success: false,
+            error: {
+              code: 'EMAIL_EXISTS',
+              message: 'An account with this email already exists',
+              timestamp: new Date().toISOString(),
+            },
+          });
+        }
+        throw error;
+      }
     });
   });
 
@@ -136,70 +169,84 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
       const { email, password } = parseResult.data;
       span.setAttributes({ 'auth.email': email });
 
-      // TODO: Implement user service call
-      // - Find user by email
-      // - Verify password hash
-      // - Update last login timestamp
+      try {
+        const authService = getAuthService();
+        const result = await authService.login(
+          { email, password },
+          { ipAddress: request.ip, userAgent: request.headers['user-agent'] }
+        );
 
-      // Stub: Simulate authentication (for development only)
-      // In production, this should verify against the database
-      if (password.length < 8) {
-        return reply.status(401).send({
-          success: false,
-          error: {
-            code: 'INVALID_CREDENTIALS',
-            message: 'Invalid email or password',
-            timestamp: new Date().toISOString(),
+        // Check if MFA is required
+        if (result.requiresMFA) {
+          return reply.send({
+            success: true,
+            data: {
+              requiresMFA: true,
+              mfaMethods: result.mfaMethods,
+            },
+          });
+        }
+
+        // Generate JWT tokens with user's role
+        const accessToken = await createToken({
+          userId: result.user.id,
+          email: result.user.email,
+          role: result.user.role,
+        });
+        const refreshToken = await createRefreshToken(result.user.id);
+
+        logger.info({ userId: result.user.id, email }, 'User login successful');
+
+        return reply.send({
+          success: true,
+          data: {
+            user: {
+              id: result.user.id,
+              email: result.user.email,
+              role: result.user.role,
+            },
+            tokens: {
+              accessToken,
+              refreshToken,
+              tokenType: 'Bearer',
+              expiresIn: 86400,
+            },
           },
         });
+      } catch (error) {
+        const authError = error as { code?: string; message?: string };
+        if (authError.code === 'INVALID_CREDENTIALS') {
+          return reply.status(401).send({
+            success: false,
+            error: {
+              code: 'INVALID_CREDENTIALS',
+              message: 'Invalid email or password',
+              timestamp: new Date().toISOString(),
+            },
+          });
+        }
+        if (authError.code === 'ACCOUNT_LOCKED') {
+          return reply.status(401).send({
+            success: false,
+            error: {
+              code: 'ACCOUNT_LOCKED',
+              message: authError.message || 'Account is temporarily locked',
+              timestamp: new Date().toISOString(),
+            },
+          });
+        }
+        if (authError.code === 'ACCOUNT_SUSPENDED') {
+          return reply.status(403).send({
+            success: false,
+            error: {
+              code: 'ACCOUNT_SUSPENDED',
+              message: authError.message || 'Account has been suspended',
+              timestamp: new Date().toISOString(),
+            },
+          });
+        }
+        throw error;
       }
-
-      const userId = nanoid(); // Should come from database
-      logger.info({ userId, email }, 'User login successful');
-
-      // Emit user.logged_in event
-      const eventStore = getEventStore();
-      await eventStore.append({
-        eventId: nanoid(),
-        timestamp: new Date().toISOString(),
-        userId,
-        sessionId: 'login',
-        turnId: null,
-        traceId: request.id,
-        type: 'user.logged_in',
-        payload: {
-          email,
-          ip: request.ip,
-          userAgent: request.headers['user-agent'] ?? null,
-        },
-        version: '1.0',
-        causationId: null,
-        correlationId: request.id,
-      });
-
-      // Generate tokens
-      const accessToken = await createToken({
-        userId,
-        email,
-        role: 'user',
-      });
-      const refreshToken = await createRefreshToken(userId);
-
-      return reply.send({
-        success: true,
-        data: {
-          user: {
-            id: userId,
-            email,
-          },
-          tokens: {
-            accessToken,
-            refreshToken,
-            tokenType: 'Bearer',
-            expiresIn: 86400,
-          },
-        },
-      });
     });
   });
 
@@ -212,27 +259,7 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
       const user = request.user!;
       span.setAttributes({ 'auth.userId': user.userId });
 
-      // TODO: Implement token blacklist or session invalidation
-      // - Add refresh token to blacklist
-      // - Clear any server-side session data
-
       logger.info({ userId: user.userId }, 'User logout');
-
-      // Emit user.logged_out event
-      const eventStore = getEventStore();
-      await eventStore.append({
-        eventId: nanoid(),
-        timestamp: new Date().toISOString(),
-        userId: user.userId,
-        sessionId: 'logout',
-        turnId: null,
-        traceId: request.id,
-        type: 'user.logged_out',
-        payload: {},
-        version: '1.0',
-        causationId: null,
-        correlationId: request.id,
-      });
 
       return reply.send({
         success: true,
@@ -280,28 +307,36 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
 
       span.setAttributes({ 'auth.userId': userId });
 
-      // TODO: Fetch user from database to get email and role
-      const email = 'user@example.com'; // Should come from database
+      // Fetch user from database
+      const usersRepo = getUsersRepository();
+      const user = await usersRepo.findById(userId);
+      if (!user) {
+        return reply.status(401).send({
+          success: false,
+          error: {
+            code: 'INVALID_REFRESH_TOKEN',
+            message: 'User not found',
+            timestamp: new Date().toISOString(),
+          },
+        });
+      }
 
-      // Generate new tokens
+      // Generate new tokens with user's role
       const newAccessToken = await createToken({
-        userId,
-        email,
-        role: 'user',
+        userId: user.id,
+        email: user.email,
+        role: user.role,
       });
-      const newRefreshToken = await createRefreshToken(userId);
+      const newRefreshToken = await createRefreshToken(user.id);
 
-      logger.debug({ userId }, 'Token refreshed');
+      logger.debug({ userId: user.id }, 'Token refreshed');
 
       return reply.send({
         success: true,
         data: {
-          tokens: {
-            accessToken: newAccessToken,
-            refreshToken: newRefreshToken,
-            tokenType: 'Bearer',
-            expiresIn: 86400,
-          },
+          accessToken: newAccessToken,
+          refreshToken: newRefreshToken,
+          expiresIn: 86400,
         },
       });
     });
@@ -328,6 +363,112 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
           issuedAt: new Date().toISOString(),
         },
       },
+    });
+  });
+
+  /**
+   * POST /auth/google
+   * Authenticate with Google OAuth
+   * Handles both login (existing users) and signup (new users)
+   */
+  app.post('/google', async (request: FastifyRequest, reply: FastifyReply) => {
+    return withSpan('auth.google', async (span) => {
+      // Validate request body
+      const parseResult = GoogleAuthBodySchema.safeParse(request.body);
+      if (!parseResult.success) {
+        return reply.status(400).send({
+          success: false,
+          error: {
+            code: 'VALIDATION_ERROR',
+            message: 'Invalid request body',
+            details: parseResult.error.flatten(),
+            timestamp: new Date().toISOString(),
+          },
+        });
+      }
+
+      const { idToken } = parseResult.data;
+
+      try {
+        const authService = getAuthService();
+        const result = await authService.authenticateWithGoogle(
+          { idToken },
+          { ipAddress: request.ip, userAgent: request.headers['user-agent'] }
+        );
+
+        span.setAttributes({ 'auth.userId': result.user.id });
+
+        // Get user profile for display name
+        const usersRepo = getUsersRepository();
+        const profile = await usersRepo.findProfileByUserId(result.user.id);
+
+        // Generate JWT tokens with user's role
+        const accessToken = await createToken({
+          userId: result.user.id,
+          email: result.user.email,
+          role: result.user.role,
+        });
+        const refreshToken = await createRefreshToken(result.user.id);
+
+        logger.info({ userId: result.user.id, provider: 'google' }, 'Google auth successful');
+
+        return reply.send({
+          success: true,
+          data: {
+            user: {
+              id: result.user.id,
+              email: result.user.email,
+              displayName: profile?.display_name ?? null,
+              emailVerified: result.user.email_verified,
+              role: result.user.role,
+              createdAt: result.user.created_at.toISOString(),
+            },
+            tokens: {
+              accessToken,
+              refreshToken,
+              tokenType: 'Bearer',
+              expiresIn: 86400,
+            },
+          },
+        });
+      } catch (error) {
+        const authError = error as { code?: string; message?: string };
+
+        if (authError.code === 'OAUTH_INVALID_TOKEN') {
+          return reply.status(401).send({
+            success: false,
+            error: {
+              code: 'OAUTH_INVALID_TOKEN',
+              message: authError.message || 'Invalid or expired Google token',
+              timestamp: new Date().toISOString(),
+            },
+          });
+        }
+
+        if (authError.code === 'ACCOUNT_SUSPENDED') {
+          return reply.status(403).send({
+            success: false,
+            error: {
+              code: 'ACCOUNT_SUSPENDED',
+              message: authError.message || 'Account has been suspended',
+              timestamp: new Date().toISOString(),
+            },
+          });
+        }
+
+        if (authError.code === 'ACCOUNT_LOCKED') {
+          return reply.status(401).send({
+            success: false,
+            error: {
+              code: 'ACCOUNT_LOCKED',
+              message: authError.message || 'Account is temporarily locked',
+              timestamp: new Date().toISOString(),
+            },
+          });
+        }
+
+        throw error;
+      }
     });
   });
 }

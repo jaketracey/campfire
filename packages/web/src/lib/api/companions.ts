@@ -5,6 +5,50 @@
 
 import { get, post, patch, del } from './client';
 
+/**
+ * Companion visual style from spec
+ */
+export interface CompanionVisualStyle {
+  style_type?: string;
+  physical_attributes?: {
+    apparent_age?: string;
+    hair_color?: string;
+    hair_style?: string;
+    eye_color?: string;
+    skin_tone?: string;
+    build?: string;
+    notable_features?: string[];
+    clothing_style?: string;
+    accessories?: string[];
+  };
+  style_modifiers?: string[];
+  custom_style_description?: string;
+}
+
+/**
+ * Companion spec (personality, voice, visual, boundaries)
+ */
+export interface CompanionSpec {
+  identity?: {
+    name?: string;
+    pronouns?: string;
+    backstory?: string;
+  };
+  personality?: {
+    archetype?: string;
+    traits?: Record<string, number>;
+  };
+  voice?: {
+    provider?: string;
+    voice_id?: string;
+  };
+  visual_style?: CompanionVisualStyle;
+  boundaries?: {
+    content_rating?: string;
+    relationship_pacing?: string;
+  };
+}
+
 export interface Companion {
   id: string;
   name: string;
@@ -18,6 +62,14 @@ export interface Companion {
   isActive: boolean;
   createdAt: string;
   ownerId: string;
+  spec?: CompanionSpec | null;
+  specVersion?: number;
+  /** The ID of the most recent active/paused session for this companion */
+  latestSessionId?: string | null;
+  /** When the latest session was last active */
+  latestSessionUpdatedAt?: string | null;
+  /** URL of the most recent image generated during conversations */
+  latestConversationImageUrl?: string | null;
 }
 
 export interface CreateCompanionInput {
@@ -41,6 +93,11 @@ export interface UpdateCompanionInput {
   systemPrompt?: string;
   isPublic?: boolean;
   isActive?: boolean;
+  spec?: {
+    personality?: {
+      traits?: Record<string, number>;
+    };
+  };
 }
 
 export interface CompanionListResponse {
@@ -96,4 +153,20 @@ export function deleteCompanion(companionId: string): Promise<void> {
  */
 export function cloneCompanion(companionId: string): Promise<Companion> {
   return post<Companion>(`/companions/${companionId}/clone`);
+}
+
+/**
+ * Update companion personality traits
+ */
+export function updateCompanionPersonality(
+  companionId: string,
+  traits: Record<string, number>
+): Promise<Companion> {
+  return patch<Companion>(`/companions/${companionId}`, {
+    spec: {
+      personality: {
+        traits,
+      },
+    },
+  });
 }

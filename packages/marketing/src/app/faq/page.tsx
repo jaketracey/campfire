@@ -44,7 +44,7 @@ const faqs = [
 
 export default function FAQPage() {
   return (
-    <div className="container py-24 md:py-32">
+    <div className="container mx-auto py-24 md:py-32">
       <SectionHeader
         title="Frequently Asked Questions"
         description="Everything you need to know about Campfire and how it works."

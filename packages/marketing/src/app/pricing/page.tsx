@@ -30,7 +30,7 @@ export default function PricingPage() {
         <div className="absolute bottom-[-10%] right-[10%] w-[40%] h-[40%] bg-vibes-cyan/10 rounded-full blur-[100px] animate-float" />
       </div>
 
-      <div className="container py-24 md:py-32">
+      <div className="container mx-auto py-24 md:py-32">
         <SectionHeader
           title="Simple, transparent pricing"
           description="Choose the plan that's right for you. No hidden fees. Cancel anytime."

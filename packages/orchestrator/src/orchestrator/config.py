@@ -29,6 +29,9 @@ class Settings(BaseSettings):
     port: int = 8000
     workers: int = 4
 
+    # Gateway (internal API)
+    gateway_internal_url: str = "http://localhost:3001"
+
     # Database
     database_url: PostgresDsn = Field(
         default="postgresql+asyncpg://postgres:postgres@localhost:5432/campfire"
@@ -52,6 +55,14 @@ class Settings(BaseSettings):
     openai_max_tokens: int = 4096
     openai_timeout: float = 60.0
 
+    # Ollama (local/self-hosted - abliterated models)
+    ollama_base_url: str = "http://localhost:11434"
+    ollama_model: str = "huihui_ai/qwen3-abliterated:8b"
+    ollama_fallback_model: str = "dolphin-llama3:8b"
+    ollama_max_tokens: int = 4096
+    ollama_timeout: float = 120.0
+    ollama_enabled: bool = True  # Prefer Ollama over OpenAI when available
+
     # Deepgram (STT)
     deepgram_api_key: str = ""
     deepgram_model: str = "nova-2"
@@ -62,7 +73,19 @@ class Settings(BaseSettings):
     elevenlabs_model: str = "eleven_multilingual_v2"
     elevenlabs_default_voice_id: str = "21m00Tcm4TlvDq8ikWAM"
 
-    # FAL AI (Image Generation - preferred)
+    # ComfyUI (local/self-hosted image generation - preferred)
+    comfyui_base_url: str = "http://localhost:8188"
+    comfyui_default_checkpoint: str = "Juggernaut-X-RunDiffusion-NSFW.safetensors"
+    comfyui_timeout: float = 300.0
+    comfyui_enabled: bool = True  # Prefer ComfyUI over FAL when available
+
+    # ComfyUI SDXL settings (for high-quality portrait generation)
+    comfyui_sdxl_checkpoint: str = "sd_xl_base_1.0.safetensors"
+    comfyui_sdxl_vae: str = "sdxl_vae.safetensors"
+    comfyui_ipadapter_model: str = "ip-adapter-plus_sdxl_vit-h.safetensors"
+    comfyui_clip_vision_model: str = "CLIP-ViT-H-14-laion2B-s32B-b79K.safetensors"
+
+    # FAL AI (Image Generation - cloud fallback)
     fal_api_key: str = ""
     fal_model: str = "fal-ai/flux/schnell"
 
@@ -73,6 +96,7 @@ class Settings(BaseSettings):
     # Safety
     safety_enabled: bool = True
     safety_strict_mode: bool = False
+    safety_level: str = "adult"  # adult, permissive, standard, strict
     content_filter_threshold: float = 0.7
 
     # Rate Limiting

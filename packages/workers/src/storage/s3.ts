@@ -10,8 +10,8 @@ export function createS3Client() {
     region: process.env.AWS_REGION || 'us-east-1',
   });
 
-  const vaultBucket = process.env.S3_VAULT_BUCKET || 'campfire-vault-dev';
-  const mediaBucket = process.env.S3_MEDIA_BUCKET || 'campfire-media-dev';
+  const vaultBucket = process.env.S3_VAULT_BUCKET || 'campfire-dev-vault';
+  const mediaBucket = process.env.S3_MEDIA_BUCKET || 'campfire-dev-media';
 
   return {
     async uploadVaultFile(key: string, content: string): Promise<string> {

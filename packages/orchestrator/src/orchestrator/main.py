@@ -20,6 +20,8 @@ from orchestrator.models.conversation import (
 )
 from orchestrator.models.memory import LongTermMemory
 from orchestrator.prompts.manager import PromptManager
+from orchestrator.providers.comfyui import ComfyUIProvider
+from orchestrator.providers.fal import FalProvider
 from orchestrator.safety.gate import SafetyGate, SafetyLevel
 from orchestrator.services.orchestrator import ConversationOrchestrator
 from orchestrator.tools.router import ToolRouter
@@ -78,6 +80,33 @@ class ErrorResponse(BaseModel):
     detail: str | None = None
 
 
+class ImageGenRequest(BaseModel):
+    """Request model for image generation."""
+
+    prompt: str
+    emotional_state: str = "neutral"
+    style: str = "stylized"
+    negative_prompt: str | None = None
+    width: int = 768
+    height: int = 1024
+    steps: int = 25
+    cfg: float = 7.0
+    reference_image_url: str | None = None  # Identity anchor for IP-Adapter
+    reference_strength: float = 0.7  # How much to follow reference image
+
+
+class ImageGenResponse(BaseModel):
+    """Response model for image generation."""
+
+    image_base64: str
+    format: str
+    width: int
+    height: int
+    latency_ms: float
+    provider: str
+    prompt_used: str
+
+
 # Application state
 class AppState:
     """Application state container."""
@@ -88,6 +117,8 @@ class AppState:
     safety_gate: SafetyGate
     tool_router: ToolRouter
     orchestrator: ConversationOrchestrator
+    comfyui_provider: ComfyUIProvider | None
+    fal_provider: FalProvider | None
 
 
 app_state = AppState()
@@ -109,11 +140,19 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     # Initialize prompt manager
     app_state.prompt_manager = PromptManager(default_version="1.0.0")
 
-    # Initialize safety gate
+    # Initialize safety gate with configured safety level
+    safety_level_map = {
+        "adult": SafetyLevel.ADULT,
+        "permissive": SafetyLevel.PERMISSIVE,
+        "standard": SafetyLevel.STANDARD,
+        "strict": SafetyLevel.STRICT,
+    }
+    configured_level = safety_level_map.get(settings.safety_level, SafetyLevel.ADULT)
+
     app_state.safety_gate = SafetyGate(
         event_emitter=app_state.event_emitter,
         policy_version="1.0.0",
-        safety_level=SafetyLevel.STRICT if settings.safety_strict_mode else SafetyLevel.STANDARD,
+        safety_level=configured_level,
         enabled=settings.safety_enabled,
         strict_mode=settings.safety_strict_mode,
         content_filter_threshold=settings.content_filter_threshold,
@@ -134,12 +173,31 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         tool_router=app_state.tool_router,
     )
 
+    # Initialize image providers
+    app_state.comfyui_provider = None
+    app_state.fal_provider = None
+
+    if settings.comfyui_enabled:
+        app_state.comfyui_provider = ComfyUIProvider(settings)
+        # Check if ComfyUI is available
+        if await app_state.comfyui_provider.health_check():
+            logger.info("comfyui_available", url=settings.comfyui_base_url)
+        else:
+            logger.warning("comfyui_not_available", url=settings.comfyui_base_url)
+            app_state.comfyui_provider = None
+
+    if settings.fal_api_key:
+        app_state.fal_provider = FalProvider(settings)
+        logger.info("fal_provider_initialized")
+
     logger.info(
         "orchestrator_service_started",
         version=settings.app_version,
         environment=settings.environment,
         prompt_version=app_state.prompt_manager.current_version,
         policy_version=app_state.safety_gate.policy_version,
+        comfyui_enabled=app_state.comfyui_provider is not None,
+        fal_enabled=app_state.fal_provider is not None,
     )
 
     yield
@@ -346,6 +404,162 @@ async def get_safety_constraints() -> dict[str, list[str]]:
     return {
         "level": app_state.safety_gate.safety_level.value,
         "constraints": app_state.safety_gate.get_constraints(),
+    }
+
+
+@app.post(
+    "/imagegen/generate",
+    response_model=ImageGenResponse,
+    responses={
+        400: {"model": ErrorResponse},
+        503: {"model": ErrorResponse},
+    },
+)
+async def generate_image(request: ImageGenRequest) -> ImageGenResponse:
+    """Generate a companion image using ComfyUI (preferred) or FAL (fallback).
+
+    Uses local ComfyUI with SDXL checkpoint for high-quality generation.
+    Falls back to FAL.ai if ComfyUI is unavailable.
+    """
+    import base64
+
+    # Build the full prompt with emotional modifiers (sensual/intimate style)
+    emotional_modifiers = {
+        "happy": "radiant smile, sparkling eyes, joyful and flirty expression, warm glow",
+        "calm": "serene sensual expression, relaxed intimate pose, soft bedroom lighting, dreamy",
+        "curious": "alluring curious gaze, head tilted seductively, inviting expression",
+        "excited": "energetic, flushed cheeks, excited anticipation, dynamic sensual pose",
+        "thoughtful": "contemplative sultry gaze, pensive expression, soft romantic focus",
+        "supportive": "warm empathetic gaze, inviting open posture, intimate comforting presence",
+        "playful": "mischievous flirty smile, sparkling teasing eyes, playful seductive pose",
+        "neutral": "confident sensual expression, alluring gaze, intimate presence",
+    }
+
+    style_prompts = {
+        "realistic": "photorealistic, highly detailed, 8k, professional boudoir photography, intimate lighting",
+        "stylized": "beautiful stylized render, soft romantic lighting, sensual artistic style",
+        "abstract": "ethereal sensual art, soft flowing forms, romantic abstract lighting",
+        "minimal": "elegant minimalist, tasteful intimate, soft clean aesthetic",
+        "anime": "beautiful anime style, expressive sensual, romantic illustration, detailed",
+    }
+
+    # Build full prompt
+    full_prompt = request.prompt
+    if request.emotional_state in emotional_modifiers:
+        full_prompt += f", {emotional_modifiers[request.emotional_state]}"
+    if request.style in style_prompts:
+        full_prompt += f", {style_prompts[request.style]}"
+    full_prompt += ", high quality, detailed, beautiful lighting"
+
+    logger.info(
+        "imagegen_request",
+        prompt=full_prompt[:100],
+        emotional_state=request.emotional_state,
+        style=request.style,
+        size=f"{request.width}x{request.height}",
+    )
+
+    # Try ComfyUI first (preferred for NSFW-capable generation)
+    if app_state.comfyui_provider:
+        try:
+            result = await app_state.comfyui_provider.generate(
+                prompt=full_prompt,
+                size=f"{request.width}x{request.height}",
+                negative_prompt=request.negative_prompt,
+                reference_image_url=request.reference_image_url,
+                reference_strength=request.reference_strength,
+            )
+
+            image_base64 = base64.b64encode(result["image_data"]).decode("utf-8")
+
+            logger.info(
+                "imagegen_success",
+                provider="comfyui",
+                latency_ms=result["latency_ms"],
+            )
+
+            return ImageGenResponse(
+                image_base64=image_base64,
+                format=result["format"],
+                width=result["width"],
+                height=result["height"],
+                latency_ms=result["latency_ms"],
+                provider="comfyui",
+                prompt_used=full_prompt,
+            )
+
+        except Exception as e:
+            logger.warning("comfyui_generation_failed", error=str(e))
+            # Fall through to FAL
+
+    # Fallback to FAL
+    if app_state.fal_provider:
+        try:
+            result = await app_state.fal_provider.generate(
+                prompt=full_prompt,
+                size=f"{request.width}x{request.height}",
+            )
+
+            # FAL returns a URL, we need to fetch and encode it
+            import httpx
+            async with httpx.AsyncClient() as client:
+                response = await client.get(result["image_url"])
+                response.raise_for_status()
+                image_base64 = base64.b64encode(response.content).decode("utf-8")
+
+            logger.info(
+                "imagegen_success",
+                provider="fal",
+                latency_ms=result["latency_ms"],
+            )
+
+            return ImageGenResponse(
+                image_base64=image_base64,
+                format="png",
+                width=result["width"],
+                height=result["height"],
+                latency_ms=result["latency_ms"],
+                provider="fal",
+                prompt_used=full_prompt,
+            )
+
+        except Exception as e:
+            logger.error("fal_generation_failed", error=str(e))
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"Image generation failed: {str(e)}",
+            )
+
+    raise HTTPException(
+        status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+        detail="No image generation providers available",
+    )
+
+
+@app.get("/imagegen/providers")
+async def get_image_providers() -> dict[str, Any]:
+    """Get available image generation providers."""
+    providers = []
+
+    if app_state.comfyui_provider:
+        providers.append({
+            "name": "comfyui",
+            "available": True,
+            "preferred": True,
+            "checkpoint": app_state.settings.comfyui_default_checkpoint,
+        })
+
+    if app_state.fal_provider:
+        providers.append({
+            "name": "fal",
+            "available": True,
+            "preferred": False,
+            "model": app_state.settings.fal_model,
+        })
+
+    return {
+        "providers": providers,
+        "default": "comfyui" if app_state.comfyui_provider else "fal" if app_state.fal_provider else None,
     }
 
 

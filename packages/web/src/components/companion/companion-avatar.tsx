@@ -40,6 +40,16 @@ interface CompanionAvatarProps {
   autoRegenerate?: boolean;
   /** Debounce delay for regeneration in ms */
   debounceDelay?: number;
+  /** User ID for S3 persistence */
+  userId?: string;
+  /** Session ID for S3 persistence */
+  sessionId?: string;
+  /** Companion ID for tracking */
+  companionId?: string;
+  /** Reference image URL for character consistency (IP-Adapter) */
+  referenceImageUrl?: string;
+  /** How strongly to follow the reference (0.0-1.0, default 0.7) */
+  referenceStrength?: number;
 }
 
 export function CompanionAvatar({
@@ -57,6 +67,11 @@ export function CompanionAvatar({
   fallbackUrl,
   autoRegenerate = true,
   debounceDelay = 1000,
+  userId,
+  sessionId,
+  companionId,
+  referenceImageUrl: externalReferenceUrl,
+  referenceStrength = 0.7,
 }: CompanionAvatarProps) {
   const [currentImageUrl, setCurrentImageUrl] = useState<string | null>(fallbackUrl || null);
   const [nextImageUrl, setNextImageUrl] = useState<string | null>(null);
@@ -64,6 +79,8 @@ export function CompanionAvatar({
   const [isTransitioning, setIsTransitioning] = useState(false);
   const [error, setError] = useState<Error | null>(null);
   const [currentCacheKey, setCurrentCacheKey] = useState<string | null>(initialCacheKey || null);
+  // Store the first generated S3 URL as identity anchor for character consistency
+  const [identityAnchorUrl, setIdentityAnchorUrl] = useState<string | null>(externalReferenceUrl || null);
 
   const generateImage = useCallback(async () => {
     if (isLoading) return;
@@ -80,9 +97,21 @@ export function CompanionAvatar({
         width,
         height,
         cacheKey: initialCacheKey,
+        userId,
+        sessionId,
+        companionId,
+        saveToS3: !!(userId && sessionId),
+        // Use identity anchor for character consistency (IP-Adapter)
+        referenceImageUrl: identityAnchorUrl || undefined,
+        referenceStrength: identityAnchorUrl ? referenceStrength : undefined,
       };
 
       const result = await generateCompanionImage(request);
+
+      // If this is the first successful generation with S3, use it as identity anchor
+      if (!identityAnchorUrl && result.s3Key && result.imageUrl) {
+        setIdentityAnchorUrl(result.imageUrl);
+      }
 
       // If we already have an image, do a crossfade
       if (currentImageUrl && result.imageUrl !== currentImageUrl) {
@@ -120,6 +149,11 @@ export function CompanionAvatar({
     isLoading,
     onLoad,
     onError,
+    userId,
+    sessionId,
+    companionId,
+    identityAnchorUrl,
+    referenceStrength,
   ]);
 
   // Auto-regenerate when emotional state or personality changes

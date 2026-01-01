@@ -1,12 +1,14 @@
 'use client';
 
-import { useLayoutEffect, useRef } from 'react';
-import { motion } from 'framer-motion';
+import { useLayoutEffect, useRef, useState, useEffect } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
 import gsap from 'gsap';
 import { ScrollTrigger } from 'gsap/ScrollTrigger';
 import { Sparkles, MessageCircle, Share2, Radio } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import Link from 'next/link';
 import { Button } from '@/components/ui/button';
+import { siteConfig } from '@/lib/constants';
 
 gsap.registerPlugin(ScrollTrigger);
 
@@ -14,6 +16,39 @@ export function CampfireHero() {
     const containerRef = useRef<HTMLDivElement>(null);
     const fireRef = useRef<HTMLDivElement>(null);
     const sparksRef = useRef<HTMLDivElement>(null);
+
+    // Dynamic Avatar Logic
+    const AVATAR_COUNT = 12;
+    const [indices, setIndices] = useState<number[]>([]);
+
+    const avatarPositions = [
+        { className: 'w-24 h-24 md:w-64 md:h-64', left: '5%', top: '10%' },
+        { className: 'w-32 h-32 md:w-72 md:h-72', right: '5%', top: '15%' },
+        { className: 'w-20 h-20 md:w-56 md:h-56', left: '8%', bottom: '20%' },
+        { className: 'w-28 h-28 md:w-60 md:h-60', right: '10%', bottom: '25%' },
+    ];
+
+    useEffect(() => {
+        // Initial random set on mount
+        const initial = [0, 1, 2, 3];
+        setIndices(initial);
+
+        const interval = setInterval(() => {
+            setIndices(prev => {
+                if (prev.length === 0) return [0, 1, 2, 3];
+                const next = [...prev];
+                const slotToUpdate = Math.floor(Math.random() * 4);
+                let nextIdx = Math.floor(Math.random() * AVATAR_COUNT);
+                while (next.includes(nextIdx)) {
+                    nextIdx = Math.floor(Math.random() * AVATAR_COUNT);
+                }
+                next[slotToUpdate] = nextIdx;
+                return next;
+            });
+        }, 3000);
+
+        return () => clearInterval(interval);
+    }, []);
 
     useLayoutEffect(() => {
         const ctx = gsap.context(() => {
@@ -93,9 +128,57 @@ export function CampfireHero() {
             <div className="absolute inset-0 bg-gradient-to-b from-transparent via-[#0a0a0a]/50 to-[#0a0a0a]" />
             <div className="absolute top-0 left-0 w-full h-full bg-[radial-gradient(circle_at_50%_50%,rgba(255,87,34,0.1),transparent_70%)]" />
 
-            {/* Main Content */}
-            <div className="relative z-10 container px-4 md:px-6 flex flex-col items-center text-center space-y-8">
+            {/* Dynamic Floating Avatars Pool */}
+            <div className="absolute inset-0 pointer-events-none overflow-hidden" style={{ perspective: '1200px', transformStyle: 'preserve-3d' }}>
+                <AnimatePresence mode="popLayout">
+                    {indices.map((avatarIdx, slotIdx) => {
+                        const pos = avatarPositions[slotIdx];
+                        return (
+                            <motion.div
+                                key={`slot-${slotIdx}-${avatarIdx}`}
+                                initial={{ opacity: 0, scale: 0.5, z: -200, rotateY: 30 }}
+                                animate={{
+                                    opacity: 1,
+                                    scale: 1,
+                                    z: 0,
+                                    rotateY: 0,
+                                    transition: { duration: 1.5, ease: "easeOut" }
+                                }}
+                                exit={{
+                                    opacity: 0,
+                                    scale: 1.2,
+                                    z: 100,
+                                    rotateY: -30,
+                                    transition: { duration: 1, ease: "easeIn" }
+                                }}
+                                className={cn(
+                                    "absolute floating-avatar z-10",
+                                    pos.className
+                                )}
+                                style={{
+                                    transformStyle: 'preserve-3d',
+                                    left: pos.left,
+                                    top: pos.top,
+                                    right: pos.right,
+                                    bottom: pos.bottom
+                                }}
+                            >
+                                <div className="relative w-full h-full">
+                                    <img
+                                        src={`/avatars/avatar-${avatarIdx + 1}.png`}
+                                        alt="AI Avatar"
+                                        className="w-full h-full object-contain rounded-3xl shadow-[0_0_30px_rgba(255,255,255,0.15)] border border-white/10 backdrop-blur-[2px]"
+                                    />
+                                    <div className="absolute inset-0 rounded-3xl bg-gradient-to-tr from-orange-500/20 to-transparent pointer-events-none" />
+                                </div>
+                            </motion.div>
+                        );
+                    })}
+                </AnimatePresence>
+            </div>
 
+            {/* Main Content */}
+            <div className="relative z-20 container px-4 md:px-6 flex flex-col items-center text-center space-y-8 select-none">
                 {/* Animated Badge */}
                 <motion.div
                     initial={{ opacity: 0, y: 20 }}
@@ -108,118 +191,64 @@ export function CampfireHero() {
                 </motion.div>
 
                 {/* Heading */}
-                {/* Heading */}
-                <div className="relative z-10" style={{ perspective: '800px', transformStyle: 'preserve-3d' }}>
-                    {/* Floating Avatars around heading - Larger, Spread further, 3D Fix applied */}
-                    <div className="absolute -left-56 -top-40 hidden lg:block md:w-64 md:h-64" style={{ transformStyle: 'preserve-3d' }}>
-                        <motion.img
-                            src="/avatars/avatar-1.png"
-                            alt="AI Avatar"
-                            className="floating-avatar w-full h-full object-contain rounded-2xl shadow-glow-lg border border-white/10"
-                            initial={{ opacity: 0, scale: 0.5, z: -200 }}
-                            animate={{ opacity: 1, scale: 1, z: 0 }}
-                            transition={{ duration: 1, delay: 0.5 }}
-                        />
-                    </div>
-                    <div className="absolute -right-72 -top-20 hidden lg:block md:w-72 md:h-72" style={{ transformStyle: 'preserve-3d' }}>
-                        <motion.img
-                            src="/avatars/avatar-2.png"
-                            alt="AI Avatar"
-                            className="floating-avatar w-full h-full object-contain rounded-full shadow-glow-lg border border-white/10"
-                            initial={{ opacity: 0, scale: 0.5, z: -300 }}
-                            animate={{ opacity: 1, scale: 1, z: 0 }}
-                            transition={{ duration: 1, delay: 0.7 }}
-                        />
-                    </div>
-                    <div className="absolute -left-80 bottom-0 hidden lg:block md:w-56 md:h-56" style={{ transformStyle: 'preserve-3d' }}>
-                        <motion.img
-                            src="/avatars/avatar-3.png"
-                            alt="AI Avatar"
-                            className="floating-avatar w-full h-full object-contain rounded-3xl shadow-glow-lg border border-white/10"
-                            initial={{ opacity: 0, scale: 0.5, z: -100 }}
-                            animate={{ opacity: 1, scale: 1, z: 0 }}
-                            transition={{ duration: 1, delay: 0.9 }}
-                        />
-                    </div>
-                    <div className="absolute -right-32 bottom-20 hidden lg:block md:w-60 md:h-60" style={{ transformStyle: 'preserve-3d' }}>
-                        <motion.img
-                            src="/avatars/avatar-4.png"
-                            alt="AI Avatar"
-                            className="floating-avatar w-full h-full object-contain rounded-xl shadow-glow-lg border border-white/10"
-                            initial={{ opacity: 0, scale: 0.5, z: -150 }}
-                            animate={{ opacity: 1, scale: 1, z: 0 }}
-                            transition={{ duration: 1, delay: 1.1 }}
-                        />
-                    </div>
-
-                    <motion.h1
-                        className="text-4xl md:text-6xl lg:text-7xl font-bold tracking-tighter text-white max-w-4xl mx-auto"
-                        initial="hidden"
-                        animate="visible"
-                        aria-label="Gather 'Round the Digital Fire"
-                        variants={{
-                            visible: {
-                                transition: {
-                                    staggerChildren: 0.05,
-                                    delayChildren: 0.2
-                                }
+                <motion.h1
+                    className="text-4xl md:text-6xl lg:text-7xl font-bold tracking-tighter text-white max-w-4xl mx-auto"
+                    initial="hidden"
+                    animate="visible"
+                    aria-label="Gather 'Round the Digital Fire"
+                    variants={{
+                        visible: {
+                            transition: {
+                                staggerChildren: 0.05,
+                                delayChildren: 0.2
                             }
-                        }}
-                    >
-                        {/* Line 1: Gather 'Round the */}
-                        <span className="block mb-2">
-                            {Array.from("Gather 'Round the").map((char, index) => (
-                                <motion.span
-                                    key={index}
-                                    className="inline-block"
-                                    variants={{
-                                        hidden: { opacity: 0, y: 20, filter: 'blur(10px)' },
-                                        visible: {
-                                            opacity: 1,
-                                            y: 0,
-                                            filter: 'blur(0px)',
-                                            transition: {
-                                                duration: 0.4,
-                                                ease: "easeOut"
-                                            }
-                                        }
-                                    }}
-                                >
-                                    {char === " " ? "\u00A0" : char}
-                                </motion.span>
-                            ))}
-                        </span>
-
-                        {/* Line 2: Digital Fire */}
-                        <span className="block relative">
-                            {Array.from("Digital Fire").map((char, index) => (
-                                <motion.span
-                                    key={index}
-                                    className="inline-block"
-                                    style={{
-                                        color: index >= 8 ? '#f97316' : undefined,
-                                        textShadow: index >= 8 ? '0 0 15px rgba(249,115,22,0.5)' : undefined
-                                    }}
-                                    variants={{
-                                        hidden: { opacity: 0, scale: 0.8, y: 20, filter: 'blur(10px)' },
-                                        visible: {
-                                            opacity: 1,
-                                            scale: 1,
-                                            y: 0,
-                                            filter: 'blur(0px)',
-                                            transition: {
-                                                duration: 0.5,
-                                                ease: "backOut"
-                                            }
-                                        }
-                                    }}
-                                >
-                                    {char === " " ? "\u00A0" : char}
-                                </motion.span>
-                            ))}
-                        </span>
-                    </motion.h1>
-                </div>
+                        }
+                    }}
+                >
+                    <span className="block mb-2">
+                        {Array.from("Gather 'Round the").map((char, index) => (
+                            <motion.span
+                                key={index}
+                                className="inline-block"
+                                variants={{
+                                    hidden: { opacity: 0, y: 20, filter: 'blur(10px)' },
+                                    visible: {
+                                        opacity: 1,
+                                        y: 0,
+                                        filter: 'blur(0px)',
+                                        transition: { duration: 0.4, ease: "easeOut" }
+                                    }
+                                }}
+                            >
+                                {char === " " ? "\u00A0" : char}
+                            </motion.span>
+                        ))}
+                    </span>
+                    <span className="block relative">
+                        {Array.from("Digital Fire").map((char, index) => (
+                            <motion.span
+                                key={index}
+                                className="inline-block"
+                                style={{
+                                    color: index >= 8 ? '#f97316' : undefined,
+                                    textShadow: index >= 8 ? '0 0 25px rgba(249,115,22,0.6)' : undefined
+                                }}
+                                variants={{
+                                    hidden: { opacity: 0, scale: 0.8, y: 20, filter: 'blur(10px)' },
+                                    visible: {
+                                        opacity: 1,
+                                        scale: 1,
+                                        y: 0,
+                                        filter: 'blur(0px)',
+                                        transition: { duration: 0.5, ease: "backOut" }
+                                    }
+                                }}
+                            >
+                                {char === " " ? "\u00A0" : char}
+                            </motion.span>
+                        ))}
+                    </span>
+                </motion.h1>
 
                 {/* Description */}
                 <motion.p
@@ -234,7 +263,7 @@ export function CampfireHero() {
 
                 {/* CTA Actions */}
                 <motion.div
-                    className="flex flex-col sm:flex-row gap-4 pt-4"
+                    className="flex flex-col sm:flex-row gap-4 pt-4 relative z-20"
                     initial={{ opacity: 0, y: 20 }}
                     animate={{ opacity: 1, y: 0 }}
                     transition={{ duration: 0.6, delay: 0.8 }}
@@ -242,15 +271,11 @@ export function CampfireHero() {
                     <Button
                         size="lg"
                         className="h-12 px-8 rounded-full bg-orange-600 hover:bg-orange-700 text-white shadow-[0_0_20px_rgba(234,88,12,0.3)] transition-all hover:scale-105 hover:shadow-[0_0_30px_rgba(234,88,12,0.5)]"
+                        asChild
                     >
-                        Start Your Free Trial
-                    </Button>
-                    <Button
-                        variant="outline"
-                        size="lg"
-                        className="h-12 px-8 rounded-full border-gray-800 bg-black/50 text-gray-300 hover:bg-white/10 hover:text-white backdrop-blur-sm transition-all hover:scale-105"
-                    >
-                        View Demo
+                        <Link href={`${siteConfig.appUrl}/onboard`}>
+                            Start Your Free Trial
+                        </Link>
                     </Button>
                 </motion.div>
             </div>
@@ -258,7 +283,7 @@ export function CampfireHero() {
             {/* Campfire Visuals */}
             <div
                 ref={fireRef}
-                className="absolute bottom-[-5%] md:bottom-[-10%] left-1/2 -translate-x-1/2 w-[800px] h-[700px] pointer-events-none flex items-end justify-center"
+                className="absolute bottom-[-5%] md:bottom-[-10%] left-1/2 -translate-x-1/2 w-[800px] h-[700px] pointer-events-none flex items-end justify-center z-0"
             >
                 {/* SVG Fire Filter */}
                 <svg className="hidden">
@@ -270,19 +295,15 @@ export function CampfireHero() {
                     </defs>
                 </svg>
 
-                {/* Fire Container with Filter */}
                 <div className="relative w-full h-full flex items-end justify-center" style={{ filter: 'url(#heat)' }}>
-                    {/* Layered Flames */}
                     <div className="absolute bottom-0 w-[400px] h-[500px] bg-gradient-to-t from-orange-600 via-orange-500/50 to-transparent rounded-[50%_50%_20%_20%] blur-3xl animate-pulse-slow opacity-60" />
                     <div className="absolute bottom-10 w-[300px] h-[400px] bg-gradient-to-t from-red-600 via-orange-400/50 to-transparent rounded-[50%_50%_30%_30%] blur-2xl animate-float-fast opacity-80" />
                     <div className="absolute bottom-20 w-[150px] h-[300px] bg-gradient-to-t from-yellow-400 via-orange-300 to-transparent rounded-[50%_50%_50%_50%] blur-xl animate-float opacity-90" />
                     <div className="absolute bottom-32 w-[60px] h-[150px] bg-white rounded-full blur-md opacity-40 animate-pulse" />
                 </div>
 
-                {/* Ground Glow */}
                 <div className="absolute bottom-0 left-1/2 -translate-x-1/2 w-[600px] h-[200px] bg-orange-900/40 rounded-full blur-[100px]" />
 
-                {/* Dynamic Sparks */}
                 <div ref={sparksRef} className="absolute inset-0 z-20">
                     {[...Array(30)].map((_, i) => (
                         <div
@@ -297,8 +318,6 @@ export function CampfireHero() {
                             }}
                         />
                     ))}
-
-                    {/* Floating Communication Icons (Upgraded) */}
                     {[...Array(8)].map((_, i) => (
                         <div
                             key={`icon-${i}`}
@@ -322,3 +341,4 @@ export function CampfireHero() {
         </div>
     );
 }
+

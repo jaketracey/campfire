@@ -98,27 +98,13 @@ function extractToken(request: FastifyRequest): string | null {
   return token;
 }
 
-// Dev user for bypassing auth in development
-export const DEV_USER: AuthenticatedUser = {
-  userId: '00000000-0000-0000-0000-000000000001',
-  email: 'dev@campfire.local',
-  role: 'user',
-};
-
 /**
  * Authentication middleware - requires valid JWT
- * In development mode, bypasses auth and uses a dev user
  */
 export async function requireAuth(
   request: FastifyRequest,
   reply: FastifyReply
 ): Promise<void> {
-  // Dev mode bypass
-  if (process.env['NODE_ENV'] === 'development') {
-    request.user = DEV_USER;
-    return;
-  }
-
   const token = extractToken(request);
 
   if (!token) {
