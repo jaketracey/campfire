@@ -1,0 +1,44 @@
+# AWS credentials (NEVER commit)
+*.pem
+*.key
+credentials
+config.local
+
+# Docker local overrides
+docker-compose.override.yml
+docker-compose.local.yml
+.docker/
+
+# Terraform (if added later)
+.terraform/
+*.tfstate
+*.tfstate.*
+*.tfvars
+!*.tfvars.example
+crash.log
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json
+.terraformrc
+terraform.rc
+
+# Pulumi (if added later)
+Pulumi.*.yaml
+!Pulumi.*.yaml.example
+
+# Local scripts output
+*.log
+output/
+reports/
+
+# Secrets
+secrets/
+.secrets/
+*-credentials.json
+service-account*.json
+
+# Local environment
+.env
+.env.local
+!.env.example

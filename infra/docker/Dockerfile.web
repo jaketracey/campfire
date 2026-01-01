@@ -1,0 +1,117 @@
+# =============================================================================
+# Campfire Web Application - Multi-stage Dockerfile
+# =============================================================================
+# Build: docker build -f infra/docker/Dockerfile.web -t campfire-web .
+# Run:   docker run -p 3000:3000 campfire-web
+# =============================================================================
+
+# -----------------------------------------------------------------------------
+# Stage 1: Base - Common dependencies and setup
+# -----------------------------------------------------------------------------
+FROM node:22-alpine AS base
+
+RUN apk update && apk upgrade && \
+    apk add --no-cache \
+    libc6-compat \
+    wget \
+    && rm -rf /var/cache/apk/*
+
+WORKDIR /app
+
+RUN corepack enable && corepack prepare pnpm@latest --activate
+
+# -----------------------------------------------------------------------------
+# Stage 2: Dependencies - Install all dependencies
+# -----------------------------------------------------------------------------
+FROM base AS deps
+
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
+COPY packages/shared/package.json ./packages/shared/
+COPY packages/web/package.json ./packages/web/
+
+RUN pnpm install --frozen-lockfile
+
+# -----------------------------------------------------------------------------
+# Stage 3: Builder - Build the Next.js application
+# -----------------------------------------------------------------------------
+FROM base AS builder
+
+COPY --from=deps /app/node_modules ./node_modules
+COPY --from=deps /app/packages/shared/node_modules ./packages/shared/node_modules
+COPY --from=deps /app/packages/web/node_modules ./packages/web/node_modules
+
+COPY packages/shared ./packages/shared
+COPY packages/web ./packages/web
+COPY tsconfig.json ./
+
+# Build-time environment variables for Next.js
+# These are baked into the client bundle at build time
+ARG NEXT_PUBLIC_GATEWAY_URL
+ARG NEXT_PUBLIC_WS_URL
+ARG NEXT_PUBLIC_POSTHOG_KEY
+ARG NEXT_PUBLIC_POSTHOG_HOST
+ARG NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY
+
+ENV NEXT_PUBLIC_GATEWAY_URL=$NEXT_PUBLIC_GATEWAY_URL \
+    NEXT_PUBLIC_WS_URL=$NEXT_PUBLIC_WS_URL \
+    NEXT_PUBLIC_POSTHOG_KEY=$NEXT_PUBLIC_POSTHOG_KEY \
+    NEXT_PUBLIC_POSTHOG_HOST=$NEXT_PUBLIC_POSTHOG_HOST \
+    NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY=$NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY
+
+# Build shared package first, then web
+RUN pnpm --filter shared build && \
+    pnpm --filter web build
+
+# -----------------------------------------------------------------------------
+# Stage 4: Production - Minimal production image with standalone output
+# -----------------------------------------------------------------------------
+FROM node:22-alpine AS production
+
+RUN addgroup --system --gid 1001 nodejs && \
+    adduser --system --uid 1001 campfire
+
+RUN apk add --no-cache wget && rm -rf /var/cache/apk/*
+
+WORKDIR /app
+
+# Copy standalone Next.js output
+# Note: Requires "output": "standalone" in next.config.js
+COPY --from=builder --chown=campfire:nodejs /app/packages/web/.next/standalone ./
+COPY --from=builder --chown=campfire:nodejs /app/packages/web/.next/static ./packages/web/.next/static
+COPY --from=builder --chown=campfire:nodejs /app/packages/web/public ./packages/web/public
+
+USER campfire
+
+EXPOSE 3000
+
+HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
+    CMD wget --no-verbose --tries=1 --spider http://localhost:3000/api/health || exit 1
+
+ENV NODE_ENV=production \
+    PORT=3000 \
+    HOSTNAME=0.0.0.0
+
+# Start the standalone Next.js server
+CMD ["node", "packages/web/server.js"]
+
+# -----------------------------------------------------------------------------
+# Stage 5: Development - Full development environment
+# -----------------------------------------------------------------------------
+FROM base AS development
+
+COPY --from=deps /app/node_modules ./node_modules
+COPY --from=deps /app/packages/shared/node_modules ./packages/shared/node_modules
+COPY --from=deps /app/packages/web/node_modules ./packages/web/node_modules
+
+COPY packages/shared ./packages/shared
+COPY packages/web ./packages/web
+COPY tsconfig.json ./
+
+WORKDIR /app/packages/web
+
+EXPOSE 3000
+
+ENV NODE_ENV=development \
+    PORT=3000
+
+CMD ["pnpm", "dev"]

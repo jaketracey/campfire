@@ -1,0 +1,124 @@
+# =============================================================================
+# Campfire Gateway Service - Multi-stage Dockerfile
+# =============================================================================
+# Build: docker build -f infra/docker/Dockerfile.gateway -t campfire-gateway .
+# Run:   docker run -p 4000:4000 -p 4001:4001 campfire-gateway
+# =============================================================================
+
+# -----------------------------------------------------------------------------
+# Stage 1: Base - Common dependencies and setup
+# -----------------------------------------------------------------------------
+FROM node:22-alpine AS base
+
+# Install security updates and required packages
+RUN apk update && apk upgrade && \
+    apk add --no-cache \
+    libc6-compat \
+    wget \
+    && rm -rf /var/cache/apk/*
+
+# Set working directory
+WORKDIR /app
+
+# Enable corepack for pnpm
+RUN corepack enable && corepack prepare pnpm@latest --activate
+
+# -----------------------------------------------------------------------------
+# Stage 2: Dependencies - Install all dependencies
+# -----------------------------------------------------------------------------
+FROM base AS deps
+
+# Copy package files for dependency installation
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
+COPY packages/shared/package.json ./packages/shared/
+COPY packages/gateway/package.json ./packages/gateway/
+
+# Install dependencies with frozen lockfile
+RUN pnpm install --frozen-lockfile
+
+# -----------------------------------------------------------------------------
+# Stage 3: Builder - Build the application
+# -----------------------------------------------------------------------------
+FROM base AS builder
+
+COPY --from=deps /app/node_modules ./node_modules
+COPY --from=deps /app/packages/shared/node_modules ./packages/shared/node_modules
+COPY --from=deps /app/packages/gateway/node_modules ./packages/gateway/node_modules
+
+# Copy source code
+COPY packages/shared ./packages/shared
+COPY packages/gateway ./packages/gateway
+COPY tsconfig.json ./
+
+# Build shared package first, then gateway
+RUN pnpm --filter shared build && \
+    pnpm --filter gateway build
+
+# -----------------------------------------------------------------------------
+# Stage 4: Production - Minimal production image
+# -----------------------------------------------------------------------------
+FROM node:22-alpine AS production
+
+# Security: Run as non-root user
+RUN addgroup --system --gid 1001 nodejs && \
+    adduser --system --uid 1001 campfire
+
+# Install wget for health checks
+RUN apk add --no-cache wget && rm -rf /var/cache/apk/*
+
+WORKDIR /app
+
+# Copy only production dependencies and built files
+COPY --from=builder /app/packages/gateway/dist ./dist
+COPY --from=builder /app/packages/gateway/package.json ./
+COPY --from=builder /app/packages/shared/dist ./node_modules/@campfire/shared/dist
+COPY --from=builder /app/packages/shared/package.json ./node_modules/@campfire/shared/
+
+# Install production dependencies only
+RUN corepack enable && corepack prepare pnpm@latest --activate && \
+    pnpm install --prod --frozen-lockfile
+
+# Set ownership
+RUN chown -R campfire:nodejs /app
+
+# Switch to non-root user
+USER campfire
+
+# Expose ports
+EXPOSE 4000 4001
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
+    CMD wget --no-verbose --tries=1 --spider http://localhost:4000/health || exit 1
+
+# Environment variables with defaults
+ENV NODE_ENV=production \
+    PORT=4000 \
+    WS_PORT=4001
+
+# Start the application
+CMD ["node", "dist/index.js"]
+
+# -----------------------------------------------------------------------------
+# Stage 5: Development - Full development environment
+# -----------------------------------------------------------------------------
+FROM base AS development
+
+COPY --from=deps /app/node_modules ./node_modules
+COPY --from=deps /app/packages/shared/node_modules ./packages/shared/node_modules
+COPY --from=deps /app/packages/gateway/node_modules ./packages/gateway/node_modules
+
+# Copy source code
+COPY packages/shared ./packages/shared
+COPY packages/gateway ./packages/gateway
+COPY tsconfig.json ./
+
+WORKDIR /app/packages/gateway
+
+EXPOSE 4000 4001
+
+ENV NODE_ENV=development \
+    PORT=4000 \
+    WS_PORT=4001
+
+CMD ["pnpm", "dev"]

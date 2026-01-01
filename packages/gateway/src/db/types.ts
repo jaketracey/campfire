@@ -1,0 +1,486 @@
+/**
+ * Database type definitions for Project Campfire
+ * These types mirror the PostgreSQL schema
+ */
+
+// ============================================================================
+// Common Types
+// ============================================================================
+
+export type UUID = string;
+export type Timestamp = Date;
+export type JSONValue = string | number | boolean | null | JSONObject | JSONArray;
+export interface JSONObject { [key: string]: JSONValue }
+export type JSONArray = JSONValue[];
+
+// ============================================================================
+// Event Store Types
+// ============================================================================
+
+export interface Event {
+  event_id: UUID;
+  timestamp: Timestamp;
+  user_id: UUID | null;
+  session_id: UUID | null;
+  turn_id: UUID | null;
+  trace_id: UUID | null;
+  type: string;
+  payload: JSONObject;
+  version: number;
+  causation_id: UUID | null;
+  correlation_id: UUID | null;
+  cost: number | null;
+  created_at: Timestamp;
+}
+
+export interface EventInsert {
+  event_id: UUID;
+  timestamp?: Timestamp;
+  user_id?: UUID | null;
+  session_id?: UUID | null;
+  turn_id?: UUID | null;
+  trace_id?: UUID | null;
+  type: string;
+  payload: JSONObject;
+  version?: number;
+  causation_id?: UUID | null;
+  correlation_id?: UUID | null;
+  cost?: number | null;
+}
+
+// ============================================================================
+// User Types
+// ============================================================================
+
+export interface User {
+  id: UUID;
+  email: string;
+  password_hash: string;
+  email_verified: boolean;
+  email_verified_at: Timestamp | null;
+  status: UserStatus;
+  created_at: Timestamp;
+  updated_at: Timestamp;
+}
+
+export type UserStatus = 'active' | 'suspended' | 'deleted';
+
+export interface UserInsert {
+  id?: UUID;
+  email: string;
+  password_hash: string;
+  email_verified?: boolean;
+  status?: UserStatus;
+}
+
+export interface UserProfile {
+  id: UUID;
+  user_id: UUID;
+  display_name: string | null;
+  avatar_url: string | null;
+  bio: string | null;
+  timezone: string | null;
+  locale: string | null;
+  preferences: JSONObject;
+  created_at: Timestamp;
+  updated_at: Timestamp;
+}
+
+export interface UserProfileInsert {
+  user_id: UUID;
+  display_name?: string | null;
+  avatar_url?: string | null;
+  bio?: string | null;
+  timezone?: string | null;
+  locale?: string | null;
+  preferences?: JSONObject;
+}
+
+export interface UserMFA {
+  id: UUID;
+  user_id: UUID;
+  method: MFAMethod;
+  secret_encrypted: string;
+  enabled: boolean;
+  verified_at: Timestamp | null;
+  backup_codes_hash: string[] | null;
+  created_at: Timestamp;
+  updated_at: Timestamp;
+}
+
+export type MFAMethod = 'totp' | 'sms' | 'email';
+
+export interface UserMFAInsert {
+  user_id: UUID;
+  method: MFAMethod;
+  secret_encrypted: string;
+  enabled?: boolean;
+  backup_codes_hash?: string[] | null;
+}
+
+// ============================================================================
+// Companion Types
+// ============================================================================
+
+export interface Companion {
+  id: UUID;
+  user_id: UUID;
+  name: string;
+  spec: CompanionSpec;
+  spec_version: number;
+  status: CompanionStatus;
+  created_at: Timestamp;
+  updated_at: Timestamp;
+}
+
+export type CompanionStatus = 'draft' | 'active' | 'archived';
+
+export interface CompanionSpec {
+  identity: {
+    name: string;
+    pronouns: string;
+    address_style: string;
+  };
+  personality: {
+    archetype: string;
+    traits: Record<string, number>;
+  };
+  voice: {
+    provider: string;
+    voice_id: string;
+    settings?: Record<string, unknown>;
+  };
+  visual_style: {
+    style_type: string;
+    palette?: string[];
+    constraints?: string[];
+    reference_assets?: string[];
+  };
+  boundaries: {
+    relationship_pacing: string;
+    topics_avoid?: string[];
+    content_rating: string;
+  };
+  memory_consent: {
+    allow_long_term: boolean;
+    allow_kg_extraction: boolean;
+    retention_days?: number;
+  };
+}
+
+export interface CompanionInsert {
+  id?: UUID;
+  user_id: UUID;
+  name: string;
+  spec: CompanionSpec;
+  spec_version?: number;
+  status?: CompanionStatus;
+}
+
+export interface CompanionAvatar {
+  id: UUID;
+  companion_id: UUID;
+  asset_url: string;
+  asset_type: AvatarAssetType;
+  is_active: boolean;
+  is_identity_anchor: boolean;
+  metadata: JSONObject;
+  generation_params: JSONObject | null;
+  source_event_id: UUID | null;
+  created_at: Timestamp;
+}
+
+export type AvatarAssetType = 'identity_anchor' | 'stateful' | 'scene';
+
+export interface CompanionAvatarInsert {
+  companion_id: UUID;
+  asset_url: string;
+  asset_type: AvatarAssetType;
+  is_active?: boolean;
+  is_identity_anchor?: boolean;
+  metadata?: JSONObject;
+  generation_params?: JSONObject | null;
+  source_event_id?: UUID | null;
+}
+
+// ============================================================================
+// Session Types
+// ============================================================================
+
+export interface Session {
+  id: UUID;
+  user_id: UUID;
+  companion_id: UUID;
+  status: SessionStatus;
+  started_at: Timestamp;
+  ended_at: Timestamp | null;
+  metadata: JSONObject;
+  created_at: Timestamp;
+  updated_at: Timestamp;
+}
+
+export type SessionStatus = 'active' | 'paused' | 'ended' | 'error';
+
+export interface SessionInsert {
+  id?: UUID;
+  user_id: UUID;
+  companion_id: UUID;
+  status?: SessionStatus;
+  metadata?: JSONObject;
+}
+
+export interface Turn {
+  id: UUID;
+  session_id: UUID;
+  turn_number: number;
+  user_message: string | null;
+  user_message_type: MessageType;
+  agent_message: string | null;
+  agent_message_type: MessageType;
+  started_at: Timestamp;
+  completed_at: Timestamp | null;
+  latency_ms: number | null;
+  token_count_input: number | null;
+  token_count_output: number | null;
+  cost_usd: number | null;
+  metadata: JSONObject;
+  created_at: Timestamp;
+}
+
+export type MessageType = 'text' | 'audio' | 'image' | 'multimodal';
+
+export interface TurnInsert {
+  id?: UUID;
+  session_id: UUID;
+  turn_number: number;
+  user_message?: string | null;
+  user_message_type?: MessageType;
+  agent_message?: string | null;
+  agent_message_type?: MessageType;
+  latency_ms?: number | null;
+  token_count_input?: number | null;
+  token_count_output?: number | null;
+  cost_usd?: number | null;
+  metadata?: JSONObject;
+}
+
+// ============================================================================
+// Memory Types
+// ============================================================================
+
+export interface Memory {
+  id: UUID;
+  user_id: UUID;
+  companion_id: UUID;
+  content: string;
+  content_type: MemoryContentType;
+  embedding: number[] | null; // pgvector stores as float array
+  importance: number;
+  source_event_id: UUID | null;
+  source_turn_id: UUID | null;
+  metadata: JSONObject;
+  expires_at: Timestamp | null;
+  created_at: Timestamp;
+  updated_at: Timestamp;
+}
+
+export type MemoryContentType = 'fact' | 'preference' | 'event' | 'summary' | 'reflection';
+
+export interface MemoryInsert {
+  id?: UUID;
+  user_id: UUID;
+  companion_id: UUID;
+  content: string;
+  content_type?: MemoryContentType;
+  embedding?: number[] | null;
+  importance?: number;
+  source_event_id?: UUID | null;
+  source_turn_id?: UUID | null;
+  metadata?: JSONObject;
+  expires_at?: Timestamp | null;
+}
+
+// ============================================================================
+// Knowledge Graph Types
+// ============================================================================
+
+export interface KGEntity {
+  id: UUID;
+  user_id: UUID;
+  companion_id: UUID;
+  name: string;
+  canonical_name: string;
+  entity_type: string;
+  aliases: string[];
+  metadata: JSONObject;
+  source_event_id: UUID | null;
+  created_at: Timestamp;
+  updated_at: Timestamp;
+}
+
+export interface KGEntityInsert {
+  id?: UUID;
+  user_id: UUID;
+  companion_id: UUID;
+  name: string;
+  canonical_name?: string;
+  entity_type: string;
+  aliases?: string[];
+  metadata?: JSONObject;
+  source_event_id?: UUID | null;
+}
+
+export interface KGEdge {
+  id: UUID;
+  user_id: UUID;
+  companion_id: UUID;
+  source_entity_id: UUID;
+  target_entity_id: UUID;
+  relation_type: string;
+  confidence: number;
+  status: KGEdgeStatus;
+  source_event_id: UUID | null;
+  first_seen: Timestamp;
+  last_seen: Timestamp;
+  last_confirmed: Timestamp | null;
+  mention_count: number;
+  metadata: JSONObject;
+  created_at: Timestamp;
+  updated_at: Timestamp;
+}
+
+export type KGEdgeStatus = 'proposed' | 'active' | 'deprecated' | 'deleted';
+
+export interface KGEdgeInsert {
+  id?: UUID;
+  user_id: UUID;
+  companion_id: UUID;
+  source_entity_id: UUID;
+  target_entity_id: UUID;
+  relation_type: string;
+  confidence?: number;
+  status?: KGEdgeStatus;
+  source_event_id?: UUID | null;
+  metadata?: JSONObject;
+}
+
+// ============================================================================
+// Billing Types
+// ============================================================================
+
+export interface Subscription {
+  id: UUID;
+  user_id: UUID;
+  stripe_customer_id: string;
+  stripe_subscription_id: string;
+  status: SubscriptionStatus;
+  plan: SubscriptionPlan;
+  current_period_start: Timestamp;
+  current_period_end: Timestamp;
+  cancel_at_period_end: boolean;
+  canceled_at: Timestamp | null;
+  trial_start: Timestamp | null;
+  trial_end: Timestamp | null;
+  metadata: JSONObject;
+  created_at: Timestamp;
+  updated_at: Timestamp;
+}
+
+export type SubscriptionStatus =
+  | 'trialing'
+  | 'active'
+  | 'past_due'
+  | 'canceled'
+  | 'unpaid'
+  | 'incomplete'
+  | 'incomplete_expired';
+
+export type SubscriptionPlan = 'free' | 'starter' | 'pro' | 'enterprise';
+
+export interface SubscriptionInsert {
+  user_id: UUID;
+  stripe_customer_id: string;
+  stripe_subscription_id: string;
+  status: SubscriptionStatus;
+  plan: SubscriptionPlan;
+  current_period_start: Timestamp;
+  current_period_end: Timestamp;
+  cancel_at_period_end?: boolean;
+  trial_start?: Timestamp | null;
+  trial_end?: Timestamp | null;
+  metadata?: JSONObject;
+}
+
+export interface BillingEvent {
+  id: UUID;
+  user_id: UUID | null;
+  stripe_event_id: string;
+  stripe_event_type: string;
+  payload: JSONObject;
+  processed: boolean;
+  processed_at: Timestamp | null;
+  error: string | null;
+  created_at: Timestamp;
+}
+
+export interface BillingEventInsert {
+  user_id?: UUID | null;
+  stripe_event_id: string;
+  stripe_event_type: string;
+  payload: JSONObject;
+  processed?: boolean;
+  error?: string | null;
+}
+
+// ============================================================================
+// Vault Types
+// ============================================================================
+
+export interface VaultFile {
+  id: UUID;
+  user_id: UUID;
+  companion_id: UUID | null;
+  path: string;
+  file_type: VaultFileType;
+  content_hash: string;
+  s3_bucket: string;
+  s3_key: string;
+  size_bytes: number;
+  source_event_ids: UUID[];
+  metadata: JSONObject;
+  created_at: Timestamp;
+  updated_at: Timestamp;
+}
+
+export type VaultFileType =
+  | 'conversation'
+  | 'daily'
+  | 'memory'
+  | 'entity'
+  | 'person'
+  | 'companion'
+  | 'index';
+
+export interface VaultFileInsert {
+  user_id: UUID;
+  companion_id?: UUID | null;
+  path: string;
+  file_type: VaultFileType;
+  content_hash: string;
+  s3_bucket: string;
+  s3_key: string;
+  size_bytes: number;
+  source_event_ids?: UUID[];
+  metadata?: JSONObject;
+}
+
+// ============================================================================
+// Migration Types
+// ============================================================================
+
+export interface Migration {
+  id: number;
+  name: string;
+  executed_at: Timestamp;
+  checksum: string;
+}

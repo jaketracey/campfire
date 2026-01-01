@@ -1,0 +1,405 @@
+"""Main conversation orchestrator service."""
+
+import time
+from typing import Any, AsyncGenerator
+from uuid import UUID
+
+import structlog
+
+from orchestrator.config import Settings
+from orchestrator.events.emitter import EventEmitter
+from orchestrator.models.conversation import (
+    CompanionSpec,
+    ConversationContext,
+    ConversationTurn,
+    SessionSummary,
+)
+from orchestrator.models.events import EventType, ProviderEvent
+from orchestrator.models.memory import LongTermMemory
+from orchestrator.models.tools import TOOL_REGISTRY, ToolCall, ToolResult
+from orchestrator.prompts.manager import PromptManager
+from orchestrator.providers.base import LLMProvider, LLMResponse
+from orchestrator.providers.anthropic import AnthropicProvider
+from orchestrator.providers.openai import OpenAIProvider
+from orchestrator.safety.gate import SafetyGate
+from orchestrator.services.context_builder import ContextBuilder
+from orchestrator.services.turn_manager import TurnManager
+from orchestrator.tools.router import ToolRouter
+
+logger = structlog.get_logger()
+
+
+class ConversationOrchestrator:
+    """Orchestrates conversation flow between user, LLM, and tools."""
+
+    def __init__(
+        self,
+        settings: Settings,
+        event_emitter: EventEmitter,
+        prompt_manager: PromptManager,
+        safety_gate: SafetyGate,
+        tool_router: ToolRouter,
+        primary_provider: LLMProvider | None = None,
+        fallback_provider: LLMProvider | None = None,
+    ):
+        self.settings = settings
+        self.event_emitter = event_emitter
+        self.prompt_manager = prompt_manager
+        self.safety_gate = safety_gate
+        self.tool_router = tool_router
+
+        # Initialize providers (OpenAI primary, Anthropic fallback)
+        self.primary_provider = primary_provider or OpenAIProvider(settings)
+        self.fallback_provider = fallback_provider or AnthropicProvider(settings)
+
+        # Initialize services
+        self.context_builder = ContextBuilder(
+            prompt_manager=prompt_manager,
+            max_context_tokens=settings.max_context_tokens,
+            default_turn_window=settings.default_turn_window,
+        )
+        self.turn_manager = TurnManager(event_emitter)
+
+    async def process_message(
+        self,
+        session_id: UUID,
+        user_id: UUID,
+        companion_spec: CompanionSpec,
+        user_message: str,
+        recent_turns: list[ConversationTurn] | None = None,
+        session_summary: SessionSummary | None = None,
+        long_term_memories: list[LongTermMemory] | None = None,
+        stream: bool = False,
+    ) -> ConversationTurn | AsyncGenerator[str, None]:
+        """Process a user message and generate a response."""
+        start_time = time.time()
+
+        # Safety check on input
+        input_safe, input_flags = await self.safety_gate.check_input(
+            content=user_message,
+            user_id=user_id,
+            session_id=session_id,
+        )
+
+        if not input_safe:
+            logger.warning(
+                "input_blocked_by_safety",
+                user_id=str(user_id),
+                flags=input_flags,
+            )
+            # Return a safety response
+            return await self._create_safety_response(
+                session_id=session_id,
+                user_id=user_id,
+                companion_spec=companion_spec,
+                user_message=user_message,
+                safety_flags=input_flags,
+            )
+
+        # Start turn
+        turn_id, user_msg = await self.turn_manager.start_turn(
+            session_id=session_id,
+            user_id=user_id,
+            companion_id=companion_spec.id,
+            user_message=user_message,
+            model=self.settings.anthropic_model,
+            prompt_version=self.prompt_manager.current_version,
+            policy_version=self.safety_gate.policy_version,
+        )
+
+        try:
+            # Build context
+            context = self.context_builder.build_context(
+                session_id=session_id,
+                user_id=user_id,
+                companion_spec=companion_spec,
+                recent_turns=recent_turns or [],
+                session_summary=session_summary,
+                long_term_memories=long_term_memories,
+                safety_constraints=self.safety_gate.get_constraints(),
+                active_tools=companion_spec.allowed_tools,
+                prompt_version=self.prompt_manager.current_version,
+                policy_version=self.safety_gate.policy_version,
+            )
+
+            # Build messages
+            messages = self.context_builder.build_messages(
+                context=context,
+                current_user_message=user_message,
+            )
+
+            # Get available tools
+            tools = self._get_available_tools(companion_spec.allowed_tools)
+
+            # Generate response (with tool loop)
+            response, tool_calls, tool_results = await self._generate_with_tools(
+                messages=messages,
+                tools=tools,
+                context=context,
+                turn_id=turn_id,
+                max_tool_iterations=5,
+            )
+
+            # Safety check on output
+            output_safe, output_flags = await self.safety_gate.check_output(
+                content=response.content,
+                user_id=user_id,
+                session_id=session_id,
+            )
+
+            all_safety_flags = input_flags + output_flags
+
+            if not output_safe:
+                logger.warning(
+                    "output_modified_by_safety",
+                    user_id=str(user_id),
+                    flags=output_flags,
+                )
+                response = await self._apply_safety_filter(response, output_flags)
+
+            # Calculate latency
+            latency_ms = (time.time() - start_time) * 1000
+
+            # Complete turn
+            turn = await self.turn_manager.complete_turn(
+                turn_id=turn_id,
+                assistant_response=response.content,
+                prompt_tokens=response.prompt_tokens,
+                completion_tokens=response.completion_tokens,
+                latency_ms=latency_ms,
+                tools_invoked=[tc.name for tc in tool_calls],
+                tool_calls=[self._serialize_tool_call(tc) for tc in tool_calls],
+                tool_results=[self._serialize_tool_result(tr) for tr in tool_results],
+                safety_flags=all_safety_flags,
+            )
+
+            return turn
+
+        except Exception as e:
+            logger.exception("orchestration_failed", error=str(e))
+            await self.turn_manager.fail_turn(
+                turn_id=turn_id,
+                error=str(e),
+                error_type=type(e).__name__,
+            )
+            raise
+
+    async def _generate_with_tools(
+        self,
+        messages: list[dict[str, Any]],
+        tools: list[dict[str, Any]],
+        context: ConversationContext,
+        turn_id: UUID,
+        max_tool_iterations: int = 5,
+    ) -> tuple[LLMResponse, list[ToolCall], list[ToolResult]]:
+        """Generate response with tool calling loop."""
+        all_tool_calls: list[ToolCall] = []
+        all_tool_results: list[ToolResult] = []
+        current_messages = messages.copy()
+
+        for iteration in range(max_tool_iterations):
+            # Call LLM
+            response = await self._call_llm_with_fallback(
+                messages=current_messages,
+                tools=tools if iteration < max_tool_iterations - 1 else None,
+            )
+
+            # Check for tool calls
+            if not response.tool_calls:
+                return response, all_tool_calls, all_tool_results
+
+            # Process tool calls
+            tool_calls = [
+                ToolCall(
+                    id=tc["id"],
+                    name=tc["name"],
+                    arguments=tc["arguments"],
+                    turn_id=turn_id,
+                    session_id=context.session_id,
+                    user_id=context.user_id,
+                    companion_id=context.companion_spec.id,
+                )
+                for tc in response.tool_calls
+            ]
+
+            all_tool_calls.extend(tool_calls)
+
+            # Execute tools
+            tool_results = await self.tool_router.execute_tools(tool_calls)
+            all_tool_results.extend(tool_results)
+
+            # Add tool results to messages
+            current_messages.append({
+                "role": "assistant",
+                "content": response.content,
+                "tool_calls": response.tool_calls,
+            })
+
+            for result in tool_results:
+                current_messages.append({
+                    "role": "tool",
+                    "tool_call_id": result.tool_call_id,
+                    "content": result.to_message_content(),
+                })
+
+        # Max iterations reached
+        logger.warning("max_tool_iterations_reached", turn_id=str(turn_id))
+        return response, all_tool_calls, all_tool_results
+
+    async def _call_llm_with_fallback(
+        self,
+        messages: list[dict[str, Any]],
+        tools: list[dict[str, Any]] | None = None,
+    ) -> LLMResponse:
+        """Call primary LLM with fallback to secondary."""
+        try:
+            # Emit provider request event
+            await self.event_emitter.emit(
+                ProviderEvent(
+                    type=EventType.PROVIDER_REQUEST_STARTED,
+                    session_id=UUID(int=0),
+                    user_id=UUID(int=0),
+                    companion_id=UUID(int=0),
+                    provider="anthropic",
+                    model=self.settings.anthropic_model,
+                    operation="chat_completion",
+                )
+            )
+
+            response = await self.primary_provider.generate(
+                messages=messages,
+                tools=tools,
+                max_tokens=self.settings.anthropic_max_tokens,
+                temperature=0.7,
+            )
+
+            await self.event_emitter.emit(
+                ProviderEvent(
+                    type=EventType.PROVIDER_REQUEST_COMPLETED,
+                    session_id=UUID(int=0),
+                    user_id=UUID(int=0),
+                    companion_id=UUID(int=0),
+                    provider="anthropic",
+                    model=self.settings.anthropic_model,
+                    operation="chat_completion",
+                    latency_ms=response.latency_ms,
+                )
+            )
+
+            return response
+
+        except Exception as primary_error:
+            logger.warning(
+                "primary_provider_failed",
+                error=str(primary_error),
+                fallback="openai",
+            )
+
+            # Emit fallback event
+            await self.event_emitter.emit(
+                ProviderEvent(
+                    type=EventType.PROVIDER_FALLBACK,
+                    session_id=UUID(int=0),
+                    user_id=UUID(int=0),
+                    companion_id=UUID(int=0),
+                    provider="openai",
+                    model=self.settings.openai_model,
+                    operation="chat_completion",
+                    error_type=type(primary_error).__name__,
+                )
+            )
+
+            # Try fallback
+            return await self.fallback_provider.generate(
+                messages=messages,
+                tools=tools,
+                max_tokens=self.settings.openai_max_tokens,
+                temperature=0.7,
+            )
+
+    async def _create_safety_response(
+        self,
+        session_id: UUID,
+        user_id: UUID,
+        companion_spec: CompanionSpec,
+        user_message: str,
+        safety_flags: list[str],
+    ) -> ConversationTurn:
+        """Create a response when input is blocked by safety."""
+        turn_id, user_msg = await self.turn_manager.start_turn(
+            session_id=session_id,
+            user_id=user_id,
+            companion_id=companion_spec.id,
+            user_message=user_message,
+            model="safety_filter",
+            prompt_version=self.prompt_manager.current_version,
+            policy_version=self.safety_gate.policy_version,
+        )
+
+        safety_response = self.prompt_manager.get_prompt(
+            "safety_response",
+            version=self.prompt_manager.current_version,
+        )
+
+        return await self.turn_manager.complete_turn(
+            turn_id=turn_id,
+            assistant_response=safety_response,
+            prompt_tokens=0,
+            completion_tokens=0,
+            latency_ms=0,
+            safety_flags=safety_flags,
+        )
+
+    async def _apply_safety_filter(
+        self,
+        response: LLMResponse,
+        safety_flags: list[str],
+    ) -> LLMResponse:
+        """Apply safety filtering to response content."""
+        filtered_content = self.safety_gate.filter_content(
+            content=response.content,
+            flags=safety_flags,
+        )
+
+        return LLMResponse(
+            content=filtered_content,
+            model=response.model,
+            prompt_tokens=response.prompt_tokens,
+            completion_tokens=response.completion_tokens,
+            finish_reason="safety_filtered",
+            tool_calls=response.tool_calls,
+            latency_ms=response.latency_ms,
+        )
+
+    def _get_available_tools(
+        self,
+        allowed_tools: list[str],
+    ) -> list[dict[str, Any]]:
+        """Get tool definitions for allowed tools."""
+        tools = []
+        for tool_name in allowed_tools:
+            if tool_name in TOOL_REGISTRY:
+                tool_def = TOOL_REGISTRY[tool_name]
+                tools.append(tool_def.to_anthropic_tool())
+        return tools
+
+    def _serialize_tool_call(self, tool_call: ToolCall) -> dict[str, Any]:
+        """Serialize a tool call for storage."""
+        return {
+            "id": tool_call.id,
+            "name": tool_call.name,
+            "arguments": tool_call.arguments,
+            "created_at": tool_call.created_at.isoformat(),
+        }
+
+    def _serialize_tool_result(self, tool_result: ToolResult) -> dict[str, Any]:
+        """Serialize a tool result for storage."""
+        return {
+            "tool_call_id": tool_result.tool_call_id,
+            "name": tool_result.name,
+            "success": tool_result.success,
+            "output": tool_result.output,
+            "error": tool_result.error,
+            "duration_ms": tool_result.duration_ms,
+            "cost_usd": tool_result.cost_usd,
+        }

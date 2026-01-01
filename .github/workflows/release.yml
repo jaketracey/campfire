@@ -1,0 +1,470 @@
+# =============================================================================
+# Campfire - Release Management Workflow
+# =============================================================================
+# Handles semantic versioning, changelog generation, and GitHub releases
+#
+# Triggers:
+#   - Manual workflow dispatch
+#   - Merge to main with conventional commits
+#
+# Features:
+#   - Semantic versioning based on conventional commits
+#   - Automatic changelog generation
+#   - GitHub release creation
+#   - Release notes with categorized changes
+#   - Git tagging
+# =============================================================================
+
+name: Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      version_type:
+        description: 'Version bump type'
+        required: true
+        type: choice
+        options:
+          - auto
+          - patch
+          - minor
+          - major
+        default: 'auto'
+      prerelease:
+        description: 'Create prerelease (e.g., beta, rc)'
+        required: false
+        type: string
+        default: ''
+      dry_run:
+        description: 'Dry run (do not create release)'
+        required: false
+        type: boolean
+        default: false
+
+  push:
+    branches:
+      - main
+    paths-ignore:
+      - 'CHANGELOG.md'
+      - '.github/workflows/deploy.yml'
+      - 'docs/**'
+      - '**.md'
+
+# Only one release at a time
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+  pull-requests: read
+
+jobs:
+  # ===========================================================================
+  # Analyze Commits and Determine Version
+  # ===========================================================================
+  analyze:
+    name: Analyze Changes
+    runs-on: ubuntu-latest
+    outputs:
+      should_release: ${{ steps.analyze.outputs.should_release }}
+      version: ${{ steps.analyze.outputs.version }}
+      version_type: ${{ steps.analyze.outputs.version_type }}
+      changelog: ${{ steps.changelog.outputs.changelog }}
+      release_notes: ${{ steps.changelog.outputs.release_notes }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Get latest tag
+        id: latest-tag
+        run: |
+          LATEST_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "v0.0.0")
+          echo "latest_tag=${LATEST_TAG}" >> $GITHUB_OUTPUT
+          echo "Latest tag: ${LATEST_TAG}"
+
+      - name: Analyze commits since last release
+        id: analyze
+        run: |
+          LATEST_TAG="${{ steps.latest-tag.outputs.latest_tag }}"
+          VERSION_TYPE="${{ github.event.inputs.version_type || 'auto' }}"
+          PRERELEASE="${{ github.event.inputs.prerelease }}"
+
+          # Get commits since last tag
+          if [[ "${LATEST_TAG}" == "v0.0.0" ]]; then
+            COMMITS=$(git log --oneline --format="%s" | head -100)
+          else
+            COMMITS=$(git log "${LATEST_TAG}..HEAD" --oneline --format="%s")
+          fi
+
+          echo "Commits since ${LATEST_TAG}:"
+          echo "${COMMITS}"
+
+          # Count by type
+          BREAKING=$(echo "${COMMITS}" | grep -cE "^(feat|fix|refactor)(\(.+\))?!:" || echo "0")
+          FEATURES=$(echo "${COMMITS}" | grep -cE "^feat(\(.+\))?:" || echo "0")
+          FIXES=$(echo "${COMMITS}" | grep -cE "^fix(\(.+\))?:" || echo "0")
+          DOCS=$(echo "${COMMITS}" | grep -cE "^docs(\(.+\))?:" || echo "0")
+          CHORES=$(echo "${COMMITS}" | grep -cE "^(chore|ci|build)(\(.+\))?:" || echo "0")
+          REFACTORS=$(echo "${COMMITS}" | grep -cE "^refactor(\(.+\))?:" || echo "0")
+          TESTS=$(echo "${COMMITS}" | grep -cE "^test(\(.+\))?:" || echo "0")
+
+          echo "Breaking changes: ${BREAKING}"
+          echo "Features: ${FEATURES}"
+          echo "Fixes: ${FIXES}"
+          echo "Docs: ${DOCS}"
+          echo "Chores: ${CHORES}"
+
+          # Determine version bump
+          if [[ "${VERSION_TYPE}" == "auto" ]]; then
+            if [[ ${BREAKING} -gt 0 ]]; then
+              VERSION_TYPE="major"
+            elif [[ ${FEATURES} -gt 0 ]]; then
+              VERSION_TYPE="minor"
+            elif [[ ${FIXES} -gt 0 ]] || [[ ${REFACTORS} -gt 0 ]]; then
+              VERSION_TYPE="patch"
+            else
+              VERSION_TYPE="none"
+            fi
+          fi
+
+          # Check if we should release
+          if [[ "${VERSION_TYPE}" == "none" ]]; then
+            echo "should_release=false" >> $GITHUB_OUTPUT
+            echo "No releasable changes found"
+            exit 0
+          fi
+
+          # Calculate new version
+          CURRENT_VERSION="${LATEST_TAG#v}"
+          IFS='.' read -r MAJOR MINOR PATCH <<< "${CURRENT_VERSION%-*}"
+
+          case "${VERSION_TYPE}" in
+            major)
+              MAJOR=$((MAJOR + 1))
+              MINOR=0
+              PATCH=0
+              ;;
+            minor)
+              MINOR=$((MINOR + 1))
+              PATCH=0
+              ;;
+            patch)
+              PATCH=$((PATCH + 1))
+              ;;
+          esac
+
+          NEW_VERSION="${MAJOR}.${MINOR}.${PATCH}"
+
+          # Add prerelease suffix if specified
+          if [[ -n "${PRERELEASE}" ]]; then
+            NEW_VERSION="${NEW_VERSION}-${PRERELEASE}"
+          fi
+
+          echo "should_release=true" >> $GITHUB_OUTPUT
+          echo "version=v${NEW_VERSION}" >> $GITHUB_OUTPUT
+          echo "version_type=${VERSION_TYPE}" >> $GITHUB_OUTPUT
+
+          echo "## Version Analysis" >> $GITHUB_STEP_SUMMARY
+          echo "| Property | Value |" >> $GITHUB_STEP_SUMMARY
+          echo "|----------|-------|" >> $GITHUB_STEP_SUMMARY
+          echo "| Previous Version | ${LATEST_TAG} |" >> $GITHUB_STEP_SUMMARY
+          echo "| New Version | v${NEW_VERSION} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Version Type | ${VERSION_TYPE} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Breaking Changes | ${BREAKING} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Features | ${FEATURES} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Fixes | ${FIXES} |" >> $GITHUB_STEP_SUMMARY
+
+      - name: Generate changelog
+        id: changelog
+        if: steps.analyze.outputs.should_release == 'true'
+        run: |
+          LATEST_TAG="${{ steps.latest-tag.outputs.latest_tag }}"
+          NEW_VERSION="${{ steps.analyze.outputs.version }}"
+          DATE=$(date +%Y-%m-%d)
+
+          # Get commits since last tag
+          if [[ "${LATEST_TAG}" == "v0.0.0" ]]; then
+            COMMIT_RANGE="HEAD"
+          else
+            COMMIT_RANGE="${LATEST_TAG}..HEAD"
+          fi
+
+          # Generate categorized changelog
+          cat > release_notes.md << 'NOTES_EOF'
+          ## What's Changed
+
+          NOTES_EOF
+
+          # Breaking Changes
+          BREAKING=$(git log ${COMMIT_RANGE} --oneline --format="- %s (%h)" | grep -E "^- (feat|fix|refactor)(\(.+\))?!:" || true)
+          if [[ -n "${BREAKING}" ]]; then
+            echo "### Breaking Changes" >> release_notes.md
+            echo "${BREAKING}" >> release_notes.md
+            echo "" >> release_notes.md
+          fi
+
+          # Features
+          FEATURES=$(git log ${COMMIT_RANGE} --oneline --format="- %s (%h)" | grep -E "^- feat(\(.+\))?:" | grep -v "!:" || true)
+          if [[ -n "${FEATURES}" ]]; then
+            echo "### Features" >> release_notes.md
+            echo "${FEATURES}" >> release_notes.md
+            echo "" >> release_notes.md
+          fi
+
+          # Bug Fixes
+          FIXES=$(git log ${COMMIT_RANGE} --oneline --format="- %s (%h)" | grep -E "^- fix(\(.+\))?:" | grep -v "!:" || true)
+          if [[ -n "${FIXES}" ]]; then
+            echo "### Bug Fixes" >> release_notes.md
+            echo "${FIXES}" >> release_notes.md
+            echo "" >> release_notes.md
+          fi
+
+          # Performance
+          PERF=$(git log ${COMMIT_RANGE} --oneline --format="- %s (%h)" | grep -E "^- perf(\(.+\))?:" || true)
+          if [[ -n "${PERF}" ]]; then
+            echo "### Performance" >> release_notes.md
+            echo "${PERF}" >> release_notes.md
+            echo "" >> release_notes.md
+          fi
+
+          # Refactoring
+          REFACTOR=$(git log ${COMMIT_RANGE} --oneline --format="- %s (%h)" | grep -E "^- refactor(\(.+\))?:" | grep -v "!:" || true)
+          if [[ -n "${REFACTOR}" ]]; then
+            echo "### Refactoring" >> release_notes.md
+            echo "${REFACTOR}" >> release_notes.md
+            echo "" >> release_notes.md
+          fi
+
+          # Documentation
+          DOCS=$(git log ${COMMIT_RANGE} --oneline --format="- %s (%h)" | grep -E "^- docs(\(.+\))?:" || true)
+          if [[ -n "${DOCS}" ]]; then
+            echo "### Documentation" >> release_notes.md
+            echo "${DOCS}" >> release_notes.md
+            echo "" >> release_notes.md
+          fi
+
+          # Other changes
+          OTHER=$(git log ${COMMIT_RANGE} --oneline --format="- %s (%h)" | grep -vE "^- (feat|fix|docs|perf|refactor|test|chore|ci|build)(\(.+\))?" || true)
+          if [[ -n "${OTHER}" ]]; then
+            echo "### Other Changes" >> release_notes.md
+            echo "${OTHER}" >> release_notes.md
+            echo "" >> release_notes.md
+          fi
+
+          # Add contributors
+          echo "### Contributors" >> release_notes.md
+          git log ${COMMIT_RANGE} --format="@%an" | sort -u | while read author; do
+            echo "- ${author}" >> release_notes.md
+          done
+
+          # Store release notes
+          RELEASE_NOTES=$(cat release_notes.md)
+          echo "release_notes<<EOF" >> $GITHUB_OUTPUT
+          echo "${RELEASE_NOTES}" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+
+          # Generate CHANGELOG entry
+          cat > changelog_entry.md << EOF
+          ## [${NEW_VERSION}] - ${DATE}
+
+          ${RELEASE_NOTES}
+
+          EOF
+
+          CHANGELOG_ENTRY=$(cat changelog_entry.md)
+          echo "changelog<<EOF" >> $GITHUB_OUTPUT
+          echo "${CHANGELOG_ENTRY}" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+
+  # ===========================================================================
+  # Create Release
+  # ===========================================================================
+  release:
+    name: Create Release
+    runs-on: ubuntu-latest
+    needs: analyze
+    if: needs.analyze.outputs.should_release == 'true' && github.event.inputs.dry_run != 'true'
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Configure Git
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+      - name: Update CHANGELOG.md
+        run: |
+          VERSION="${{ needs.analyze.outputs.version }}"
+          DATE=$(date +%Y-%m-%d)
+
+          # Create CHANGELOG.md if it doesn't exist
+          if [[ ! -f CHANGELOG.md ]]; then
+            cat > CHANGELOG.md << 'EOF'
+          # Changelog
+
+          All notable changes to this project will be documented in this file.
+
+          The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
+          and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+
+          EOF
+          fi
+
+          # Prepend new changelog entry after the header
+          CHANGELOG_ENTRY='${{ needs.analyze.outputs.changelog }}'
+
+          # Use awk to insert after the header section
+          awk -v entry="${CHANGELOG_ENTRY}" '
+            /^# Changelog/ { print; getline; print; getline; print; getline; print; print entry; next }
+            { print }
+          ' CHANGELOG.md > CHANGELOG.tmp && mv CHANGELOG.tmp CHANGELOG.md
+
+      - name: Update package.json versions
+        run: |
+          VERSION="${{ needs.analyze.outputs.version }}"
+          VERSION_NUMBER="${VERSION#v}"
+
+          # Update root package.json
+          if [[ -f package.json ]]; then
+            jq --arg v "${VERSION_NUMBER}" '.version = $v' package.json > package.tmp && mv package.tmp package.json
+          fi
+
+          # Update workspace packages
+          for pkg_json in packages/*/package.json; do
+            if [[ -f "${pkg_json}" ]]; then
+              jq --arg v "${VERSION_NUMBER}" '.version = $v' "${pkg_json}" > "${pkg_json}.tmp" && mv "${pkg_json}.tmp" "${pkg_json}"
+            fi
+          done
+
+      - name: Commit version bump
+        run: |
+          VERSION="${{ needs.analyze.outputs.version }}"
+
+          git add CHANGELOG.md package.json packages/*/package.json
+          git commit -m "chore(release): ${VERSION}
+
+          - Update CHANGELOG.md
+          - Bump package versions
+
+          [skip ci]"
+
+      - name: Create and push tag
+        run: |
+          VERSION="${{ needs.analyze.outputs.version }}"
+
+          git tag -a "${VERSION}" -m "Release ${VERSION}"
+          git push origin main --follow-tags
+
+      - name: Create GitHub Release
+        uses: actions/create-release@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tag_name: ${{ needs.analyze.outputs.version }}
+          release_name: ${{ needs.analyze.outputs.version }}
+          body: |
+            # Release ${{ needs.analyze.outputs.version }}
+
+            ${{ needs.analyze.outputs.release_notes }}
+
+            ---
+
+            ## Installation
+
+            ```bash
+            # Clone the repository
+            git clone https://github.com/${{ github.repository }}.git
+            cd campfire
+            git checkout ${{ needs.analyze.outputs.version }}
+
+            # Install dependencies
+            pnpm install
+            ```
+
+            ## Deployment
+
+            This release can be deployed using the [Deploy workflow](https://github.com/${{ github.repository }}/actions/workflows/deploy.yml).
+
+            ```bash
+            gh workflow run deploy.yml -f environment=prod -f services=all
+            ```
+
+            ---
+
+            **Full Changelog**: https://github.com/${{ github.repository }}/compare/${{ steps.latest-tag.outputs.latest_tag }}...${{ needs.analyze.outputs.version }}
+          draft: false
+          prerelease: ${{ github.event.inputs.prerelease != '' }}
+
+      - name: Generate release summary
+        run: |
+          echo "## Release Created" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Property | Value |" >> $GITHUB_STEP_SUMMARY
+          echo "|----------|-------|" >> $GITHUB_STEP_SUMMARY
+          echo "| Version | ${{ needs.analyze.outputs.version }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Type | ${{ needs.analyze.outputs.version_type }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Prerelease | ${{ github.event.inputs.prerelease || 'No' }} |" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Next Steps" >> $GITHUB_STEP_SUMMARY
+          echo "1. Review the [release notes](https://github.com/${{ github.repository }}/releases/tag/${{ needs.analyze.outputs.version }})" >> $GITHUB_STEP_SUMMARY
+          echo "2. Deploy to staging: \`gh workflow run deploy.yml -f environment=staging\`" >> $GITHUB_STEP_SUMMARY
+          echo "3. Deploy to production: \`gh workflow run deploy.yml -f environment=prod\`" >> $GITHUB_STEP_SUMMARY
+
+  # ===========================================================================
+  # Dry Run Summary
+  # ===========================================================================
+  dry-run:
+    name: Dry Run Summary
+    runs-on: ubuntu-latest
+    needs: analyze
+    if: needs.analyze.outputs.should_release == 'true' && github.event.inputs.dry_run == 'true'
+    steps:
+      - name: Display dry run results
+        run: |
+          echo "## Dry Run Results" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "This is a dry run. No release was created." >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Proposed Release" >> $GITHUB_STEP_SUMMARY
+          echo "| Property | Value |" >> $GITHUB_STEP_SUMMARY
+          echo "|----------|-------|" >> $GITHUB_STEP_SUMMARY
+          echo "| Version | ${{ needs.analyze.outputs.version }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Type | ${{ needs.analyze.outputs.version_type }} |" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Changelog Preview" >> $GITHUB_STEP_SUMMARY
+          echo '```markdown' >> $GITHUB_STEP_SUMMARY
+          echo '${{ needs.analyze.outputs.changelog }}' >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+
+  # ===========================================================================
+  # No Release Needed
+  # ===========================================================================
+  no-release:
+    name: No Release Needed
+    runs-on: ubuntu-latest
+    needs: analyze
+    if: needs.analyze.outputs.should_release == 'false'
+    steps:
+      - name: Report no release needed
+        run: |
+          echo "## No Release Needed" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "No conventional commits requiring a release were found." >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "To trigger a release, use conventional commit messages:" >> $GITHUB_STEP_SUMMARY
+          echo "- \`feat: ...\` for new features (minor version)" >> $GITHUB_STEP_SUMMARY
+          echo "- \`fix: ...\` for bug fixes (patch version)" >> $GITHUB_STEP_SUMMARY
+          echo "- \`feat!: ...\` or \`BREAKING CHANGE:\` for breaking changes (major version)" >> $GITHUB_STEP_SUMMARY

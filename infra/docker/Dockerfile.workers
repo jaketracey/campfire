@@ -1,0 +1,108 @@
+# =============================================================================
+# Campfire Workers Service - Multi-stage Dockerfile
+# =============================================================================
+# Build: docker build -f infra/docker/Dockerfile.workers -t campfire-workers .
+# Run:   docker run campfire-workers
+# =============================================================================
+
+# -----------------------------------------------------------------------------
+# Stage 1: Base - Common dependencies and setup
+# -----------------------------------------------------------------------------
+FROM node:22-alpine AS base
+
+RUN apk update && apk upgrade && \
+    apk add --no-cache \
+    libc6-compat \
+    wget \
+    python3 \
+    make \
+    g++ \
+    && rm -rf /var/cache/apk/*
+
+WORKDIR /app
+
+RUN corepack enable && corepack prepare pnpm@latest --activate
+
+# -----------------------------------------------------------------------------
+# Stage 2: Dependencies - Install all dependencies
+# -----------------------------------------------------------------------------
+FROM base AS deps
+
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
+COPY packages/shared/package.json ./packages/shared/
+COPY packages/workers/package.json ./packages/workers/
+
+RUN pnpm install --frozen-lockfile
+
+# -----------------------------------------------------------------------------
+# Stage 3: Builder - Build the application
+# -----------------------------------------------------------------------------
+FROM base AS builder
+
+COPY --from=deps /app/node_modules ./node_modules
+COPY --from=deps /app/packages/shared/node_modules ./packages/shared/node_modules
+COPY --from=deps /app/packages/workers/node_modules ./packages/workers/node_modules
+
+COPY packages/shared ./packages/shared
+COPY packages/workers ./packages/workers
+COPY tsconfig.json ./
+
+RUN pnpm --filter shared build && \
+    pnpm --filter workers build
+
+# -----------------------------------------------------------------------------
+# Stage 4: Production - Minimal production image
+# -----------------------------------------------------------------------------
+FROM node:22-alpine AS production
+
+RUN addgroup --system --gid 1001 nodejs && \
+    adduser --system --uid 1001 campfire
+
+RUN apk add --no-cache wget && rm -rf /var/cache/apk/*
+
+WORKDIR /app
+
+COPY --from=builder /app/packages/workers/dist ./dist
+COPY --from=builder /app/packages/workers/package.json ./
+COPY --from=builder /app/packages/shared/dist ./node_modules/@campfire/shared/dist
+COPY --from=builder /app/packages/shared/package.json ./node_modules/@campfire/shared/
+
+RUN corepack enable && corepack prepare pnpm@latest --activate && \
+    pnpm install --prod --frozen-lockfile
+
+RUN chown -R campfire:nodejs /app
+
+USER campfire
+
+# Workers expose a health check endpoint on port 8080
+EXPOSE 8080
+
+HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
+    CMD wget --no-verbose --tries=1 --spider http://localhost:8080/health || exit 1
+
+ENV NODE_ENV=production \
+    HEALTH_PORT=8080
+
+CMD ["node", "dist/index.js"]
+
+# -----------------------------------------------------------------------------
+# Stage 5: Development - Full development environment
+# -----------------------------------------------------------------------------
+FROM base AS development
+
+COPY --from=deps /app/node_modules ./node_modules
+COPY --from=deps /app/packages/shared/node_modules ./packages/shared/node_modules
+COPY --from=deps /app/packages/workers/node_modules ./packages/workers/node_modules
+
+COPY packages/shared ./packages/shared
+COPY packages/workers ./packages/workers
+COPY tsconfig.json ./
+
+WORKDIR /app/packages/workers
+
+EXPOSE 8080
+
+ENV NODE_ENV=development \
+    HEALTH_PORT=8080
+
+CMD ["pnpm", "dev"]

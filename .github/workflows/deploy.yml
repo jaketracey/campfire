@@ -1,0 +1,649 @@
+# =============================================================================
+# Campfire - Continuous Deployment Pipeline
+# =============================================================================
+# Builds, tests, and deploys services to AWS ECS Fargate
+#
+# Triggers:
+#   - Push to main branch (auto-deploy to dev)
+#   - Manual workflow dispatch (deploy to any environment)
+#
+# Requirements:
+#   - AWS OIDC provider configured for GitHub Actions
+#   - ECR repositories: campfire-{env}/{service}
+#   - ECS cluster: campfire-{env}-cluster
+#   - Secrets configured in GitHub repository settings
+# =============================================================================
+
+name: Deploy to AWS ECS
+
+on:
+  push:
+    branches:
+      - main
+    paths-ignore:
+      - '**.md'
+      - 'docs/**'
+      - '.github/workflows/release.yml'
+
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Target environment'
+        required: true
+        type: choice
+        options:
+          - dev
+          - staging
+          - prod
+        default: 'dev'
+      services:
+        description: 'Services to deploy (comma-separated or "all")'
+        required: true
+        type: string
+        default: 'all'
+      skip_tests:
+        description: 'Skip tests (use with caution)'
+        required: false
+        type: boolean
+        default: false
+      dry_run:
+        description: 'Dry run (build but do not deploy)'
+        required: false
+        type: boolean
+        default: false
+
+# Prevent concurrent deployments to the same environment
+concurrency:
+  group: deploy-${{ github.event.inputs.environment || 'dev' }}
+  cancel-in-progress: false
+
+env:
+  AWS_REGION: us-east-1
+  PROJECT_NAME: campfire
+
+# Required for OIDC token authentication with AWS
+permissions:
+  id-token: write
+  contents: read
+  actions: read
+  deployments: write
+
+jobs:
+  # ===========================================================================
+  # Preparation - Determine what to build and deploy
+  # ===========================================================================
+  prepare:
+    name: Prepare Deployment
+    runs-on: ubuntu-latest
+    outputs:
+      environment: ${{ steps.config.outputs.environment }}
+      services: ${{ steps.config.outputs.services }}
+      image_tag: ${{ steps.config.outputs.image_tag }}
+      should_deploy: ${{ steps.config.outputs.should_deploy }}
+      deploy_id: ${{ steps.config.outputs.deploy_id }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Configure deployment parameters
+        id: config
+        run: |
+          # Determine environment
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            ENVIRONMENT="${{ github.event.inputs.environment }}"
+            SERVICES="${{ github.event.inputs.services }}"
+            SHOULD_DEPLOY="${{ github.event.inputs.dry_run != 'true' }}"
+          else
+            # Push to main deploys to dev
+            ENVIRONMENT="dev"
+            SERVICES="all"
+            SHOULD_DEPLOY="true"
+          fi
+
+          # Generate unique image tag
+          SHORT_SHA=$(git rev-parse --short HEAD)
+          TIMESTAMP=$(date +%Y%m%d%H%M%S)
+          IMAGE_TAG="${ENVIRONMENT}-${SHORT_SHA}-${TIMESTAMP}"
+
+          # Generate deployment ID for tracking
+          DEPLOY_ID="${ENVIRONMENT}-$(uuidgen | cut -d'-' -f1)"
+
+          echo "environment=${ENVIRONMENT}" >> $GITHUB_OUTPUT
+          echo "services=${SERVICES}" >> $GITHUB_OUTPUT
+          echo "image_tag=${IMAGE_TAG}" >> $GITHUB_OUTPUT
+          echo "should_deploy=${SHOULD_DEPLOY}" >> $GITHUB_OUTPUT
+          echo "deploy_id=${DEPLOY_ID}" >> $GITHUB_OUTPUT
+
+          echo "### Deployment Configuration" >> $GITHUB_STEP_SUMMARY
+          echo "| Parameter | Value |" >> $GITHUB_STEP_SUMMARY
+          echo "|-----------|-------|" >> $GITHUB_STEP_SUMMARY
+          echo "| Environment | ${ENVIRONMENT} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Services | ${SERVICES} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Image Tag | ${IMAGE_TAG} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Deploy ID | ${DEPLOY_ID} |" >> $GITHUB_STEP_SUMMARY
+
+  # ===========================================================================
+  # Build and Test
+  # ===========================================================================
+  test:
+    name: Run Tests
+    runs-on: ubuntu-latest
+    needs: prepare
+    if: ${{ github.event.inputs.skip_tests != 'true' }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v3
+        with:
+          version: latest
+
+      - name: Get pnpm store directory
+        id: pnpm-cache
+        shell: bash
+        run: echo "store=$(pnpm store path)" >> $GITHUB_OUTPUT
+
+      - name: Setup pnpm cache
+        uses: actions/cache@v4
+        with:
+          path: ${{ steps.pnpm-cache.outputs.store }}
+          key: ${{ runner.os }}-pnpm-store-${{ hashFiles('**/pnpm-lock.yaml') }}
+          restore-keys: |
+            ${{ runner.os }}-pnpm-store-
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Run linting
+        run: pnpm lint
+
+      - name: Run type checking
+        run: pnpm typecheck
+
+      - name: Run unit tests
+        run: pnpm test:unit
+
+      - name: Run integration tests
+        run: pnpm test:integration
+        env:
+          DATABASE_URL: postgresql://test:test@localhost:5432/campfire_test
+
+  # ===========================================================================
+  # Build Docker Images
+  # ===========================================================================
+  build:
+    name: Build ${{ matrix.service }}
+    runs-on: ubuntu-latest
+    needs: [prepare, test]
+    if: |
+      always() &&
+      (needs.test.result == 'success' || needs.test.result == 'skipped') &&
+      needs.prepare.result == 'success'
+    strategy:
+      fail-fast: false
+      matrix:
+        service: [gateway, orchestrator, web, marketing, workers]
+        include:
+          - service: gateway
+            dockerfile: infra/docker/Dockerfile.gateway
+            port: 4000
+          - service: orchestrator
+            dockerfile: infra/docker/Dockerfile.orchestrator
+            port: 5000
+          - service: web
+            dockerfile: infra/docker/Dockerfile.web
+            port: 3000
+          - service: marketing
+            dockerfile: infra/docker/Dockerfile.marketing
+            port: 3001
+          - service: workers
+            dockerfile: infra/docker/Dockerfile.workers
+            port: 8080
+    outputs:
+      gateway_image: ${{ steps.build-push.outputs.gateway_image }}
+      orchestrator_image: ${{ steps.build-push.outputs.orchestrator_image }}
+      web_image: ${{ steps.build-push.outputs.web_image }}
+      marketing_image: ${{ steps.build-push.outputs.marketing_image }}
+      workers_image: ${{ steps.build-push.outputs.workers_image }}
+
+    steps:
+      - name: Check if service should be built
+        id: should-build
+        run: |
+          SERVICES="${{ needs.prepare.outputs.services }}"
+          SERVICE="${{ matrix.service }}"
+
+          if [[ "${SERVICES}" == "all" ]] || [[ "${SERVICES}" == *"${SERVICE}"* ]]; then
+            echo "build=true" >> $GITHUB_OUTPUT
+          else
+            echo "build=false" >> $GITHUB_OUTPUT
+            echo "Skipping ${SERVICE} - not in requested services: ${SERVICES}"
+          fi
+
+      - name: Checkout code
+        if: steps.should-build.outputs.build == 'true'
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials via OIDC
+        if: steps.should-build.outputs.build == 'true'
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::${{ secrets.AWS_ACCOUNT_ID }}:role/github-actions-deploy
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Login to Amazon ECR
+        if: steps.should-build.outputs.build == 'true'
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Set up Docker Buildx
+        if: steps.should-build.outputs.build == 'true'
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build and push Docker image
+        if: steps.should-build.outputs.build == 'true'
+        id: build-push
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ${{ matrix.dockerfile }}
+          target: production
+          push: true
+          tags: |
+            ${{ steps.login-ecr.outputs.registry }}/${{ env.PROJECT_NAME }}-${{ needs.prepare.outputs.environment }}/${{ matrix.service }}:${{ needs.prepare.outputs.image_tag }}
+            ${{ steps.login-ecr.outputs.registry }}/${{ env.PROJECT_NAME }}-${{ needs.prepare.outputs.environment }}/${{ matrix.service }}:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          build-args: |
+            NEXT_PUBLIC_GATEWAY_URL=${{ secrets[format('{0}_GATEWAY_URL', needs.prepare.outputs.environment)] }}
+            NEXT_PUBLIC_WS_URL=${{ secrets[format('{0}_WS_URL', needs.prepare.outputs.environment)] }}
+            NEXT_PUBLIC_POSTHOG_KEY=${{ secrets.POSTHOG_KEY }}
+            NEXT_PUBLIC_POSTHOG_HOST=${{ secrets.POSTHOG_HOST }}
+            NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY=${{ secrets[format('{0}_STRIPE_PUBLISHABLE_KEY', needs.prepare.outputs.environment)] }}
+            NEXT_PUBLIC_WEB_URL=${{ secrets[format('{0}_WEB_URL', needs.prepare.outputs.environment)] }}
+            NEXT_PUBLIC_GTM_ID=${{ secrets.GTM_ID }}
+          labels: |
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.created=${{ github.event.head_commit.timestamp }}
+
+      - name: Output image URI
+        if: steps.should-build.outputs.build == 'true'
+        run: |
+          IMAGE_URI="${{ steps.login-ecr.outputs.registry }}/${{ env.PROJECT_NAME }}-${{ needs.prepare.outputs.environment }}/${{ matrix.service }}:${{ needs.prepare.outputs.image_tag }}"
+          echo "${{ matrix.service }}_image=${IMAGE_URI}" >> $GITHUB_OUTPUT
+
+  # ===========================================================================
+  # Production Gate - Manual approval required for prod
+  # ===========================================================================
+  prod-gate:
+    name: Production Approval
+    runs-on: ubuntu-latest
+    needs: [prepare, build]
+    if: |
+      needs.prepare.outputs.environment == 'prod' &&
+      needs.prepare.outputs.should_deploy == 'true'
+    environment:
+      name: production
+      url: https://app.campfire.com
+    steps:
+      - name: Confirm production deployment
+        run: |
+          echo "Production deployment approved by: ${{ github.actor }}"
+          echo "Image tag: ${{ needs.prepare.outputs.image_tag }}"
+          echo "Deploy ID: ${{ needs.prepare.outputs.deploy_id }}"
+
+  # ===========================================================================
+  # Deploy to ECS
+  # ===========================================================================
+  deploy:
+    name: Deploy ${{ matrix.service }}
+    runs-on: ubuntu-latest
+    needs: [prepare, build, prod-gate]
+    if: |
+      always() &&
+      needs.prepare.outputs.should_deploy == 'true' &&
+      needs.build.result == 'success' &&
+      (needs.prod-gate.result == 'success' || needs.prod-gate.result == 'skipped')
+    strategy:
+      fail-fast: false
+      max-parallel: 2
+      matrix:
+        service: [gateway, orchestrator, web, marketing, workers]
+        include:
+          - service: gateway
+            port: 4000
+            has_alb: true
+          - service: orchestrator
+            port: 5000
+            has_alb: false
+          - service: web
+            port: 3000
+            has_alb: true
+          - service: marketing
+            port: 3001
+            has_alb: true
+          - service: workers
+            port: 8080
+            has_alb: false
+    environment:
+      name: ${{ needs.prepare.outputs.environment }}
+      url: ${{ matrix.has_alb && format('https://{0}.campfire.com', needs.prepare.outputs.environment) || '' }}
+
+    steps:
+      - name: Check if service should be deployed
+        id: should-deploy
+        run: |
+          SERVICES="${{ needs.prepare.outputs.services }}"
+          SERVICE="${{ matrix.service }}"
+
+          if [[ "${SERVICES}" == "all" ]] || [[ "${SERVICES}" == *"${SERVICE}"* ]]; then
+            echo "deploy=true" >> $GITHUB_OUTPUT
+          else
+            echo "deploy=false" >> $GITHUB_OUTPUT
+            echo "Skipping ${SERVICE} deployment - not in requested services: ${SERVICES}"
+          fi
+
+      - name: Checkout code
+        if: steps.should-deploy.outputs.deploy == 'true'
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials via OIDC
+        if: steps.should-deploy.outputs.deploy == 'true'
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::${{ secrets.AWS_ACCOUNT_ID }}:role/github-actions-deploy
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Emit deploy.started event
+        if: steps.should-deploy.outputs.deploy == 'true'
+        run: |
+          # Emit deploy.started event to CloudWatch
+          aws logs put-log-events \
+            --log-group-name "/campfire/${{ needs.prepare.outputs.environment }}/deployments" \
+            --log-stream-name "deploy-events" \
+            --log-events "[{
+              \"timestamp\": $(date +%s000),
+              \"message\": \"{\\\"event_type\\\": \\\"deploy.started\\\", \\\"deploy_id\\\": \\\"${{ needs.prepare.outputs.deploy_id }}\\\", \\\"service\\\": \\\"${{ matrix.service }}\\\", \\\"environment\\\": \\\"${{ needs.prepare.outputs.environment }}\\\", \\\"image_tag\\\": \\\"${{ needs.prepare.outputs.image_tag }}\\\", \\\"actor\\\": \\\"${{ github.actor }}\\\", \\\"commit_sha\\\": \\\"${{ github.sha }}\\\"}\"
+            }]" || true
+
+      - name: Get current task definition
+        if: steps.should-deploy.outputs.deploy == 'true'
+        id: current-task
+        run: |
+          CLUSTER_NAME="${{ env.PROJECT_NAME }}-${{ needs.prepare.outputs.environment }}-cluster"
+          SERVICE_NAME="${{ env.PROJECT_NAME }}-${{ needs.prepare.outputs.environment }}-${{ matrix.service }}"
+
+          # Get current task definition for potential rollback
+          CURRENT_TASK_DEF=$(aws ecs describe-services \
+            --cluster "${CLUSTER_NAME}" \
+            --services "${SERVICE_NAME}" \
+            --query 'services[0].taskDefinition' \
+            --output text 2>/dev/null || echo "none")
+
+          echo "current_task_def=${CURRENT_TASK_DEF}" >> $GITHUB_OUTPUT
+          echo "Current task definition: ${CURRENT_TASK_DEF}"
+
+      - name: Download task definition
+        if: steps.should-deploy.outputs.deploy == 'true'
+        run: |
+          TASK_FAMILY="${{ env.PROJECT_NAME }}-${{ needs.prepare.outputs.environment }}-${{ matrix.service }}"
+
+          aws ecs describe-task-definition \
+            --task-definition "${TASK_FAMILY}" \
+            --query 'taskDefinition' \
+            --output json > task-definition.json
+
+          # Remove fields that cannot be registered
+          jq 'del(.taskDefinitionArn, .revision, .status, .requiresAttributes, .compatibilities, .registeredAt, .registeredBy)' \
+            task-definition.json > cleaned-task-definition.json
+
+      - name: Update task definition with new image
+        if: steps.should-deploy.outputs.deploy == 'true'
+        id: render-task-def
+        uses: aws-actions/amazon-ecs-render-task-definition@v1
+        with:
+          task-definition: cleaned-task-definition.json
+          container-name: ${{ matrix.service }}
+          image: ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/${{ env.PROJECT_NAME }}-${{ needs.prepare.outputs.environment }}/${{ matrix.service }}:${{ needs.prepare.outputs.image_tag }}
+
+      - name: Deploy to Amazon ECS
+        if: steps.should-deploy.outputs.deploy == 'true'
+        id: deploy-ecs
+        uses: aws-actions/amazon-ecs-deploy-task-definition@v1
+        with:
+          task-definition: ${{ steps.render-task-def.outputs.task-definition }}
+          service: ${{ env.PROJECT_NAME }}-${{ needs.prepare.outputs.environment }}-${{ matrix.service }}
+          cluster: ${{ env.PROJECT_NAME }}-${{ needs.prepare.outputs.environment }}-cluster
+          wait-for-service-stability: true
+          wait-for-minutes: 10
+
+      - name: Emit deploy.completed event
+        if: steps.should-deploy.outputs.deploy == 'true' && success()
+        run: |
+          aws logs put-log-events \
+            --log-group-name "/campfire/${{ needs.prepare.outputs.environment }}/deployments" \
+            --log-stream-name "deploy-events" \
+            --log-events "[{
+              \"timestamp\": $(date +%s000),
+              \"message\": \"{\\\"event_type\\\": \\\"deploy.completed\\\", \\\"deploy_id\\\": \\\"${{ needs.prepare.outputs.deploy_id }}\\\", \\\"service\\\": \\\"${{ matrix.service }}\\\", \\\"environment\\\": \\\"${{ needs.prepare.outputs.environment }}\\\", \\\"image_tag\\\": \\\"${{ needs.prepare.outputs.image_tag }}\\\", \\\"task_definition\\\": \\\"${{ steps.deploy-ecs.outputs.task-definition-arn }}\\\"}\"
+            }]" || true
+
+      - name: Emit deploy.failed event
+        if: steps.should-deploy.outputs.deploy == 'true' && failure()
+        run: |
+          aws logs put-log-events \
+            --log-group-name "/campfire/${{ needs.prepare.outputs.environment }}/deployments" \
+            --log-stream-name "deploy-events" \
+            --log-events "[{
+              \"timestamp\": $(date +%s000),
+              \"message\": \"{\\\"event_type\\\": \\\"deploy.failed\\\", \\\"deploy_id\\\": \\\"${{ needs.prepare.outputs.deploy_id }}\\\", \\\"service\\\": \\\"${{ matrix.service }}\\\", \\\"environment\\\": \\\"${{ needs.prepare.outputs.environment }}\\\", \\\"previous_task_def\\\": \\\"${{ steps.current-task.outputs.current_task_def }}\\\"}\"
+            }]" || true
+
+  # ===========================================================================
+  # Smoke Tests
+  # ===========================================================================
+  smoke-tests:
+    name: Smoke Tests
+    runs-on: ubuntu-latest
+    needs: [prepare, deploy]
+    if: |
+      always() &&
+      needs.deploy.result == 'success'
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials via OIDC
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::${{ secrets.AWS_ACCOUNT_ID }}:role/github-actions-deploy
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Get ALB DNS
+        id: alb
+        run: |
+          ALB_DNS=$(aws elbv2 describe-load-balancers \
+            --names "${{ env.PROJECT_NAME }}-${{ needs.prepare.outputs.environment }}-alb" \
+            --query 'LoadBalancers[0].DNSName' \
+            --output text)
+          echo "alb_dns=${ALB_DNS}" >> $GITHUB_OUTPUT
+
+      - name: Run smoke tests
+        run: |
+          set -e
+          ALB_DNS="${{ steps.alb.outputs.alb_dns }}"
+          ENVIRONMENT="${{ needs.prepare.outputs.environment }}"
+
+          echo "Running smoke tests against: ${ALB_DNS}"
+
+          # Define health check endpoints
+          declare -A ENDPOINTS=(
+            ["gateway"]="/api/health"
+            ["web"]="/api/health"
+            ["marketing"]="/api/health"
+          )
+
+          FAILED=0
+
+          for SERVICE in "${!ENDPOINTS[@]}"; do
+            ENDPOINT="${ENDPOINTS[$SERVICE]}"
+            URL="https://${ALB_DNS}${ENDPOINT}"
+
+            echo "Testing ${SERVICE}: ${URL}"
+
+            HTTP_STATUS=$(curl -s -o /dev/null -w "%{http_code}" \
+              --max-time 30 \
+              --retry 3 \
+              --retry-delay 5 \
+              "${URL}" || echo "000")
+
+            if [[ "${HTTP_STATUS}" == "200" ]]; then
+              echo "  [PASS] ${SERVICE} returned ${HTTP_STATUS}"
+            else
+              echo "  [FAIL] ${SERVICE} returned ${HTTP_STATUS}"
+              FAILED=$((FAILED + 1))
+            fi
+          done
+
+          # Test WebSocket connectivity for gateway
+          echo "Testing WebSocket endpoint..."
+          WS_TEST=$(timeout 10 wscat -c "wss://${ALB_DNS}/ws" -x '{"type":"ping"}' 2>/dev/null || echo "failed")
+
+          if [[ "${WS_TEST}" != "failed" ]]; then
+            echo "  [PASS] WebSocket connection successful"
+          else
+            echo "  [WARN] WebSocket test skipped or failed (non-blocking)"
+          fi
+
+          if [[ ${FAILED} -gt 0 ]]; then
+            echo "Smoke tests failed: ${FAILED} service(s) unhealthy"
+            exit 1
+          fi
+
+          echo "All smoke tests passed!"
+
+      - name: Emit smoke_tests event
+        run: |
+          aws logs put-log-events \
+            --log-group-name "/campfire/${{ needs.prepare.outputs.environment }}/deployments" \
+            --log-stream-name "deploy-events" \
+            --log-events "[{
+              \"timestamp\": $(date +%s000),
+              \"message\": \"{\\\"event_type\\\": \\\"smoke_tests.completed\\\", \\\"deploy_id\\\": \\\"${{ needs.prepare.outputs.deploy_id }}\\\", \\\"environment\\\": \\\"${{ needs.prepare.outputs.environment }}\\\", \\\"status\\\": \\\"passed\\\"}\"
+            }]" || true
+
+  # ===========================================================================
+  # Rollback (Manual trigger)
+  # ===========================================================================
+  rollback:
+    name: Rollback ${{ matrix.service }}
+    runs-on: ubuntu-latest
+    if: failure() && needs.deploy.result == 'failure'
+    needs: [prepare, deploy]
+    strategy:
+      fail-fast: false
+      matrix:
+        service: [gateway, orchestrator, web, marketing, workers]
+
+    steps:
+      - name: Configure AWS credentials via OIDC
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::${{ secrets.AWS_ACCOUNT_ID }}:role/github-actions-deploy
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Get previous stable deployment
+        id: previous
+        run: |
+          CLUSTER_NAME="${{ env.PROJECT_NAME }}-${{ needs.prepare.outputs.environment }}-cluster"
+          SERVICE_NAME="${{ env.PROJECT_NAME }}-${{ needs.prepare.outputs.environment }}-${{ matrix.service }}"
+
+          # List recent task definitions and find the previous stable one
+          PREVIOUS_TASK_DEF=$(aws ecs list-task-definitions \
+            --family-prefix "${SERVICE_NAME}" \
+            --sort DESC \
+            --status ACTIVE \
+            --query 'taskDefinitionArns[1]' \
+            --output text)
+
+          if [[ "${PREVIOUS_TASK_DEF}" != "None" ]] && [[ -n "${PREVIOUS_TASK_DEF}" ]]; then
+            echo "previous_task_def=${PREVIOUS_TASK_DEF}" >> $GITHUB_OUTPUT
+            echo "Found previous task definition: ${PREVIOUS_TASK_DEF}"
+          else
+            echo "No previous task definition found for rollback"
+            exit 1
+          fi
+
+      - name: Rollback to previous version
+        run: |
+          CLUSTER_NAME="${{ env.PROJECT_NAME }}-${{ needs.prepare.outputs.environment }}-cluster"
+          SERVICE_NAME="${{ env.PROJECT_NAME }}-${{ needs.prepare.outputs.environment }}-${{ matrix.service }}"
+
+          echo "Rolling back ${SERVICE_NAME} to ${{ steps.previous.outputs.previous_task_def }}"
+
+          aws ecs update-service \
+            --cluster "${CLUSTER_NAME}" \
+            --service "${SERVICE_NAME}" \
+            --task-definition "${{ steps.previous.outputs.previous_task_def }}" \
+            --force-new-deployment
+
+          # Wait for rollback to stabilize
+          aws ecs wait services-stable \
+            --cluster "${CLUSTER_NAME}" \
+            --services "${SERVICE_NAME}"
+
+          echo "Rollback completed successfully"
+
+      - name: Emit rollback event
+        run: |
+          aws logs put-log-events \
+            --log-group-name "/campfire/${{ needs.prepare.outputs.environment }}/deployments" \
+            --log-stream-name "deploy-events" \
+            --log-events "[{
+              \"timestamp\": $(date +%s000),
+              \"message\": \"{\\\"event_type\\\": \\\"deploy.rollback\\\", \\\"deploy_id\\\": \\\"${{ needs.prepare.outputs.deploy_id }}\\\", \\\"service\\\": \\\"${{ matrix.service }}\\\", \\\"environment\\\": \\\"${{ needs.prepare.outputs.environment }}\\\", \\\"rolled_back_to\\\": \\\"${{ steps.previous.outputs.previous_task_def }}\\\"}\"
+            }]" || true
+
+  # ===========================================================================
+  # Deployment Summary
+  # ===========================================================================
+  summary:
+    name: Deployment Summary
+    runs-on: ubuntu-latest
+    needs: [prepare, build, deploy, smoke-tests]
+    if: always()
+    steps:
+      - name: Generate deployment summary
+        run: |
+          echo "## Deployment Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Property | Value |" >> $GITHUB_STEP_SUMMARY
+          echo "|----------|-------|" >> $GITHUB_STEP_SUMMARY
+          echo "| Deploy ID | \`${{ needs.prepare.outputs.deploy_id }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| Environment | ${{ needs.prepare.outputs.environment }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Image Tag | \`${{ needs.prepare.outputs.image_tag }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| Services | ${{ needs.prepare.outputs.services }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Triggered By | ${{ github.actor }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Commit | [${{ github.sha }}](${{ github.server_url }}/${{ github.repository }}/commit/${{ github.sha }}) |" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Job Results" >> $GITHUB_STEP_SUMMARY
+          echo "| Job | Status |" >> $GITHUB_STEP_SUMMARY
+          echo "|-----|--------|" >> $GITHUB_STEP_SUMMARY
+          echo "| Build | ${{ needs.build.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Deploy | ${{ needs.deploy.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Smoke Tests | ${{ needs.smoke-tests.result }} |" >> $GITHUB_STEP_SUMMARY
+
+      - name: Notify on failure
+        if: failure()
+        run: |
+          echo "::error::Deployment failed. Check the logs for details."
+          # Add Slack/Discord notification here if needed

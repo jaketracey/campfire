@@ -1,0 +1,615 @@
+# =============================================================================
+# Campfire CI Pipeline
+# =============================================================================
+# Comprehensive CI workflow for pnpm/turbo monorepo with Node.js and Python packages.
+# Runs on pull requests and pushes to main branch.
+#
+# Architecture:
+# - Uses job dependencies to optimize execution order
+# - Parallel matrix execution for independent checks
+# - Turbo remote caching for build acceleration
+# - Separate job for Python orchestrator tests
+# =============================================================================
+
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+    types: [opened, synchronize, reopened]
+
+# Cancel in-progress runs for the same branch/PR to save resources
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+env:
+  # Node.js and pnpm versions - centralized for easy updates
+  NODE_VERSION: "24"
+  PNPM_VERSION: "9.15.0"
+  PYTHON_VERSION: "3.14"
+
+  # Turbo remote caching configuration
+  # Set TURBO_TOKEN and TURBO_TEAM in repository secrets for remote caching
+  TURBO_TOKEN: ${{ secrets.TURBO_TOKEN }}
+  TURBO_TEAM: ${{ vars.TURBO_TEAM }}
+  TURBO_REMOTE_ONLY: true
+
+jobs:
+  # ===========================================================================
+  # Setup and Install Dependencies
+  # ===========================================================================
+  # Single job to install dependencies and populate cache for subsequent jobs.
+  # This prevents redundant installs across parallel jobs.
+  # ===========================================================================
+  setup:
+    name: Setup
+    runs-on: ubuntu-latest
+    outputs:
+      # Pass cache key to dependent jobs for cache restoration
+      pnpm-cache-key: ${{ steps.cache-keys.outputs.pnpm }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # Full history for better Turbo caching
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: "pnpm"
+
+      - name: Generate cache keys
+        id: cache-keys
+        run: |
+          echo "pnpm=${{ runner.os }}-pnpm-${{ hashFiles('**/pnpm-lock.yaml') }}" >> $GITHUB_OUTPUT
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      # Cache Turbo local cache directory for faster subsequent runs
+      - name: Cache Turbo
+        uses: actions/cache@v4
+        with:
+          path: .turbo
+          key: ${{ runner.os }}-turbo-${{ github.sha }}
+          restore-keys: |
+            ${{ runner.os }}-turbo-
+
+  # ===========================================================================
+  # Build Shared Package First
+  # ===========================================================================
+  # The shared package is a dependency for other packages, so we build it first.
+  # This output is cached by Turbo for downstream jobs.
+  # ===========================================================================
+  build-shared:
+    name: Build Shared
+    runs-on: ubuntu-latest
+    needs: setup
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: "pnpm"
+
+      - name: Restore Turbo cache
+        uses: actions/cache@v4
+        with:
+          path: .turbo
+          key: ${{ runner.os }}-turbo-${{ github.sha }}
+          restore-keys: |
+            ${{ runner.os }}-turbo-
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build shared package
+        run: pnpm turbo run build --filter=@campfire/shared
+
+      # Upload shared build artifacts for dependent jobs
+      - name: Upload shared build
+        uses: actions/upload-artifact@v4
+        with:
+          name: shared-dist
+          path: packages/shared/dist
+          retention-days: 1
+
+  # ===========================================================================
+  # Lint Check (Matrix)
+  # ===========================================================================
+  # Runs ESLint across all packages in parallel using matrix strategy.
+  # Each package runs independently to provide granular feedback.
+  # ===========================================================================
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    needs: build-shared
+    strategy:
+      fail-fast: false  # Continue other packages even if one fails
+      matrix:
+        package:
+          - gateway
+          - web
+          - marketing
+          - workers
+          - shared
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: "pnpm"
+
+      - name: Restore Turbo cache
+        uses: actions/cache@v4
+        with:
+          path: .turbo
+          key: ${{ runner.os }}-turbo-${{ github.sha }}
+          restore-keys: |
+            ${{ runner.os }}-turbo-
+
+      - name: Download shared build
+        uses: actions/download-artifact@v4
+        with:
+          name: shared-dist
+          path: packages/shared/dist
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Run lint
+        run: pnpm turbo run lint --filter=@campfire/${{ matrix.package }}
+
+  # ===========================================================================
+  # TypeScript Type Check (Matrix)
+  # ===========================================================================
+  # Runs TypeScript compiler in noEmit mode to verify type safety.
+  # Separate from lint to provide clearer error attribution.
+  # ===========================================================================
+  typecheck:
+    name: Type Check
+    runs-on: ubuntu-latest
+    needs: build-shared
+    strategy:
+      fail-fast: false
+      matrix:
+        package:
+          - gateway
+          - web
+          - workers
+          - shared
+        # Note: marketing uses type-check script name (handled below)
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: "pnpm"
+
+      - name: Restore Turbo cache
+        uses: actions/cache@v4
+        with:
+          path: .turbo
+          key: ${{ runner.os }}-turbo-${{ github.sha }}
+          restore-keys: |
+            ${{ runner.os }}-turbo-
+
+      - name: Download shared build
+        uses: actions/download-artifact@v4
+        with:
+          name: shared-dist
+          path: packages/shared/dist
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Run typecheck
+        run: pnpm turbo run typecheck --filter=@campfire/${{ matrix.package }}
+
+  # Marketing package uses different script name (type-check vs typecheck)
+  typecheck-marketing:
+    name: Type Check (marketing)
+    runs-on: ubuntu-latest
+    needs: build-shared
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: "pnpm"
+
+      - name: Restore Turbo cache
+        uses: actions/cache@v4
+        with:
+          path: .turbo
+          key: ${{ runner.os }}-turbo-${{ github.sha }}
+          restore-keys: |
+            ${{ runner.os }}-turbo-
+
+      - name: Download shared build
+        uses: actions/download-artifact@v4
+        with:
+          name: shared-dist
+          path: packages/shared/dist
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Run type-check
+        run: pnpm --filter @campfire/marketing type-check
+
+  # ===========================================================================
+  # Unit Tests (Matrix)
+  # ===========================================================================
+  # Runs unit tests for each package that has them defined.
+  # Unit tests should be fast and not require external services.
+  # ===========================================================================
+  test-unit:
+    name: Unit Tests
+    runs-on: ubuntu-latest
+    needs: build-shared
+    strategy:
+      fail-fast: false
+      matrix:
+        package:
+          - gateway
+          - web
+          - workers
+          - shared
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: "pnpm"
+
+      - name: Restore Turbo cache
+        uses: actions/cache@v4
+        with:
+          path: .turbo
+          key: ${{ runner.os }}-turbo-${{ github.sha }}
+          restore-keys: |
+            ${{ runner.os }}-turbo-
+
+      - name: Download shared build
+        uses: actions/download-artifact@v4
+        with:
+          name: shared-dist
+          path: packages/shared/dist
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Run unit tests
+        run: pnpm turbo run test:unit --filter=@campfire/${{ matrix.package }}
+
+      # Upload coverage reports for potential aggregation
+      - name: Upload coverage
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: coverage-${{ matrix.package }}
+          path: packages/${{ matrix.package }}/coverage
+          retention-days: 7
+
+  # ===========================================================================
+  # Integration Tests
+  # ===========================================================================
+  # Runs integration tests that may require database or external services.
+  # Uses service containers for dependencies like PostgreSQL and Redis.
+  # ===========================================================================
+  test-integration:
+    name: Integration Tests
+    runs-on: ubuntu-latest
+    needs: build-shared
+
+    # Service containers for integration test dependencies
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: campfire
+          POSTGRES_PASSWORD: campfire_test
+          POSTGRES_DB: campfire_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    env:
+      # Database connection for integration tests
+      DATABASE_URL: postgresql://campfire:campfire_test@localhost:5432/campfire_test
+      REDIS_URL: redis://localhost:6379
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: "pnpm"
+
+      - name: Restore Turbo cache
+        uses: actions/cache@v4
+        with:
+          path: .turbo
+          key: ${{ runner.os }}-turbo-${{ github.sha }}
+          restore-keys: |
+            ${{ runner.os }}-turbo-
+
+      - name: Download shared build
+        uses: actions/download-artifact@v4
+        with:
+          name: shared-dist
+          path: packages/shared/dist
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Wait for services
+        run: |
+          # Ensure PostgreSQL is ready
+          until pg_isready -h localhost -p 5432 -U campfire; do
+            echo "Waiting for PostgreSQL..."
+            sleep 2
+          done
+
+          # Ensure Redis is ready
+          until redis-cli -h localhost ping | grep -q PONG; do
+            echo "Waiting for Redis..."
+            sleep 2
+          done
+
+      - name: Run database migrations
+        run: pnpm --filter @campfire/gateway db:migrate
+
+      - name: Run integration tests
+        run: pnpm turbo run test:integration
+
+  # ===========================================================================
+  # Python Orchestrator Tests
+  # ===========================================================================
+  # Separate job for Python package testing with its own toolchain.
+  # Uses pytest with async support and coverage reporting.
+  # ===========================================================================
+  test-python:
+    name: Python Tests (orchestrator)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: packages/orchestrator
+
+    # Service containers for Python integration tests
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: orchestrator
+          POSTGRES_PASSWORD: orchestrator_test
+          POSTGRES_DB: orchestrator_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    env:
+      DATABASE_URL: postgresql://orchestrator:orchestrator_test@localhost:5432/orchestrator_test
+      REDIS_URL: redis://localhost:6379
+      # Disable telemetry during tests
+      OTEL_SDK_DISABLED: true
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Cache pip dependencies
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-${{ hashFiles('packages/orchestrator/pyproject.toml') }}
+          restore-keys: |
+            ${{ runner.os }}-pip-
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev]"
+
+      - name: Run linting (ruff)
+        run: ruff check .
+
+      - name: Run formatting check (black)
+        run: black --check .
+
+      - name: Run type checking (mypy)
+        run: mypy src
+
+      - name: Run tests with coverage
+        run: pytest --cov=orchestrator --cov-report=xml --cov-report=html
+
+      - name: Upload coverage report
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: coverage-orchestrator-python
+          path: packages/orchestrator/htmlcov
+          retention-days: 7
+
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v4
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        with:
+          file: packages/orchestrator/coverage.xml
+          flags: orchestrator-python
+          token: ${{ secrets.CODECOV_TOKEN }}
+
+  # ===========================================================================
+  # Build All Packages
+  # ===========================================================================
+  # Full build of all packages to ensure production builds succeed.
+  # This catches build-time errors that might not surface in dev mode.
+  # ===========================================================================
+  build:
+    name: Build
+    runs-on: ubuntu-latest
+    needs: [lint, typecheck, typecheck-marketing, test-unit]
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: "pnpm"
+
+      - name: Restore Turbo cache
+        uses: actions/cache@v4
+        with:
+          path: .turbo
+          key: ${{ runner.os }}-turbo-${{ github.sha }}
+          restore-keys: |
+            ${{ runner.os }}-turbo-
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build all packages
+        run: pnpm turbo run build
+
+      # Cache Next.js build output for potential deployment jobs
+      - name: Upload Next.js builds
+        uses: actions/upload-artifact@v4
+        with:
+          name: nextjs-builds
+          path: |
+            packages/web/.next
+            packages/marketing/.next
+          retention-days: 1
+
+  # ===========================================================================
+  # CI Status Check
+  # ===========================================================================
+  # Aggregate job that depends on all required checks.
+  # Use this as the required status check in branch protection rules.
+  # This pattern allows adding/removing checks without updating branch protection.
+  # ===========================================================================
+  ci-status:
+    name: CI Status
+    runs-on: ubuntu-latest
+    needs:
+      - lint
+      - typecheck
+      - typecheck-marketing
+      - test-unit
+      - test-integration
+      - test-python
+      - build
+    if: always()
+    steps:
+      - name: Check all job statuses
+        run: |
+          # Aggregate results from all required jobs
+          results="${{ needs.lint.result }} ${{ needs.typecheck.result }} ${{ needs.typecheck-marketing.result }} ${{ needs.test-unit.result }} ${{ needs.test-integration.result }} ${{ needs.test-python.result }} ${{ needs.build.result }}"
+
+          echo "Job results: $results"
+
+          # Fail if any job failed or was cancelled
+          if echo "$results" | grep -qE "(failure|cancelled)"; then
+            echo "One or more jobs failed or were cancelled"
+            exit 1
+          fi
+
+          echo "All CI checks passed successfully"

@@ -1,0 +1,59 @@
+# Dependencies
+node_modules/
+.pnp
+.pnp.js
+.pnp.cjs
+
+# Next.js
+.next/
+out/
+build/
+.vercel/
+.output/
+standalone/
+
+# Testing
+coverage/
+.nyc_output/
+test-results/
+playwright-report/
+
+# TypeScript
+*.tsbuildinfo
+next-env.d.ts
+*.d.ts.map
+
+# Environment
+.env
+.env.local
+.env.*.local
+!.env.example
+
+# Debug logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+
+# Secrets
+*.pem
+
+# Storybook
+storybook-static/
+
+# Bundle analysis
+.next/analyze/
+analyze/
+
+# Vitest
+vitest.config.*.timestamp*

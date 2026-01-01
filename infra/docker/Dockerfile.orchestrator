@@ -1,0 +1,111 @@
+# =============================================================================
+# Campfire Orchestrator Service - Multi-stage Dockerfile
+# =============================================================================
+# Build: docker build -f infra/docker/Dockerfile.orchestrator -t campfire-orchestrator .
+# Run:   docker run -p 5000:5000 campfire-orchestrator
+# =============================================================================
+
+# -----------------------------------------------------------------------------
+# Stage 1: Base - Common dependencies and setup
+# -----------------------------------------------------------------------------
+FROM node:22-alpine AS base
+
+# Install security updates and required packages
+RUN apk update && apk upgrade && \
+    apk add --no-cache \
+    libc6-compat \
+    wget \
+    python3 \
+    make \
+    g++ \
+    && rm -rf /var/cache/apk/*
+
+WORKDIR /app
+
+# Enable corepack for pnpm
+RUN corepack enable && corepack prepare pnpm@latest --activate
+
+# -----------------------------------------------------------------------------
+# Stage 2: Dependencies - Install all dependencies
+# -----------------------------------------------------------------------------
+FROM base AS deps
+
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
+COPY packages/shared/package.json ./packages/shared/
+COPY packages/orchestrator/package.json ./packages/orchestrator/
+
+RUN pnpm install --frozen-lockfile
+
+# -----------------------------------------------------------------------------
+# Stage 3: Builder - Build the application
+# -----------------------------------------------------------------------------
+FROM base AS builder
+
+COPY --from=deps /app/node_modules ./node_modules
+COPY --from=deps /app/packages/shared/node_modules ./packages/shared/node_modules
+COPY --from=deps /app/packages/orchestrator/node_modules ./packages/orchestrator/node_modules
+
+COPY packages/shared ./packages/shared
+COPY packages/orchestrator ./packages/orchestrator
+COPY tsconfig.json ./
+
+RUN pnpm --filter shared build && \
+    pnpm --filter orchestrator build
+
+# -----------------------------------------------------------------------------
+# Stage 4: Production - Minimal production image
+# -----------------------------------------------------------------------------
+FROM node:22-alpine AS production
+
+# Security: Run as non-root user
+RUN addgroup --system --gid 1001 nodejs && \
+    adduser --system --uid 1001 campfire
+
+# Install wget for health checks
+RUN apk add --no-cache wget && rm -rf /var/cache/apk/*
+
+WORKDIR /app
+
+COPY --from=builder /app/packages/orchestrator/dist ./dist
+COPY --from=builder /app/packages/orchestrator/package.json ./
+COPY --from=builder /app/packages/shared/dist ./node_modules/@campfire/shared/dist
+COPY --from=builder /app/packages/shared/package.json ./node_modules/@campfire/shared/
+
+RUN corepack enable && corepack prepare pnpm@latest --activate && \
+    pnpm install --prod --frozen-lockfile
+
+RUN chown -R campfire:nodejs /app
+
+USER campfire
+
+EXPOSE 5000
+
+HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
+    CMD wget --no-verbose --tries=1 --spider http://localhost:5000/health || exit 1
+
+ENV NODE_ENV=production \
+    PORT=5000
+
+CMD ["node", "dist/index.js"]
+
+# -----------------------------------------------------------------------------
+# Stage 5: Development - Full development environment
+# -----------------------------------------------------------------------------
+FROM base AS development
+
+COPY --from=deps /app/node_modules ./node_modules
+COPY --from=deps /app/packages/shared/node_modules ./packages/shared/node_modules
+COPY --from=deps /app/packages/orchestrator/node_modules ./packages/orchestrator/node_modules
+
+COPY packages/shared ./packages/shared
+COPY packages/orchestrator ./packages/orchestrator
+COPY tsconfig.json ./
+
+WORKDIR /app/packages/orchestrator
+
+EXPOSE 5000
+
+ENV NODE_ENV=development \
+    PORT=5000
+
+CMD ["pnpm", "dev"]

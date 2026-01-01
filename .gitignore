@@ -1,0 +1,251 @@
+# ============================================
+# DEPENDENCIES
+# ============================================
+node_modules/
+.pnpm-store/
+.pnpm-debug.log
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+venv/
+.env/
+ENV/
+env/
+*.egg-info/
+*.egg
+.eggs/
+pip-log.txt
+pip-delete-this-directory.txt
+.Python
+develop-eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+share/python-wheels/
+
+# ============================================
+# BUILD OUTPUTS
+# ============================================
+dist/
+build/
+.next/
+out/
+.vercel/
+.output/
+standalone/
+
+# TypeScript
+*.tsbuildinfo
+*.d.ts.map
+
+# Python build
+*.so
+*.manifest
+*.spec
+
+# ============================================
+# IDE & EDITORS
+# ============================================
+.idea/
+.vscode/
+*.swp
+*.swo
+*.swn
+*~
+.project
+.classpath
+.settings/
+*.sublime-workspace
+*.sublime-project
+.spyderproject
+.spyproject
+
+# ============================================
+# OS FILES
+# ============================================
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+Desktop.ini
+
+# ============================================
+# ENVIRONMENT & SECRETS
+# ============================================
+.env
+.env.local
+.env.*.local
+.env.development
+.env.test
+.env.production
+!.env.example
+!.env.*.example
+
+# Secret files (NEVER commit)
+*.pem
+*.key
+*.p12
+*.pfx
+*.crt
+*.cer
+*.der
+credentials.json
+secrets.json
+service-account*.json
+*-credentials.json
+.secrets/
+.credentials/
+
+# AWS
+.aws/
+aws-exports.js
+
+# ============================================
+# LOGS & DEBUGGING
+# ============================================
+logs/
+*.log
+npm-debug.log*
+pnpm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+lerna-debug.log*
+.pnpm-debug.log*
+dev.log
+
+# Python logs
+*.log.*
+celery*.pid
+
+# ============================================
+# TESTING & COVERAGE
+# ============================================
+coverage/
+.nyc_output/
+*.lcov
+.coverage
+.coverage.*
+htmlcov/
+.tox/
+.nox/
+nosetests.xml
+coverage.xml
+*.cover
+*.py,cover
+.hypothesis/
+junit.xml
+test-results/
+playwright-report/
+test-output/
+
+# Pytest
+.pytest_cache/
+.cache/
+pytestdebug.log
+
+# Vitest
+vitest.config.*.timestamp*
+
+# ============================================
+# PYTHON TOOLING
+# ============================================
+.mypy_cache/
+.dmypy.json
+dmypy.json
+.ruff_cache/
+.pytype/
+.pyre/
+
+# ============================================
+# TURBO & MONOREPO
+# ============================================
+.turbo/
+
+# ============================================
+# DOCKER
+# ============================================
+*.pid
+docker-compose.override.yml
+.docker/
+
+# ============================================
+# DATABASE
+# ============================================
+*.sql.backup
+*.sql.gz
+*.dump
+*.db
+*.sqlite
+*.sqlite3
+data/postgres/
+data/redis/
+
+# Redis
+dump.rdb
+appendonly.aof
+
+# ============================================
+# OBSERVABILITY
+# ============================================
+# OpenTelemetry
+otel-collector-config.yaml.local
+traces/
+spans/
+
+# Prometheus
+prometheus_data/
+
+# ============================================
+# GENERATED & TEMPORARY
+# ============================================
+*.generated.*
+*.tmp
+*.temp
+*.bak
+*.backup
+*.orig
+.tmp/
+temp/
+tmp/
+
+# Storybook
+storybook-static/
+
+# Next.js specific
+next-env.d.ts
+
+# Sentry
+.sentryclirc
+
+# ============================================
+# MISC
+# ============================================
+# Yarn v2+
+.yarn/cache
+.yarn/unplugged
+.yarn/build-state.yml
+.yarn/install-state.gz
+.pnp.*
+
+# Husky
+.husky/_
+
+# Local Netlify folder
+.netlify
+
+# Local scripts output
+output/
+reports/
+
+# Claude Code local settings
+.claude/settings.local.json
+.claude/*.local.json
