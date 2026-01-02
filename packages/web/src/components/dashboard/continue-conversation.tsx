@@ -12,6 +12,7 @@ interface RecentSession {
   companionId: string;
   companionName: string;
   companionAvatarUrl: string | null;
+  companionImageUrl: string | null; // Latest conversation image or anchor image
   lastMessage: string;
   updatedAt: string;
 }
@@ -91,9 +92,9 @@ export function ContinueConversation({ sessions, maxSessions = 3 }: ContinueConv
           <div className="flex flex-col md:flex-row">
             {/* Avatar section */}
             <div className="relative w-full md:w-48 h-32 md:h-auto md:aspect-square flex-shrink-0 overflow-hidden">
-              {primarySession.companionAvatarUrl ? (
+              {(primarySession.companionImageUrl || primarySession.companionAvatarUrl) ? (
                 <img
-                  src={primarySession.companionAvatarUrl}
+                  src={primarySession.companionImageUrl || primarySession.companionAvatarUrl || ''}
                   alt={primarySession.companionName}
                   className="w-full h-full object-cover object-top group-hover:scale-105 transition-transform duration-500"
                 />
@@ -119,8 +120,8 @@ export function ContinueConversation({ sessions, maxSessions = 3 }: ContinueConv
                     {formatRelativeTime(primarySession.updatedAt)}
                   </span>
                 </div>
-                <p className="text-gray-400 text-sm md:text-base line-clamp-2 italic leading-relaxed">
-                  "{primarySession.lastMessage}"
+                <p className={`text-gray-400 text-sm md:text-base line-clamp-2 leading-relaxed ${primarySession.lastMessage !== 'Start chatting...' ? 'italic' : ''}`}>
+                  {primarySession.lastMessage !== 'Start chatting...' ? `"${primarySession.lastMessage}"` : primarySession.lastMessage}
                 </p>
               </div>
 
@@ -160,7 +161,7 @@ export function ContinueConversation({ sessions, maxSessions = 3 }: ContinueConv
                     {/* Avatar */}
                     <Avatar className="h-12 w-12 border border-white/10 flex-shrink-0">
                       <AvatarImage
-                        src={session.companionAvatarUrl || undefined}
+                        src={session.companionImageUrl || session.companionAvatarUrl || undefined}
                         alt={session.companionName}
                         className="object-cover"
                       />
@@ -179,8 +180,8 @@ export function ContinueConversation({ sessions, maxSessions = 3 }: ContinueConv
                           {formatRelativeTime(session.updatedAt)}
                         </span>
                       </div>
-                      <p className="text-xs text-gray-500 line-clamp-1 italic">
-                        "{session.lastMessage}"
+                      <p className={`text-xs text-gray-500 line-clamp-1 ${session.lastMessage !== 'Start chatting...' ? 'italic' : ''}`}>
+                        {session.lastMessage !== 'Start chatting...' ? `"${session.lastMessage}"` : session.lastMessage}
                       </p>
                     </div>
 

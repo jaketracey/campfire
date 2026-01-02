@@ -70,6 +70,7 @@ interface Session {
   companionId: string;
   companionName: string;
   companionAvatarUrl: string | null;
+  companionImageUrl: string | null; // Latest conversation image or anchor image
   lastMessage: string;
   updatedAt: string;
 }
@@ -187,11 +188,16 @@ export default function DashboardPage() {
       // Map API sessions to dashboard format
       const mappedSessions: Session[] = sessionsRes.sessions.map((s: APISession) => {
         const companion = companionMap.get(s.companionId);
+        // Get best available image: latest conversation image > anchor image > avatar
+        const ethnicity = companion?.spec?.visual_style?.appearance?.ethnicity || null;
+        const anchorImage = ethnicity ? getAnchorImageUrl(ethnicity) : null;
+        const companionImageUrl = companion?.latestConversationImageUrl || anchorImage || companion?.avatarUrl || null;
         return {
           id: s.id,
           companionId: s.companionId,
           companionName: companion?.name || 'Unknown Companion',
           companionAvatarUrl: companion?.avatarUrl || null,
+          companionImageUrl,
           lastMessage: s.summary || 'Start chatting...',
           updatedAt: s.lastMessageAt || s.startedAt,
         };

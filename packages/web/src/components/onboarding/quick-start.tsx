@@ -18,6 +18,7 @@ import {
 import { createCompanion, createSession, generateBackstory } from '@/lib/api';
 import { useToast } from '@/hooks/use-toast';
 import type { VoiceOption } from '@/stores/onboarding-store';
+import { QuickStartCarousel } from './quick-start-carousel';
 
 // All 12 archetypes from the personality schema
 const ARCHETYPES = [
@@ -137,11 +138,12 @@ interface QuickStartProps {
 export function QuickStart({ onBack }: QuickStartProps) {
   const router = useRouter();
   const { toast } = useToast();
-  const [step, setStep] = useState<'name' | 'creating'>('name');
+  const [step, setStep] = useState<'name' | 'carousel' | 'creating'>('name');
   const [isCreating, setIsCreating] = useState(false);
   const [creationProgress, setCreationProgress] = useState(0);
   const [loadingMessage, setLoadingMessage] = useState(LOADING_MESSAGES[0]);
   const [generatedCompanion, setGeneratedCompanion] = useState<ReturnType<typeof generateRandomCompanion> | null>(null);
+  const [apiPromise, setApiPromise] = useState<Promise<{ companionId: string; sessionId: string }> | null>(null);
   const nameInputRef = useRef<HTMLInputElement>(null);
 
   const {
@@ -166,17 +168,88 @@ export function QuickStart({ onBack }: QuickStartProps) {
     }
   }, [step]);
 
-  // Handle name submission - go straight to creating
+  // Start API calls in background while carousel plays
+  const startApiCalls = useCallback(async (name: string, randomCompanion: ReturnType<typeof generateRandomCompanion>) => {
+    const personalityDescription = [
+      randomCompanion.primaryArchetype.description,
+      randomCompanion.secondaryArchetype
+        ? `Secondary archetype: ${randomCompanion.secondaryArchetype.name}`
+        : '',
+      `Traits: ${randomCompanion.primaryArchetype.traits.join(', ')}`,
+      `Warmth: ${Math.round(randomCompanion.personality.warmth * 100)}%`,
+      `Playfulness: ${Math.round(randomCompanion.personality.playfulness * 100)}%`,
+      `Empathy: ${Math.round(randomCompanion.personality.empathy * 100)}%`,
+      `Energy: ${Math.round(randomCompanion.personality.energy * 100)}%`,
+    ].filter(Boolean).join('\n');
+
+    // Create the companion with random values
+    const companion = await createCompanion({
+      name,
+      description: randomCompanion.primaryArchetype.description,
+      personality: personalityDescription,
+      voiceId: randomCompanion.voice.id,
+      isPublic: false,
+      spec: {
+        identity: {
+          name,
+          pronouns: 'they/them',
+        },
+        personality: {
+          archetype: randomCompanion.primaryArchetype.id,
+          secondary_archetype: randomCompanion.secondaryArchetype?.id,
+          traits: randomCompanion.personality,
+        },
+        voice: {
+          provider: 'elevenlabs',
+          voice_id: randomCompanion.voice.id,
+        },
+        visual_style: randomCompanion.visualStyle,
+        boundaries: randomCompanion.boundaries,
+      },
+    });
+
+    // Fire off backstory generation in background (don't await)
+    generateBackstory(companion.id, {
+      archetype: randomCompanion.primaryArchetype.id,
+      secondaryArchetype: randomCompanion.secondaryArchetype?.id,
+      archetypeDescription: randomCompanion.primaryArchetype.description,
+      personality: randomCompanion.personality,
+      tenets: [],
+    }).catch((err) => console.error('Backstory generation failed:', err));
+
+    // Create a session
+    const session = await createSession({
+      companionId: companion.id,
+      title: `Chat with ${name}`,
+    });
+
+    return { companionId: companion.id, sessionId: session.id };
+  }, []);
+
+  // Handle name submission - start carousel and API calls in parallel
   const onNameSubmit = useCallback(async () => {
     if (!isValid || !companionName) return;
 
-    // Generate random companion and start creation
+    // Generate random companion
     const randomCompanion = generateRandomCompanion();
     setGeneratedCompanion(randomCompanion);
+
+    // Start API calls in background
+    const promise = startApiCalls(companionName, randomCompanion);
+    setApiPromise(promise);
+
+    // Show carousel
+    setStep('carousel');
+  }, [isValid, companionName, startApiCalls]);
+
+  // Handle carousel completion - wait for API and redirect
+  const onCarouselComplete = useCallback(async () => {
+    if (!apiPromise || !generatedCompanion) return;
+
     setStep('creating');
     setIsCreating(true);
-    setCreationProgress(10);
-    setLoadingMessage(LOADING_MESSAGES[0]);
+    setCreationProgress(80);
+    setLoadingMessage('Bringing your companion to life...');
 
     // Cycle through loading messages
     const messageInterval = setInterval(() => {
@@ -188,69 +261,8 @@ export function QuickStart({ onBack }: QuickStartProps) {
     }, 1200);
 
     try {
-      // Progress: Generating personality
-      setCreationProgress(20);
-      await new Promise((r) => setTimeout(r, 400));
-
-      // Build personality description from random values
-      const personalityDescription = [
-        randomCompanion.primaryArchetype.description,
-        randomCompanion.secondaryArchetype
-          ? `Secondary archetype: ${randomCompanion.secondaryArchetype.name}`
-          : '',
-        `Traits: ${randomCompanion.primaryArchetype.traits.join(', ')}`,
-        `Warmth: ${Math.round(randomCompanion.personality.warmth * 100)}%`,
-        `Playfulness: ${Math.round(randomCompanion.personality.playfulness * 100)}%`,
-        `Empathy: ${Math.round(randomCompanion.personality.empathy * 100)}%`,
-        `Energy: ${Math.round(randomCompanion.personality.energy * 100)}%`,
-      ].filter(Boolean).join('\n');
-
-      setCreationProgress(40);
-
-      // Create the companion with random values
-      const companion = await createCompanion({
-        name: companionName,
-        description: randomCompanion.primaryArchetype.description,
-        personality: personalityDescription,
-        voiceId: randomCompanion.voice.id,
-        isPublic: false,
-        spec: {
-          identity: {
-            name: companionName,
-            pronouns: 'they/them', // Default neutral pronouns
-          },
-          personality: {
-            archetype: randomCompanion.primaryArchetype.id,
-            secondary_archetype: randomCompanion.secondaryArchetype?.id,
-            traits: randomCompanion.personality,
-          },
-          voice: {
-            provider: 'elevenlabs',
-            voice_id: randomCompanion.voice.id,
-          },
-          visual_style: randomCompanion.visualStyle,
-          boundaries: randomCompanion.boundaries,
-        },
-      });
-
-      setCreationProgress(60);
-
-      // Fire off backstory generation in background (don't await)
-      generateBackstory(companion.id, {
-        archetype: randomCompanion.primaryArchetype.id,
-        secondaryArchetype: randomCompanion.secondaryArchetype?.id,
-        archetypeDescription: randomCompanion.primaryArchetype.description,
-        personality: randomCompanion.personality,
-        tenets: [],
-      }).catch((err) => console.error('Backstory generation failed:', err));
-
-      setCreationProgress(80);
-
-      // Create a session
-      const session = await createSession({
-        companionId: companion.id,
-        title: `Chat with ${companionName}`,
-      });
+      // Wait for API calls to complete
+      const { sessionId } = await apiPromise;
 
       setCreationProgress(100);
       clearInterval(messageInterval);
@@ -260,7 +272,7 @@ export function QuickStart({ onBack }: QuickStartProps) {
       await new Promise((r) => setTimeout(r, 600));
 
       // Redirect to chat
-      router.push(`/chat/${session.id}`);
+      router.push(`/chat/${sessionId}`);
     } catch (error) {
       clearInterval(messageInterval);
       console.error('Quick start creation failed:', error);
@@ -271,11 +283,12 @@ export function QuickStart({ onBack }: QuickStartProps) {
       });
       setIsCreating(false);
       setStep('name');
+      setApiPromise(null);
     }
-  }, [isValid, companionName, router, toast]);
+  }, [apiPromise, generatedCompanion, router, toast]);
 
   return (
-    <div className="w-full max-w-2xl mx-auto">
+    <div className={`w-full mx-auto ${step === 'carousel' ? 'max-w-5xl' : 'max-w-2xl'}`}>
       <AnimatePresence mode="wait">
         {/* Step 1: Name */}
         {step === 'name' && (
@@ -356,7 +369,25 @@ export function QuickStart({ onBack }: QuickStartProps) {
           </motion.div>
         )}
 
-        {/* Step 2: Creating */}
+        {/* Step 2: Carousel */}
+        {step === 'carousel' && generatedCompanion && (
+          <motion.div
+            key="carousel-step"
+            initial={{ opacity: 0, scale: 0.98 }}
+            animate={{ opacity: 1, scale: 1 }}
+            exit={{ opacity: 0, scale: 0.98 }}
+            transition={{ duration: 0.4, ease: [0.22, 1, 0.36, 1] }}
+            className="w-full"
+          >
+            <QuickStartCarousel
+              companionName={companionName}
+              generatedData={generatedCompanion}
+              onComplete={onCarouselComplete}
+            />
+          </motion.div>
+        )}
+
+        {/* Step 3: Creating */}
         {step === 'creating' && (
           <motion.div
             key="creating-step"
@@ -442,7 +473,7 @@ export function QuickStart({ onBack }: QuickStartProps) {
       </AnimatePresence>
 
       {/* Tip at bottom */}
-      {step !== 'creating' && (
+      {step === 'name' && (
         <motion.div
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}

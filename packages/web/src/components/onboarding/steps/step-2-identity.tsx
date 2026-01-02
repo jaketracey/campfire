@@ -12,6 +12,7 @@ import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { ArrowRight, Sparkles, Wand2 } from 'lucide-react';
+import { cn } from '@/lib/utils';
 import { generateRandomIdentity } from '@/lib/api/companions';
 
 const identitySchema = z.object({
@@ -111,15 +112,22 @@ export function Step2Identity() {
                 size="lg"
                 onClick={handleSurpriseMe}
                 disabled={isGenerating}
-                className="relative w-full h-16 rounded-2xl bg-gradient-to-r from-vibes-hot via-vibes-neon to-vibes-cyan text-white font-bold text-lg shadow-[0_0_30px_rgba(168,85,247,0.3)] hover:shadow-[0_0_50px_rgba(168,85,247,0.5)] transition-all overflow-hidden group"
+                className={cn(
+                  "relative w-full h-16 rounded-2xl font-bold text-lg transition-all duration-400 overflow-hidden group",
+                  hasGenerated && !isGenerating
+                    ? "bg-transparent border border-white/20 text-gray-400 hover:border-white/40 hover:text-gray-300 shadow-none"
+                    : "bg-gradient-to-r from-vibes-hot via-vibes-neon to-vibes-cyan text-white shadow-[0_0_30px_rgba(168,85,247,0.3)] hover:shadow-[0_0_50px_rgba(168,85,247,0.5)]"
+                )}
               >
-                {/* Animated shimmer effect */}
-                <motion.div
-                  className="absolute inset-0 bg-gradient-to-r from-transparent via-white/20 to-transparent"
-                  initial={{ x: '-100%' }}
-                  animate={isGenerating ? { x: '100%' } : { x: '-100%' }}
-                  transition={isGenerating ? { repeat: Infinity, duration: 1, ease: 'linear' } : {}}
-                />
+                {/* Animated shimmer effect - only show when not generated */}
+                {!hasGenerated && (
+                  <motion.div
+                    className="absolute inset-0 bg-gradient-to-r from-transparent via-white/20 to-transparent"
+                    initial={{ x: '-100%' }}
+                    animate={isGenerating ? { x: '100%' } : { x: '-100%' }}
+                    transition={isGenerating ? { repeat: Infinity, duration: 1, ease: 'linear' } : {}}
+                  />
+                )}
 
                 <span className="relative flex items-center justify-center gap-3">
                   {isGenerating ? (
