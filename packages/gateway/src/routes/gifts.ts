@@ -7,14 +7,17 @@ import type { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
 import crypto from 'crypto';
 import { z } from 'zod';
 import { nanoid } from 'nanoid';
+import type Stripe from 'stripe';
 import { requireAuth, requireInternalService } from '../middleware/auth.js';
 import { logger } from '../observability/logger.js';
 import { withSpan } from '../observability/tracing.js';
 import { getGiftsRepository } from '../repositories/gifts.js';
 import { getCompanionsRepository } from '../repositories/companions.js';
+import { getBillingRepository } from '../repositories/billing.js';
 import { getEventStore } from '../db/event-store.js';
 import { ValidationError } from '../repositories/errors.js';
 import { enqueueGiftGenerationJob } from '../utils/queue.js';
+import { getStripe, isStripeConfigured } from '../utils/stripe.js';
 import type { JSONObject } from '../db/types.js';
 
 // ============================================================================
@@ -112,6 +115,7 @@ const UpdateEmbeddingSchema = z.object({
 export async function giftsRoutes(app: FastifyInstance): Promise<void> {
   const giftsRepo = getGiftsRepository();
   const companionsRepo = getCompanionsRepository();
+  const billingRepo = getBillingRepository();
   const eventStore = getEventStore();
 
   // ==========================================================================
@@ -215,10 +219,91 @@ export async function giftsRoutes(app: FastifyInstance): Promise<void> {
 
       logger.info({ userId: user.userId, bundleId, tokens: bundle.tokens }, 'Token checkout requested');
 
-      // TODO: Implement Stripe integration
-      // - Get or create Stripe customer for user
-      // - Create Stripe checkout session with bundle.stripe_price_id
-      // - Return checkout URL
+      // Check if Stripe is configured
+      if (!isStripeConfigured()) {
+        logger.error('Stripe is not configured - STRIPE_SECRET_KEY missing');
+        return reply.status(503).send({
+          success: false,
+          error: {
+            code: 'PAYMENT_UNAVAILABLE',
+            message: 'Payment processing is not available',
+            timestamp: new Date().toISOString(),
+          },
+        });
+      }
+
+      // Validate bundle has Stripe price ID
+      if (!bundle.stripe_price_id) {
+        logger.error({ bundleId }, 'Bundle does not have Stripe price ID configured');
+        return reply.status(400).send({
+          success: false,
+          error: {
+            code: 'BUNDLE_NOT_CONFIGURED',
+            message: 'Token bundle is not configured for purchase',
+            timestamp: new Date().toISOString(),
+          },
+        });
+      }
+
+      const stripe = getStripe();
+      const totalTokens = bundle.tokens + bundle.bonus_tokens;
+
+      // Get or create Stripe customer
+      let stripeCustomerId: string;
+      const existingSubscription = await billingRepo.findSubscriptionByUserId(user.userId);
+
+      if (existingSubscription?.stripe_customer_id) {
+        stripeCustomerId = existingSubscription.stripe_customer_id;
+        span.setAttributes({ 'stripe.customer_id': stripeCustomerId, 'stripe.customer_new': false });
+      } else {
+        // Create new Stripe customer
+        const customer = await stripe.customers.create({
+          email: user.email,
+          metadata: {
+            userId: user.userId,
+            source: 'token_purchase',
+          },
+        });
+        stripeCustomerId = customer.id;
+        span.setAttributes({ 'stripe.customer_id': stripeCustomerId, 'stripe.customer_new': true });
+        logger.info({ userId: user.userId, stripeCustomerId }, 'Created new Stripe customer for token purchase');
+      }
+
+      // Create Stripe Checkout Session
+      const session = await stripe.checkout.sessions.create({
+        customer: stripeCustomerId,
+        mode: 'payment',
+        payment_method_types: ['card'],
+        line_items: [
+          {
+            price: bundle.stripe_price_id,
+            quantity: 1,
+          },
+        ],
+        success_url: successUrl,
+        cancel_url: cancelUrl,
+        metadata: {
+          userId: user.userId,
+          bundleId: bundle.id,
+          tokens: bundle.tokens.toString(),
+          bonusTokens: bundle.bonus_tokens.toString(),
+          totalTokens: totalTokens.toString(),
+          type: 'token_purchase',
+        },
+        payment_intent_data: {
+          metadata: {
+            userId: user.userId,
+            bundleId: bundle.id,
+            type: 'token_purchase',
+          },
+        },
+      });
+
+      span.setAttributes({
+        'stripe.session_id': session.id,
+        'bundle.tokens': bundle.tokens,
+        'bundle.bonus_tokens': bundle.bonus_tokens,
+      });
 
       // Emit checkout event
       const checkoutTraceId = crypto.randomUUID();
@@ -235,24 +320,30 @@ export async function giftsRoutes(app: FastifyInstance): Promise<void> {
           tokens: bundle.tokens,
           bonusTokens: bundle.bonus_tokens,
           priceCents: bundle.price_cents,
+          stripeSessionId: session.id,
+          stripeCustomerId,
         },
         version: '1.0',
         causationId: null,
         correlationId: checkoutTraceId,
       });
 
-      // Stub response - would return actual Stripe checkout URL
+      logger.info(
+        { userId: user.userId, bundleId, stripeSessionId: session.id, totalTokens },
+        'Stripe checkout session created'
+      );
+
       return reply.status(201).send({
         success: true,
         data: {
-          checkoutUrl: `https://checkout.stripe.com/c/pay/stub_${nanoid()}`,
-          sessionId: `cs_${nanoid()}`,
+          checkoutUrl: session.url,
+          sessionId: session.id,
           bundle: {
             id: bundle.id,
             name: bundle.name,
             tokens: bundle.tokens,
             bonusTokens: bundle.bonus_tokens,
-            totalTokens: bundle.tokens + bundle.bonus_tokens,
+            totalTokens,
             priceCents: bundle.price_cents,
           },
           expiresAt: new Date(Date.now() + 30 * 60 * 1000).toISOString(),
@@ -291,6 +382,162 @@ export async function giftsRoutes(app: FastifyInstance): Promise<void> {
           hasMore: result.hasMore,
         },
       });
+    });
+  });
+
+  /**
+   * POST /gifts/tokens/webhook - Handle Stripe webhook for token purchases
+   * This endpoint receives webhooks from Stripe when a checkout session completes.
+   * It verifies the signature and credits tokens to the user's account.
+   */
+  app.post('/tokens/webhook', {
+    config: {
+      rawBody: true,
+    } as Record<string, unknown>,
+  }, async (request: FastifyRequest, reply: FastifyReply) => {
+    return withSpan('gifts.handleTokenWebhook', async (span) => {
+      // Check if Stripe is configured
+      if (!isStripeConfigured()) {
+        logger.error('Stripe webhook received but Stripe is not configured');
+        return reply.status(503).send({ error: 'Stripe not configured' });
+      }
+
+      const stripe = getStripe();
+      const webhookSecret = process.env['STRIPE_WEBHOOK_SECRET'];
+
+      if (!webhookSecret) {
+        logger.error('STRIPE_WEBHOOK_SECRET not configured');
+        return reply.status(500).send({ error: 'Webhook not configured' });
+      }
+
+      // Get Stripe signature header
+      const signature = request.headers['stripe-signature'] as string | undefined;
+      if (!signature) {
+        logger.warn('Missing Stripe signature header');
+        return reply.status(400).send({ error: 'Missing signature' });
+      }
+
+      // Verify signature and construct event
+      let event: Stripe.Event;
+      try {
+        // Access raw body for signature verification
+        const rawBody = (request as unknown as { rawBody: string | Buffer }).rawBody;
+        if (!rawBody) {
+          logger.error('Raw body not available for webhook verification');
+          return reply.status(400).send({ error: 'Raw body not available' });
+        }
+        event = stripe.webhooks.constructEvent(rawBody, signature, webhookSecret);
+      } catch (err) {
+        logger.warn({ error: err }, 'Webhook signature verification failed');
+        return reply.status(400).send({ error: 'Invalid signature' });
+      }
+
+      span.setAttributes({
+        'stripe.event_type': event.type,
+        'stripe.event_id': event.id,
+      });
+
+      logger.info({ eventType: event.type, eventId: event.id }, 'Token webhook received');
+
+      // Handle checkout.session.completed event
+      if (event.type === 'checkout.session.completed') {
+        const session = event.data.object as Stripe.Checkout.Session;
+
+        // Only process payment mode sessions for token purchases
+        if (session.mode !== 'payment') {
+          logger.debug({ sessionId: session.id, mode: session.mode }, 'Ignoring non-payment checkout session');
+          return reply.send({ received: true });
+        }
+
+        // Check if this is a token purchase (not a subscription)
+        if (session.metadata?.type !== 'token_purchase') {
+          logger.debug({ sessionId: session.id, type: session.metadata?.type }, 'Ignoring non-token checkout session');
+          return reply.send({ received: true });
+        }
+
+        // Extract metadata
+        const userId = session.metadata?.userId;
+        const bundleId = session.metadata?.bundleId;
+        const totalTokens = parseInt(session.metadata?.totalTokens ?? '0', 10);
+
+        if (!userId || !bundleId || totalTokens === 0) {
+          logger.warn({ sessionId: session.id, metadata: session.metadata }, 'Missing metadata in checkout session');
+          return reply.send({ received: true });
+        }
+
+        span.setAttributes({
+          'user.id': userId,
+          'bundle.id': bundleId,
+          'tokens.total': totalTokens,
+        });
+
+        // Use checkout session ID as idempotency key to prevent duplicate credits
+        const idempotencyKey = `stripe_checkout_${session.id}`;
+
+        try {
+          // Credit tokens using existing repository function
+          const result = await giftsRepo.creditTokens(
+            userId,
+            totalTokens,
+            'purchase',
+            {
+              stripeCheckoutSessionId: session.id,
+              stripePaymentIntentId: session.payment_intent as string,
+              description: `Token purchase: ${totalTokens} tokens`,
+              idempotencyKey,
+              metadata: {
+                bundleId,
+                checkoutSessionId: session.id,
+              },
+            }
+          );
+
+          if (result.wasDuplicate) {
+            logger.info(
+              { userId, sessionId: session.id },
+              'Duplicate token credit ignored (already processed)'
+            );
+          } else {
+            logger.info(
+              { userId, tokensAdded: totalTokens, newBalance: result.newBalance, transactionId: result.transactionId },
+              'Tokens credited from Stripe checkout'
+            );
+
+            // Emit event for audit trail
+            const eventTraceId = crypto.randomUUID();
+            await eventStore.append({
+              eventId: crypto.randomUUID(),
+              timestamp: new Date().toISOString(),
+              userId,
+              sessionId: null,
+              turnId: null,
+              traceId: eventTraceId,
+              type: 'gifts.tokens_purchased',
+              payload: {
+                bundleId,
+                tokensAdded: totalTokens,
+                newBalance: result.newBalance,
+                transactionId: result.transactionId,
+                stripeCheckoutSessionId: session.id,
+                stripePaymentIntentId: session.payment_intent,
+              },
+              version: '1.0',
+              causationId: null,
+              correlationId: event.id,
+            });
+          }
+        } catch (error) {
+          logger.error(
+            { error, userId, sessionId: session.id },
+            'Failed to credit tokens from webhook'
+          );
+          // Return 200 to acknowledge receipt - Stripe will retry if we return error
+          // But we log the error for manual investigation
+        }
+      }
+
+      // Return 200 to acknowledge receipt
+      return reply.send({ received: true });
     });
   });
 

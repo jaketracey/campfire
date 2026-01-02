@@ -8,8 +8,15 @@ import * as jose from 'jose';
 import { logger } from '../observability/logger.js';
 
 // JWT configuration
+const NODE_ENV = process.env['NODE_ENV'] ?? 'development';
+
+// SECURITY: JWT_SECRET is required in production - no defaults allowed
+const jwtSecretValue = process.env['JWT_SECRET'];
+if (!jwtSecretValue && NODE_ENV === 'production') {
+  throw new Error('FATAL: JWT_SECRET environment variable is required in production');
+}
 const JWT_SECRET = new TextEncoder().encode(
-  process.env['JWT_SECRET'] ?? 'development-secret-change-in-production'
+  jwtSecretValue ?? 'dev-only-secret-not-for-production'
 );
 const JWT_ISSUER = process.env['JWT_ISSUER'] ?? 'campfire';
 const JWT_AUDIENCE = process.env['JWT_AUDIENCE'] ?? 'campfire-api';
@@ -212,7 +219,12 @@ export async function verifyRefreshToken(token: string): Promise<string | null> 
 }
 
 // Internal service authentication
-const INTERNAL_SERVICE_KEY = process.env['INTERNAL_SERVICE_KEY'] ?? 'dev-internal-service-key';
+// SECURITY: INTERNAL_SERVICE_KEY is required in production - no defaults allowed
+const internalServiceKeyValue = process.env['INTERNAL_SERVICE_KEY'];
+if (!internalServiceKeyValue && NODE_ENV === 'production') {
+  throw new Error('FATAL: INTERNAL_SERVICE_KEY environment variable is required in production');
+}
+const INTERNAL_SERVICE_KEY = internalServiceKeyValue ?? 'dev-only-internal-key';
 
 /**
  * Internal service middleware - for service-to-service calls (orchestrator -> gateway)

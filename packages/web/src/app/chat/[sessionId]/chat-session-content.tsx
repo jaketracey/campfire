@@ -8,10 +8,10 @@ import { Input } from '@/components/ui/input';
 import { Card } from '@/components/ui/card';
 import { X, ArrowRight, Mic, MicOff, Bug, Images, Flame, Sparkles, Gift, BookOpen, GripVertical, Volume2, User, Video, VideoOff, Gamepad2, Heart, Users, ChevronLeft, ChevronRight, Phone, HelpCircle } from 'lucide-react';
 import Link from 'next/link';
-import { getSessionTurns, getSession, getCompanion, getCompanionBackstory, type Companion, type CompanionBackstory } from '@/lib/api';
+import { getSessionTurns, getSession, getCompanion, getCompanionBackstory, createCompanion, createSession, generateRandomIdentity, type Companion, type CompanionBackstory } from '@/lib/api';
 import { CampfireWebSocket, connectWebSocket, type GroupParticipant } from '@/lib/ws';
 import { ParticipantList, GroupMessageBubble, CompanionJoinNotification, TypingIndicator } from '@/components/group-chat';
-import { CompanionAvatar, StaticCompanionAvatar, CompanionGallery, PersonalityModal, BackstoryModal } from '@/components/companion';
+import { CompanionAvatar, StaticCompanionAvatar, CompanionGallery, PersonalityModal, BackstoryModal, CompanionAvatarSwitcher } from '@/components/companion';
 import { DebugPanel } from '@/components/debug-panel';
 import { GiftsPanel } from '@/components/gifts';
 import { FriendsPanel } from '@/components/friends';
@@ -32,6 +32,7 @@ import { CallButton, CallSidebar, InsufficientTokensModal } from '@/components/v
 import { VideoRequestButton, VideoRequestModal } from '@/components/video';
 import { getTokenBalance } from '@/lib/api/tokens';
 import { toast } from 'sonner';
+import { randomTraits, randomAppearance } from '@/lib/utils/random-companion';
 
 interface Message {
   id: string;
@@ -57,6 +58,12 @@ interface MessageSegment {
 // Parse message content into action and dialogue segments
 function parseMessageSegments(content: string): MessageSegment[] {
   const segments: MessageSegment[] = [];
+
+  // Handle null/undefined content
+  if (!content) {
+    return segments;
+  }
+
   const regex = /\*([^*]+)\*/g;
   let lastIndex = 0;
   let match;
@@ -362,9 +369,8 @@ export function ChatSessionContent({ sessionId, isDemo, demoFingerprint, demoCom
   const isAuthenticated = isDemo ? true : authResult.isAuthenticated;
   const authLoading = isDemo ? false : authResult.isLoading;
   const user = useAuthStore((state) => state.user);
-  // Demo mode state
+  // Demo mode state - server controls conversion via engagement scoring
   const [demoMessagesUsed, setDemoMessagesUsed] = useState(0);
-  const DEMO_MESSAGE_LIMIT = 4;
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
@@ -449,6 +455,11 @@ export function ChatSessionContent({ sessionId, isDemo, demoFingerprint, demoCom
   const [keyboardHeight, setKeyboardHeight] = useState(0);
   // Track if we've shown the initial pulse animation (only show once)
   const [hasShownPulse, setHasShownPulse] = useState(false);
+  // Track companion switching state
+  const [isGeneratingNewCompanion, setIsGeneratingNewCompanion] = useState(false);
+  // Mobile avatar pop animation when new image is received
+  const [mobileAvatarPop, setMobileAvatarPop] = useState(false);
+  const prevAvatarUrlRef = useRef<string | null>(null);
 
   // Demo mode: Show initial greeting from companion with typing delay
   useEffect(() => {
@@ -832,6 +843,18 @@ export function ChatSessionContent({ sessionId, isDemo, demoFingerprint, demoCom
     }
   }, [companion?.avatarUrl, currentAvatarUrl]);
 
+  // Trigger mobile avatar pop animation when a new image is received
+  useEffect(() => {
+    // Only trigger if we have a previous URL and it's changing to a new one
+    if (prevAvatarUrlRef.current && currentAvatarUrl && prevAvatarUrlRef.current !== currentAvatarUrl) {
+      setMobileAvatarPop(true);
+      // Reset after animation completes
+      const timer = setTimeout(() => setMobileAvatarPop(false), 400);
+      return () => clearTimeout(timer);
+    }
+    prevAvatarUrlRef.current = currentAvatarUrl;
+  }, [currentAvatarUrl]);
+
   // Connect to WebSocket - wait for auth to be ready (or demo mode)
   useEffect(() => {
     // In demo mode, we don't need to wait for auth
@@ -1175,11 +1198,8 @@ export function ChatSessionContent({ sessionId, isDemo, demoFingerprint, demoCom
   const handleSend = useCallback(() => {
     if (!input.trim() || isLoading) return;
 
-    // In demo mode, check if limit reached and show signup modal instead of sending
-    if (isDemo && demoMessagesUsed >= DEMO_MESSAGE_LIMIT) {
-      onLimitReached?.();
-      return;
-    }
+    // Server handles conversion triggering via engagement scoring
+    // Client just sends messages - server will emit limit_reached when appropriate
 
     const userMessage: Message = {
       id: crypto.randomUUID(),
@@ -1205,7 +1225,7 @@ export function ChatSessionContent({ sessionId, isDemo, demoFingerprint, demoCom
     setTimeout(() => {
       inputRef.current?.focus();
     }, 10);
-  }, [input, isLoading, isDemo, demoMessagesUsed, onLimitReached]);
+  }, [input, isLoading]);
 
   // Handle liking a message
   const handleLikeMessage = useCallback((messageId: string) => {
@@ -1225,6 +1245,46 @@ export function ChatSessionContent({ sessionId, isDemo, demoFingerprint, demoCom
     // Trigger heart animation in companion avatar area
     setLikeAnimationTrigger((prev) => prev + 1);
   }, []);
+
+  // Handle switching to a new random companion
+  const handleSwitchCompanion = useCallback(async () => {
+    if (isGeneratingNewCompanion || isDemo) return;
+    setIsGeneratingNewCompanion(true);
+
+    try {
+      // 1. Generate random identity
+      const identity = await generateRandomIdentity();
+
+      // 2. Create companion with randomized spec
+      const newCompanion = await createCompanion({
+        name: identity.name,
+        personality: identity.backstory,
+        spec: {
+          identity: {
+            name: identity.name,
+            pronouns: identity.pronouns,
+            backstory: identity.backstory,
+          },
+          personality: {
+            traits: randomTraits(),
+          },
+          visual_style: {
+            appearance: randomAppearance(),
+          },
+        },
+      });
+
+      // 3. Create session for the new companion
+      const session = await createSession({ companionId: newCompanion.id });
+
+      // 4. Navigate to new session (anchor images will generate on page load)
+      router.replace(`/chat/${session.id}`);
+    } catch (error) {
+      console.error('[Chat] Failed to generate new companion:', error);
+      toast.error('Failed to generate new companion');
+      setIsGeneratingNewCompanion(false);
+    }
+  }, [isGeneratingNewCompanion, isDemo, router]);
 
   // Handle starting a game from the modal
   const handleStartGame = useCallback((gameType: string) => {
@@ -1435,39 +1495,45 @@ export function ChatSessionContent({ sessionId, isDemo, demoFingerprint, demoCom
           <>
         {/* Only render CompanionAvatar once we have companion data with anchor image */}
         {companion?.avatarUrl ? (
-          <button
-            onClick={() => {
-              if (isDemo && onRequireAuth) {
-                onRequireAuth('gallery');
-              } else {
-                setShowGallery(true);
-              }
-            }}
-            className="relative cursor-pointer hover:opacity-90 transition-opacity focus:outline-none focus:ring-2 focus:ring-campfire-500 focus:ring-offset-2 focus:ring-offset-background rounded-xl overflow-hidden"
-            style={{ width: avatarDimensions.width, height: avatarDimensions.height }}
-            aria-label="View gallery"
+          <CompanionAvatarSwitcher
+            onSwitch={handleSwitchCompanion}
+            isGenerating={isGeneratingNewCompanion}
+            disabled={isDemo}
           >
-            <CompanionAvatar
-              emotionalState={currentEmotionalState}
-              customPrompt={customPrompt}
-              width={avatarDimensions.genWidth}
-              height={avatarDimensions.genHeight}
-              autoRegenerate={false}
-              debounceDelay={2000}
-              className="shadow-lg w-full h-full"
-              userId={user?.id}
-              sessionId={sessionId}
-              companionId={companion.id}
-              anchorImageUrl={companion.avatarUrl}
-              generationTrigger={imageGenTrigger}
-              sceneDescription={sceneDescription}
-              onLoad={(imageUrl) => {
-                // Sync mobile avatar with newly generated image
-                setCurrentAvatarUrl(imageUrl);
+            <button
+              onClick={() => {
+                if (isDemo && onRequireAuth) {
+                  onRequireAuth('gallery');
+                } else {
+                  setShowGallery(true);
+                }
               }}
-            />
-            <LikeHeartsAnimation trigger={likeAnimationTrigger} />
-          </button>
+              className="relative cursor-pointer hover:opacity-90 transition-opacity focus:outline-none focus:ring-2 focus:ring-campfire-500 focus:ring-offset-2 focus:ring-offset-background rounded-xl overflow-hidden"
+              style={{ width: avatarDimensions.width, height: avatarDimensions.height }}
+              aria-label="View gallery"
+            >
+              <CompanionAvatar
+                emotionalState={currentEmotionalState}
+                customPrompt={customPrompt}
+                width={avatarDimensions.genWidth}
+                height={avatarDimensions.genHeight}
+                autoRegenerate={false}
+                debounceDelay={2000}
+                className="shadow-lg w-full h-full"
+                userId={user?.id}
+                sessionId={sessionId}
+                companionId={companion.id}
+                anchorImageUrl={companion.avatarUrl}
+                generationTrigger={imageGenTrigger}
+                sceneDescription={sceneDescription}
+                onLoad={(imageUrl) => {
+                  // Sync mobile avatar with newly generated image
+                  setCurrentAvatarUrl(imageUrl);
+                }}
+              />
+              <LikeHeartsAnimation trigger={likeAnimationTrigger} />
+            </button>
+          </CompanionAvatarSwitcher>
         ) : (
           /* Loading placeholder while companion data loads */
           <div
@@ -2155,7 +2221,8 @@ export function ChatSessionContent({ sessionId, isDemo, demoFingerprint, demoCom
                   : 'right-4 w-[120px] h-[144px]'
               }`}
               style={!showMobileAvatar ? { bottom: keyboardHeight > 0 ? `${keyboardHeight + 150}px` : '150px' } : undefined}
-              transition={{ type: 'spring', stiffness: 300, damping: 30 }}
+              animate={!showMobileAvatar ? { scale: mobileAvatarPop ? 1.15 : 1 } : undefined}
+              transition={{ type: 'spring', stiffness: 400, damping: 20 }}
             >
               {/* Swipeable gallery when expanded */}
               {showMobileAvatar ? (

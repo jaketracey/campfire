@@ -1,13 +1,11 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
 import {
   Dialog,
   DialogContent,
-  DialogHeader,
   DialogTitle,
-  DialogDescription,
-  DialogFooter,
 } from '@/components/ui/dialog';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { Button } from '@/components/ui/button';
@@ -80,6 +78,107 @@ const categoryOptions: TenetCategory[] = [
   'knowledge',
   'autonomy',
 ];
+
+// ============================================================================
+// Flame Effect Component
+// ============================================================================
+
+interface FlameParticle {
+  id: number;
+  x: number;
+  size: number;
+  delay: number;
+  color: string;
+}
+
+// Softer, more elegant flame colors
+const flameColors = ['#ff8c42', '#ffa54f', '#ffbd59', '#ffcc80', '#ffab40'];
+
+// Calculate flame intensity based on slider value
+function getFlameIntensity(value: number): number {
+  if (value < 90) return 0;
+  if (value < 95) return 0.15;  // glow only
+  if (value < 100) return 0.4;  // sparse embers
+  return 1;                      // full (but still subtle)
+}
+
+function FlameEffect({ intensity }: { intensity: number }) {
+  const [particles, setParticles] = useState<FlameParticle[]>([]);
+
+  useEffect(() => {
+    // Only spawn particles at intensity >= 0.4 (95%+)
+    if (intensity >= 0.4) {
+      const spawnInterval = intensity < 0.6 ? 150 : 100;
+      const maxParticles = Math.floor(intensity * 12);
+
+      const interval = setInterval(() => {
+        setParticles((prev) => [
+          ...prev.slice(-maxParticles),
+          {
+            id: Date.now() + Math.random(),
+            x: 75 + Math.random() * 20, // Right side where high values are
+            size: 3 + Math.random() * (intensity * 4), // Smaller particles
+            delay: Math.random() * 0.1,
+            color: flameColors[Math.floor(Math.random() * flameColors.length)],
+          },
+        ]);
+      }, spawnInterval);
+      return () => clearInterval(interval);
+    } else {
+      setParticles([]);
+    }
+  }, [intensity]);
+
+  if (intensity === 0) return null;
+
+  return (
+    <div className="absolute inset-0 pointer-events-none overflow-visible">
+      {/* Warm glow layer for lower intensities (90-94%) */}
+      {intensity > 0 && intensity < 0.4 && (
+        <motion.div
+          className="absolute inset-0 rounded-full pointer-events-none"
+          style={{
+            background: 'radial-gradient(ellipse at 90% 50%, rgba(255,140,66,0.12) 0%, transparent 60%)',
+          }}
+          initial={{ opacity: 0 }}
+          animate={{ opacity: intensity * 4 }}
+          transition={{ duration: 0.3 }}
+        />
+      )}
+
+      {/* Particle flames */}
+      <AnimatePresence>
+        {particles.map((p) => (
+          <motion.div
+            key={p.id}
+            className="absolute rounded-full pointer-events-none"
+            style={{
+              left: `${p.x}%`,
+              bottom: '50%',
+              width: p.size,
+              height: p.size,
+              background: `radial-gradient(circle, ${p.color}90 0%, transparent 70%)`,
+              boxShadow: `0 0 ${p.size}px ${p.color}30`,
+            }}
+            initial={{ y: 0, opacity: 0.7, scale: 1 }}
+            animate={{
+              y: [-3, -25 - Math.random() * 15],
+              opacity: [0.7, 0.5, 0],
+              scale: [1, 1.1, 0.4],
+              x: (Math.random() - 0.5) * 10,
+            }}
+            exit={{ opacity: 0 }}
+            transition={{
+              duration: 0.6 + Math.random() * 0.2,
+              delay: p.delay,
+              ease: 'easeOut',
+            }}
+          />
+        ))}
+      </AnimatePresence>
+    </div>
+  );
+}
 
 // ============================================================================
 // Component
@@ -265,51 +364,93 @@ export function PersonalityModal({ companion, isOpen, onClose, onSave }: Persona
 
   return (
     <Dialog open={isOpen} onOpenChange={(open) => !open && onClose()}>
-      <DialogContent className="max-w-2xl max-h-[85vh] flex flex-col">
-        <DialogHeader>
-          <DialogTitle>Personality Settings</DialogTitle>
-          <DialogDescription>
-            Customize your companion&apos;s personality traits and behavioral rules.
-          </DialogDescription>
-        </DialogHeader>
+      <DialogContent
+        className="max-w-2xl p-0 bg-transparent border-none shadow-none overflow-visible"
+        onPointerDownOutside={(e) => e.preventDefault()}
+      >
+        <DialogTitle className="sr-only">Personality Settings</DialogTitle>
 
-        <Tabs defaultValue="traits" className="flex-1 flex flex-col min-h-0">
-          <TabsList className="grid w-full grid-cols-2">
-            <TabsTrigger value="traits">Traits</TabsTrigger>
-            <TabsTrigger value="rules">Rules</TabsTrigger>
-          </TabsList>
-
-          {/* Traits Tab */}
-          <TabsContent value="traits" className="flex-1 overflow-y-auto py-4 space-y-6 pr-2">
-            {PERSONALITY_SLIDERS.map((slider) => (
-              <div key={slider.key} className="space-y-2">
-                <div className="flex justify-between items-center">
-                  <Label className="text-sm font-medium">{slider.label}</Label>
-                  <span className="text-sm text-muted-foreground font-mono">
-                    {traits[slider.key]}%
-                  </span>
-                </div>
-                <div className="flex items-center gap-3">
-                  <span className="text-xs text-muted-foreground w-20 text-right">
-                    {slider.low}
-                  </span>
-                  <Slider
-                    value={[traits[slider.key]]}
-                    onValueChange={handleSliderChange(slider.key)}
-                    max={100}
-                    step={1}
-                    className="flex-1"
-                  />
-                  <span className="text-xs text-muted-foreground w-20">
-                    {slider.high}
-                  </span>
-                </div>
+        <AnimatePresence>
+          {isOpen && (
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95, y: 10 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 10 }}
+              transition={{ duration: 0.2, ease: 'easeOut' }}
+              className="relative bg-gradient-to-b from-background to-muted/30 rounded-3xl overflow-hidden shadow-2xl max-h-[85vh] flex flex-col"
+            >
+              {/* Header */}
+              <div className="px-6 py-5 border-b border-border/50">
+                <h2 className="text-lg font-semibold text-foreground">
+                  Personality Settings
+                </h2>
+                <p className="text-sm text-muted-foreground mt-1">
+                  Customize your companion&apos;s personality traits and behavioral rules.
+                </p>
               </div>
-            ))}
-          </TabsContent>
 
-          {/* Rules Tab */}
-          <TabsContent value="rules" className="flex-1 overflow-y-auto py-4 space-y-6 pr-2">
+              <Tabs defaultValue="traits" className="flex-1 flex flex-col min-h-0">
+                <div className="px-6 pt-4">
+                  <TabsList className="grid w-full grid-cols-2">
+                    <TabsTrigger value="traits">Traits</TabsTrigger>
+                    <TabsTrigger value="rules">Rules</TabsTrigger>
+                  </TabsList>
+                </div>
+
+                {/* Traits Tab */}
+                <TabsContent value="traits" className="flex-1 overflow-y-auto px-6 py-4 space-y-6">
+                  {PERSONALITY_SLIDERS.map((slider) => {
+                    const value = traits[slider.key];
+                    const intensity = getFlameIntensity(value);
+
+                    return (
+                      <div key={slider.key} className="space-y-2">
+                        <div className="flex justify-between items-center">
+                          <Label className="text-sm font-medium">{slider.label}</Label>
+                          <span
+                            className={cn(
+                              'text-sm font-mono transition-colors duration-200',
+                              value >= 90 && value < 100 && 'text-orange-300/80',
+                              value === 100 && 'text-orange-400'
+                            )}
+                          >
+                            {value}%
+                          </span>
+                        </div>
+                        <div className="flex items-center gap-3">
+                          <span className="text-xs text-muted-foreground w-20 text-right">
+                            {slider.low}
+                          </span>
+                          <div
+                            className={cn(
+                              'relative flex-1 transition-shadow duration-500',
+                              value === 100 && 'shadow-[0_0_15px_rgba(255,140,66,0.15)]'
+                            )}
+                          >
+                            <Slider
+                              value={[value]}
+                              onValueChange={handleSliderChange(slider.key)}
+                              max={100}
+                              step={1}
+                              className={cn(
+                                'flex-1',
+                                value >= 95 && '[&_[data-state=active]]:bg-orange-500/70',
+                                value === 100 && '[&_[role=slider]]:bg-orange-500 [&_[role=slider]]:border-orange-400'
+                              )}
+                            />
+                            <FlameEffect intensity={intensity} />
+                          </div>
+                          <span className="text-xs text-muted-foreground w-20">
+                            {slider.high}
+                          </span>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </TabsContent>
+
+                {/* Rules Tab */}
+                <TabsContent value="rules" className="flex-1 overflow-y-auto px-6 py-4 space-y-6">
             {isLoadingTenets ? (
               <div className="flex items-center justify-center py-8">
                 <span className="text-muted-foreground">Loading rules...</span>
@@ -472,17 +613,21 @@ export function PersonalityModal({ companion, isOpen, onClose, onSave }: Persona
                 )}
               </>
             )}
-          </TabsContent>
-        </Tabs>
+                </TabsContent>
+              </Tabs>
 
-        <DialogFooter className="gap-2 sm:gap-0">
-          <Button variant="outline" onClick={onClose} disabled={isSaving}>
-            Cancel
-          </Button>
-          <Button onClick={handleSaveTraits} disabled={isSaving}>
-            {isSaving ? 'Saving...' : 'Save Changes'}
-          </Button>
-        </DialogFooter>
+              {/* Footer */}
+              <div className="px-6 py-4 border-t border-border/50 flex justify-end gap-3">
+                <Button variant="outline" onClick={onClose} disabled={isSaving}>
+                  Cancel
+                </Button>
+                <Button onClick={handleSaveTraits} disabled={isSaving}>
+                  {isSaving ? 'Saving...' : 'Save Changes'}
+                </Button>
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
       </DialogContent>
     </Dialog>
   );

@@ -19,6 +19,7 @@ import { MessageCircle, Plus, RotateCcw, Sparkles, Trash2, ArrowRight, Check, Us
 import { ShareCompanionDialog } from '@/components/companion/share-companion-dialog';
 import { BackstoryModal } from '@/components/companion/backstory-modal';
 import { CompanionCardImage } from '@/components/companion/companion-card-image';
+import { ContinueConversation } from '@/components/dashboard/continue-conversation';
 import { useAuth } from '@/hooks/use-auth';
 import { WelcomeTransition } from '@/components/auth/welcome-transition';
 import {
@@ -351,6 +352,11 @@ export default function DashboardPage() {
               Admin Panel
             </Link>
           </div>
+        )}
+
+        {/* Continue Where You Left Off - shown only when there are recent sessions */}
+        {hasSessions && (
+          <ContinueConversation sessions={sessions} maxSessions={3} />
         )}
 
         {/* Empty State */}

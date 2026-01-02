@@ -4,6 +4,7 @@ import { ThemeProvider } from './theme-provider';
 import { QueryProvider } from './query-provider';
 import { AuthProvider } from './auth-provider';
 import { Toaster } from '@/components/ui/toaster';
+import { CookieConsent } from '@/components/privacy';
 
 export function ClientProviders({ children }: { children: React.ReactNode }) {
   return (
@@ -17,6 +18,7 @@ export function ClientProviders({ children }: { children: React.ReactNode }) {
         <AuthProvider>
           {children}
           <Toaster />
+          <CookieConsent />
         </AuthProvider>
       </QueryProvider>
     </ThemeProvider>

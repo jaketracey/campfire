@@ -148,6 +148,7 @@ class ConversationOrchestrator:
         user_image_url: str | None = None,
         active_game: dict | None = None,
         liked_content: list[dict] | None = None,
+        engagement_level: str | None = None,
         stream: bool = False,
     ) -> ConversationTurn | AsyncGenerator[str, None]:
         """Process a user message and generate a response."""
@@ -362,6 +363,7 @@ class ConversationOrchestrator:
                 user_image_url=user_image_url,
                 active_game=active_game,
                 liked_content=liked_content,
+                engagement_level=engagement_level,
             )
 
             # Get available tools

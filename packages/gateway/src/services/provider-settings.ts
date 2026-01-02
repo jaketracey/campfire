@@ -41,8 +41,15 @@ import {
 // Configuration
 // ============================================================================
 
+const NODE_ENV = process.env['NODE_ENV'] ?? 'development';
 const ORCHESTRATOR_URL = process.env.ORCHESTRATOR_URL || 'http://localhost:8000';
-const PROVIDER_KEY_ENCRYPTION_SECRET = process.env.PROVIDER_KEY_ENCRYPTION_SECRET || 'default-encryption-key-change-in-production';
+
+// SECURITY: Encryption key required in production - no defaults allowed
+const providerKeyEncryptionSecretValue = process.env['PROVIDER_KEY_ENCRYPTION_SECRET'];
+if (!providerKeyEncryptionSecretValue && NODE_ENV === 'production') {
+  throw new Error('FATAL: PROVIDER_KEY_ENCRYPTION_SECRET environment variable is required in production');
+}
+const PROVIDER_KEY_ENCRYPTION_SECRET = providerKeyEncryptionSecretValue ?? 'dev-only-encryption-key-not-for-production';
 
 // ============================================================================
 // Validation Schemas

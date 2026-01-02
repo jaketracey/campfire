@@ -219,7 +219,7 @@ export class VideoGenerationWorker {
       throw new Error(`Orchestrator error: ${response.status} - ${errorText}`);
     }
 
-    const result = await response.json();
+    const result = await response.json() as { video_base64: string };
     const videoData = Buffer.from(result.video_base64, 'base64');
 
     // TODO: Extract first frame as thumbnail using ffmpeg

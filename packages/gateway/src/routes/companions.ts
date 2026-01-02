@@ -735,8 +735,8 @@ export async function companionsRoutes(app: FastifyInstance): Promise<void> {
         });
       }
 
-      // Create backstory entity
-      const backstoryEntity = await kgRepo.createEntity({
+      // Upsert backstory entity (may already exist if regenerating)
+      const backstoryEntity = await kgRepo.upsertEntity({
         user_id: userId,
         companion_id: companionId,
         name: 'My Backstory',
@@ -749,7 +749,7 @@ export async function companionsRoutes(app: FastifyInstance): Promise<void> {
 
       // Create motivation entities and relationships
       for (const motivation of backstoryResult.motivations) {
-        const motivationEntity = await kgRepo.createEntity({
+        const motivationEntity = await kgRepo.upsertEntity({
           user_id: userId,
           companion_id: companionId,
           name: motivation,
@@ -769,7 +769,7 @@ export async function companionsRoutes(app: FastifyInstance): Promise<void> {
 
       // Create key memory entities and relationships
       for (const memory of backstoryResult.key_memories) {
-        const memoryEntity = await kgRepo.createEntity({
+        const memoryEntity = await kgRepo.upsertEntity({
           user_id: userId,
           companion_id: companionId,
           name: memory,
@@ -789,7 +789,7 @@ export async function companionsRoutes(app: FastifyInstance): Promise<void> {
 
       // Create personality quirk entities and relationships
       for (const quirk of backstoryResult.personality_quirks) {
-        const quirkEntity = await kgRepo.createEntity({
+        const quirkEntity = await kgRepo.upsertEntity({
           user_id: userId,
           companion_id: companionId,
           name: quirk,

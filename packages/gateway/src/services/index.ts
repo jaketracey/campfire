@@ -261,6 +261,32 @@ export type {
   AffiliateStats,
 } from './affiliates.js';
 
+// Analytics service
+import { getAnalyticsService as _getAnalyticsService } from './analytics.js';
+export {
+  AnalyticsService,
+  getAnalyticsService,
+  AnalyticsQuerySchema,
+  RetentionQuerySchema,
+  CompanionQuerySchema,
+  AggregateQuerySchema,
+} from './analytics.js';
+export type {
+  AnalyticsQuery,
+  RetentionQuery,
+  CompanionQuery,
+  AggregateQuery,
+  EngagementSummary,
+  RevenueSummary,
+} from './analytics.js';
+
+// Engagement service
+import { getEngagementService as _getEngagementService } from './engagement.js';
+export {
+  EngagementService,
+  getEngagementService,
+} from './engagement.js';
+
 /**
  * Initialize all services
  * Call this at application startup to ensure singleton instances are created
@@ -280,6 +306,8 @@ export function initializeServices(): void {
   _getSupportService();
   _getProviderSettingsService();
   _getAffiliatesService();
+  _getAnalyticsService();
+  _getEngagementService();
 }
 
 /**
@@ -302,6 +330,8 @@ export function getServices() {
     support: _getSupportService(),
     providerSettings: _getProviderSettingsService(),
     affiliates: _getAffiliatesService(),
+    analytics: _getAnalyticsService(),
+    engagement: _getEngagementService(),
   };
 }
 
@@ -323,4 +353,6 @@ export interface ServiceContext {
   support: ReturnType<typeof _getSupportService>;
   providerSettings: ReturnType<typeof _getProviderSettingsService>;
   affiliates: ReturnType<typeof _getAffiliatesService>;
+  analytics: ReturnType<typeof _getAnalyticsService>;
+  engagement: ReturnType<typeof _getEngagementService>;
 }

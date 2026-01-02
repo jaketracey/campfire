@@ -320,6 +320,45 @@ export type {
   ConversionListFilters,
 } from './affiliates.js';
 
+// Analytics repository
+import { getAnalyticsRepository as _getAnalyticsRepository } from './analytics.js';
+export {
+  AnalyticsRepository,
+  getAnalyticsRepository,
+} from './analytics.js';
+export type {
+  DailyEngagementMetrics,
+  DailyRevenueMetrics,
+  RetentionCohort,
+  CompanionStats,
+  UserActivityBucket,
+  ActiveUserMetrics,
+  SessionMetrics,
+  MRRMetrics,
+  SubscriptionTierDistribution,
+  TokenMetrics,
+  ConversionFunnel,
+} from './analytics.js';
+
+// Engagement repository
+import { getEngagementRepository as _getEngagementRepository } from './engagement.js';
+export {
+  EngagementRepository,
+  getEngagementRepository,
+} from './engagement.js';
+
+// Session Search repository
+import { getSessionSearchRepository as _getSessionSearchRepository } from './session-search.js';
+export {
+  SessionSearchRepository,
+  getSessionSearchRepository,
+} from './session-search.js';
+export type {
+  SessionSearchResult,
+  SessionSearchFilters,
+  SessionSearchResponse,
+} from './session-search.js';
+
 /**
  * Initialize all repositories
  * Call this at application startup to ensure singleton instances are created
@@ -345,6 +384,9 @@ export function initializeRepositories(): void {
   _getSupportTicketsRepository();
   _getProviderSettingsRepository();
   _getAffiliatesRepository();
+  _getAnalyticsRepository();
+  _getEngagementRepository();
+  _getSessionSearchRepository();
 }
 
 /**
@@ -373,5 +415,8 @@ export function getRepositories() {
     supportTickets: _getSupportTicketsRepository(),
     providerSettings: _getProviderSettingsRepository(),
     affiliates: _getAffiliatesRepository(),
+    analytics: _getAnalyticsRepository(),
+    engagement: _getEngagementRepository(),
+    sessionSearch: _getSessionSearchRepository(),
   };
 }

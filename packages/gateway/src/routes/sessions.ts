@@ -8,6 +8,7 @@ import { z } from 'zod';
 import { requireAuth, requireInternalService } from '../middleware/auth.js';
 import { getSessionsRepository } from '../repositories/sessions.js';
 import { getCompanionsRepository } from '../repositories/companions.js';
+import { getSessionSearchRepository } from '../repositories/session-search.js';
 import { getSessionsService } from '../services/sessions.js';
 import { logger } from '../observability/logger.js';
 
@@ -39,6 +40,7 @@ const InviteParticipantSchema = z.object({
 export async function sessionsRoutes(app: FastifyInstance): Promise<void> {
   const sessionRepo = getSessionsRepository();
   const companionRepo = getCompanionsRepository();
+  const searchRepo = getSessionSearchRepository();
 
   /**
    * GET /sessions - List user's sessions
@@ -81,6 +83,67 @@ export async function sessionsRoutes(app: FastifyInstance): Promise<void> {
   });
 
   /**
+   * GET /sessions/search - Search sessions by companion name or message content
+   */
+  app.get('/search', { preHandler: requireAuth }, async (request: FastifyRequest, reply: FastifyReply) => {
+    const {
+      q,
+      limit = '20',
+      offset = '0',
+      companionId,
+      status,
+    } = request.query as {
+      q?: string;
+      limit?: string;
+      offset?: string;
+      companionId?: string;
+      status?: string;
+    };
+
+    if (!q || q.trim().length === 0) {
+      return reply.status(400).send({
+        error: 'Bad Request',
+        message: 'Search query (q) is required',
+      });
+    }
+
+    if (q.trim().length < 2) {
+      return reply.status(400).send({
+        error: 'Bad Request',
+        message: 'Search query must be at least 2 characters',
+      });
+    }
+
+    const result = await searchRepo.search({
+      userId: request.user!.userId,
+      query: q,
+      companionId,
+      status: status as 'active' | 'ended' | undefined,
+      limit: parseInt(limit, 10),
+      offset: parseInt(offset, 10),
+    });
+
+    return reply.send({
+      results: result.results.map((r) => ({
+        sessionId: r.sessionId,
+        companionId: r.companionId,
+        companionName: r.companionName,
+        companionAvatarUrl: r.companionAvatarUrl,
+        matchType: r.matchType,
+        snippet: r.snippet,
+        snippetHighlight: r.snippetHighlight,
+        lastActivityAt: r.lastActivityAt,
+        turnCount: r.turnCount,
+        sessionStatus: r.sessionStatus,
+      })),
+      total: result.total,
+      limit: result.limit,
+      offset: result.offset,
+      hasMore: result.hasMore,
+    });
+  });
+
+  /**
    * POST /sessions - Create new session
    */
   app.post('/', { preHandler: requireAuth }, async (request: FastifyRequest, reply: FastifyReply) => {
@@ -103,8 +166,8 @@ export async function sessionsRoutes(app: FastifyInstance): Promise<void> {
       });
     }
 
-    // Check if companion belongs to user
-    if (companion.user_id !== request.user!.userId) {
+    // Check if companion belongs to user OR is public
+    if (companion.user_id !== request.user!.userId && !companion.is_public) {
       return reply.status(403).send({
         error: 'Forbidden',
         message: 'You do not have access to this companion',
@@ -152,7 +215,8 @@ export async function sessionsRoutes(app: FastifyInstance): Promise<void> {
       });
     }
 
-    if (session.user_id !== request.user!.userId) {
+    // Allow access if user owns session OR is admin
+    if (session.user_id !== request.user!.userId && request.user!.role !== 'admin') {
       return reply.status(403).send({
         error: 'Forbidden',
         message: 'You do not have access to this session',
@@ -185,7 +249,8 @@ export async function sessionsRoutes(app: FastifyInstance): Promise<void> {
       });
     }
 
-    if (session.user_id !== request.user!.userId) {
+    // Allow access if user owns session OR is admin
+    if (session.user_id !== request.user!.userId && request.user!.role !== 'admin') {
       return reply.status(403).send({
         error: 'Forbidden',
         message: 'You do not have access to this session',
@@ -225,7 +290,8 @@ export async function sessionsRoutes(app: FastifyInstance): Promise<void> {
       });
     }
 
-    if (session.user_id !== request.user!.userId) {
+    // Allow access if user owns session OR is admin
+    if (session.user_id !== request.user!.userId && request.user!.role !== 'admin') {
       return reply.status(403).send({
         error: 'Forbidden',
         message: 'You do not have access to this session',
@@ -276,7 +342,8 @@ export async function sessionsRoutes(app: FastifyInstance): Promise<void> {
       });
     }
 
-    if (session.user_id !== request.user!.userId) {
+    // Allow access if user owns session OR is admin
+    if (session.user_id !== request.user!.userId && request.user!.role !== 'admin') {
       return reply.status(403).send({
         error: 'Forbidden',
         message: 'You do not have access to this session',
@@ -327,7 +394,8 @@ export async function sessionsRoutes(app: FastifyInstance): Promise<void> {
       });
     }
 
-    if (session.user_id !== request.user!.userId) {
+    // Allow access if user owns session OR is admin
+    if (session.user_id !== request.user!.userId && request.user!.role !== 'admin') {
       return reply.status(403).send({
         error: 'Forbidden',
         message: 'You do not have access to this session',

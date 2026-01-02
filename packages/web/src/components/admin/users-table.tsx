@@ -1,10 +1,11 @@
 'use client';
 
 import { formatDistanceToNow } from 'date-fns';
+import { ArrowUp, ArrowDown, ChevronsUpDown } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { UserRowActions } from './user-row-actions';
-import type { AdminUser, UserRole, UserStatus } from '@/lib/api/admin';
+import type { AdminUser, UserRole, UserStatus, UserSortField } from '@/lib/api/admin';
 
 function formatTokens(tokens: number): string {
   if (tokens >= 1_000_000) {
@@ -19,6 +20,45 @@ function formatTokens(tokens: number): string {
 interface UsersTableProps {
   users: AdminUser[];
   onRefresh: () => void;
+  sortBy: UserSortField;
+  sortOrder: 'asc' | 'desc';
+  onSort: (field: UserSortField) => void;
+}
+
+interface SortableHeaderProps {
+  field: UserSortField;
+  label: string;
+  currentSortBy: UserSortField;
+  sortOrder: 'asc' | 'desc';
+  onSort: (field: UserSortField) => void;
+  align?: 'left' | 'center' | 'right';
+}
+
+function SortableHeader({ field, label, currentSortBy, sortOrder, onSort, align = 'left' }: SortableHeaderProps) {
+  const isActive = currentSortBy === field;
+  const alignClass = align === 'center' ? 'justify-center' : align === 'right' ? 'justify-end' : 'justify-start';
+
+  return (
+    <th className="py-4 px-4">
+      <button
+        onClick={() => onSort(field)}
+        className={`flex items-center gap-1 text-xs font-medium uppercase tracking-wider transition-colors ${alignClass} w-full ${
+          isActive ? 'text-campfire-400' : 'text-gray-500 hover:text-gray-300'
+        }`}
+      >
+        {label}
+        {isActive ? (
+          sortOrder === 'asc' ? (
+            <ArrowUp className="h-3 w-3" />
+          ) : (
+            <ArrowDown className="h-3 w-3" />
+          )
+        ) : (
+          <ChevronsUpDown className="h-3 w-3 opacity-50" />
+        )}
+      </button>
+    </th>
+  );
 }
 
 function StatusBadge({ status }: { status: UserStatus }) {
@@ -48,7 +88,7 @@ function RoleBadge({ role }: { role: UserRole }) {
   return null;
 }
 
-export function UsersTable({ users, onRefresh }: UsersTableProps) {
+export function UsersTable({ users, onRefresh, sortBy, sortOrder, onSort }: UsersTableProps) {
   if (users.length === 0) {
     return (
       <div className="text-center py-12 text-gray-500">
@@ -62,27 +102,58 @@ export function UsersTable({ users, onRefresh }: UsersTableProps) {
       <table className="w-full">
         <thead>
           <tr className="border-b border-white/5">
-            <th className="text-left py-4 px-4 text-xs font-medium text-gray-500 uppercase tracking-wider">
-              User
-            </th>
-            <th className="text-left py-4 px-4 text-xs font-medium text-gray-500 uppercase tracking-wider">
-              Status
-            </th>
-            <th className="text-left py-4 px-4 text-xs font-medium text-gray-500 uppercase tracking-wider">
-              Role
-            </th>
-            <th className="text-center py-4 px-4 text-xs font-medium text-gray-500 uppercase tracking-wider">
-              Companions
-            </th>
-            <th className="text-center py-4 px-4 text-xs font-medium text-gray-500 uppercase tracking-wider">
-              Images
-            </th>
-            <th className="text-center py-4 px-4 text-xs font-medium text-gray-500 uppercase tracking-wider">
-              Tokens
-            </th>
-            <th className="text-left py-4 px-4 text-xs font-medium text-gray-500 uppercase tracking-wider">
-              Last Sign In
-            </th>
+            <SortableHeader
+              field="email"
+              label="User"
+              currentSortBy={sortBy}
+              sortOrder={sortOrder}
+              onSort={onSort}
+            />
+            <SortableHeader
+              field="status"
+              label="Status"
+              currentSortBy={sortBy}
+              sortOrder={sortOrder}
+              onSort={onSort}
+            />
+            <SortableHeader
+              field="role"
+              label="Role"
+              currentSortBy={sortBy}
+              sortOrder={sortOrder}
+              onSort={onSort}
+            />
+            <SortableHeader
+              field="companionCount"
+              label="Companions"
+              currentSortBy={sortBy}
+              sortOrder={sortOrder}
+              onSort={onSort}
+              align="center"
+            />
+            <SortableHeader
+              field="imageCount"
+              label="Images"
+              currentSortBy={sortBy}
+              sortOrder={sortOrder}
+              onSort={onSort}
+              align="center"
+            />
+            <SortableHeader
+              field="totalTokens"
+              label="Tokens"
+              currentSortBy={sortBy}
+              sortOrder={sortOrder}
+              onSort={onSort}
+              align="center"
+            />
+            <SortableHeader
+              field="lastLoginAt"
+              label="Last Sign In"
+              currentSortBy={sortBy}
+              sortOrder={sortOrder}
+              onSort={onSort}
+            />
             <th className="text-right py-4 px-4 text-xs font-medium text-gray-500 uppercase tracking-wider">
               Actions
             </th>

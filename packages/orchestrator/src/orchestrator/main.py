@@ -137,6 +137,7 @@ class StreamMessageRequest(BaseModel):
     user_image_url: str | None = None  # Webcam frame URL for multimodal context
     active_game: dict | None = None  # Active game state for game context injection
     liked_content: list[dict] | None = None  # User's liked messages for companion awareness
+    engagement_level: str | None = None  # Engagement level for anonymous user guidance (low/medium/high)
 
 
 class HealthResponse(BaseModel):
@@ -595,6 +596,7 @@ async def stream_message(request: StreamMessageRequest) -> StreamingResponse:
                 user_image_url=request.user_image_url,
                 active_game=request.active_game,
                 liked_content=request.liked_content,
+                engagement_level=request.engagement_level,
                 stream=True,
             )
 

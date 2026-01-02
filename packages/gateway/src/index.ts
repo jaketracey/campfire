@@ -33,6 +33,19 @@ const app = Fastify({
   genReqId: () => nanoid(),
 });
 
+// Add raw body parser for webhook signature verification
+// This stores the raw body on the request for routes that need it (e.g., Stripe webhooks)
+app.addContentTypeParser('application/json', { parseAs: 'string' }, (req, body, done) => {
+  // Store raw body for webhook verification
+  (req as unknown as { rawBody: string }).rawBody = body as string;
+  try {
+    const json = JSON.parse(body as string);
+    done(null, json);
+  } catch (err) {
+    done(err as Error, undefined);
+  }
+});
+
 // Register plugins
 async function registerPlugins() {
   // Security headers

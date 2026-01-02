@@ -1341,3 +1341,125 @@ export interface VideoRequestWithCompanion extends VideoRequest {
   companion_name: string;
   companion_avatar_url: string | null;
 }
+
+// ============================================================================
+// Engagement Tracking Types
+// ============================================================================
+
+export type EngagementLevel = 'low' | 'medium' | 'high';
+
+export interface EngagementSignal {
+  id: UUID;
+  anonymous_usage_id: UUID;
+  session_id: UUID | null;
+  message_number: number;
+
+  // Emotional depth signals (0-100)
+  sentiment_score: number;
+  personal_pronoun_density: number;
+  vulnerability_score: number;
+  emotional_language_score: number;
+
+  // Investment signals (0-100)
+  message_length_score: number;
+  question_engagement_score: number;
+  topic_depth_score: number;
+  response_time_score: number;
+
+  // Computed scores (0-100)
+  emotional_depth_score: number;
+  investment_score: number;
+  combined_score: number;
+
+  // Raw metrics
+  message_length: number;
+  word_count: number;
+  question_count: number;
+  response_time_ms: number | null;
+
+  created_at: Timestamp;
+}
+
+export interface EngagementSignalInsert {
+  anonymous_usage_id: UUID;
+  session_id?: UUID | null;
+  message_number: number;
+
+  // Emotional depth signals
+  sentiment_score: number;
+  personal_pronoun_density: number;
+  vulnerability_score: number;
+  emotional_language_score: number;
+
+  // Investment signals
+  message_length_score: number;
+  question_engagement_score: number;
+  topic_depth_score: number;
+  response_time_score: number;
+
+  // Computed scores
+  emotional_depth_score: number;
+  investment_score: number;
+  combined_score: number;
+
+  // Raw metrics
+  message_length: number;
+  word_count: number;
+  question_count: number;
+  response_time_ms?: number | null;
+}
+
+export interface EngagementConfig {
+  conversionThreshold: number;
+  minMessages: number;
+  maxMessages: number;
+}
+
+export interface EngagementAnalysis {
+  // Individual signal scores (0-100)
+  sentimentScore: number;
+  personalPronounDensity: number;
+  vulnerabilityScore: number;
+  emotionalLanguageScore: number;
+  messageLengthScore: number;
+  questionEngagementScore: number;
+  topicDepthScore: number;
+  responseTimeScore: number;
+
+  // Composite scores (0-100)
+  emotionalDepthScore: number;
+  investmentScore: number;
+  combinedScore: number;
+
+  // Raw metrics
+  messageLength: number;
+  wordCount: number;
+  questionCount: number;
+  responseTimeMs: number | null;
+}
+
+export interface ConversionDecision {
+  shouldTrigger: boolean;
+  reason: 'engagement_threshold' | 'max_messages' | 'none';
+  messageNumber: number;
+  cumulativeScore: number;
+  threshold: number;
+}
+
+/**
+ * Extended anonymous usage with engagement fields
+ */
+export interface AnonymousUsageWithEngagement {
+  id: UUID;
+  device_fingerprint: string;
+  ip_address: string | null;
+  messages_used: number;
+  last_session_id: UUID | null;
+  first_seen_at: Timestamp;
+  last_seen_at: Timestamp;
+  converted_user_id: UUID | null;
+  engagement_score: number;
+  peak_engagement_score: number;
+  conversion_triggered_at: Timestamp | null;
+  conversion_trigger_message: number | null;
+}

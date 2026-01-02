@@ -58,7 +58,6 @@ const navItems: NavItem[] = [
     label: 'Analytics',
     href: '/admin/analytics' as Route,
     icon: BarChart3,
-    disabled: true,
   },
   {
     label: 'Settings',

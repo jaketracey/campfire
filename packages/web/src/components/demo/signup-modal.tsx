@@ -104,6 +104,7 @@ export type SignupTrigger =
   | 'voice'
   | 'webcam'
   | 'call'
+  | 'video'
   | 'general';
 
 interface TriggerContent {
@@ -114,8 +115,8 @@ interface TriggerContent {
 
 const triggerContent: Record<SignupTrigger, TriggerContent> = {
   message_limit: {
-    title: 'Continue Your Conversation',
-    description: 'You\'ve used all 4 free messages. Sign up to keep chatting!',
+    title: 'Loving the Conversation?',
+    description: 'Sign up now to keep chatting and unlock all features!',
     features: [
       'Unlimited conversations',
       'Create custom companions',
@@ -265,6 +266,17 @@ const triggerContent: Record<SignupTrigger, TriggerContent> = {
       'Voice activity detection',
       'Interrupt anytime',
       'Full transcripts saved',
+    ],
+  },
+  video: {
+    title: 'Video Messages',
+    description: 'Request personalized video messages from your companion',
+    features: [
+      'AI-generated videos',
+      'Custom video requests',
+      'Save to gallery',
+      'Share with friends',
+      'High-quality output',
     ],
   },
   general: {

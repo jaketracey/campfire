@@ -155,16 +155,33 @@ export class SessionsService {
 
   /**
    * Get a session by ID
+   * @param userId - The user ID to check ownership against
+   * @param sessionId - The session ID to retrieve
+   * @param txOrOptions - Transaction context or options object
+   * @param options - Options including isAdmin bypass
    */
   async getById(
     userId: string,
     sessionId: string,
-    tx?: TransactionContext
+    txOrOptions?: TransactionContext | { isAdmin?: boolean; tx?: TransactionContext },
+    options?: { isAdmin?: boolean }
   ): Promise<Session | null> {
+    // Handle both old signature (tx) and new signature (options object)
+    let tx: TransactionContext | undefined;
+    let isAdmin = false;
+
+    if (txOrOptions && typeof txOrOptions === 'object' && 'isAdmin' in txOrOptions) {
+      isAdmin = txOrOptions.isAdmin ?? false;
+      tx = txOrOptions.tx;
+    } else {
+      tx = txOrOptions as TransactionContext | undefined;
+      isAdmin = options?.isAdmin ?? false;
+    }
+
     const session = await this.sessions.findById(sessionId, tx);
 
-    // Verify ownership
-    if (session && session.user_id !== userId) {
+    // Verify ownership (admins can bypass)
+    if (session && session.user_id !== userId && !isAdmin) {
       return null;
     }
 

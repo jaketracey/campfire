@@ -36,6 +36,7 @@ import { affiliateAuthRoutes } from './affiliate-auth.js';
 import { affiliatePortalRoutes } from './affiliate-portal.js';
 import { affiliateTrackingRoutes } from './affiliate-tracking.js';
 import { adminAffiliatesRoutes } from './admin-affiliates.js';
+import { adminAnalyticsRoutes } from './admin-analytics.js';
 import { videosRoutes, mediaRoutes } from './videos.js';
 import { logger } from '../observability/logger.js';
 
@@ -131,6 +132,9 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
 
       // Admin affiliate routes
       await api.register(adminAffiliatesRoutes, { prefix: '/admin/affiliates' });
+
+      // Admin analytics routes
+      await api.register(adminAnalyticsRoutes, { prefix: '/admin/analytics' });
     },
     { prefix: '/api/v1' }
   );

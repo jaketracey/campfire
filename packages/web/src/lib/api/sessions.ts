@@ -50,6 +50,30 @@ export interface SessionListResponse {
   offset: number;
 }
 
+export interface SessionSearchResult {
+  sessionId: string;
+  companionId: string;
+  companionName: string;
+  companionAvatarUrl: string | null;
+  matchType: 'companion' | 'message';
+  snippet: string;
+  snippetHighlight: {
+    start: number;
+    end: number;
+  } | null;
+  lastActivityAt: string | null;
+  turnCount: number;
+  sessionStatus: string;
+}
+
+export interface SessionSearchResponse {
+  results: SessionSearchResult[];
+  total: number;
+  limit: number;
+  offset: number;
+  hasMore: boolean;
+}
+
 export interface TurnListResponse {
   turns: Turn[];
   limit: number;
@@ -66,6 +90,19 @@ export function listSessions(options?: {
   status?: 'active' | 'ended';
 }): Promise<SessionListResponse> {
   return get<SessionListResponse>('/sessions', options);
+}
+
+/**
+ * Search sessions by companion name or message content
+ */
+export function searchSessions(options: {
+  q: string;
+  limit?: number;
+  offset?: number;
+  companionId?: string;
+  status?: 'active' | 'ended';
+}): Promise<SessionSearchResponse> {
+  return get<SessionSearchResponse>('/sessions/search', options);
 }
 
 /**

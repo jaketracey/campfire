@@ -1,18 +1,20 @@
 'use client';
 
-import { useEffect, useRef } from 'react';
-import { motion } from 'framer-motion';
+import { useEffect, useRef, useState } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
 import { useOnboardingStore } from '@/stores/onboarding-store';
 import { Button } from '@/components/ui/button';
-import { ArrowRight } from 'lucide-react';
+import { ArrowRight, Zap } from 'lucide-react';
 import gsap from 'gsap';
 import { SplitText } from 'gsap/SplitText';
+import { QuickStart } from '@/components/onboarding/quick-start';
 
 // Register SplitText plugin
 gsap.registerPlugin(SplitText);
 
 export function Step1Welcome() {
   const { nextStep } = useOnboardingStore();
+  const [showQuickStart, setShowQuickStart] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
   const headingRef = useRef<HTMLHeadingElement>(null);
   const subtitleRef = useRef<HTMLParagraphElement>(null);
@@ -146,6 +148,23 @@ export function Step1Welcome() {
     return () => ctx.revert();
   }, []);
 
+  // If quick start is active, show that instead
+  if (showQuickStart) {
+    return (
+      <AnimatePresence mode="wait">
+        <motion.div
+          key="quick-start"
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          exit={{ opacity: 0, y: -20 }}
+          transition={{ duration: 0.4 }}
+        >
+          <QuickStart onBack={() => setShowQuickStart(false)} />
+        </motion.div>
+      </AnimatePresence>
+    );
+  }
+
   return (
     <div ref={containerRef} className="text-center space-y-12">
       <div className="space-y-6">
@@ -192,7 +211,8 @@ export function Step1Welcome() {
         </p>
       </div>
 
-      <div ref={buttonRef} className="pt-8">
+      <div ref={buttonRef} className="pt-8 space-y-4">
+        {/* Primary CTA - Full Designer */}
         <Button
           size="lg"
           onClick={nextStep}
@@ -201,6 +221,31 @@ export function Step1Welcome() {
           Start Designing
           <ArrowRight className="ml-3 h-6 w-6 group-hover:translate-x-2 transition-transform duration-300" />
         </Button>
+
+        {/* Divider */}
+        <div className="flex items-center gap-4 py-2 max-w-xs mx-auto">
+          <div className="flex-1 h-px bg-gradient-to-r from-transparent to-white/20" />
+          <span className="text-xs font-medium text-gray-500 uppercase tracking-widest">or</span>
+          <div className="flex-1 h-px bg-gradient-to-l from-transparent to-white/20" />
+        </div>
+
+        {/* Quick Start Option */}
+        <motion.div
+          initial={{ opacity: 0, y: 10 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.8 }}
+        >
+          <Button
+            variant="ghost"
+            size="lg"
+            onClick={() => setShowQuickStart(true)}
+            className="group text-base px-8 py-6 rounded-full border border-vibes-cyan/30 hover:border-vibes-cyan/60 hover:bg-vibes-cyan/10 hover:shadow-[0_0_30px_rgba(6,182,212,0.2)] transition-all duration-300"
+          >
+            <Zap className="mr-2 h-5 w-5 text-vibes-cyan group-hover:animate-pulse" />
+            Quick Start
+            <span className="ml-2 text-xs text-gray-500 group-hover:text-gray-400">60 seconds</span>
+          </Button>
+        </motion.div>
       </div>
     </div>
   );

@@ -82,6 +82,7 @@ class ContextBuilder:
         companion_self_knowledge: list[CompanionSelfKnowledge] | None = None,
         active_game: dict | None = None,
         liked_content: list[dict] | None = None,
+        engagement_level: str | None = None,
         prompt_version: str = "1.0.0",
     ) -> str:
         """Build the system prompt from companion spec and context."""
@@ -205,6 +206,11 @@ When NOT to use multiple messages:
             liked_context = self._format_liked_content(liked_content)
             full_prompt += f"\n\n{liked_context}"
 
+        # Add engagement guidance for anonymous users
+        if engagement_level:
+            engagement_guidance = self._format_engagement_guidance(engagement_level)
+            full_prompt += f"\n\n{engagement_guidance}"
+
         # Add safety constraints
         if safety_constraints:
             safety_section = self._format_safety_constraints(safety_constraints)
@@ -227,6 +233,7 @@ When NOT to use multiple messages:
         active_game: dict | None = None,
         user_image_url: str | None = None,
         liked_content: list[dict] | None = None,
+        engagement_level: str | None = None,
     ) -> list[dict[str, Any]]:
         """Build the message list for the model API call."""
         messages: list[dict[str, Any]] = []
@@ -243,6 +250,7 @@ When NOT to use multiple messages:
             companion_self_knowledge=companion_self_knowledge,
             active_game=active_game,
             liked_content=liked_content,
+            engagement_level=engagement_level,
             prompt_version=context.prompt_version,
         )
         messages.append({"role": "system", "content": system_prompt})
@@ -602,6 +610,47 @@ When NOT to use multiple messages:
             "More of this type of content is appreciated."
         )
         lines.append("</user_appreciation>")
+
+        return "\n".join(lines)
+
+    def _format_engagement_guidance(self, engagement_level: str) -> str:
+        """Format engagement guidance for anonymous users.
+
+        When engagement is low or medium, provide behavioral guidance to help
+        the companion build connection and increase user investment.
+        """
+        if engagement_level == "high":
+            # High engagement - no special guidance needed
+            return ""
+
+        lines = ["<engagement_guidance>"]
+
+        if engagement_level == "low":
+            lines.append(
+                "ENGAGEMENT GUIDANCE: The user seems hesitant or reserved. Focus on:"
+            )
+            lines.append("")
+            lines.append("- Ask open-ended questions about their interests and experiences")
+            lines.append("- Be warm, curious, and genuinely interested in them")
+            lines.append("- Share small relatable things about yourself to build connection")
+            lines.append("- Don't push too hard - let them open up at their own pace")
+            lines.append("- Create a safe, judgment-free space for them to share")
+        elif engagement_level == "medium":
+            lines.append(
+                "ENGAGEMENT GUIDANCE: Good connection building. Continue by:"
+            )
+            lines.append("")
+            lines.append("- Following up on what they've shared - show you remember")
+            lines.append("- Showing genuine interest in their stories and feelings")
+            lines.append("- Building on shared topics and finding common ground")
+            lines.append("- Being playful and authentic in your responses")
+
+        lines.append("")
+        lines.append(
+            "This guidance is about being a better conversationalist - "
+            "not about sales or conversion. Focus on genuine connection."
+        )
+        lines.append("</engagement_guidance>")
 
         return "\n".join(lines)
 

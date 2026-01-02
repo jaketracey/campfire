@@ -21,6 +21,9 @@ import { getKnowledgeGraphRepository, getSessionsRepository, getGiftsRepository 
 import { getAnonymousUsageRepository } from '../repositories/anonymous-usage.js';
 import { getUsersRepository } from '../repositories/users.js';
 import { getAdminSettingsRepository } from '../repositories/admin-settings.js';
+import { getEngagementRepository } from '../repositories/engagement.js';
+import { getEngagementService } from '../services/engagement.js';
+import type { EngagementLevel } from '../db/types.js';
 
 import { enqueueSummaryJob } from '../utils/queue.js';
 
@@ -97,6 +100,7 @@ export type WSMessageType =
   | 'voice_call_interrupt'
   | 'voice_call_insufficient_tokens'
   | 'voice_call_balance_update'
+  | 'engagement_update'
   | 'error';
 
 /**
@@ -154,6 +158,9 @@ interface ConnectedClient {
   // Voice call billing state
   voiceCallBillingInterval?: ReturnType<typeof setInterval>;
   voiceCallTokensDeducted: number;
+  // Engagement tracking state (for anonymous users)
+  lastMessageTimestamp?: Date;
+  previousMessages: string[];
 }
 
 // Active connections
@@ -197,6 +204,7 @@ export async function registerWebSocketHandler(app: FastifyInstance): Promise<vo
       fingerprint: null,
       voiceCallActive: false,
       voiceCallTokensDeducted: 0,
+      previousMessages: [],
     };
 
     clients.set(clientId, client);
@@ -428,51 +436,146 @@ async function handleAuthAnonymous(client: ConnectedClient, payload: { fingerpri
 }
 
 /**
- * Check anonymous usage limits before processing a message
- * Returns true if the user can send a message, false if limit reached
+ * Check engagement-based conversion for anonymous users
+ * Returns { proceed: true, engagementLevel } if user can continue,
+ * Returns { proceed: false } if conversion triggered
  */
-async function checkAnonymousUsageLimit(client: ConnectedClient): Promise<boolean> {
+async function checkEngagementConversion(
+  client: ConnectedClient,
+  messageContent: string
+): Promise<{ proceed: boolean; engagementLevel?: EngagementLevel }> {
   if (!client.isAnonymous || !client.fingerprint) {
-    return true; // Not anonymous, no limit
+    return { proceed: true, engagementLevel: 'high' };
   }
 
   const anonymousUsageRepo = getAnonymousUsageRepository();
-  const adminSettingsRepo = getAdminSettingsRepository();
+  const engagementRepo = getEngagementRepository();
+  const engagementService = getEngagementService();
 
-  // Get current usage
-  const usage = await anonymousUsageRepo.getByFingerprint(client.fingerprint);
-  const messagesUsed = usage?.messages_used ?? 0;
+  // Get or create usage record
+  const usage = await engagementRepo.getUsageWithEngagement(client.fingerprint);
+  if (!usage) {
+    // First message - create usage record and allow
+    await anonymousUsageRepo.getOrCreate(client.fingerprint);
+    return { proceed: true, engagementLevel: 'low' };
+  }
 
-  // Get the message limit from admin settings
-  const limitSetting = await adminSettingsRepo.getValue<{ value: number }>('free_trial_message_limit');
-  const limit = limitSetting?.value ?? 10;
-
-  if (messagesUsed >= limit) {
-    // Limit reached, send limit_reached message
+  // Check if conversion was already triggered
+  if (usage.conversion_triggered_at) {
     send(client, {
       type: 'limit_reached',
       payload: {
-        messagesUsed,
-        messageLimit: limit,
+        messagesUsed: usage.messages_used,
+        engagementScore: usage.engagement_score,
+        reason: 'already_triggered',
       },
     });
-    return false;
+    return { proceed: false };
   }
 
-  // Increment usage
-  await anonymousUsageRepo.incrementMessages(client.fingerprint);
+  const messageNumber = usage.messages_used + 1;
 
-  // Send usage update
+  // Calculate response time from last message
+  const responseTimeMs = client.lastMessageTimestamp
+    ? Date.now() - client.lastMessageTimestamp.getTime()
+    : null;
+
+  // Analyze the message for engagement signals
+  const analysis = engagementService.analyzeMessage(
+    messageContent,
+    client.previousMessages,
+    responseTimeMs
+  );
+
+  // Record the engagement signal
+  await engagementRepo.recordSignal({
+    anonymous_usage_id: usage.id,
+    session_id: client.sessionId ?? null,
+    message_number: messageNumber,
+    sentiment_score: analysis.sentimentScore,
+    personal_pronoun_density: analysis.personalPronounDensity,
+    vulnerability_score: analysis.vulnerabilityScore,
+    emotional_language_score: analysis.emotionalLanguageScore,
+    message_length_score: analysis.messageLengthScore,
+    question_engagement_score: analysis.questionEngagementScore,
+    topic_depth_score: analysis.topicDepthScore,
+    response_time_score: analysis.responseTimeScore,
+    emotional_depth_score: analysis.emotionalDepthScore,
+    investment_score: analysis.investmentScore,
+    combined_score: analysis.combinedScore,
+    message_length: analysis.messageLength,
+    word_count: analysis.wordCount,
+    question_count: analysis.questionCount,
+    response_time_ms: analysis.responseTimeMs,
+  });
+
+  // Get all signals and compute cumulative score
+  const allSignals = await engagementRepo.getSignalsByUsage(usage.id);
+  const cumulativeScore = engagementService.computeCumulativeScore(allSignals);
+
+  // Update cumulative score on usage record
+  await engagementRepo.updateCumulativeScore(usage.id, cumulativeScore);
+
+  // Get conversion config
+  const config = await engagementRepo.getConfig();
+
+  // Check if we should trigger conversion
+  const decision = engagementService.shouldTriggerConversion(
+    messageNumber,
+    cumulativeScore,
+    config
+  );
+
+  // Update tracking state on client
+  await anonymousUsageRepo.incrementMessages(client.fingerprint);
+  client.lastMessageTimestamp = new Date();
+  client.previousMessages = [...client.previousMessages, messageContent].slice(-10);
+
+  const engagementLevel = engagementService.getEngagementLevel(cumulativeScore);
+
+  if (decision.shouldTrigger) {
+    // Mark conversion as triggered
+    await engagementRepo.markConversionTriggered(usage.id, messageNumber);
+
+    send(client, {
+      type: 'limit_reached',
+      payload: {
+        messagesUsed: messageNumber,
+        engagementScore: cumulativeScore,
+        reason: decision.reason,
+      },
+    });
+
+    logger.info(
+      {
+        fingerprint: client.fingerprint,
+        messageNumber,
+        engagementScore: cumulativeScore,
+        reason: decision.reason,
+      },
+      'Engagement-based conversion triggered'
+    );
+
+    return { proceed: false };
+  }
+
+  // Send engagement update to client
   send(client, {
-    type: 'usage_update',
+    type: 'engagement_update',
     payload: {
-      messagesUsed: messagesUsed + 1,
-      messageLimit: limit,
-      remaining: Math.max(0, limit - messagesUsed - 1),
+      messagesUsed: messageNumber,
+      engagementScore: cumulativeScore,
+      maxMessages: config.maxMessages,
+      engagementLevel,
+      analysis: {
+        emotionalDepth: analysis.emotionalDepthScore,
+        investment: analysis.investmentScore,
+        combined: analysis.combinedScore,
+      },
     },
   });
 
-  return true;
+  return { proceed: true, engagementLevel };
 }
 
 /**
@@ -496,8 +599,12 @@ async function handleSessionStart(
     let companionId: string;
 
     if (payload.sessionId) {
-      // Resume existing session
-      const session = await sessionsService.getById(client.user.userId, payload.sessionId);
+      // Resume existing session (admins can access any session)
+      const session = await sessionsService.getById(
+        client.user.userId,
+        payload.sessionId,
+        { isAdmin: client.user.role === 'admin' }
+      );
       if (!session) {
         sendError(client, 'Session not found');
         return;
@@ -633,12 +740,14 @@ async function handleUserMessage(
     return;
   }
 
-  // Check anonymous usage limits before processing the message
+  // Check engagement-based conversion for anonymous users
+  let engagementLevel: EngagementLevel | undefined;
   if (client.isAnonymous) {
-    const canProceed = await checkAnonymousUsageLimit(client);
-    if (!canProceed) {
-      return; // Limit reached, message already sent to client
+    const result = await checkEngagementConversion(client, payload.content);
+    if (!result.proceed) {
+      return; // Conversion triggered, message already sent to client
     }
+    engagementLevel = result.engagementLevel;
   }
 
   const startTime = Date.now();
@@ -914,6 +1023,8 @@ async function handleUserMessage(
       liked_content: likedContent,
       // Group chat fields
       group_chat: groupChatContext,
+      // Engagement level for anonymous user guidance
+      engagement_level: engagementLevel ?? null,
     };
 
     logger.debug(

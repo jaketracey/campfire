@@ -92,6 +92,7 @@ export type WSMessageType =
   // Demo/anonymous session types
   | 'limit_reached'
   | 'usage_update'
+  | 'engagement_update'
   | 'error';
 
 /**
@@ -147,6 +148,7 @@ export class CampfireWebSocket {
   private _isAnonymous = false;
   private _messagesUsed = 0;
   private _messageLimit = 0;
+  private _engagementScore = 0;
   // Pending messages queue for retry on iOS keyboard race condition
   private pendingMessages: Array<{ content: string }> = [];
 
@@ -196,6 +198,10 @@ export class CampfireWebSocket {
 
   get remainingMessages(): number {
     return Math.max(0, this._messageLimit - this._messagesUsed);
+  }
+
+  get engagementScore(): number {
+    return this._engagementScore;
   }
 
   /**
@@ -292,6 +298,7 @@ export class CampfireWebSocket {
     this._isAnonymous = false;
     this._messagesUsed = 0;
     this._messageLimit = 0;
+    this._engagementScore = 0;
   }
 
   /**
@@ -840,9 +847,33 @@ export class CampfireWebSocket {
    * Subscribe to limit reached events (for anonymous sessions)
    */
   onLimitReached(
-    handler: (data: { messagesUsed: number; messageLimit: number }) => void
+    handler: (data: { messagesUsed: number; engagementScore?: number; reason?: string }) => void
   ): () => void {
-    return this.on<{ messagesUsed: number; messageLimit: number }>('limit_reached', (msg) => {
+    return this.on<{ messagesUsed: number; engagementScore?: number; reason?: string }>('limit_reached', (msg) => {
+      handler(msg.payload);
+    });
+  }
+
+  /**
+   * Subscribe to engagement updates (for anonymous sessions)
+   */
+  onEngagementUpdate(
+    handler: (data: {
+      messagesUsed: number;
+      engagementScore: number;
+      maxMessages: number;
+      engagementLevel: 'low' | 'medium' | 'high';
+      analysis: { emotionalDepth: number; investment: number; combined: number };
+    }) => void
+  ): () => void {
+    return this.on<{
+      messagesUsed: number;
+      engagementScore: number;
+      maxMessages: number;
+      engagementLevel: 'low' | 'medium' | 'high';
+      analysis: { emotionalDepth: number; investment: number; combined: number };
+    }>('engagement_update', (msg) => {
+      this._engagementScore = msg.payload.engagementScore;
       handler(msg.payload);
     });
   }
@@ -931,11 +962,25 @@ export class CampfireWebSocket {
       case 'limit_reached': {
         const payload = message.payload as {
           messagesUsed: number;
-          messageLimit: number;
+          engagementScore?: number;
         };
         this._messagesUsed = payload.messagesUsed;
-        this._messageLimit = payload.messageLimit;
-        console.log('[WS] Message limit reached:', this._messagesUsed, '/', this._messageLimit);
+        if (payload.engagementScore !== undefined) {
+          this._engagementScore = payload.engagementScore;
+        }
+        console.log('[WS] Conversion triggered at message:', this._messagesUsed, 'engagement:', this._engagementScore);
+        break;
+      }
+      case 'engagement_update': {
+        const payload = message.payload as {
+          messagesUsed: number;
+          engagementScore: number;
+          maxMessages: number;
+        };
+        this._messagesUsed = payload.messagesUsed;
+        this._messageLimit = payload.maxMessages;
+        this._engagementScore = payload.engagementScore;
+        console.log('[WS] Engagement update:', this._engagementScore, 'messages:', this._messagesUsed, '/', this._messageLimit);
         break;
       }
     }

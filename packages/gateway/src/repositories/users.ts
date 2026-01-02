@@ -92,6 +92,11 @@ export interface UserSessionInsert {
 }
 
 /**
+ * Sort field for user list
+ */
+export type UserSortField = 'email' | 'status' | 'role' | 'companionCount' | 'imageCount' | 'totalTokens' | 'lastLoginAt' | 'createdAt';
+
+/**
  * User list filters
  */
 export interface UserListFilters extends PaginationOptions {
@@ -99,6 +104,8 @@ export interface UserListFilters extends PaginationOptions {
   emailVerified?: boolean;
   search?: string;
   role?: UserRole;
+  sortBy?: UserSortField;
+  sortOrder?: 'asc' | 'desc';
 }
 
 /**
@@ -379,6 +386,7 @@ export class UsersRepository {
     const db = this.getSql(tx);
     const limit = filters.limit ?? 50;
     const offset = filters.offset ?? 0;
+    const sortOrder = filters.sortOrder ?? 'desc';
 
     const conditions: ReturnType<typeof db>[] = [db`u.status != 'deleted'`];
 
@@ -396,6 +404,24 @@ export class UsersRepository {
     }
 
     const whereClause = db`WHERE ${conditions.reduce((acc, cond, i) => (i === 0 ? cond : db`${acc} AND ${cond}`))}`;
+
+    // Map sortBy field to SQL column - validated by zod enum so safe from injection
+    const sortColumnMap: Record<UserSortField, string> = {
+      email: 'u.email',
+      status: 'u.status',
+      role: 'u.role',
+      companionCount: 'companion_count',
+      imageCount: 'image_count',
+      totalTokens: 'total_tokens',
+      lastLoginAt: 'u.last_login_at',
+      createdAt: 'u.created_at',
+    };
+    const sortColumn = filters.sortBy ? sortColumnMap[filters.sortBy] : 'u.created_at';
+
+    // Build ORDER BY clause - using raw SQL since column is from validated enum
+    const orderByClause = sortOrder === 'asc'
+      ? db.unsafe(`ORDER BY ${sortColumn} ASC NULLS LAST`)
+      : db.unsafe(`ORDER BY ${sortColumn} DESC NULLS LAST`);
 
     const result = await db`
       SELECT
@@ -428,7 +454,7 @@ export class UsersRepository {
         GROUP BY user_id
       ) s ON s.user_id = u.id
       ${whereClause}
-      ORDER BY u.created_at DESC
+      ${orderByClause}
       LIMIT ${limit + 1}
       OFFSET ${offset}
     `;

@@ -20,6 +20,8 @@ export const AdminUserListQuerySchema = z.object({
   status: z.enum(['active', 'suspended', 'deleted']).optional(),
   role: z.enum(['user', 'admin']).optional(),
   search: z.string().optional(),
+  sortBy: z.enum(['email', 'status', 'role', 'companionCount', 'imageCount', 'totalTokens', 'lastLoginAt', 'createdAt']).optional(),
+  sortOrder: z.enum(['asc', 'desc']).default('desc'),
 });
 
 export const AdminInviteUserSchema = z.object({
