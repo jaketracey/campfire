@@ -164,11 +164,15 @@ export function Step5Visuals() {
   };
 
   return (
-    <div className="space-y-8 2xl:space-y-0 2xl:grid 2xl:grid-cols-[280px_1fr] 2xl:gap-12 3xl:grid-cols-[320px_1fr] 3xl:gap-16">
-      {/* Title section - centered on smaller screens, left column on 2xl+ */}
-      <div className="text-center 2xl:text-left 2xl:sticky 2xl:top-8 2xl:self-start space-y-3">
+    <div className="relative">
+      {/* Title section - centered on mobile, top-right fixed on desktop */}
+      <div className="text-center mb-8 lg:hidden space-y-3">
         <h2 className="text-4xl md:text-5xl font-bold font-display tracking-tight text-white">Visual Identity</h2>
-        <p className="text-gray-400 max-w-md mx-auto 2xl:mx-0">Design your companion's physical appearance and art style.</p>
+        <p className="text-gray-400 max-w-md mx-auto">Design your companion's physical appearance and art style.</p>
+      </div>
+      <div className="hidden lg:block fixed top-6 right-8 z-10 text-right space-y-1">
+        <h2 className="text-2xl font-bold font-display tracking-tight text-white/80">Visual Identity</h2>
+        <p className="text-gray-500 text-sm max-w-[200px] ml-auto">Design your companion's appearance and art style.</p>
       </div>
 
       {/* Main content area */}

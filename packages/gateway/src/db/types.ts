@@ -686,6 +686,7 @@ export type TokenTransactionType =
   | 'purchase'
   | 'subscription_bonus'
   | 'gift_spent'
+  | 'voice_call'
   | 'refund'
   | 'admin_grant';
 
@@ -1267,4 +1268,76 @@ export interface PendingPayoutSummary {
   pending_amount: number; // cents
   pending_count: number;
   conversions: AffiliateConversion[];
+}
+
+// ============================================================================
+// Video Request Types
+// ============================================================================
+
+export type VideoRequestStatus = 'pending' | 'generating' | 'encoding' | 'ready' | 'failed';
+
+export interface VideoRequest {
+  id: UUID;
+  user_id: UUID;
+  companion_id: UUID;
+  session_id: UUID | null;
+  prompt: string;
+  generated_prompt: string | null;
+  duration_seconds: number;
+  width: number;
+  height: number;
+  fps: number;
+  s3_bucket: string | null;
+  s3_key: string | null;
+  video_url: string | null;
+  thumbnail_s3_key: string | null;
+  thumbnail_url: string | null;
+  file_size_bytes: number | null;
+  status: VideoRequestStatus;
+  token_cost: number;
+  generation_params: JSONObject | null;
+  generation_error: string | null;
+  processing_time_ms: number | null;
+  source_turn_id: UUID | null;
+  created_at: Timestamp;
+  updated_at: Timestamp;
+  completed_at: Timestamp | null;
+}
+
+export interface VideoRequestInsert {
+  id?: UUID;
+  user_id: UUID;
+  companion_id: UUID;
+  session_id?: UUID | null;
+  prompt: string;
+  generated_prompt?: string | null;
+  duration_seconds?: number;
+  width?: number;
+  height?: number;
+  fps?: number;
+  token_cost?: number;
+  source_turn_id?: UUID | null;
+}
+
+export interface VideoRequestUpdate {
+  status?: VideoRequestStatus;
+  generated_prompt?: string | null;
+  s3_bucket?: string | null;
+  s3_key?: string | null;
+  video_url?: string | null;
+  thumbnail_s3_key?: string | null;
+  thumbnail_url?: string | null;
+  file_size_bytes?: number | null;
+  generation_params?: JSONObject | null;
+  generation_error?: string | null;
+  processing_time_ms?: number | null;
+  completed_at?: Timestamp | null;
+}
+
+/**
+ * Video request with companion details for API responses
+ */
+export interface VideoRequestWithCompanion extends VideoRequest {
+  companion_name: string;
+  companion_avatar_url: string | null;
 }

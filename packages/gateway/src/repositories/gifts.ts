@@ -213,6 +213,42 @@ export class GiftsRepository {
     };
   }
 
+  /**
+   * Deduct a single token for voice call billing.
+   * Called every second during an active voice call.
+   */
+  async deductVoiceCallToken(
+    userId: string,
+    sessionId: string,
+    description?: string,
+    tx?: TransactionContext
+  ): Promise<DeductTokensResult> {
+    const db = this.getSql(tx);
+
+    const result = await db`
+      SELECT * FROM deduct_voice_call_token(
+        ${userId},
+        ${sessionId},
+        ${description ?? null}
+      )
+    `;
+
+    const row = result[0]!;
+
+    if (row.success) {
+      logger.debug({ userId, sessionId, newBalance: row.new_balance }, 'Voice call token deducted');
+    } else {
+      logger.warn({ userId, sessionId, error: row.error_message }, 'Voice call token deduction failed');
+    }
+
+    return {
+      success: row.success,
+      transactionId: row.transaction_id,
+      newBalance: row.new_balance ?? 0,
+      errorMessage: row.error_message,
+    };
+  }
+
   // ===========================================================================
   // Token Transactions
   // ===========================================================================
@@ -523,6 +559,51 @@ export class GiftsRepository {
     }
 
     logger.debug({ giftId: id }, 'Gift image set');
+    return this.mapGift(result[0]);
+  }
+
+  /**
+   * Update gift content and image together (for worker completion)
+   */
+  async updateGiftWithContent(
+    id: string,
+    data: {
+      name: string;
+      description: string;
+      visualPrompt: string;
+      emotionalMeaning: string;
+      imageUrl: string;
+      s3Bucket: string;
+      s3Key: string;
+    },
+    tx?: TransactionContext
+  ): Promise<Gift> {
+    const db = this.getSql(tx);
+
+    const result = await db`
+      UPDATE gifts
+      SET
+        name = ${data.name},
+        description = ${data.description},
+        visual_prompt = ${data.visualPrompt},
+        emotional_meaning = ${data.emotionalMeaning},
+        image_url = ${data.imageUrl},
+        s3_bucket = ${data.s3Bucket},
+        s3_key = ${data.s3Key},
+        status = 'ready'
+      WHERE id = ${id}
+      RETURNING
+        id, user_id, companion_id, name, description, visual_prompt,
+        emotional_meaning, image_url, s3_bucket, s3_key, token_cost,
+        status, generation_params, generation_error, source_event_id,
+        source_turn_id, given_at, created_at, updated_at
+    `;
+
+    if (!result[0]) {
+      throw new NotFoundError('Gift', id);
+    }
+
+    logger.info({ giftId: id }, 'Gift content and image updated');
     return this.mapGift(result[0]);
   }
 

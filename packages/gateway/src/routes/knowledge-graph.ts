@@ -396,31 +396,19 @@ export async function knowledgeGraphRoutes(app: FastifyInstance): Promise<void> 
         const labelToEntityId = new Map<string, string>();
 
         for (const node of nodes) {
-          // Check if entity already exists by canonical name
-          const existing = await repo.findEntityByCanonicalName(
-            userId,
-            companionId,
-            node.label.toLowerCase().trim()
-          );
+          // Upsert entity to handle race conditions gracefully
+          const entity = await repo.upsertEntity({
+            user_id: userId,
+            companion_id: companionId,
+            name: node.label,
+            entity_type: node.nodeType,
+            metadata: node.properties as Record<string, unknown>,
+            source_event_id: sourceEventId,
+          });
 
-          if (existing) {
-            labelToEntityId.set(node.label, existing.id);
-            logger.debug({ label: node.label, existingId: existing.id }, 'Found existing entity');
-          } else {
-            // Create new entity
-            const entity = await repo.createEntity({
-              user_id: userId,
-              companion_id: companionId,
-              name: node.label,
-              entity_type: node.nodeType,
-              metadata: node.properties as Record<string, unknown>,
-              source_event_id: sourceEventId,
-            });
-
-            labelToEntityId.set(node.label, entity.id);
-            createdEntities.push({ label: node.label, id: entity.id });
-            logger.debug({ label: node.label, entityId: entity.id }, 'Created new entity');
-          }
+          labelToEntityId.set(node.label, entity.id);
+          createdEntities.push({ label: node.label, id: entity.id });
+          logger.debug({ label: node.label, entityId: entity.id }, 'Entity upserted');
         }
 
         // Process relations - create edges between entities

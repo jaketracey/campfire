@@ -292,6 +292,44 @@ export class UsersRepository {
     };
   }
 
+  async updateUserAffiliateTracking(
+    id: string,
+    data: { affiliate_id: string; affiliate_click_id: string },
+    tx?: TransactionContext
+  ): Promise<void> {
+    const db = this.getSql(tx);
+
+    await db`
+      UPDATE users
+      SET
+        affiliate_id = ${data.affiliate_id},
+        affiliate_click_id = ${data.affiliate_click_id}
+      WHERE id = ${id}
+    `;
+  }
+
+  async getUserAffiliateInfo(
+    id: string,
+    tx?: TransactionContext
+  ): Promise<{ affiliate_id: string | null; affiliate_click_id: string | null } | null> {
+    const db = this.getSql(tx);
+
+    const result = await db`
+      SELECT affiliate_id, affiliate_click_id
+      FROM users
+      WHERE id = ${id}
+    `;
+
+    if (!result[0]) {
+      return null;
+    }
+
+    return {
+      affiliate_id: result[0]['affiliate_id'] as string | null,
+      affiliate_click_id: result[0]['affiliate_click_id'] as string | null,
+    };
+  }
+
   async list(filters: UserListFilters = {}, tx?: TransactionContext): Promise<PaginatedResult<User>> {
     const db = this.getSql(tx);
     const limit = filters.limit ?? 50;

@@ -5,13 +5,15 @@
 
 import type { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
 import { z } from 'zod';
-import { requireAdmin } from '../middleware/auth.js';
+import { requireAdmin, createToken, createRefreshToken } from '../middleware/auth.js';
+import { getUsersRepository } from '../repositories/index.js';
 import {
   getAdminService,
   AdminUserListQuerySchema,
   AdminInviteUserSchema,
   AdminUpdateRoleSchema,
   AdminUpdateStatusSchema,
+  AdminGrantTokensSchema,
 } from '../services/admin.js';
 import { logger } from '../observability/logger.js';
 import { getAdminSettingsRepository } from '../repositories/admin-settings.js';
@@ -159,6 +161,56 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
           message: 'Password reset email sent',
           // Only return token in development for testing
           ...(process.env.NODE_ENV === 'development' && { resetToken: result.resetToken }),
+        },
+      });
+    } catch (error) {
+      const err = error as Error;
+      if (err.message === 'User not found') {
+        return reply.status(404).send({
+          error: 'Not Found',
+          message: err.message,
+        });
+      }
+      throw error;
+    }
+  });
+
+  /**
+   * POST /admin/users/:userId/grant-tokens - Grant tokens to user
+   */
+  app.post('/users/:userId/grant-tokens', async (request: FastifyRequest, reply: FastifyReply) => {
+    const paramsResult = UserIdParamsSchema.safeParse(request.params);
+    if (!paramsResult.success) {
+      return reply.status(400).send({
+        error: 'Validation Error',
+        message: 'Invalid user ID',
+        details: paramsResult.error.issues,
+      });
+    }
+
+    const bodyResult = AdminGrantTokensSchema.safeParse(request.body);
+    if (!bodyResult.success) {
+      return reply.status(400).send({
+        error: 'Validation Error',
+        message: 'Invalid request body',
+        details: bodyResult.error.issues,
+      });
+    }
+
+    const { userId } = paramsResult.data;
+    const adminUserId = request.user!.userId;
+
+    try {
+      const result = await adminService.grantTokens(userId, bodyResult.data, adminUserId);
+
+      logger.info({ userId, amount: result.amount, adminUserId }, 'Admin granted tokens to user');
+
+      return reply.send({
+        success: true,
+        data: {
+          transactionId: result.transactionId,
+          newBalance: result.newBalance,
+          amount: result.amount,
         },
       });
     } catch (error) {
@@ -584,5 +636,87 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
       }
       throw error;
     }
+  });
+
+  // ===========================================================================
+  // User Impersonation
+  // ===========================================================================
+
+  /**
+   * POST /admin/users/:userId/impersonate - Get tokens to impersonate a user
+   *
+   * Returns access and refresh tokens for the target user, allowing
+   * the admin to act as that user in the frontend.
+   */
+  app.post('/users/:userId/impersonate', async (request: FastifyRequest, reply: FastifyReply) => {
+    const paramsResult = UserIdParamsSchema.safeParse(request.params);
+    if (!paramsResult.success) {
+      return reply.status(400).send({
+        error: 'Validation Error',
+        message: 'Invalid user ID',
+        details: paramsResult.error.issues,
+      });
+    }
+
+    const { userId } = paramsResult.data;
+    const adminUserId = request.user!.userId;
+
+    // Prevent self-impersonation
+    if (userId === adminUserId) {
+      return reply.status(400).send({
+        error: 'Invalid Operation',
+        message: 'Cannot impersonate yourself',
+      });
+    }
+
+    const usersRepo = getUsersRepository();
+    const targetUser = await usersRepo.findById(userId);
+
+    if (!targetUser) {
+      return reply.status(404).send({
+        error: 'Not Found',
+        message: 'User not found',
+      });
+    }
+
+    // Don't allow impersonating other admins
+    if (targetUser.role === 'admin') {
+      return reply.status(403).send({
+        error: 'Forbidden',
+        message: 'Cannot impersonate admin users',
+      });
+    }
+
+    // Generate tokens for the target user
+    const accessToken = await createToken({
+      userId: targetUser.id,
+      email: targetUser.email,
+      role: targetUser.role,
+    });
+    const refreshToken = await createRefreshToken(targetUser.id);
+
+    logger.info(
+      { adminUserId, targetUserId: userId, targetEmail: targetUser.email },
+      'Admin started impersonating user'
+    );
+
+    return reply.send({
+      success: true,
+      data: {
+        user: {
+          id: targetUser.id,
+          email: targetUser.email,
+          role: targetUser.role,
+          emailVerified: targetUser.email_verified,
+          createdAt: targetUser.created_at.toISOString(),
+        },
+        tokens: {
+          accessToken,
+          refreshToken,
+          tokenType: 'Bearer',
+          expiresIn: 86400,
+        },
+      },
+    });
   });
 }

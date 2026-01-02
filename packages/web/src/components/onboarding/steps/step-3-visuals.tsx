@@ -204,27 +204,18 @@ export function Step3Visuals() {
 
   return (
     <div className="space-y-8">
-      {/* Mobile: centered title */}
-      <div className="text-center space-y-3 lg:hidden">
-        <h2 className="text-4xl font-bold font-display tracking-tight text-white">Visual Identity</h2>
-        <p className="text-gray-400 max-w-md mx-auto">Design your companion&apos;s physical appearance and art style.</p>
-      </div>
-
-      {/* Desktop: title positioned top-right */}
-      <div className="hidden lg:flex lg:justify-end lg:text-right lg:-mt-4 lg:mb-2">
-        <div className="space-y-1">
-          <h2 className="text-3xl font-bold font-display tracking-tight text-white">Visual Identity</h2>
-          <p className="text-gray-500 text-sm">Design your companion&apos;s physical appearance and art style.</p>
+      {/* Header row: Title left, Surprise Me right */}
+      <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-6">
+        <div className="text-center lg:text-left space-y-2">
+          <h2 className="text-4xl font-bold font-display tracking-tight text-white">Visual Identity</h2>
+          <p className="text-gray-400 max-w-md mx-auto lg:mx-0">Design your companion&apos;s physical appearance and art style.</p>
         </div>
-      </div>
 
-      {/* Surprise Me - centered */}
-      <div className="flex justify-center">
         <Button
           size="lg"
           disabled={isSurprising}
           onClick={handleSurpriseMe}
-          className="group h-20 px-16 rounded-full bg-white/[0.03] border-2 border-dashed border-white/20 hover:border-vibes-cyan/50 hover:bg-vibes-cyan/10 hover:shadow-[0_0_40px_rgba(6,182,212,0.2)] transition-all font-bold text-xl relative overflow-hidden"
+          className="group h-14 lg:h-16 px-8 lg:px-12 rounded-full bg-white/[0.03] border-2 border-dashed border-white/20 hover:border-vibes-cyan/50 hover:bg-vibes-cyan/10 hover:shadow-[0_0_40px_rgba(6,182,212,0.2)] transition-all font-bold text-lg relative overflow-hidden shrink-0"
         >
           {isSurprising && (
             <motion.div
@@ -234,7 +225,7 @@ export function Step3Visuals() {
               transition={{ repeat: Infinity, duration: 0.8, ease: 'linear' }}
             />
           )}
-          <Shuffle className={cn("mr-3 h-7 w-7", isSurprising && "animate-spin")} />
+          <Shuffle className={cn("mr-2 h-5 w-5", isSurprising && "animate-spin")} />
           {isSurprising ? 'Choosing...' : 'Surprise Me'}
         </Button>
       </div>

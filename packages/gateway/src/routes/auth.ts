@@ -10,7 +10,8 @@ import { withSpan } from '../observability/tracing.js';
 import { requireAuth, createToken, createRefreshToken, verifyRefreshToken } from '../middleware/auth.js';
 import { getAuthService } from '../services/auth.js';
 import { getReferralsService } from '../services/referrals.js';
-import { getUsersRepository, getReferralsRepository } from '../repositories/index.js';
+import { getUsersRepository, getReferralsRepository, getAffiliatesRepository } from '../repositories/index.js';
+import { parseAffiliateCookie, AFFILIATE_COOKIE } from './affiliate-tracking.js';
 
 /**
  * Request schemas
@@ -67,11 +68,11 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
         const authService = getAuthService();
         const referralsService = getReferralsService();
         const referralsRepo = getReferralsRepository();
+        const usersRepo = getUsersRepository();
         const result = await authService.register({ email, password });
 
         // Update profile with display name if provided
         if (displayName) {
-          const usersRepo = getUsersRepository();
           await usersRepo.updateProfile(result.user.id, { display_name: displayName });
         }
 
@@ -97,6 +98,40 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
           } catch (invError) {
             // Don't fail signup if invite acceptance fails
             logger.warn({ userId: result.user.id, inviteToken, error: invError }, 'Failed to accept invite');
+          }
+        }
+
+        // Track affiliate referral if cookie is present
+        // Parse cookies from the Cookie header manually
+        const cookieHeader = request.headers.cookie || '';
+        const cookies = Object.fromEntries(
+          cookieHeader.split(';').map((c) => {
+            const [key, ...vals] = c.trim().split('=');
+            return [key, vals.join('=')];
+          })
+        );
+        const affiliateCookie = cookies[AFFILIATE_COOKIE];
+        if (affiliateCookie) {
+          try {
+            const affiliateData = parseAffiliateCookie(affiliateCookie);
+            if (affiliateData) {
+              const affiliatesRepo = getAffiliatesRepository();
+              const affiliate = await affiliatesRepo.findByCode(affiliateData.code);
+              if (affiliate && affiliate.status === 'active') {
+                // Update user with affiliate tracking info
+                await usersRepo.updateUserAffiliateTracking(result.user.id, {
+                  affiliate_id: affiliate.id,
+                  affiliate_click_id: affiliateData.clickId,
+                });
+                logger.info(
+                  { userId: result.user.id, affiliateCode: affiliateData.code, clickId: affiliateData.clickId },
+                  'Affiliate tracking recorded during signup'
+                );
+              }
+            }
+          } catch (affError) {
+            // Don't fail signup if affiliate tracking fails
+            logger.warn({ userId: result.user.id, error: affError }, 'Failed to record affiliate tracking');
           }
         }
 

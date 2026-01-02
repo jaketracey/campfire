@@ -17,7 +17,7 @@ import {
   getLLMUsageService,
   type EventContext,
 } from '../services/index.js';
-import { getKnowledgeGraphRepository, getSessionsRepository } from '../repositories/index.js';
+import { getKnowledgeGraphRepository, getSessionsRepository, getGiftsRepository } from '../repositories/index.js';
 import { getAnonymousUsageRepository } from '../repositories/anonymous-usage.js';
 import { getUsersRepository } from '../repositories/users.js';
 import { getAdminSettingsRepository } from '../repositories/admin-settings.js';
@@ -95,6 +95,8 @@ export type WSMessageType =
   | 'voice_call_started'
   | 'voice_call_ended'
   | 'voice_call_interrupt'
+  | 'voice_call_insufficient_tokens'
+  | 'voice_call_balance_update'
   | 'error';
 
 /**
@@ -149,6 +151,9 @@ interface ConnectedClient {
   // Voice call state
   voiceCallActive: boolean;
   voiceCallStartedAt?: Date;
+  // Voice call billing state
+  voiceCallBillingInterval?: ReturnType<typeof setInterval>;
+  voiceCallTokensDeducted: number;
 }
 
 // Active connections
@@ -191,6 +196,7 @@ export async function registerWebSocketHandler(app: FastifyInstance): Promise<vo
       isAnonymous: false,
       fingerprint: null,
       voiceCallActive: false,
+      voiceCallTokensDeducted: 0,
     };
 
     clients.set(clientId, client);
@@ -1604,7 +1610,7 @@ async function handleWebcamFrame(
  * Enables voice mode and starts the call session
  */
 async function handleVoiceCallStart(client: ConnectedClient): Promise<void> {
-  if (!client.authenticated) {
+  if (!client.authenticated || !client.user) {
     sendError(client, 'Authentication required');
     return;
   }
@@ -1614,20 +1620,123 @@ async function handleVoiceCallStart(client: ConnectedClient): Promise<void> {
     return;
   }
 
+  const userId = client.user.userId;
+  const sessionId = client.sessionId;
+
+  // Check token balance before starting call
+  const giftsRepo = getGiftsRepository();
+  const balance = await giftsRepo.getTokenBalance(userId);
+
+  if (!balance || balance.balance < 1) {
+    send(client, {
+      type: 'voice_call_insufficient_tokens',
+      payload: {
+        balance: balance?.balance ?? 0,
+        required: 1,
+      },
+    });
+    logger.info(
+      { clientId: client.id, userId, balance: balance?.balance ?? 0 },
+      'Voice call rejected - insufficient tokens'
+    );
+    return;
+  }
+
   // Enable voice mode and mark call as active
   client.voiceEnabled = true;
   client.voiceCallActive = true;
   client.voiceCallStartedAt = new Date();
+  client.voiceCallTokensDeducted = 0;
+
+  // Start billing interval - deduct 1 token per second
+  client.voiceCallBillingInterval = setInterval(async () => {
+    await deductVoiceCallToken(client);
+  }, 1000);
 
   send(client, {
     type: 'voice_call_started',
-    payload: { startedAt: client.voiceCallStartedAt.toISOString() },
+    payload: {
+      startedAt: client.voiceCallStartedAt.toISOString(),
+      currentBalance: balance.balance,
+    },
   });
 
   logger.info(
-    { clientId: client.id, sessionId: client.sessionId },
-    'Voice call started'
+    { clientId: client.id, sessionId, balance: balance.balance },
+    'Voice call started with token billing'
   );
+}
+
+/**
+ * Deduct a single token for voice call billing.
+ * Called every second during an active voice call.
+ */
+async function deductVoiceCallToken(client: ConnectedClient): Promise<void> {
+  if (!client.voiceCallActive || !client.user || !client.sessionId) {
+    return;
+  }
+
+  const userId = client.user.userId;
+  const sessionId = client.sessionId;
+  const giftsRepo = getGiftsRepository();
+
+  const result = await giftsRepo.deductVoiceCallToken(
+    userId,
+    sessionId,
+    'Voice call usage - 1 second'
+  );
+
+  if (result.success) {
+    client.voiceCallTokensDeducted++;
+
+    // Send balance update to client
+    send(client, {
+      type: 'voice_call_balance_update',
+      payload: {
+        balance: result.newBalance,
+        tokensUsed: client.voiceCallTokensDeducted,
+      },
+    });
+
+    logger.debug(
+      { clientId: client.id, newBalance: result.newBalance, tokensUsed: client.voiceCallTokensDeducted },
+      'Voice call token deducted'
+    );
+  } else {
+    // Balance depleted - end the call immediately
+    logger.info(
+      { clientId: client.id, sessionId, tokensUsed: client.voiceCallTokensDeducted },
+      'Voice call ended - tokens depleted'
+    );
+
+    // Clear billing interval
+    if (client.voiceCallBillingInterval) {
+      clearInterval(client.voiceCallBillingInterval);
+      client.voiceCallBillingInterval = undefined;
+    }
+
+    // Calculate duration
+    const duration = client.voiceCallStartedAt
+      ? Math.round((Date.now() - client.voiceCallStartedAt.getTime()) / 1000)
+      : 0;
+
+    const tokensUsed = client.voiceCallTokensDeducted;
+
+    // Reset call state
+    client.voiceCallActive = false;
+    client.voiceCallStartedAt = undefined;
+    client.voiceEnabled = false;
+    client.voiceCallTokensDeducted = 0;
+
+    send(client, {
+      type: 'voice_call_ended',
+      payload: {
+        duration,
+        reason: 'tokens_depleted',
+        tokensUsed,
+      },
+    });
+  }
 }
 
 /**
@@ -1639,23 +1748,36 @@ async function handleVoiceCallEnd(client: ConnectedClient): Promise<void> {
     return; // Already ended
   }
 
+  // Clear billing interval
+  if (client.voiceCallBillingInterval) {
+    clearInterval(client.voiceCallBillingInterval);
+    client.voiceCallBillingInterval = undefined;
+  }
+
   const duration = client.voiceCallStartedAt
     ? Math.round((Date.now() - client.voiceCallStartedAt.getTime()) / 1000)
     : 0;
+
+  const tokensUsed = client.voiceCallTokensDeducted;
 
   // Reset call state
   client.voiceCallActive = false;
   client.voiceCallStartedAt = undefined;
   client.voiceEnabled = false;
+  client.voiceCallTokensDeducted = 0;
 
   send(client, {
     type: 'voice_call_ended',
-    payload: { duration },
+    payload: {
+      duration,
+      reason: 'user_ended',
+      tokensUsed,
+    },
   });
 
   logger.info(
-    { clientId: client.id, sessionId: client.sessionId, duration },
-    'Voice call ended'
+    { clientId: client.id, sessionId: client.sessionId, duration, tokensUsed },
+    'Voice call ended by user'
   );
 }
 

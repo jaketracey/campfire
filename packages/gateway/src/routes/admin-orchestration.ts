@@ -346,24 +346,42 @@ export async function adminOrchestrationRoutes(app: FastifyInstance): Promise<vo
 
   /**
    * GET /admin/orchestration/providers - Get provider health statuses
+   * Fetches live configuration from orchestrator and merges with DB historical data
    */
   app.get('/providers', async (request: FastifyRequest, reply: FastifyReply) => {
-    const providers = await service.getProviderHealth();
+    // Fetch live config from orchestrator
+    const orchestratorConfig = await service.getOrchestratorProviderConfig();
+
+    // Get DB historical data
+    const dbProviders = await service.getProviderHealth();
+    const dbProviderMap = new Map(dbProviders.map(p => [p.provider, p]));
+
+    // Merge: live config + DB historical data
+    const providers = Object.entries(orchestratorConfig.providers).map(([name, config]) => {
+      const dbData = dbProviderMap.get(name);
+      return {
+        provider: name,
+        isAvailable: config.is_available,
+        isConfigured: config.is_configured,
+        role: config.role,
+        model: config.model,
+        lastCheckAt: dbData?.last_check_at?.toISOString() ?? new Date().toISOString(),
+        lastSuccessAt: dbData?.last_success_at?.toISOString() ?? null,
+        lastErrorAt: dbData?.last_error_at?.toISOString() ?? null,
+        lastErrorMessage: dbData?.last_error_message ?? null,
+        errorCount: dbData?.error_count ?? config.error_count ?? 0,
+        avgLatencyMs: config.avg_latency_ms ?? dbData?.avg_latency_ms ?? null,
+        successRate: config.success_rate ?? dbData?.success_rate ?? null,
+      };
+    });
 
     return reply.send({
       success: true,
       data: {
-        providers: providers.map(p => ({
-          provider: p.provider,
-          isAvailable: p.is_available,
-          lastCheckAt: p.last_check_at.toISOString(),
-          lastSuccessAt: p.last_success_at?.toISOString() ?? null,
-          lastErrorAt: p.last_error_at?.toISOString() ?? null,
-          lastErrorMessage: p.last_error_message,
-          errorCount: p.error_count,
-          avgLatencyMs: p.avg_latency_ms,
-          successRate: p.success_rate,
-        })),
+        providers,
+        primaryProvider: orchestratorConfig.primary_provider,
+        fallbackProvider: orchestratorConfig.fallback_provider,
+        contentRoutingEnabled: orchestratorConfig.content_routing_enabled,
       },
     });
   });

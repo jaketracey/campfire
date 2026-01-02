@@ -41,6 +41,15 @@ export interface NewsletterContext extends BaseTemplateContext {
   }>;
 }
 
+export interface AffiliateWelcomeContext extends BaseTemplateContext {
+  affiliateName: string;
+  affiliateCode: string;
+  temporaryPassword: string;
+  loginUrl: string;
+  commissionStandard: string;
+  commissionPremium: string;
+}
+
 /** Generate signed unsubscribe URL */
 export function generateUnsubscribeUrl(
   identifier: string,
@@ -289,6 +298,47 @@ export const templates = {
   `,
       ctx
     ),
+
+  affiliateWelcome: (ctx: AffiliateWelcomeContext) =>
+    baseTemplate(
+      `
+    <mj-text font-size="24px" font-weight="bold" padding-bottom="20px">
+      Welcome to the Campfire Affiliate Program!
+    </mj-text>
+    <mj-text>
+      Hi ${ctx.affiliateName},
+    </mj-text>
+    <mj-text>
+      You've been added as an affiliate partner for Campfire. We're excited to have you on board!
+    </mj-text>
+    <mj-text font-weight="bold" padding-top="20px">
+      Your Account Details:
+    </mj-text>
+    <mj-text>
+      <strong>Email:</strong> ${ctx.recipientEmail}<br/>
+      <strong>Temporary Password:</strong> ${ctx.temporaryPassword}<br/>
+      <strong>Your Affiliate Code:</strong> ${ctx.affiliateCode}
+    </mj-text>
+    <mj-text font-weight="bold" padding-top="20px">
+      Commission Rates:
+    </mj-text>
+    <mj-text>
+      &#x2022; Standard Plan: ${ctx.commissionStandard} per conversion<br/>
+      &#x2022; Premium Plan: ${ctx.commissionPremium} per conversion
+    </mj-text>
+    <mj-button href="${ctx.loginUrl}" padding="30px 0">
+      Access Affiliate Portal
+    </mj-button>
+    <mj-text font-size="14px" color="#666666">
+      Please log in and change your password immediately. You can share your affiliate link to start earning commissions.
+    </mj-text>
+    <mj-text padding-top="20px">
+      Your affiliate link:<br/>
+      <a href="https://campfire.app/ref/${ctx.affiliateCode}" style="color: #FF6B35; word-break: break-all;">https://campfire.app/ref/${ctx.affiliateCode}</a>
+    </mj-text>
+  `,
+      ctx
+    ),
 };
 
 export type TemplateType = keyof typeof templates;
@@ -300,6 +350,7 @@ type TemplateContextMap = {
   welcome: WelcomeContext;
   notification: NotificationContext;
   newsletter: NewsletterContext;
+  affiliateWelcome: AffiliateWelcomeContext;
 };
 
 /** Compile MJML to HTML */
@@ -355,6 +406,7 @@ export function getDefaultSubject(templateName: string): string {
     welcome: 'Welcome to Campfire!',
     notification: 'Notification from Campfire',
     newsletter: 'Campfire Newsletter',
+    affiliateWelcome: 'Welcome to the Campfire Affiliate Program',
   };
   return subjects[templateName] || 'Message from Campfire';
 }

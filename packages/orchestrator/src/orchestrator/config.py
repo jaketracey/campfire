@@ -126,6 +126,17 @@ class Settings(BaseSettings):
     comfyui_upscale_model: str = "RealESRGAN_x4plus.pth"
     comfyui_enable_upscale: bool = False  # Disabled - 4x upscaling degrades quality
 
+    # AnimateDiff Video Generation (via ComfyUI on 5080 server)
+    animatediff_enabled: bool = True
+    animatediff_base_url: str = "http://localhost:8188"  # Same as ComfyUI or separate server
+    animatediff_timeout: float = 600.0  # 10 minutes for video generation
+    animatediff_motion_module: str = "mm_sdxl_v10_beta.ckpt"  # AnimateDiff motion module
+    animatediff_default_frames: int = 48  # ~4 seconds at 12fps
+    animatediff_default_fps: int = 12
+    animatediff_default_width: int = 512
+    animatediff_default_height: int = 768
+    animatediff_video_format: str = "video/h264-mp4"  # VHS output format
+
     # FAL AI (Image Generation - cloud fallback)
     fal_api_key: str = ""
     fal_model: str = "fal-ai/flux/schnell"

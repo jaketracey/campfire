@@ -22,6 +22,8 @@ interface ShareCompanionDialogProps {
   isPublic: boolean;
   onShareStatusChange?: (isPublic: boolean) => void;
   size?: 'sm' | 'default';
+  /** User's referral code to include in share links for tracking */
+  referralCode?: string;
 }
 
 export function ShareCompanionDialog({
@@ -30,6 +32,7 @@ export function ShareCompanionDialog({
   isPublic: initialIsPublic,
   onShareStatusChange,
   size = 'default',
+  referralCode,
 }: ShareCompanionDialogProps) {
   const [open, setOpen] = useState(false);
   const [isPublic, setIsPublic] = useState(initialIsPublic);
@@ -38,7 +41,10 @@ export function ShareCompanionDialog({
 
   // Use marketing site URL for share links
   const marketingUrl = process.env.NEXT_PUBLIC_MARKETING_URL || 'https://campfire.dev';
-  const shareUrl = `${marketingUrl}/c/${companionId}`;
+  // Include referral code in share URL for tracking
+  const shareUrl = referralCode
+    ? `${marketingUrl}/c/${companionId}?ref=${encodeURIComponent(referralCode)}`
+    : `${marketingUrl}/c/${companionId}`;
 
   const handleCopyLink = async () => {
     await navigator.clipboard.writeText(shareUrl);

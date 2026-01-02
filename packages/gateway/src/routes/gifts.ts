@@ -14,6 +14,7 @@ import { getGiftsRepository } from '../repositories/gifts.js';
 import { getCompanionsRepository } from '../repositories/companions.js';
 import { getEventStore } from '../db/event-store.js';
 import { ValidationError } from '../repositories/errors.js';
+import { enqueueGiftGenerationJob } from '../utils/queue.js';
 import type { JSONObject } from '../db/types.js';
 
 // ============================================================================
@@ -69,6 +70,17 @@ const InternalGenerateSchema = z.object({
 
 const InternalReceiveSchema = z.object({
   giftId: z.string().uuid(),
+  imageUrl: z.string().url(),
+  s3Bucket: z.string(),
+  s3Key: z.string(),
+});
+
+const InternalUpdateGiftSchema = z.object({
+  giftId: z.string().uuid(),
+  name: z.string().min(1).max(255),
+  description: z.string().max(1000),
+  visualPrompt: z.string().max(2000),
+  emotionalMeaning: z.string().max(1000),
   imageUrl: z.string().url(),
   s3Bucket: z.string(),
   s3Key: z.string(),
@@ -426,7 +438,7 @@ export async function giftsRoutes(app: FastifyInstance): Promise<void> {
         'Gift generation started'
       );
 
-      // Emit gift.generation_started event (workers will pick this up for AI generation)
+      // Emit gift.generation_started event (for audit trail)
       const eventTraceId = crypto.randomUUID();
       await eventStore.append({
         eventId: crypto.randomUUID(),
@@ -446,6 +458,18 @@ export async function giftsRoutes(app: FastifyInstance): Promise<void> {
         version: '1.0',
         causationId: null,
         correlationId: eventTraceId,
+      });
+
+      // Enqueue job for worker to generate gift content and image
+      await enqueueGiftGenerationJob({
+        giftId: gift.id,
+        userId: user.userId,
+        companionId,
+        companionName,
+        companionBackstory: undefined, // Backstory is stored in KG, not spec - worker can fetch if needed
+        companionPersonality: companion.spec?.personality?.traits ?? undefined,
+        tokenCost,
+        tier: preferredCost,
       });
 
       // Return 202 Accepted - gift is being generated async
@@ -868,6 +892,65 @@ export async function giftsRoutes(app: FastifyInstance): Promise<void> {
         success: true,
         data: {
           id: updatedGift.id,
+          status: updatedGift.status,
+          imageUrl: updatedGift.image_url,
+        },
+      });
+    });
+  });
+
+  /**
+   * POST /gifts/internal/update-gift - Internal: Update gift content and image
+   * Used by workers to complete gift generation
+   */
+  app.post('/internal/update-gift', { preHandler: requireInternalService }, async (request: FastifyRequest, reply: FastifyReply) => {
+    return withSpan('gifts.internal.updateGift', async (span) => {
+      const parseResult = InternalUpdateGiftSchema.safeParse(request.body);
+      if (!parseResult.success) {
+        return reply.status(400).send({
+          success: false,
+          error: {
+            code: 'VALIDATION_ERROR',
+            message: 'Invalid request body',
+            details: parseResult.error.flatten(),
+            timestamp: new Date().toISOString(),
+          },
+        });
+      }
+
+      const { giftId, name, description, visualPrompt, emotionalMeaning, imageUrl, s3Bucket, s3Key } = parseResult.data;
+      span.setAttributes({ 'gift.id': giftId });
+
+      const gift = await giftsRepo.findGiftById(giftId);
+      if (!gift) {
+        return reply.status(404).send({
+          success: false,
+          error: {
+            code: 'GIFT_NOT_FOUND',
+            message: 'Gift not found',
+            timestamp: new Date().toISOString(),
+          },
+        });
+      }
+
+      const updatedGift = await giftsRepo.updateGiftWithContent(giftId, {
+        name,
+        description,
+        visualPrompt,
+        emotionalMeaning,
+        imageUrl,
+        s3Bucket,
+        s3Key,
+      });
+
+      logger.info({ giftId }, 'Gift generation completed');
+
+      return reply.send({
+        success: true,
+        data: {
+          id: updatedGift.id,
+          name: updatedGift.name,
+          description: updatedGift.description,
           status: updatedGift.status,
           imageUrl: updatedGift.image_url,
         },

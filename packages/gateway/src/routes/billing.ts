@@ -10,6 +10,9 @@ import { requireAuth } from '../middleware/auth.js';
 import { logger } from '../observability/logger.js';
 import { withSpan } from '../observability/tracing.js';
 import { getEventStore } from '../db/event-store.js';
+import { getUsersRepository } from '../repositories/index.js';
+import { getAffiliatesService } from '../services/affiliates.js';
+import type { PlanTier } from '../db/types.js';
 
 /**
  * Request schemas
@@ -160,10 +163,48 @@ export async function billingRoutes(app: FastifyInstance): Promise<void> {
 
       // Handle specific event types
       switch (event.type) {
-        case 'checkout.session.completed':
+        case 'checkout.session.completed': {
           // TODO: Activate subscription
           logger.info({ eventId: event.id }, 'Checkout completed');
+
+          // Handle affiliate conversion tracking
+          const checkoutData = event.data.object as {
+            customer?: string;
+            metadata?: { userId?: string; planTier?: string };
+            mode?: string;
+          };
+
+          // Only track conversions for subscription checkouts
+          if (checkoutData.mode === 'subscription' && checkoutData.metadata?.userId) {
+            const userId = checkoutData.metadata.userId;
+            const planTier = (checkoutData.metadata.planTier || 'standard') as PlanTier;
+
+            try {
+              const usersRepo = getUsersRepository();
+              const affiliateInfo = await usersRepo.getUserAffiliateInfo(userId);
+
+              if (affiliateInfo?.affiliate_id) {
+                const affiliatesService = getAffiliatesService();
+                await affiliatesService.createConversion(
+                  userId,
+                  affiliateInfo.affiliate_id,
+                  affiliateInfo.affiliate_click_id ?? null,
+                  planTier,
+                  undefined // stripeInvoiceId - will be set when invoice.paid is received
+                );
+
+                logger.info(
+                  { userId, affiliateId: affiliateInfo.affiliate_id, planTier },
+                  'Affiliate conversion created from checkout'
+                );
+              }
+            } catch (convError) {
+              // Don't fail webhook if conversion tracking fails
+              logger.error({ error: convError, userId }, 'Failed to create affiliate conversion');
+            }
+          }
           break;
+        }
 
         case 'customer.subscription.created':
         case 'customer.subscription.updated':

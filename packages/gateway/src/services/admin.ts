@@ -5,7 +5,7 @@
 
 import { nanoid } from 'nanoid';
 import { z } from 'zod';
-import { getUsersRepository, getReferralsRepository, type UserWithStats, type UserListFilters } from '../repositories/index.js';
+import { getUsersRepository, getReferralsRepository, getGiftsRepository, type UserWithStats, type UserListFilters } from '../repositories/index.js';
 import { logger } from '../observability/logger.js';
 import type { User, UserRole, UserStatus, PendingInvite } from '../db/types.js';
 import type { TransactionContext, PaginatedResult } from '../repositories/types.js';
@@ -35,16 +35,28 @@ export const AdminUpdateStatusSchema = z.object({
   status: z.enum(['active', 'suspended']),
 });
 
+export const AdminGrantTokensSchema = z.object({
+  amount: z.number().int().min(1).max(1000000),
+  reason: z.string().min(1).max(500).optional(),
+});
+
 // ============================================================================
 // Types
 // ============================================================================
 
 export type AdminUserListQuery = z.infer<typeof AdminUserListQuerySchema>;
 export type AdminInviteUserInput = z.infer<typeof AdminInviteUserSchema>;
+export type AdminGrantTokensInput = z.infer<typeof AdminGrantTokensSchema>;
 
 export interface AdminInviteResult {
   invite: PendingInvite;
   inviteUrl: string;
+}
+
+export interface AdminGrantTokensResult {
+  transactionId: string;
+  newBalance: number;
+  amount: number;
 }
 
 // ============================================================================
@@ -54,6 +66,7 @@ export interface AdminInviteResult {
 export class AdminService {
   private users = getUsersRepository();
   private referrals = getReferralsRepository();
+  private gifts = getGiftsRepository();
 
   /**
    * List users with enriched stats (companion count, last login, etc.)
@@ -222,6 +235,50 @@ export class AdminService {
       { inviteId, adminUserId },
       'Admin revoked pending invite'
     );
+  }
+
+  /**
+   * Grant tokens to a user (admin action)
+   */
+  async grantTokens(
+    userId: string,
+    input: AdminGrantTokensInput,
+    adminUserId: string,
+    tx?: TransactionContext
+  ): Promise<AdminGrantTokensResult> {
+    const validated = AdminGrantTokensSchema.parse(input);
+
+    // Verify user exists
+    const user = await this.users.findById(userId, tx);
+    if (!user) {
+      throw new Error('User not found');
+    }
+
+    // Credit tokens using admin_grant type
+    const result = await this.gifts.creditTokens(
+      userId,
+      validated.amount,
+      'admin_grant',
+      {
+        description: validated.reason ?? `Admin grant by ${adminUserId}`,
+        metadata: {
+          grantedBy: adminUserId,
+          reason: validated.reason ?? null,
+        },
+      },
+      tx
+    );
+
+    logger.info(
+      { userId, amount: validated.amount, adminUserId, transactionId: result.transactionId },
+      'Admin granted tokens to user'
+    );
+
+    return {
+      transactionId: result.transactionId,
+      newBalance: result.newBalance,
+      amount: validated.amount,
+    };
   }
 }
 

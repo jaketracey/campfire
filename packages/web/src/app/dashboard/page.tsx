@@ -294,14 +294,17 @@ export default function DashboardPage() {
             </p>
           </div>
           <div className="flex flex-col lg:flex-row gap-3 md:pt-6">
-            <Button
+            <motion.button
               onClick={() => router.push('/onboard')}
-              size="lg"
-              className="h-14 md:h-11 px-8 md:px-6 rounded-full bg-campfire-600 hover:bg-campfire-500 text-white font-bold text-lg md:text-base shadow-[0_0_20px_rgba(234,88,12,0.3)] transition-all hover:scale-105 active:scale-95"
+              className="h-14 md:h-11 px-8 md:px-6 rounded-full bg-campfire-600 hover:bg-campfire-500 text-white font-bold text-lg md:text-base shadow-[0_0_20px_rgba(234,88,12,0.3)] transition-colors"
+              whileHover={{
+                scale: 1.05,
+                boxShadow: '0 0 30px rgba(234,88,12,0.5)'
+              }}
+              whileTap={{ scale: 0.95 }}
             >
-              <Plus className="mr-2 h-6 w-6 md:h-5 md:w-5" />
               Design new companion
-            </Button>
+            </motion.button>
             {inviteCode && (
               <motion.button
                 onClick={handleCopyCode}
@@ -479,6 +482,7 @@ export default function DashboardPage() {
                                   companionName={companion.name}
                                   isPublic={companion.isPublic}
                                   size="sm"
+                                  referralCode={inviteCode?.code}
                                   onShareStatusChange={(isPublic) => {
                                     setCompanions((prev) =>
                                       prev.map((c) =>
@@ -619,6 +623,7 @@ export default function DashboardPage() {
                                     companionName={companion.name}
                                     isPublic={companion.isPublic}
                                     size="sm"
+                                    referralCode={inviteCode?.code}
                                     onShareStatusChange={(isPublic) => {
                                       setCompanions((prev) =>
                                         prev.map((c) =>

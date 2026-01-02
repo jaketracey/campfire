@@ -110,7 +110,8 @@ export default function OrchestrationDashboardPage() {
     );
   }
 
-  const healthyProviders = providers.filter((p) => p.isAvailable).length;
+  const configuredProviders = providers.filter((p) => p.isConfigured).length;
+  const availableProviders = providers.filter((p) => p.isAvailable).length;
 
   return (
     <div className="space-y-6">
@@ -180,7 +181,7 @@ export default function OrchestrationDashboardPage() {
               <div>
                 <p className="text-sm text-gray-400">Providers</p>
                 <p className="text-lg font-semibold text-white">
-                  {healthyProviders}/{providers.length} Available
+                  {availableProviders}/{configuredProviders} Online
                 </p>
               </div>
             </div>
@@ -233,40 +234,71 @@ export default function OrchestrationDashboardPage() {
           </CardTitle>
         </CardHeader>
         <CardContent>
-          <div className="grid gap-3 md:grid-cols-5">
-            {providers.map((provider) => (
-              <div
-                key={provider.provider}
-                className={cn(
-                  'p-4 rounded-lg border',
-                  provider.isAvailable
-                    ? 'bg-green-500/5 border-green-500/20'
-                    : 'bg-red-500/5 border-red-500/20'
-                )}
-              >
-                <div className="flex items-center justify-between mb-2">
-                  <span className="font-medium text-white capitalize">
-                    {provider.provider}
-                  </span>
-                  <Badge
-                    variant={provider.isAvailable ? 'default' : 'destructive'}
-                    className={cn(
-                      'text-xs',
-                      provider.isAvailable && 'bg-green-500/20 text-green-500 hover:bg-green-500/30'
-                    )}
-                  >
-                    {provider.isAvailable ? 'Online' : 'Offline'}
-                  </Badge>
-                </div>
-                <div className="text-sm text-gray-400">
-                  {provider.avgLatencyMs ? (
-                    <span>{Math.round(provider.avgLatencyMs)}ms avg</span>
-                  ) : (
-                    <span>No data</span>
+          <div className="grid gap-3 md:grid-cols-3 lg:grid-cols-6">
+            {providers.map((provider) => {
+              const roleColors = {
+                primary: 'bg-blue-500/20 text-blue-400 border-blue-500/30',
+                fallback: 'bg-amber-500/20 text-amber-400 border-amber-500/30',
+                available: 'bg-gray-500/20 text-gray-400 border-gray-500/30',
+                not_configured: 'bg-gray-800/50 text-gray-600 border-gray-700/30',
+              };
+
+              return (
+                <div
+                  key={provider.provider}
+                  className={cn(
+                    'p-4 rounded-lg border',
+                    provider.isConfigured
+                      ? provider.isAvailable
+                        ? 'bg-green-500/5 border-green-500/20'
+                        : 'bg-red-500/5 border-red-500/20'
+                      : 'bg-gray-900/50 border-gray-800/50'
                   )}
+                >
+                  <div className="flex items-center justify-between mb-2">
+                    <span className={cn(
+                      'font-medium capitalize',
+                      provider.isConfigured ? 'text-white' : 'text-gray-500'
+                    )}>
+                      {provider.provider}
+                    </span>
+                    <Badge
+                      variant="outline"
+                      className={cn('text-xs', roleColors[provider.role])}
+                    >
+                      {provider.role === 'not_configured' ? 'N/A' : provider.role}
+                    </Badge>
+                  </div>
+                  <div className="space-y-1">
+                    {provider.isConfigured ? (
+                      <>
+                        <div className="flex items-center gap-1">
+                          <span className={cn(
+                            'w-2 h-2 rounded-full',
+                            provider.isAvailable ? 'bg-green-500' : 'bg-red-500'
+                          )} />
+                          <span className="text-xs text-gray-400">
+                            {provider.isAvailable ? 'Online' : 'Offline'}
+                          </span>
+                        </div>
+                        {provider.model && (
+                          <div className="text-xs text-gray-500 truncate" title={provider.model}>
+                            {provider.model.split('/').pop()?.split(':')[0] || provider.model}
+                          </div>
+                        )}
+                        {provider.avgLatencyMs ? (
+                          <div className="text-xs text-gray-500">
+                            {Math.round(provider.avgLatencyMs)}ms avg
+                          </div>
+                        ) : null}
+                      </>
+                    ) : (
+                      <div className="text-xs text-gray-600">Not configured</div>
+                    )}
+                  </div>
                 </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         </CardContent>
       </Card>

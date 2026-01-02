@@ -17,6 +17,7 @@ import { GiftsPanel } from '@/components/gifts';
 import { FriendsPanel } from '@/components/friends';
 import { GamesModal, GameBoardContainer } from '@/components/games';
 import { LikeButton } from '@/components/likes';
+import { LikeHeartsAnimation } from '@/components/likes/like-hearts-animation';
 import { SupportModal } from '@/components/support/support-modal';
 import type { ActiveGame } from '@campfire/shared';
 import type { SignupTrigger } from '@/components/demo/signup-modal';
@@ -27,7 +28,10 @@ import { useVoiceRecording } from '@/hooks/use-voice-recording';
 import { useAudioPlayer } from '@/hooks/use-audio-player';
 import { useWebcamCapture } from '@/hooks/use-webcam-capture';
 import { useVoiceCall } from '@/hooks/use-voice-call';
-import { CallButton, CallSidebar } from '@/components/voice-call';
+import { CallButton, CallSidebar, InsufficientTokensModal } from '@/components/voice-call';
+import { VideoRequestButton, VideoRequestModal } from '@/components/video';
+import { getTokenBalance } from '@/lib/api/tokens';
+import { toast } from 'sonner';
 
 interface Message {
   id: string;
@@ -40,6 +44,222 @@ interface Message {
   companionName?: string;
   themeColor?: string;
   isReaction?: boolean;
+  // Animation control
+  isNew?: boolean;
+}
+
+// Segment type for parsed message content
+interface MessageSegment {
+  type: 'action' | 'dialogue';
+  content: string;
+}
+
+// Parse message content into action and dialogue segments
+function parseMessageSegments(content: string): MessageSegment[] {
+  const segments: MessageSegment[] = [];
+  const regex = /\*([^*]+)\*/g;
+  let lastIndex = 0;
+  let match;
+
+  while ((match = regex.exec(content)) !== null) {
+    // Add dialogue before the action (if any)
+    if (match.index > lastIndex) {
+      const dialogue = content.slice(lastIndex, match.index).trim();
+      if (dialogue) {
+        segments.push({ type: 'dialogue', content: dialogue });
+      }
+    }
+    // Add the action
+    segments.push({ type: 'action', content: match[1].trim() });
+    lastIndex = regex.lastIndex;
+  }
+
+  // Add remaining dialogue after the last action
+  if (lastIndex < content.length) {
+    const dialogue = content.slice(lastIndex).trim();
+    if (dialogue) {
+      segments.push({ type: 'dialogue', content: dialogue });
+    }
+  }
+
+  // If no segments found, return the whole content as dialogue
+  if (segments.length === 0) {
+    segments.push({ type: 'dialogue', content: content.trim() });
+  }
+
+  return segments;
+}
+
+// Animated message segments component
+function AnimatedMessageSegments({
+  segments,
+  isUser,
+  messageId,
+  showLikeButton,
+  likeCount,
+  onLike,
+  isNewMessage = false,
+  onSegmentReveal,
+}: {
+  segments: MessageSegment[];
+  isUser: boolean;
+  messageId: string;
+  showLikeButton?: boolean;
+  likeCount?: number;
+  onLike?: (id: string) => void;
+  isNewMessage?: boolean;
+  onSegmentReveal?: () => void;
+}) {
+  // Track how many action segments are visible (only actions stagger, only for new messages)
+  const actionSegments = segments.filter((s) => s.type === 'action');
+  const [visibleActionCount, setVisibleActionCount] = useState(isNewMessage ? 1 : actionSegments.length);
+
+  // Progressively reveal action segments (only for new messages)
+  useEffect(() => {
+    if (!isNewMessage || visibleActionCount >= actionSegments.length) return;
+
+    const timer = setTimeout(() => {
+      setVisibleActionCount((prev) => prev + 1);
+      onSegmentReveal?.();
+    }, 1500);
+
+    return () => clearTimeout(timer);
+  }, [visibleActionCount, actionSegments.length, isNewMessage, onSegmentReveal]);
+
+  // Find the last dialogue segment for the like button
+  const lastDialogueIndex = segments.reduceRight(
+    (acc, seg, idx) => (acc === -1 && seg.type === 'dialogue' ? idx : acc),
+    -1
+  );
+
+  // Show segments progressively for new messages
+  // Reveal action + everything after it until the next action
+  let visibleSegments: MessageSegment[];
+
+  if (!isNewMessage) {
+    // Historical messages: show everything
+    visibleSegments = segments;
+  } else {
+    // Find the index of the next unrevealed action
+    let actionCount = 0;
+    let cutoffIdx = segments.length;
+
+    for (let i = 0; i < segments.length; i++) {
+      if (segments[i].type === 'action') {
+        actionCount++;
+        if (actionCount > visibleActionCount) {
+          // This action is not yet revealed - cut off here
+          cutoffIdx = i;
+          break;
+        }
+      }
+    }
+
+    visibleSegments = segments.slice(0, cutoffIdx);
+  }
+
+  // Group consecutive actions together
+  const groupedSegments: { type: 'actions' | 'dialogue'; items: MessageSegment[]; startIndex: number }[] = [];
+  let currentGroup: { type: 'actions' | 'dialogue'; items: MessageSegment[]; startIndex: number } | null = null;
+
+  visibleSegments.forEach((segment, index) => {
+    const groupType = segment.type === 'action' ? 'actions' : 'dialogue';
+    if (!currentGroup || currentGroup.type !== groupType) {
+      currentGroup = { type: groupType, items: [segment], startIndex: index };
+      groupedSegments.push(currentGroup);
+    } else {
+      currentGroup.items.push(segment);
+    }
+  });
+
+  // Track shimmer state for each action pill
+  const [shimmerIndex, setShimmerIndex] = useState(0);
+
+  // Stagger shimmer through action pills when new message
+  useEffect(() => {
+    if (!isNewMessage || actionSegments.length === 0) return;
+
+    const timer = setInterval(() => {
+      setShimmerIndex((prev) => {
+        if (prev >= actionSegments.length - 1) {
+          clearInterval(timer);
+          return prev;
+        }
+        return prev + 1;
+      });
+    }, 1500);
+
+    return () => clearInterval(timer);
+  }, [isNewMessage, actionSegments.length]);
+
+  // Get action index for shimmer tracking
+  const getActionIndex = (startIndex: number, itemIndex: number) => {
+    return segments.slice(0, startIndex + itemIndex + 1).filter(s => s.type === 'action').length - 1;
+  };
+
+  return (
+    <div className={`flex flex-col gap-2 ${isUser ? 'items-end' : 'items-start'} max-w-[80%]`}>
+      {groupedSegments.map((group) => (
+        <div
+          key={`${messageId}-group-${group.startIndex}`}
+          className={group.type === 'actions' ? 'flex flex-wrap gap-1.5' : ''}
+        >
+          {group.type === 'actions' ? (
+            <AnimatePresence mode="popLayout">
+              {group.items.map((segment, i) => {
+                const actionIdx = getActionIndex(group.startIndex, i);
+                const isShimmering = isNewMessage && actionIdx === shimmerIndex;
+                return (
+                  <motion.span
+                    key={`${messageId}-${group.startIndex + i}`}
+                    initial={{ opacity: 0, scale: 0.9 }}
+                    animate={{ opacity: 1, scale: 1 }}
+                    transition={{ duration: 0.3 }}
+                    className="inline-flex px-3 py-1.5 rounded-xl bg-muted/60 overflow-hidden relative"
+                  >
+                    <span className="text-xs text-campfire-400/80 whitespace-nowrap relative z-10">
+                      {segment.content}
+                    </span>
+                    {isShimmering && (
+                      <motion.div
+                        className="absolute inset-0 bg-gradient-to-r from-transparent via-campfire-400/30 to-transparent"
+                        initial={{ x: '-100%' }}
+                        animate={{ x: '100%' }}
+                        transition={{ duration: 0.6, ease: 'easeInOut' }}
+                      />
+                    )}
+                  </motion.span>
+                );
+              })}
+            </AnimatePresence>
+          ) : (
+            group.items.map((segment, i) => {
+              const actualIndex = group.startIndex + i;
+              return (
+                <span
+                  key={`${messageId}-${actualIndex}`}
+                  className={`inline-flex px-3 py-1.5 rounded-xl ${
+                    isUser ? 'bg-primary text-primary-foreground' : 'bg-muted'
+                  }`}
+                >
+                  <span className="text-base lg:text-sm whitespace-pre-wrap">{segment.content}</span>
+                  {showLikeButton && actualIndex === lastDialogueIndex && onLike && (
+                    <span className="ml-2 -mr-1">
+                      <LikeButton
+                        turnId={messageId}
+                        initialCount={likeCount || 0}
+                        onLike={onLike}
+                      />
+                    </span>
+                  )}
+                </span>
+              );
+            })
+          )}
+        </div>
+      ))}
+    </div>
+  );
 }
 
 // Chat event for join/leave notifications
@@ -157,6 +377,8 @@ export function ChatSessionContent({ sessionId, isDemo, demoFingerprint, demoCom
   const [showGallery, setShowGallery] = useState(false);
   const [showPersonality, setShowPersonality] = useState(false);
   const [showBackstory, setShowBackstory] = useState(false);
+  const [showVideoRequest, setShowVideoRequest] = useState(false);
+  const [tokenBalance, setTokenBalance] = useState(0);
   const [showGiftsPanel, setShowGiftsPanel] = useState(false);
   const [showFriendsPanel, setShowFriendsPanel] = useState(false);
   const [showMobileAvatar, setShowMobileAvatar] = useState(false);
@@ -205,6 +427,7 @@ export function ChatSessionContent({ sessionId, isDemo, demoFingerprint, demoCom
   // Likes tracking
   const [messageLikes, setMessageLikes] = useState<Record<string, number>>({});
   const [sessionTotalLikes, setSessionTotalLikes] = useState(0);
+  const [likeAnimationTrigger, setLikeAnimationTrigger] = useState(0);
   // Multi-message sequence tracking
   const [showTypingBetweenMessages, setShowTypingBetweenMessages] = useState(false);
   // Group chat state
@@ -255,6 +478,7 @@ export function ChatSessionContent({ sessionId, isDemo, demoFingerprint, demoCom
           role: 'assistant',
           content: randomGreeting,
           timestamp: new Date(),
+          isNew: true,
         },
       ]);
       setIsLoading(false);
@@ -414,6 +638,11 @@ export function ChatSessionContent({ sessionId, isDemo, demoFingerprint, demoCom
     endCall,
     toggleMute: toggleCallMute,
     getAnalyserNode: getCallAnalyserNode,
+    // Token billing state
+    currentBalance: voiceCallBalance,
+    tokensUsed: voiceCallTokensUsed,
+    insufficientTokens,
+    clearInsufficientTokens,
   } = useVoiceCall(wsRef, audioPlayerRef, {
     onTranscription: (text, isFinal) => {
       if (isFinal && text.trim()) {
@@ -473,13 +702,16 @@ export function ChatSessionContent({ sessionId, isDemo, demoFingerprint, demoCom
     ? buildPromptFromCompanion(companion.spec.visual_style, 'stylized')
     : undefined;
 
-  const scrollToBottom = () => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  };
+  const scrollToBottom = useCallback(() => {
+    // Small delay to ensure DOM has updated with new content
+    setTimeout(() => {
+      messagesEndRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' });
+    }, 50);
+  }, []);
 
   useEffect(() => {
     scrollToBottom();
-  }, [messages, streamingContent]);
+  }, [messages, streamingContent, scrollToBottom]);
 
   // Load gallery images for mobile avatar modal
   // Skip in demo mode since we don't have auth - just show current avatar
@@ -528,6 +760,14 @@ export function ChatSessionContent({ sessionId, isDemo, demoFingerprint, demoCom
               setBackstoryData(backstory);
             } catch (err) {
               console.warn('Failed to load backstory:', err);
+            }
+
+            // Fetch token balance for video requests
+            try {
+              const balance = await getTokenBalance();
+              setTokenBalance(balance.balance);
+            } catch (err) {
+              console.warn('Failed to load token balance:', err);
             }
           } catch (err) {
             console.warn('Failed to load companion:', err);
@@ -675,6 +915,7 @@ export function ChatSessionContent({ sessionId, isDemo, demoFingerprint, demoCom
           content,
           timestamp: new Date(),
           emotionalState,
+          isNew: true,
         },
       ]);
       // Extract scene description and trigger image generation
@@ -691,18 +932,28 @@ export function ChatSessionContent({ sessionId, isDemo, demoFingerprint, demoCom
     });
 
     // Subscribe to message end (with multi-message sequence support)
-    const unsubEnd = ws.onAgentMessageEnd((content, imagePrompt, sequence) => {
+    const unsubEnd = ws.onAgentMessageEnd((content, imagePrompt, sequence, turnId) => {
       const emotionalState = detectEmotionalState(content);
 
-      // Add message immediately
+      // Build message ID: use turnId-agent format to match historical messages
+      // For multi-message sequences, append index to ensure uniqueness
+      let messageId: string;
+      if (turnId) {
+        messageId = sequence ? `${turnId}-agent-${sequence.index}` : `${turnId}-agent`;
+      } else {
+        messageId = crypto.randomUUID();
+      }
+
+      // Add message immediately - use turnId from backend for liking support
       setMessages((prev) => [
         ...prev,
         {
-          id: crypto.randomUUID(),
+          id: messageId,
           role: 'assistant',
           content,
           timestamp: new Date(),
           emotionalState,
+          isNew: true,
         },
       ]);
 
@@ -867,10 +1118,13 @@ export function ChatSessionContent({ sessionId, isDemo, demoFingerprint, demoCom
       const companion = groupParticipants.find(p => p.companionId === companionId);
       const emotionalState = detectEmotionalState(content);
 
+      // Build unique message ID: include companionId to differentiate group chat messages
+      const messageId = turnId ? `${turnId}-${companionId}` : crypto.randomUUID();
+
       setMessages((prev) => [
         ...prev,
         {
-          id: turnId || crypto.randomUUID(),
+          id: messageId,
           role: 'assistant',
           content,
           timestamp: new Date(),
@@ -879,6 +1133,7 @@ export function ChatSessionContent({ sessionId, isDemo, demoFingerprint, demoCom
           companionName,
           themeColor: companion?.themeColor || '#8B5CF6',
           isReaction,
+          isNew: true,
         },
       ]);
 
@@ -955,9 +1210,20 @@ export function ChatSessionContent({ sessionId, isDemo, demoFingerprint, demoCom
   // Handle liking a message
   const handleLikeMessage = useCallback((messageId: string) => {
     if (!wsRef.current?.isConnected) return;
-    // Strip -agent or -user suffix from synthetic message IDs to get the actual turn UUID
-    const turnId = messageId.replace(/-(agent|user)$/, '');
+    // Extract the turn UUID from message ID formats:
+    // - Historical: {turnId}-agent, {turnId}-user
+    // - Streaming: {turnId}-agent, {turnId}-agent-{index}
+    // - Group chat: {turnId}-{companionId}
+    const uuidPattern = /^([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/i;
+    const match = messageId.match(uuidPattern);
+    if (!match) {
+      console.warn('[Chat] Cannot like message with non-UUID id:', messageId);
+      return;
+    }
+    const turnId = match[1];
     wsRef.current.likeMessage(turnId);
+    // Trigger heart animation in companion avatar area
+    setLikeAnimationTrigger((prev) => prev + 1);
   }, []);
 
   // Handle starting a game from the modal
@@ -1148,7 +1414,7 @@ export function ChatSessionContent({ sessionId, isDemo, demoFingerprint, demoCom
       {/* Companion Avatar Sidebar */}
       <div
         ref={sidebarRef}
-        className="hidden lg:flex flex-col items-center p-4 bg-muted/10 relative select-none"
+        className="hidden lg:flex flex-col items-center p-4 bg-muted/10 relative select-none overflow-y-auto overflow-x-hidden scrollbar-subtle"
         style={{ width: sidebarWidth }}
         onMouseMove={handleMouseMoveNearGrabber}
         onMouseLeave={handleMouseLeaveGrabber}
@@ -1177,7 +1443,7 @@ export function ChatSessionContent({ sessionId, isDemo, demoFingerprint, demoCom
                 setShowGallery(true);
               }
             }}
-            className="cursor-pointer hover:opacity-90 transition-opacity focus:outline-none focus:ring-2 focus:ring-campfire-500 focus:ring-offset-2 focus:ring-offset-background rounded-xl overflow-hidden"
+            className="relative cursor-pointer hover:opacity-90 transition-opacity focus:outline-none focus:ring-2 focus:ring-campfire-500 focus:ring-offset-2 focus:ring-offset-background rounded-xl overflow-hidden"
             style={{ width: avatarDimensions.width, height: avatarDimensions.height }}
             aria-label="View gallery"
           >
@@ -1200,6 +1466,7 @@ export function ChatSessionContent({ sessionId, isDemo, demoFingerprint, demoCom
                 setCurrentAvatarUrl(imageUrl);
               }}
             />
+            <LikeHeartsAnimation trigger={likeAnimationTrigger} />
           </button>
         ) : (
           /* Loading placeholder while companion data loads */
@@ -1224,6 +1491,20 @@ export function ChatSessionContent({ sessionId, isDemo, demoFingerprint, demoCom
         {/* Voice Call Button */}
         <div className="w-full px-2 mt-3">
           <CallButton onClick={handleCallClick} disabled={isCallActive} />
+        </div>
+
+        {/* Video Request Button */}
+        <div className="w-full px-2 mt-2">
+          <VideoRequestButton
+            onClick={() => {
+              if (isDemo && onRequireAuth) {
+                onRequireAuth('video');
+              } else {
+                setShowVideoRequest(true);
+              }
+            }}
+            disabled={isCallActive}
+          />
         </div>
 
         <div className="flex flex-col gap-2.5 mt-4 w-full px-2">
@@ -1584,31 +1865,51 @@ export function ChatSessionContent({ sessionId, isDemo, demoFingerprint, demoCom
               Start a conversation with your companion
             </div>
           )}
-          {messages.map((message) => (
-            <div
-              key={message.id}
-              className={`flex ${message.role === 'user' ? 'justify-end' : 'justify-start'}`}
-            >
-              <Card
-                className={`max-w-[80%] p-3 ${
-                  message.role === 'user'
-                    ? 'bg-primary text-primary-foreground'
-                    : 'bg-muted'
-                }`}
+          {messages.map((message) => {
+            const isUser = message.role === 'user';
+            const segments = isUser ? null : parseMessageSegments(message.content);
+            const hasMultipleSegments = segments && segments.length > 1;
+
+            return (
+              <div
+                key={message.id}
+                className={`flex ${isUser ? 'justify-end' : 'justify-start'}`}
               >
-                <p className="text-base lg:text-sm whitespace-pre-wrap">{message.content}</p>
-                {message.role === 'assistant' && (
-                  <div className="flex justify-end mt-1 -mb-1 -mr-1">
-                    <LikeButton
-                      turnId={message.id}
-                      initialCount={messageLikes[message.id] || 0}
-                      onLike={handleLikeMessage}
-                    />
-                  </div>
+                {/* Use animated segments for assistant messages with actions */}
+                {!isUser && hasMultipleSegments ? (
+                  <AnimatedMessageSegments
+                    segments={segments}
+                    isUser={false}
+                    messageId={message.id}
+                    showLikeButton={!isDemo}
+                    likeCount={messageLikes[message.id] || 0}
+                    onLike={handleLikeMessage}
+                    isNewMessage={message.isNew}
+                    onSegmentReveal={scrollToBottom}
+                  />
+                ) : (
+                  <Card
+                    className={`max-w-[80%] p-3 ${
+                      isUser
+                        ? 'bg-primary text-primary-foreground'
+                        : 'bg-muted'
+                    }`}
+                  >
+                    <p className="text-base lg:text-sm whitespace-pre-wrap">{message.content}</p>
+                    {!isUser && !isDemo && (
+                      <div className="flex justify-end mt-1 -mb-1 -mr-1">
+                        <LikeButton
+                          turnId={message.id}
+                          initialCount={messageLikes[message.id] || 0}
+                          onLike={handleLikeMessage}
+                        />
+                      </div>
+                    )}
+                  </Card>
                 )}
-              </Card>
-            </div>
-          ))}
+              </div>
+            );
+          })}
           {/* Streaming message */}
           {streamingContent && (
             <div className="flex justify-start">
@@ -1975,6 +2276,7 @@ export function ChatSessionContent({ sessionId, isDemo, demoFingerprint, demoCom
                   className="w-full h-full object-cover"
                 />
               )}
+              <LikeHeartsAnimation trigger={likeAnimationTrigger} />
             </motion.div>
           </>
         )}
@@ -2025,6 +2327,21 @@ export function ChatSessionContent({ sessionId, isDemo, demoFingerprint, demoCom
         avatarUrl={companion?.avatarUrl || undefined}
       />
 
+      {/* Video Request Modal */}
+      <VideoRequestModal
+        isOpen={showVideoRequest}
+        onClose={() => setShowVideoRequest(false)}
+        companionId={companion?.id || ''}
+        companionName={companion?.name || ''}
+        sessionId={sessionId}
+        avatarUrl={companion?.avatarUrl || undefined}
+        tokenBalance={tokenBalance}
+        onSuccess={(videoRequestId, newBalance) => {
+          setTokenBalance(newBalance);
+          toast.success('Video request submitted! Check your Media Gallery for updates.');
+        }}
+      />
+
       {/* Games Modal */}
       <GamesModal
         isOpen={showGames}
@@ -2068,6 +2385,13 @@ export function ChatSessionContent({ sessionId, isDemo, demoFingerprint, demoCom
           }}
         />
       )}
+
+      {/* Insufficient Tokens Modal (Voice Call) */}
+      <InsufficientTokensModal
+        isOpen={insufficientTokens}
+        onClose={clearInsufficientTokens}
+        currentBalance={voiceCallBalance ?? 0}
+      />
 
       {/* Support Modal */}
       <SupportModal

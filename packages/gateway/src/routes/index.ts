@@ -32,6 +32,11 @@ import {
   adminRoutingRoutes,
   adminCompanionRoutingRoutes,
 } from './admin-providers.js';
+import { affiliateAuthRoutes } from './affiliate-auth.js';
+import { affiliatePortalRoutes } from './affiliate-portal.js';
+import { affiliateTrackingRoutes } from './affiliate-tracking.js';
+import { adminAffiliatesRoutes } from './admin-affiliates.js';
+import { videosRoutes, mediaRoutes } from './videos.js';
 import { logger } from '../observability/logger.js';
 
 /**
@@ -80,6 +85,12 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
       // Image generation routes
       await api.register(imagegenRoutes, { prefix: '/imagegen' });
 
+      // Video request routes
+      await api.register(videosRoutes, { prefix: '/videos' });
+
+      // Media gallery routes (images + videos)
+      await api.register(mediaRoutes, { prefix: '/media' });
+
       // Debug routes (admin/dev tools)
       await api.register(debugRoutes, { prefix: '/debug' });
 
@@ -112,9 +123,20 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
       await api.register(adminModelsRoutes, { prefix: '/admin/models' });
       await api.register(adminRoutingRoutes, { prefix: '/admin/routing' });
       await api.register(adminCompanionRoutingRoutes, { prefix: '/admin/companions' });
+
+      // Affiliate routes
+      await api.register(affiliateAuthRoutes, { prefix: '/affiliate/auth' });
+      await api.register(affiliatePortalRoutes, { prefix: '/affiliate' });
+      await api.register(affiliateTrackingRoutes, { prefix: '/affiliate' });
+
+      // Admin affiliate routes
+      await api.register(adminAffiliatesRoutes, { prefix: '/admin/affiliates' });
     },
     { prefix: '/api/v1' }
   );
+
+  // Affiliate tracking routes (at root level for short URLs)
+  await app.register(affiliateTrackingRoutes);
 
   // Webhook routes (at root level for external services)
   await app.register(emailWebhookRoutes, { prefix: '/webhooks/email' });

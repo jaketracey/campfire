@@ -20,6 +20,8 @@ async function bootstrap() {
   const { EmailProjectionWorker } = await import('./email/worker.js');
   const { getEmailService } = await import('./email/service.js');
   const { ImageRenditionWorker } = await import('./image/worker.js');
+  const { VideoGenerationWorker } = await import('./video/worker.js');
+  const { GiftGenerationWorker } = await import('./gift/worker.js');
   const { createDbClient } = await import('./db/client.js');
   const { createS3Client } = await import('./storage/s3.js');
 
@@ -99,6 +101,22 @@ async function bootstrap() {
     concurrency: 2, // CPU-intensive, limit concurrency
   });
 
+  // Video generation worker - processes video requests via AnimateDiff
+  const videoGenerationWorker = new VideoGenerationWorker({
+    connection,
+    db,
+    logger: logger.child({ worker: 'video-generation' }),
+    concurrency: 1, // GPU-intensive, limit to one at a time
+  });
+
+  // Gift generation worker - generates gift content and images
+  const giftGenerationWorker = new GiftGenerationWorker({
+    connection,
+    db,
+    logger: logger.child({ worker: 'gift-generation' }),
+    concurrency: 2, // LLM + imagegen, moderate concurrency
+  });
+
   // Start all workers
   await Promise.all([
     vaultWorker.start(),
@@ -108,6 +126,8 @@ async function bootstrap() {
     personalityProfileWorker.start(),
     emailWorker.start(),
     imageRenditionWorker.start(),
+    videoGenerationWorker.start(),
+    giftGenerationWorker.start(),
   ]);
 
   logger.info('All projection workers started successfully');
@@ -123,6 +143,8 @@ async function bootstrap() {
       personalityProfileWorker.stop(),
       emailWorker.stop(),
       imageRenditionWorker.stop(),
+      videoGenerationWorker.stop(),
+      giftGenerationWorker.stop(),
     ]);
     await connection.quit();
     process.exit(0);

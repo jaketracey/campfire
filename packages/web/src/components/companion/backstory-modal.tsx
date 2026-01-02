@@ -67,9 +67,10 @@ export function BackstoryModal({
   }, [isOpen, backstory]);
 
   const handleSkip = useCallback(() => {
-    setDisplayedText(backstory);
+    setDisplayedText('');
     setIsTyping(false);
-  }, [backstory]);
+    onClose();
+  }, [onClose]);
 
   const handleClose = useCallback(() => {
     setDisplayedText('');

@@ -10,6 +10,9 @@ export * from './personality-profile';
 export * from './demo';
 export * from './orchestration';
 export * from './support';
+export * from './affiliates';
+export * from './videos';
+export * from './media';
 export {
   type UseCaseType,
   USE_CASE_TYPES,

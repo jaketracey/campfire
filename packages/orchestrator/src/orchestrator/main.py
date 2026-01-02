@@ -21,6 +21,7 @@ from orchestrator.models.conversation import (
 )
 from orchestrator.models.memory import LongTermMemory
 from orchestrator.prompts.manager import PromptManager
+from orchestrator.providers.animatediff import AnimateDiffProvider
 from orchestrator.providers.comfyui import ComfyUIProvider
 from orchestrator.providers.fal import FalProvider
 from orchestrator.providers.ollama import OllamaProvider
@@ -184,6 +185,34 @@ class ImageGenResponse(BaseModel):
     prompt_used: str
 
 
+class VideoGenRequest(BaseModel):
+    """Request model for video generation."""
+
+    prompt: str
+    negative_prompt: str | None = None
+    width: int = 512
+    height: int = 768
+    frames: int = 48  # ~4 seconds at 12fps
+    fps: int = 12
+    reference_image_url: str | None = None  # Identity anchor for IP-Adapter
+    reference_strength: float = 0.7  # How much to follow reference image
+
+
+class VideoGenResponse(BaseModel):
+    """Response model for video generation."""
+
+    video_base64: str
+    format: str
+    width: int
+    height: int
+    frames: int
+    fps: int
+    duration_seconds: float
+    latency_ms: float
+    provider: str
+    prompt_used: str
+
+
 class PersonalityTraits(BaseModel):
     """Personality trait sliders (0-100)."""
 
@@ -296,6 +325,7 @@ class AppState:
     fal_provider: FalProvider | None
     ollama_provider: OllamaProvider | None
     prompt_enhancer: PromptEnhancer | None
+    animatediff_provider: AnimateDiffProvider | None
 
 
 app_state = AppState()
@@ -389,6 +419,16 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
             model=settings.prompt_enhancement_model,
         )
 
+    # Initialize AnimateDiff provider for video generation
+    app_state.animatediff_provider = None
+    if settings.animatediff_enabled:
+        app_state.animatediff_provider = AnimateDiffProvider(settings)
+        if await app_state.animatediff_provider.health_check():
+            logger.info("animatediff_available", url=settings.animatediff_base_url)
+        else:
+            logger.warning("animatediff_not_available", url=settings.animatediff_base_url)
+            app_state.animatediff_provider = None
+
     logger.info(
         "orchestrator_service_started",
         version=settings.app_version,
@@ -399,6 +439,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         fal_enabled=app_state.fal_provider is not None,
         ollama_enabled=app_state.ollama_provider is not None,
         prompt_enhancement_enabled=app_state.prompt_enhancer is not None,
+        animatediff_enabled=app_state.animatediff_provider is not None,
     )
 
     yield
@@ -860,6 +901,100 @@ async def get_image_providers() -> dict[str, Any]:
     return {
         "providers": providers,
         "default": "comfyui" if app_state.comfyui_provider else "fal" if app_state.fal_provider else None,
+    }
+
+
+@app.post(
+    "/videogen/generate",
+    response_model=VideoGenResponse,
+    responses={
+        400: {"model": ErrorResponse},
+        503: {"model": ErrorResponse},
+    },
+)
+async def generate_video(request: VideoGenRequest) -> VideoGenResponse:
+    """Generate a companion video using AnimateDiff.
+
+    Uses ComfyUI with AnimateDiff motion module for video generation.
+    Optional IP-Adapter support for character consistency from anchor image.
+    """
+    import base64
+
+    logger.info(
+        "videogen_request",
+        prompt_length=len(request.prompt) if request.prompt else 0,
+        prompt=request.prompt[:200] if request.prompt else None,
+        size=f"{request.width}x{request.height}",
+        frames=request.frames,
+        fps=request.fps,
+        has_reference=bool(request.reference_image_url),
+    )
+
+    # Check if AnimateDiff provider is available
+    if not app_state.animatediff_provider:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Video generation provider not available",
+        )
+
+    try:
+        result = await app_state.animatediff_provider.generate(
+            prompt=request.prompt,
+            negative_prompt=request.negative_prompt,
+            width=request.width,
+            height=request.height,
+            frames=request.frames,
+            fps=request.fps,
+            reference_image_url=request.reference_image_url,
+            reference_strength=request.reference_strength,
+        )
+
+        video_base64 = base64.b64encode(result["video_data"]).decode("utf-8")
+
+        logger.info(
+            "videogen_success",
+            provider="animatediff",
+            latency_ms=result["latency_ms"],
+            duration_seconds=result["duration_seconds"],
+        )
+
+        return VideoGenResponse(
+            video_base64=video_base64,
+            format=result["format"],
+            width=result["width"],
+            height=result["height"],
+            frames=result["frames"],
+            fps=result["fps"],
+            duration_seconds=result["duration_seconds"],
+            latency_ms=result["latency_ms"],
+            provider="animatediff",
+            prompt_used=request.prompt,
+        )
+
+    except Exception as e:
+        logger.error("videogen_failed", error=str(e))
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Video generation failed: {str(e)}",
+        )
+
+
+@app.get("/videogen/providers")
+async def get_video_providers() -> dict[str, Any]:
+    """Get available video generation providers."""
+    providers = []
+
+    if app_state.animatediff_provider:
+        providers.append({
+            "name": "animatediff",
+            "available": True,
+            "preferred": True,
+            "motion_module": app_state.settings.animatediff_motion_module,
+        })
+
+    return {
+        "providers": providers,
+        "default": "animatediff" if app_state.animatediff_provider else None,
     }
 
 

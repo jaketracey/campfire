@@ -244,6 +244,41 @@ export class KnowledgeGraphRepository {
     }
   }
 
+  async upsertEntity(data: KGEntityInsert, tx?: TransactionContext): Promise<KGEntity> {
+    const db = this.getSql(tx);
+    const canonicalName = data.canonical_name ?? data.name.toLowerCase().trim();
+
+    const result = await db`
+      INSERT INTO kg_entities (
+        user_id, companion_id, name, canonical_name,
+        entity_type, aliases, metadata, source_event_id
+      ) VALUES (
+        ${data.user_id},
+        ${data.companion_id},
+        ${data.name},
+        ${canonicalName},
+        ${data.entity_type},
+        ${data.aliases ?? []},
+        ${data.metadata ? db.json(data.metadata as postgres.JSONValue) : db.json({})},
+        ${data.source_event_id ?? null}
+      )
+      ON CONFLICT ON CONSTRAINT kg_entities_canonical_unique DO UPDATE SET
+        name = COALESCE(EXCLUDED.name, kg_entities.name),
+        entity_type = COALESCE(EXCLUDED.entity_type, kg_entities.entity_type),
+        aliases = ARRAY(SELECT DISTINCT unnest(kg_entities.aliases || EXCLUDED.aliases)),
+        metadata = kg_entities.metadata || EXCLUDED.metadata,
+        updated_at = NOW()
+      RETURNING
+        id, user_id, companion_id, name, canonical_name,
+        entity_type, aliases, metadata, source_event_id,
+        created_at, updated_at
+    `;
+
+    const entity = this.mapEntity(result[0]!);
+    logger.debug({ entityId: entity.id, name: data.name }, 'Entity upserted');
+    return entity;
+  }
+
   async updateEntity(
     id: string,
     data: Partial<Omit<KGEntityInsert, 'user_id' | 'companion_id'>>,
@@ -580,7 +615,7 @@ export class KnowledgeGraphRepository {
         ${data.source_event_id ?? null},
         ${data.metadata ? db.json(data.metadata as postgres.JSONValue) : db.json({})}
       )
-      ON CONFLICT (source_entity_id, target_entity_id, relation_type) DO UPDATE SET
+      ON CONFLICT ON CONSTRAINT kg_edges_unique DO UPDATE SET
         confidence = GREATEST(kg_edges.confidence, EXCLUDED.confidence),
         status = CASE
           WHEN EXCLUDED.status = 'active' THEN 'active'

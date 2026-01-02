@@ -312,7 +312,7 @@ export function SignupModal({
   const [touched, setTouched] = useState<{ email?: boolean; password?: boolean }>({});
   const contentRef = useRef<HTMLDivElement>(null);
 
-  const content = triggerContent[trigger];
+  const content = triggerContent[trigger] ?? triggerContent.general;
 
   // Validation functions
   const validateEmail = (value: string): string | undefined => {

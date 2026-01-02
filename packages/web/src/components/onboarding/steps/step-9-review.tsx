@@ -628,20 +628,10 @@ export function Step9Review() {
         ) : (
           <Button
             size="lg"
-            className="w-full h-14 md:h-20 text-lg md:text-2xl font-bold rounded-2xl bg-gradient-to-r from-vibes-neon via-vibes-hot to-vibes-cyan transition-all duration-500 text-white cursor-wait"
-            disabled
+            className="w-full h-14 md:h-20 text-lg md:text-2xl font-bold rounded-2xl bg-gradient-to-r from-vibes-neon via-vibes-hot to-vibes-cyan transition-all duration-500 text-white"
           >
-            {phase === 'generating-identity' ? (
-              <>
-                <Loader2 className="mr-2 md:mr-3 h-6 w-6 md:h-8 md:w-8 animate-spin" />
-                Building Identity...
-              </>
-            ) : (
-              <>
-                <Loader2 className="mr-2 md:mr-3 h-6 w-6 md:h-8 md:w-8 animate-spin" />
-                Preparing Chat...
-              </>
-            )}
+            <Loader2 className="mr-2 md:mr-3 h-6 w-6 md:h-8 md:w-8 animate-spin" />
+            Ignite this companion
           </Button>
         )}
         <p className="text-xs text-center text-gray-500 font-medium">

@@ -27,6 +27,11 @@ interface UseVoiceCallReturn {
   endCall: () => void;
   toggleMute: () => void;
   getAnalyserNode: () => AnalyserNode | null;
+  // Token billing state
+  currentBalance: number | null;
+  tokensUsed: number;
+  insufficientTokens: boolean;
+  clearInsufficientTokens: () => void;
 }
 
 /**
@@ -48,6 +53,10 @@ export function useVoiceCall(
   const [isMuted, setIsMuted] = useState(false);
   const [currentTranscript, setCurrentTranscript] = useState('');
   const [error, setError] = useState<string | null>(null);
+  // Token billing state
+  const [currentBalance, setCurrentBalance] = useState<number | null>(null);
+  const [tokensUsed, setTokensUsed] = useState(0);
+  const [insufficientTokens, setInsufficientTokens] = useState(false);
 
   const vadRef = useRef<MicVAD | null>(null);
   const isCallActiveRef = useRef(false);
@@ -195,6 +204,7 @@ export function useVoiceCall(
     setCallState('idle');
     setCurrentTranscript('');
     setIsMuted(false);
+    setTokensUsed(0);
   }, [wsRef, audioPlayerRef]);
 
   /**
@@ -206,6 +216,13 @@ export function useVoiceCall(
       console.log('[VoiceCall] Mute:', newMuted);
       return newMuted;
     });
+  }, []);
+
+  /**
+   * Clear insufficient tokens modal
+   */
+  const clearInsufficientTokens = useCallback(() => {
+    setInsufficientTokens(false);
   }, []);
 
   /**
@@ -252,17 +269,35 @@ export function useVoiceCall(
       }
     });
 
-    // Handle voice call started confirmation
-    const unsubCallStarted = ws.on('voice_call_started', () => {
-      console.log('[VoiceCall] Call confirmed by server');
+    // Handle voice call started confirmation with balance
+    const unsubCallStarted = ws.onVoiceCallStarted((data) => {
+      console.log('[VoiceCall] Call confirmed by server, balance:', data.currentBalance);
+      if (data.currentBalance !== undefined) {
+        setCurrentBalance(data.currentBalance);
+      }
     });
 
     // Handle voice call ended
-    const unsubCallEnded = ws.on('voice_call_ended', () => {
-      console.log('[VoiceCall] Call ended by server');
+    const unsubCallEnded = ws.onVoiceCallEnded((data) => {
+      console.log('[VoiceCall] Call ended by server, reason:', data.reason, 'tokens used:', data.tokensUsed);
       if (isCallActiveRef.current) {
         endCall();
       }
+    });
+
+    // Handle insufficient tokens - call blocked before starting
+    const unsubInsufficientTokens = ws.onVoiceCallInsufficientTokens((data) => {
+      console.log('[VoiceCall] Insufficient tokens, balance:', data.balance);
+      setCurrentBalance(data.balance);
+      setInsufficientTokens(true);
+      setCallState('idle');
+      isCallActiveRef.current = false;
+    });
+
+    // Handle balance updates during active call
+    const unsubBalanceUpdate = ws.onVoiceCallBalanceUpdate((data) => {
+      setCurrentBalance(data.balance);
+      setTokensUsed(data.tokensUsed);
     });
 
     return () => {
@@ -271,6 +306,8 @@ export function useVoiceCall(
       unsubTTSEnd();
       unsubCallStarted();
       unsubCallEnded();
+      unsubInsufficientTokens();
+      unsubBalanceUpdate();
     };
   }, [wsRef, onTranscription, endCall]);
 
@@ -297,5 +334,10 @@ export function useVoiceCall(
     endCall,
     toggleMute,
     getAnalyserNode,
+    // Token billing state
+    currentBalance,
+    tokensUsed,
+    insufficientTokens,
+    clearInsufficientTokens,
   };
 }

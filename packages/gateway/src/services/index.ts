@@ -237,6 +237,30 @@ export type {
   SyncResult,
 } from './provider-settings.js';
 
+// Affiliates service
+import { getAffiliatesService as _getAffiliatesService } from './affiliates.js';
+export {
+  AffiliatesService,
+  getAffiliatesService,
+  CreateAffiliateSchema,
+  UpdateAffiliateSchema,
+  UpdatePayoutInfoSchema,
+  UpdateConversionStatusSchema,
+  AffiliateLoginSchema,
+  PayoutInfoSchema,
+} from './affiliates.js';
+export type {
+  CreateAffiliateInput,
+  UpdateAffiliateInput,
+  UpdatePayoutInfoInput,
+  UpdateConversionStatusInput,
+  AffiliateLoginInput,
+  AffiliateAuthResult,
+  AffiliateAuthError,
+  TrackClickInput,
+  AffiliateStats,
+} from './affiliates.js';
+
 /**
  * Initialize all services
  * Call this at application startup to ensure singleton instances are created
@@ -255,6 +279,7 @@ export function initializeServices(): void {
   _getLLMUsageService();
   _getSupportService();
   _getProviderSettingsService();
+  _getAffiliatesService();
 }
 
 /**
@@ -276,6 +301,7 @@ export function getServices() {
     llmUsage: _getLLMUsageService(),
     support: _getSupportService(),
     providerSettings: _getProviderSettingsService(),
+    affiliates: _getAffiliatesService(),
   };
 }
 
@@ -296,4 +322,5 @@ export interface ServiceContext {
   llmUsage: ReturnType<typeof _getLLMUsageService>;
   support: ReturnType<typeof _getSupportService>;
   providerSettings: ReturnType<typeof _getProviderSettingsService>;
+  affiliates: ReturnType<typeof _getAffiliatesService>;
 }

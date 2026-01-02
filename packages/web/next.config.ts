@@ -3,7 +3,7 @@ import type { NextConfig } from 'next';
 const nextConfig: NextConfig = {
   reactStrictMode: true,
   reactCompiler: true,
-  devIndicators: {},
+  devIndicators: false,
   cacheComponents: true,
   typedRoutes: true,
   transpilePackages: ['@campfire/shared'],

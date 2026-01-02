@@ -69,6 +69,8 @@ export type WSMessageType =
   | 'voice_call_started'
   | 'voice_call_ended'
   | 'voice_call_interrupt'
+  | 'voice_call_insufficient_tokens'
+  | 'voice_call_balance_update'
   | 'webcam_enabled'
   | 'webcam_frame'
   | 'game_update'
@@ -593,15 +595,17 @@ export class CampfireWebSocket {
     handler: (
       content: string,
       imagePrompt?: string,
-      sequence?: { index: number; total: number; isLast: boolean; typingDelayMs?: number }
+      sequence?: { index: number; total: number; isLast: boolean; typingDelayMs?: number },
+      turnId?: string
     ) => void
   ): () => void {
     return this.on<{
       content: string;
       imagePrompt?: string;
       sequence?: { index: number; total: number; isLast: boolean; typingDelayMs?: number };
+      turnId?: string;
     }>('agent_message_end', (msg) => {
-      handler(msg.payload.content, msg.payload.imagePrompt, msg.payload.sequence);
+      handler(msg.payload.content, msg.payload.imagePrompt, msg.payload.sequence, msg.payload.turnId);
     });
   }
 
@@ -648,17 +652,35 @@ export class CampfireWebSocket {
   /**
    * Subscribe to voice call started confirmation
    */
-  onVoiceCallStarted(handler: () => void): () => void {
-    return this.on('voice_call_started', () => {
-      handler();
+  onVoiceCallStarted(handler: (data: { startedAt?: string; currentBalance?: number }) => void): () => void {
+    return this.on<{ startedAt?: string; currentBalance?: number }>('voice_call_started', (msg) => {
+      handler(msg.payload);
     });
   }
 
   /**
    * Subscribe to voice call ended
    */
-  onVoiceCallEnded(handler: (data: { duration?: number }) => void): () => void {
-    return this.on<{ duration?: number }>('voice_call_ended', (msg) => {
+  onVoiceCallEnded(handler: (data: { duration?: number; reason?: string; tokensUsed?: number }) => void): () => void {
+    return this.on<{ duration?: number; reason?: string; tokensUsed?: number }>('voice_call_ended', (msg) => {
+      handler(msg.payload);
+    });
+  }
+
+  /**
+   * Subscribe to voice call insufficient tokens
+   */
+  onVoiceCallInsufficientTokens(handler: (data: { balance: number; required: number }) => void): () => void {
+    return this.on<{ balance: number; required: number }>('voice_call_insufficient_tokens', (msg) => {
+      handler(msg.payload);
+    });
+  }
+
+  /**
+   * Subscribe to voice call balance updates during active call
+   */
+  onVoiceCallBalanceUpdate(handler: (data: { balance: number; tokensUsed: number }) => void): () => void {
+    return this.on<{ balance: number; tokensUsed: number }>('voice_call_balance_update', (msg) => {
       handler(msg.payload);
     });
   }

@@ -268,10 +268,73 @@ export class OrchestrationService {
   }
 
   /**
-   * Get provider health statuses
+   * Get provider health statuses from DB
    */
   async getProviderHealth(tx?: TransactionContext): Promise<ProviderHealth[]> {
     return this.testsRepo.getProviderHealth(tx);
+  }
+
+  /**
+   * Get live provider configuration from orchestrator
+   * Returns which providers are configured, their roles, and current status
+   */
+  async getOrchestratorProviderConfig(): Promise<{
+    providers: Record<string, {
+      is_available: boolean;
+      is_configured: boolean;
+      role: 'primary' | 'fallback' | 'available' | 'not_configured';
+      model: string | null;
+      avg_latency_ms: number | null;
+      error_count: number;
+      success_rate: number | null;
+    }>;
+    primary_provider: string;
+    fallback_provider: string;
+    content_routing_enabled: boolean;
+  }> {
+    try {
+      const response = await fetch(`${ORCHESTRATOR_URL}/health/providers`);
+
+      if (!response.ok) {
+        logger.warn({ status: response.status }, 'Failed to fetch provider config from orchestrator');
+        // Return empty defaults if orchestrator is down
+        return {
+          providers: {},
+          primary_provider: 'unknown',
+          fallback_provider: 'unknown',
+          content_routing_enabled: false,
+        };
+      }
+
+      const data = await response.json() as {
+        providers?: Record<string, {
+          is_available: boolean;
+          is_configured: boolean;
+          role: 'primary' | 'fallback' | 'available' | 'not_configured';
+          model: string | null;
+          avg_latency_ms: number | null;
+          error_count: number;
+          success_rate: number | null;
+        }>;
+        primary_provider?: string;
+        fallback_provider?: string;
+        content_routing_enabled?: boolean;
+      };
+      return {
+        providers: data.providers || {},
+        primary_provider: data.primary_provider || 'unknown',
+        fallback_provider: data.fallback_provider || 'unknown',
+        content_routing_enabled: data.content_routing_enabled || false,
+      };
+    } catch (error) {
+      logger.error({ error }, 'Failed to fetch provider config from orchestrator');
+      return {
+        providers: {},
+        primary_provider: 'unknown',
+        fallback_provider: 'unknown',
+        content_routing_enabled: false,
+      };
+    }
   }
 
   /**

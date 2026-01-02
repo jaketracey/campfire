@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { MoreHorizontal, KeyRound, UserX, UserCheck, Shield, ShieldOff } from 'lucide-react';
+import { MoreHorizontal, KeyRound, UserX, UserCheck, Shield, ShieldOff, Coins } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
   DropdownMenu,
@@ -20,11 +20,14 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
 import {
   resetUserPassword,
   setUserRole,
   suspendUser,
   unsuspendUser,
+  grantUserTokens,
   type AdminUser,
 } from '@/lib/api/admin';
 
@@ -33,11 +36,12 @@ interface UserRowActionsProps {
   onActionComplete: () => void;
 }
 
-type DialogType = 'resetPassword' | 'suspend' | 'unsuspend' | 'makeAdmin' | 'removeAdmin' | null;
+type DialogType = 'resetPassword' | 'suspend' | 'unsuspend' | 'makeAdmin' | 'removeAdmin' | 'grantTokens' | null;
 
 export function UserRowActions({ user, onActionComplete }: UserRowActionsProps) {
   const [openDialog, setOpenDialog] = useState<DialogType>(null);
   const [isLoading, setIsLoading] = useState(false);
+  const [tokenAmount, setTokenAmount] = useState('1000');
 
   const handleAction = async () => {
     setIsLoading(true);
@@ -57,6 +61,10 @@ export function UserRowActions({ user, onActionComplete }: UserRowActionsProps) 
           break;
         case 'removeAdmin':
           await setUserRole(user.id, 'user');
+          break;
+        case 'grantTokens':
+          await grantUserTokens(user.id, { amount: parseInt(tokenAmount, 10) });
+          setTokenAmount('1000'); // Reset for next time
           break;
       }
       onActionComplete();
@@ -104,6 +112,12 @@ export function UserRowActions({ user, onActionComplete }: UserRowActionsProps) 
       actionLabel: 'Remove Admin',
       variant: 'destructive',
     },
+    grantTokens: {
+      title: 'Grant Tokens',
+      description: `Grant tokens to ${user.email}. These tokens can be used for gifts and other features.`,
+      actionLabel: 'Grant Tokens',
+      variant: 'default',
+    },
   };
 
   const currentDialog = openDialog ? dialogConfig[openDialog] : null;
@@ -130,6 +144,14 @@ export function UserRowActions({ user, onActionComplete }: UserRowActionsProps) 
           >
             <KeyRound className="mr-2 h-4 w-4" />
             Reset Password
+          </DropdownMenuItem>
+
+          <DropdownMenuItem
+            onClick={() => setOpenDialog('grantTokens')}
+            className="cursor-pointer text-amber-400 focus:text-amber-400"
+          >
+            <Coins className="mr-2 h-4 w-4" />
+            Grant Tokens
           </DropdownMenuItem>
 
           <DropdownMenuSeparator className="bg-white/10" />
@@ -184,6 +206,23 @@ export function UserRowActions({ user, onActionComplete }: UserRowActionsProps) 
               {currentDialog?.description}
             </AlertDialogDescription>
           </AlertDialogHeader>
+          {openDialog === 'grantTokens' && (
+            <div className="py-4">
+              <Label htmlFor="tokenAmount" className="text-sm font-medium text-gray-300">
+                Token Amount
+              </Label>
+              <Input
+                id="tokenAmount"
+                type="number"
+                min="1"
+                max="1000000"
+                value={tokenAmount}
+                onChange={(e) => setTokenAmount(e.target.value)}
+                className="mt-2 bg-white/5 border-white/10 text-white"
+                placeholder="Enter amount..."
+              />
+            </div>
+          )}
           <AlertDialogFooter>
             <AlertDialogCancel
               disabled={isLoading}

@@ -137,7 +137,7 @@ export class AffiliatesRepository {
           ${data.commission_standard ?? 500},
           ${data.commission_premium ?? 2500},
           ${data.status ?? 'active'},
-          ${db.json((data.payout_info ?? { type: 'paypal' }) as postgres.JSONValue)},
+          ${db.json((data.payout_info ?? { type: 'paypal' }) as unknown as postgres.JSONValue)},
           ${data.notes ?? null}
         )
         RETURNING
@@ -172,7 +172,7 @@ export class AffiliatesRepository {
         commission_standard = COALESCE(${data.commission_standard ?? null}, commission_standard),
         commission_premium = COALESCE(${data.commission_premium ?? null}, commission_premium),
         status = COALESCE(${data.status ?? null}, status),
-        payout_info = COALESCE(${data.payout_info ? db.json(data.payout_info as postgres.JSONValue) : null}, payout_info),
+        payout_info = COALESCE(${data.payout_info ? db.json(data.payout_info as unknown as postgres.JSONValue) : null}, payout_info),
         notes = COALESCE(${data.notes ?? null}, notes)
       WHERE id = ${id}
       RETURNING
@@ -206,7 +206,7 @@ export class AffiliatesRepository {
 
     // Build conditions
     const conditions: string[] = [];
-    const params: unknown[] = [];
+    const params: (string | string[] | number)[] = [];
 
     if (status) {
       if (Array.isArray(status)) {
@@ -302,13 +302,13 @@ export class AffiliatesRepository {
     const { affiliateId, dateRange, limit = 50, offset = 0 } = filters;
 
     let result;
-    if (affiliateId && dateRange) {
+    if (affiliateId && dateRange?.from && dateRange?.to) {
       result = await db`
         SELECT id, affiliate_id, ip_hash, user_agent, referrer_url, landing_page, created_at
         FROM affiliate_clicks
         WHERE affiliate_id = ${affiliateId}
-          AND created_at >= ${dateRange.start}
-          AND created_at <= ${dateRange.end}
+          AND created_at >= ${dateRange.from}
+          AND created_at <= ${dateRange.to}
         ORDER BY created_at DESC
         LIMIT ${limit + 1} OFFSET ${offset}
       `;
@@ -424,7 +424,7 @@ export class AffiliatesRepository {
 
     // Build dynamic query
     const conditions: string[] = [];
-    const params: unknown[] = [];
+    const params: (string | string[] | number | Date)[] = [];
 
     if (affiliateId) {
       conditions.push(`c.affiliate_id = $${params.length + 1}`);
@@ -451,9 +451,9 @@ export class AffiliatesRepository {
       params.push(planTier);
     }
 
-    if (dateRange) {
+    if (dateRange?.from && dateRange?.to) {
       conditions.push(`c.created_at >= $${params.length + 1} AND c.created_at <= $${params.length + 2}`);
-      params.push(dateRange.start, dateRange.end);
+      params.push(dateRange.from, dateRange.to);
     }
 
     const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';

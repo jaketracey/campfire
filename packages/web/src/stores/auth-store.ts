@@ -17,6 +17,14 @@ function clearAuthCookie() {
   }
 }
 
+// Impersonation state stored separately to survive session changes
+interface ImpersonationState {
+  originalUser: User;
+  originalAccessToken: string;
+  originalRefreshToken: string;
+  originalExpiresAt: number;
+}
+
 export interface AuthState {
   // State
   user: User | null;
@@ -26,6 +34,10 @@ export interface AuthState {
   isLoading: boolean;
   isInitialized: boolean;
 
+  // Impersonation state
+  isImpersonating: boolean;
+  impersonationState: ImpersonationState | null;
+
   // Actions
   setSession: (user: User, tokens: AuthTokens) => void;
   clearSession: () => void;
@@ -33,11 +45,15 @@ export interface AuthState {
   updateUser: (updates: Partial<User>) => void;
   setLoading: (loading: boolean) => void;
   setInitialized: (initialized: boolean) => void;
+
+  // Impersonation actions
+  startImpersonation: (targetUser: User, tokens: AuthTokens) => void;
+  stopImpersonation: () => void;
 }
 
 export const useAuthStore = create<AuthState>()(
   persist(
-    (set) => ({
+    (set, get) => ({
       // Initial state
       user: null,
       accessToken: null,
@@ -45,6 +61,10 @@ export const useAuthStore = create<AuthState>()(
       expiresAt: null,
       isLoading: false,
       isInitialized: false,
+
+      // Impersonation state
+      isImpersonating: false,
+      impersonationState: null,
 
       // Actions
       setSession: (user, tokens) => {
@@ -95,6 +115,61 @@ export const useAuthStore = create<AuthState>()(
       setInitialized: (initialized) => {
         set({ isInitialized: initialized });
       },
+
+      // Impersonation actions
+      startImpersonation: (targetUser, tokens) => {
+        const state = get();
+
+        // Don't allow nested impersonation
+        if (state.isImpersonating) {
+          console.warn('[AUTH-STORE] Already impersonating, cannot start nested impersonation');
+          return;
+        }
+
+        // Store current admin state
+        const impersonationState: ImpersonationState = {
+          originalUser: state.user!,
+          originalAccessToken: state.accessToken!,
+          originalRefreshToken: state.refreshToken!,
+          originalExpiresAt: state.expiresAt!,
+        };
+
+        const expiresAt = Date.now() + tokens.expiresIn * 1000;
+        set({
+          user: targetUser,
+          accessToken: tokens.accessToken,
+          refreshToken: tokens.refreshToken,
+          expiresAt,
+          isImpersonating: true,
+          impersonationState,
+        });
+        setAuthCookie();
+        console.log('[AUTH-STORE] Started impersonating user:', targetUser.id);
+      },
+
+      stopImpersonation: () => {
+        const state = get();
+
+        if (!state.isImpersonating || !state.impersonationState) {
+          console.warn('[AUTH-STORE] Not impersonating, cannot stop');
+          return;
+        }
+
+        // Restore original admin state
+        const { originalUser, originalAccessToken, originalRefreshToken, originalExpiresAt } =
+          state.impersonationState;
+
+        set({
+          user: originalUser,
+          accessToken: originalAccessToken,
+          refreshToken: originalRefreshToken,
+          expiresAt: originalExpiresAt,
+          isImpersonating: false,
+          impersonationState: null,
+        });
+        setAuthCookie();
+        console.log('[AUTH-STORE] Stopped impersonation, restored admin:', originalUser.id);
+      },
     }),
     {
       name: 'campfire-auth',
@@ -104,6 +179,8 @@ export const useAuthStore = create<AuthState>()(
         accessToken: state.accessToken,
         refreshToken: state.refreshToken,
         expiresAt: state.expiresAt,
+        isImpersonating: state.isImpersonating,
+        impersonationState: state.impersonationState,
       }),
       onRehydrateStorage: () => {
         console.log('[AUTH-STORE] onRehydrateStorage called');

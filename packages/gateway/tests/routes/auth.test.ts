@@ -31,20 +31,65 @@ vi.mock('../../src/middleware/auth.js', () => ({
 const mockAuthService = {
   register: vi.fn(),
   login: vi.fn(),
+  authenticateWithGoogle: vi.fn(),
 };
 
 vi.mock('../../src/services/auth.js', () => ({
   getAuthService: () => mockAuthService,
 }));
 
+// Mock the referrals service
+const mockReferralsService = {
+  recordReferral: vi.fn(),
+};
+
+vi.mock('../../src/services/referrals.js', () => ({
+  getReferralsService: () => mockReferralsService,
+}));
+
 // Mock the users repository
 const mockUsersRepo = {
   findById: vi.fn(),
   updateProfile: vi.fn(),
+  findProfileByUserId: vi.fn(),
+  updateUserAffiliateTracking: vi.fn(),
+};
+
+// Mock the referrals repository
+const mockReferralsRepo = {
+  findPendingInviteByToken: vi.fn(),
+  acceptPendingInvite: vi.fn(),
+};
+
+// Mock the affiliates repository
+const mockAffiliatesRepo = {
+  findByCode: vi.fn(),
 };
 
 vi.mock('../../src/repositories/index.js', () => ({
   getUsersRepository: () => mockUsersRepo,
+  getReferralsRepository: () => mockReferralsRepo,
+  getAffiliatesRepository: () => mockAffiliatesRepo,
+}));
+
+// Mock the observability modules
+vi.mock('../../src/observability/tracing.js', () => ({
+  withSpan: vi.fn((name, fn) => fn({ setAttributes: vi.fn() })),
+}));
+
+vi.mock('../../src/observability/logger.js', () => ({
+  logger: {
+    info: vi.fn(),
+    warn: vi.fn(),
+    error: vi.fn(),
+    debug: vi.fn(),
+  },
+}));
+
+// Mock the affiliate tracking
+vi.mock('../../src/routes/affiliate-tracking.js', () => ({
+  parseAffiliateCookie: vi.fn().mockReturnValue(null),
+  AFFILIATE_COOKIE: 'cf_affiliate',
 }));
 
 // Import mocked modules for assertions
@@ -71,6 +116,7 @@ describe('Auth Routes', () => {
         id: 'user-123',
         email: 'newuser@example.com',
         email_verified: false,
+        role: 'user',
         created_at: new Date('2024-01-01'),
       };
 
@@ -100,6 +146,7 @@ describe('Auth Routes', () => {
         id: 'user-123',
         email: 'newuser@example.com',
         email_verified: false,
+        role: 'user',
         created_at: new Date('2024-01-01'),
       };
 
@@ -180,6 +227,7 @@ describe('Auth Routes', () => {
       const mockUser = {
         id: 'user-123',
         email: 'user@example.com',
+        role: 'user',
       };
 
       mockAuthService.login.mockResolvedValue({

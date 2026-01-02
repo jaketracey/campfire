@@ -22,6 +22,7 @@ import {
   X,
   Brain,
   ShieldCheck,
+  Image as ImageIcon,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -613,6 +614,17 @@ export default function AccountPage() {
                 <div className="flex items-center gap-2 sm:gap-3">
                   <Coins className="h-4 w-4 sm:h-5 sm:w-5 text-amber-500" />
                   <span className="text-sm sm:text-base text-white font-medium">Purchase Tokens</span>
+                </div>
+                <ChevronRight className="h-4 w-4 sm:h-5 sm:w-5 text-gray-500 group-hover:text-white transition-colors" />
+              </Link>
+
+              <Link
+                href="/account/media"
+                className="flex items-center justify-between p-3 sm:p-4 rounded-xl bg-white/[0.02] border border-white/5 hover:bg-white/[0.05] hover:border-white/10 transition-all group"
+              >
+                <div className="flex items-center gap-2 sm:gap-3">
+                  <ImageIcon className="h-4 w-4 sm:h-5 sm:w-5 text-blue-500" />
+                  <span className="text-sm sm:text-base text-white font-medium">Media Gallery</span>
                 </div>
                 <ChevronRight className="h-4 w-4 sm:h-5 sm:w-5 text-gray-500 group-hover:text-white transition-colors" />
               </Link>

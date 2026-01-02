@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { X, RefreshCw, Gift, History, Sparkles, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
@@ -12,6 +12,7 @@ import { GiftAnimation, type GiftAnimationType } from './gift-animation';
 import { useGiftsStore } from '@/stores/gifts-store';
 import {
   generateGift,
+  getGift,
   giveGift,
   getGiftHistory,
   type Gift as GiftType,
@@ -40,6 +41,9 @@ export function GiftsPanel({
   const [showConfirmation, setShowConfirmation] = useState(false);
   const [animationType, setAnimationType] = useState<GiftAnimationType | null>(null);
   const [isAnimating, setIsAnimating] = useState(false);
+
+  // Ref to track polling timeout for cleanup
+  const pollTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   const {
     tokenBalance,
@@ -72,10 +76,16 @@ export function GiftsPanel({
   // Clean up on close
   useEffect(() => {
     if (!isOpen) {
+      // Clear any pending poll
+      if (pollTimeoutRef.current) {
+        clearTimeout(pollTimeoutRef.current);
+        pollTimeoutRef.current = null;
+      }
       selectGift(null);
       setError(null);
+      setIsLoadingGifts(false);
     }
-  }, [isOpen, selectGift, setError]);
+  }, [isOpen, selectGift, setError, setIsLoadingGifts]);
 
   const fetchTokenBalance = useCallback(async () => {
     try {
@@ -105,6 +115,57 @@ export function GiftsPanel({
     }
   }, [companionId]);
 
+  // Poll for gift completion
+  const pollForGiftCompletion = useCallback(
+    (giftId: string) => {
+      const maxAttempts = 60; // 2 minutes at 2s intervals
+      let attempts = 0;
+
+      const poll = async () => {
+        try {
+          const gift = await getGift(giftId);
+
+          if (gift.status === 'ready') {
+            selectGift(gift);
+            setIsLoadingGifts(false);
+            pollTimeoutRef.current = null;
+            return;
+          }
+
+          if (gift.status === 'failed') {
+            setError('Gift generation failed. Please try again.');
+            setIsLoadingGifts(false);
+            selectGift(null);
+            pollTimeoutRef.current = null;
+            return;
+          }
+
+          attempts++;
+          if (attempts >= maxAttempts) {
+            setError('Gift generation timed out. Please try again.');
+            setIsLoadingGifts(false);
+            selectGift(null);
+            pollTimeoutRef.current = null;
+            return;
+          }
+
+          // Continue polling
+          pollTimeoutRef.current = setTimeout(poll, 2000);
+        } catch (err) {
+          console.error('Poll error:', err);
+          setError('Failed to check gift status');
+          setIsLoadingGifts(false);
+          selectGift(null);
+          pollTimeoutRef.current = null;
+        }
+      };
+
+      // Start polling
+      poll();
+    },
+    [selectGift, setError, setIsLoadingGifts]
+  );
+
   const handleGenerateGift = useCallback(async () => {
     // Validate companionId is a valid UUID
     const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -113,19 +174,35 @@ export function GiftsPanel({
       return;
     }
 
+    // Clear any existing poll
+    if (pollTimeoutRef.current) {
+      clearTimeout(pollTimeoutRef.current);
+      pollTimeoutRef.current = null;
+    }
+
     setIsLoadingGifts(true);
     setError(null);
     selectGift(null);
 
     try {
       const gift = await generateGift(companionId);
-      selectGift(gift);
+
+      // If gift is still generating, start polling
+      if (gift.status === 'generating') {
+        pollForGiftCompletion(gift.id);
+      } else if (gift.status === 'ready') {
+        // Gift is already ready (cached?)
+        selectGift(gift);
+        setIsLoadingGifts(false);
+      } else if (gift.status === 'failed') {
+        setError('Gift generation failed. Please try again.');
+        setIsLoadingGifts(false);
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to generate gift');
-    } finally {
       setIsLoadingGifts(false);
     }
-  }, [companionId, selectGift, setIsLoadingGifts, setError]);
+  }, [companionId, selectGift, setIsLoadingGifts, setError, pollForGiftCompletion]);
 
   const handleSendGift = useCallback(async () => {
     if (!selectedGift) return;
@@ -264,8 +341,11 @@ export function GiftsPanel({
               {isLoadingGifts && (
                 <div className="flex flex-col items-center justify-center py-8 text-center">
                   <Loader2 className="h-8 w-8 animate-spin text-campfire-500 mb-4" />
-                  <p className="text-sm text-muted-foreground">
-                    Creating something special...
+                  <p className="text-sm font-medium text-foreground mb-1">
+                    Gift is being generated
+                  </p>
+                  <p className="text-xs text-muted-foreground">
+                    Creating something special just for your companion...
                   </p>
                 </div>
               )}
