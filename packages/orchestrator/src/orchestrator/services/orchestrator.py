@@ -22,14 +22,17 @@ from orchestrator.models.events import (
     BaseEvent,
     ContentBlockedEvent,
     ContentRoutingEvent,
+    CostTrackingEvent,
     EventType,
     ProviderEvent,
 )
 from orchestrator.routing import (
     ContentCapability,
     IntentDetector,
+    MODEL_REGISTRY,
     ModelRouter,
     RoutingDecision,
+    get_model,
 )
 from orchestrator.models.gifts import GiftMemory, GiftRecallContext
 from orchestrator.models.memory import LongTermMemory, CompanionSelfKnowledge
@@ -39,6 +42,8 @@ from orchestrator.providers.base import LLMProvider, LLMResponse
 from orchestrator.providers.anthropic import AnthropicProvider
 from orchestrator.providers.openai import OpenAIProvider
 from orchestrator.providers.ollama import OllamaProvider
+from orchestrator.providers.bedrock import BedrockProvider
+from orchestrator.providers.sagemaker import SageMakerProvider
 from orchestrator.queue import JobQueue
 from orchestrator.safety.gate import SafetyGate
 from orchestrator.services.context_builder import ContextBuilder
@@ -76,9 +81,12 @@ class ConversationOrchestrator:
         self.job_queue = job_queue
 
         # Initialize providers
-        # Use Ollama (local abliterated model) when enabled, fallback to OpenAI/Anthropic
+        # Priority: provided > Bedrock (prod) > Ollama (dev) > OpenAI
         if primary_provider:
             self.primary_provider = primary_provider
+        elif settings.bedrock_enabled:
+            self.primary_provider = BedrockProvider(settings)
+            logger.info("using_bedrock_provider", model=settings.bedrock_default_model)
         elif settings.ollama_enabled:
             self.primary_provider = OllamaProvider(settings)
             logger.info("using_ollama_provider", model=settings.ollama_model)
@@ -86,6 +94,12 @@ class ConversationOrchestrator:
             self.primary_provider = OpenAIProvider(settings)
 
         self.fallback_provider = fallback_provider or AnthropicProvider(settings)
+
+        # Optional SageMaker provider for custom fine-tuned models
+        self.sagemaker_provider: SageMakerProvider | None = None
+        if settings.sagemaker_enabled and settings.sagemaker_endpoint_name:
+            self.sagemaker_provider = SageMakerProvider(settings)
+            logger.info("sagemaker_provider_enabled", endpoint=settings.sagemaker_endpoint_name)
 
         # Initialize services
         self.context_builder = ContextBuilder(
@@ -399,6 +413,30 @@ class ConversationOrchestrator:
                 image_prompt=image_prompt,
             )
 
+            # Emit cost tracking event (fire-and-forget)
+            # Determine provider and model used
+            provider_name = (
+                self._current_routing_decision.model_spec.provider
+                if self._current_routing_decision and self._current_routing_decision.model_spec
+                else ("bedrock" if self.settings.bedrock_enabled else "ollama" if self.settings.ollama_enabled else "anthropic")
+            )
+            model_name = (
+                self._current_routing_decision.model_spec.model_id
+                if self._current_routing_decision and self._current_routing_decision.model_spec
+                else response.model or self.settings.bedrock_default_model if self.settings.bedrock_enabled else self.settings.ollama_model
+            )
+            asyncio.create_task(
+                self._emit_cost_tracking_event(
+                    session_id=session_id,
+                    user_id=user_id,
+                    companion_id=companion_spec.id,
+                    turn_id=turn_id,
+                    response=response,
+                    provider=provider_name,
+                    model=model_name,
+                )
+            )
+
             # Fire-and-forget KG extraction (don't block response)
             asyncio.create_task(
                 self._extract_knowledge_graph(
@@ -595,28 +633,41 @@ class ConversationOrchestrator:
         model_spec = self._current_routing_decision.model_spec
         provider_name = model_spec.provider.lower()
 
+        logger.info(
+            "using_routed_model",
+            provider=provider_name,
+            model_id=model_spec.model_id,
+            is_abliterated=model_spec.is_abliterated,
+        )
+
         # Map provider name to provider instance
-        if provider_name == "ollama" and self.settings.ollama_enabled:
-            # For Ollama, we can dynamically use the routed model
-            logger.info(
-                "using_routed_model",
-                provider=provider_name,
-                model_id=model_spec.model_id,
-                is_abliterated=model_spec.is_abliterated,
-            )
-            # Return the primary provider configured with the routed model
-            if self.primary_provider.name == "ollama":
-                # Use with_model() to create provider instance with correct model
+        if provider_name == "bedrock" and self.settings.bedrock_enabled:
+            # Route to Bedrock with the specified model
+            if self.primary_provider.name == "bedrock":
                 routed_provider = self.primary_provider.with_model(model_spec.model_id)
                 return routed_provider, model_spec.model_id
-            # For now, return None to use default - dynamic provider creation
-            # would require more infrastructure changes
+            # Create a new Bedrock provider for this model
+            bedrock_provider = BedrockProvider(self.settings, model_override=model_spec.model_id)
+            return bedrock_provider, model_spec.model_id
+
+        elif provider_name == "sagemaker" and self.sagemaker_provider:
+            # Route to SageMaker endpoint
+            routed_provider = self.sagemaker_provider.with_model(model_spec.model_id)
+            return routed_provider, model_spec.model_id
+
+        elif provider_name == "ollama" and self.settings.ollama_enabled:
+            # For Ollama, dynamically use the routed model
+            if self.primary_provider.name == "ollama":
+                routed_provider = self.primary_provider.with_model(model_spec.model_id)
+                return routed_provider, model_spec.model_id
             return None, None
+
         elif provider_name == "anthropic":
             if self.primary_provider.name == "anthropic":
                 return self.primary_provider, model_spec.model_id
             elif self.fallback_provider.name == "anthropic":
                 return self.fallback_provider, model_spec.model_id
+
         elif provider_name == "openai":
             if self.primary_provider.name == "openai":
                 return self.primary_provider, model_spec.model_id
@@ -627,7 +678,11 @@ class ConversationOrchestrator:
 
     def _get_model_for_provider(self, provider: str) -> str:
         """Get the model name for a provider."""
-        if provider == "ollama":
+        if provider == "bedrock":
+            return self.settings.bedrock_default_model
+        elif provider == "sagemaker":
+            return self.settings.sagemaker_endpoint_name
+        elif provider == "ollama":
             return self.settings.ollama_model
         elif provider == "anthropic":
             return self.settings.anthropic_model
@@ -637,7 +692,11 @@ class ConversationOrchestrator:
 
     def _get_max_tokens_for_provider(self, provider: str) -> int:
         """Get max tokens for a provider."""
-        if provider == "ollama":
+        if provider == "bedrock":
+            return self.settings.bedrock_max_tokens
+        elif provider == "sagemaker":
+            return self.settings.sagemaker_max_tokens
+        elif provider == "ollama":
             return self.settings.ollama_max_tokens
         elif provider == "anthropic":
             return self.settings.anthropic_max_tokens
@@ -818,6 +877,62 @@ class ConversationOrchestrator:
             "cost_usd": tool_result.cost_usd,
         }
 
+    async def _emit_cost_tracking_event(
+        self,
+        session_id: UUID,
+        user_id: UUID,
+        companion_id: UUID,
+        turn_id: UUID,
+        response: LLMResponse,
+        provider: str,
+        model: str,
+    ) -> None:
+        """Emit a cost tracking event for the LLM call.
+
+        Calculates cost based on token usage and model pricing from the registry.
+        """
+        # Get model spec for pricing info
+        model_spec = get_model(model)
+
+        # Calculate cost
+        if model_spec:
+            input_cost = (response.prompt_tokens / 1_000_000) * model_spec.cost_per_1m_input
+            output_cost = (response.completion_tokens / 1_000_000) * model_spec.cost_per_1m_output
+            cost_usd = input_cost + output_cost
+        else:
+            # Default to zero for unknown models (e.g., local Ollama)
+            cost_usd = 0.0
+
+        # Only emit if there are actual tokens used
+        if response.prompt_tokens == 0 and response.completion_tokens == 0:
+            return
+
+        event = CostTrackingEvent(
+            type=EventType.COST_INCURRED,
+            session_id=session_id,
+            user_id=user_id,
+            companion_id=companion_id,
+            turn_id=turn_id,
+            provider=provider,
+            model=model,
+            prompt_tokens=response.prompt_tokens,
+            completion_tokens=response.completion_tokens,
+            total_tokens=response.prompt_tokens + response.completion_tokens,
+            cost_usd=cost_usd,
+        )
+
+        await self.event_emitter.emit(event)
+
+        logger.info(
+            "cost_tracking_event_emitted",
+            turn_id=str(turn_id),
+            provider=provider,
+            model=model,
+            prompt_tokens=response.prompt_tokens,
+            completion_tokens=response.completion_tokens,
+            cost_usd=cost_usd,
+        )
+
     def _parse_image_prompt(self, content: str) -> tuple[str, str | None]:
         """Parse image_prompt from response content.
 
@@ -827,6 +942,13 @@ class ConversationOrchestrator:
         Returns:
             tuple of (cleaned_content, image_prompt or None)
         """
+        # Log incoming content for debugging
+        logger.debug(
+            "image_prompt_parse_input",
+            content_length=len(content),
+            content_tail=content[-500:] if len(content) > 500 else content,
+        )
+
         # Match <image_prompt>...</image_prompt> anywhere in the content
         pattern = r'<image_prompt>(.*?)</image_prompt>'
         match = re.search(pattern, content, re.DOTALL)
@@ -835,8 +957,20 @@ class ConversationOrchestrator:
             image_prompt = match.group(1).strip()
             # Remove the image_prompt tag from the content
             cleaned_content = re.sub(pattern, '', content, flags=re.DOTALL).strip()
+
+            logger.info(
+                "image_prompt_extracted",
+                image_prompt_length=len(image_prompt),
+                image_prompt=image_prompt[:200],
+            )
             return cleaned_content, image_prompt
 
+        # Log when no image_prompt found
+        logger.warning(
+            "image_prompt_not_found",
+            content_length=len(content),
+            content_tail=content[-300:] if len(content) > 300 else content,
+        )
         return content, None
 
     def _parse_multi_messages(self, content: str) -> tuple[list[str], str | None]:
@@ -930,14 +1064,14 @@ Assistant: {assistant_response}"""
 
             # Parse the JSON response
             try:
-                # Try to extract JSON from the response
-                content = response.content.strip()
-                # Handle markdown code blocks
-                if content.startswith("```"):
-                    lines = content.split("\n")
-                    content = "\n".join(lines[1:-1])
-                
-                kg_data = json.loads(content)
+                kg_data = self._extract_json_from_response(response.content)
+                if kg_data is None:
+                    logger.warning(
+                        "kg_extraction_parse_failed",
+                        error="No valid JSON found in response",
+                        content_preview=response.content[:200],
+                    )
+                    return
             except json.JSONDecodeError as e:
                 logger.warning(
                     "kg_extraction_parse_failed",
@@ -1038,6 +1172,111 @@ Assistant: {assistant_response}"""
                 session_id=str(session_id),
                 turn_id=str(turn_id),
             )
+
+    def _extract_json_from_response(self, content: str) -> dict[str, Any] | None:
+        """Extract and parse JSON from LLM response, handling common issues.
+
+        Handles:
+        - Markdown code blocks (```json, ```, etc.)
+        - Unescaped newlines in string values
+        - JSON embedded in other text
+        """
+        content = content.strip()
+
+        # Strategy 1: Handle markdown code blocks
+        if content.startswith("```"):
+            # Find the end of the code block
+            lines = content.split("\n")
+            # Skip first line (```json or ```)
+            start_idx = 1
+            # Find closing ```
+            end_idx = len(lines)
+            for i in range(len(lines) - 1, 0, -1):
+                if lines[i].strip() == "```":
+                    end_idx = i
+                    break
+            content = "\n".join(lines[start_idx:end_idx]).strip()
+
+        # Strategy 2: Try direct parse first
+        try:
+            return json.loads(content)
+        except json.JSONDecodeError:
+            pass
+
+        # Strategy 3: Extract JSON object using brace matching
+        # Find first { and match to closing }
+        start = content.find("{")
+        if start == -1:
+            return None
+
+        brace_count = 0
+        in_string = False
+        escape_next = False
+        end = start
+
+        for i, char in enumerate(content[start:], start):
+            if escape_next:
+                escape_next = False
+                continue
+            if char == "\\":
+                escape_next = True
+                continue
+            if char == '"' and not escape_next:
+                in_string = not in_string
+                continue
+            if in_string:
+                continue
+            if char == "{":
+                brace_count += 1
+            elif char == "}":
+                brace_count -= 1
+                if brace_count == 0:
+                    end = i + 1
+                    break
+
+        json_str = content[start:end]
+
+        # Strategy 4: Fix unescaped newlines in string values
+        # This is a common issue where LLMs put literal newlines in strings
+        def fix_unescaped_newlines(s: str) -> str:
+            result = []
+            in_str = False
+            escape = False
+            for char in s:
+                if escape:
+                    result.append(char)
+                    escape = False
+                    continue
+                if char == "\\":
+                    result.append(char)
+                    escape = True
+                    continue
+                if char == '"':
+                    in_str = not in_str
+                    result.append(char)
+                    continue
+                if in_str and char == "\n":
+                    result.append("\\n")
+                    continue
+                result.append(char)
+            return "".join(result)
+
+        try:
+            fixed_json = fix_unescaped_newlines(json_str)
+            return json.loads(fixed_json)
+        except json.JSONDecodeError:
+            pass
+
+        # Strategy 5: Try regex to find JSON object
+        json_pattern = r'\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\}'
+        matches = re.findall(json_pattern, content, re.DOTALL)
+        for match in matches:
+            try:
+                return json.loads(match)
+            except json.JSONDecodeError:
+                continue
+
+        return None
 
     def _infer_entity_type(
         self,

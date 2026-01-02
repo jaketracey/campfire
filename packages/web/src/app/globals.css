@@ -64,7 +64,6 @@
     text-wrap: balance;
   }
 
-  /* Hide scrollbar for horizontal swipe containers */
   .scrollbar-hide {
     -ms-overflow-style: none;
     scrollbar-width: none;
@@ -108,6 +107,35 @@
 
 .scrollbar-subtle::-webkit-scrollbar-thumb:hover {
   background: rgba(255, 255, 255, 0.2);
+}
+
+/* Chat scrollbar - sleek campfire themed */
+.scrollbar-chat {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(249, 115, 22, 0.3) transparent;
+}
+
+.scrollbar-chat::-webkit-scrollbar {
+  width: 6px;
+}
+
+.scrollbar-chat::-webkit-scrollbar-track {
+  background: transparent;
+  margin: 8px 0;
+}
+
+.scrollbar-chat::-webkit-scrollbar-thumb {
+  background: rgba(249, 115, 22, 0.25);
+  border-radius: 9999px;
+  transition: background 0.2s ease;
+}
+
+.scrollbar-chat::-webkit-scrollbar-thumb:hover {
+  background: rgba(249, 115, 22, 0.5);
+}
+
+.scrollbar-chat::-webkit-scrollbar-thumb:active {
+  background: rgba(249, 115, 22, 0.7);
 }
 
 /* Gradient backgrounds */

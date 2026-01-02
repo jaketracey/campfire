@@ -6,7 +6,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card } from '@/components/ui/card';
-import { X, ArrowRight, Mic, MicOff, Bug, Images, Flame, Sparkles, Gift, BookOpen, GripVertical, Volume2, Menu, User, Video, VideoOff, Gamepad2, Heart, Users } from 'lucide-react';
+import { X, ArrowRight, Mic, MicOff, Bug, Images, Flame, Sparkles, Gift, BookOpen, GripVertical, Volume2, User, Video, VideoOff, Gamepad2, Heart, Users, ChevronLeft, ChevronRight, Phone } from 'lucide-react';
 import Link from 'next/link';
 import { getSessionTurns, getSession, getCompanion, getCompanionBackstory, type Companion, type CompanionBackstory } from '@/lib/api';
 import { CampfireWebSocket, connectWebSocket, type GroupParticipant } from '@/lib/ws';
@@ -18,12 +18,15 @@ import { FriendsPanel } from '@/components/friends';
 import { GamesModal, GameBoardContainer } from '@/components/games';
 import { LikeButton } from '@/components/likes';
 import type { ActiveGame } from '@campfire/shared';
+import type { SignupTrigger } from '@/components/demo/signup-modal';
 import { useRequireAuth } from '@/hooks/use-auth';
 import { useAuthStore } from '@/stores/auth-store';
 import { buildPromptFromCompanion, getSessionGallery, type EmotionalState, type GalleryImage } from '@/lib/api/imagegen';
 import { useVoiceRecording } from '@/hooks/use-voice-recording';
 import { useAudioPlayer } from '@/hooks/use-audio-player';
 import { useWebcamCapture } from '@/hooks/use-webcam-capture';
+import { useVoiceCall } from '@/hooks/use-voice-call';
+import { CallButton, CallSidebar } from '@/components/voice-call';
 
 interface Message {
   id: string;
@@ -51,8 +54,27 @@ interface ChatEvent {
   timestamp: Date;
 }
 
+/** Demo companion data passed from demo page */
+interface DemoCompanionData {
+  id: string;
+  name: string;
+  avatarUrl: string | null;
+  archetype: string | null;
+  description: string | null;
+}
+
 interface ChatSessionContentProps {
   sessionId: string;
+  /** Enable demo mode for anonymous users */
+  isDemo?: boolean;
+  /** Device fingerprint for anonymous auth (required when isDemo=true) */
+  demoFingerprint?: string;
+  /** Demo companion data (required when isDemo=true) */
+  demoCompanion?: DemoCompanionData;
+  /** Callback when message limit reached (demo mode only) */
+  onLimitReached?: () => void;
+  /** Callback when user tries to access a feature requiring auth (demo mode only) */
+  onRequireAuth?: (trigger: SignupTrigger) => void;
 }
 
 // Simple emotional state detection based on message content
@@ -111,10 +133,17 @@ function extractSceneDescription(content: string): string | undefined {
   return undefined;
 }
 
-export function ChatSessionContent({ sessionId }: ChatSessionContentProps) {
+export function ChatSessionContent({ sessionId, isDemo, demoFingerprint, demoCompanion, onLimitReached, onRequireAuth }: ChatSessionContentProps) {
   const router = useRouter();
-  const { isAuthenticated, isLoading: authLoading } = useRequireAuth('/login');
+  // In demo mode, skip auth redirect - pass null to useRequireAuth
+  const authResult = useRequireAuth(isDemo ? null : '/login');
+  // Override auth state in demo mode
+  const isAuthenticated = isDemo ? true : authResult.isAuthenticated;
+  const authLoading = isDemo ? false : authResult.isLoading;
   const user = useAuthStore((state) => state.user);
+  // Demo mode state
+  const [demoMessagesUsed, setDemoMessagesUsed] = useState(0);
+  const DEMO_MESSAGE_LIMIT = 4;
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
@@ -130,17 +159,44 @@ export function ChatSessionContent({ sessionId }: ChatSessionContentProps) {
   const [showGiftsPanel, setShowGiftsPanel] = useState(false);
   const [showFriendsPanel, setShowFriendsPanel] = useState(false);
   const [showMobileAvatar, setShowMobileAvatar] = useState(false);
+  const [mobileGalleryImages, setMobileGalleryImages] = useState<GalleryImage[]>([]);
+  const [mobileGalleryIndex, setMobileGalleryIndex] = useState(0);
+  const [mobileGalleryLoading, setMobileGalleryLoading] = useState(false);
   const [showMobileMenu, setShowMobileMenu] = useState(false);
   const [showGames, setShowGames] = useState(false);
   const [activeGame, setActiveGame] = useState<ActiveGame | null>(null);
   const [waitingForCompanionMove, setWaitingForCompanionMove] = useState(false);
   const [debugRefreshTrigger, setDebugRefreshTrigger] = useState(0);
-  const [companion, setCompanion] = useState<Companion | null>(null);
+  // Initialize companion with demo data when in demo mode
+  const [companion, setCompanion] = useState<Companion | null>(
+    isDemo && demoCompanion
+      ? {
+          id: demoCompanion.id,
+          name: demoCompanion.name,
+          description: demoCompanion.description,
+          personality: demoCompanion.archetype || '',
+          voiceId: null,
+          avatarUrl: demoCompanion.avatarUrl,
+          allowedTools: [],
+          isPublic: true,
+          isActive: true,
+          createdAt: new Date().toISOString(),
+          ownerId: '00000000-0000-0000-0000-000000000000',
+          spec: {
+            identity: { backstory: demoCompanion.description || '' },
+            personality: { archetype: demoCompanion.archetype || '' },
+          },
+          specVersion: 1,
+        }
+      : null
+  );
   const [backstoryData, setBackstoryData] = useState<CompanionBackstory | null>(null);
   // Track image generation - only generate after LLM response
   const [imageGenTrigger, setImageGenTrigger] = useState(0);
-  // Dynamic avatar URL - synced with generated images
-  const [currentAvatarUrl, setCurrentAvatarUrl] = useState<string | null>(null);
+  // Dynamic avatar URL - synced with generated images (initialize with demo avatar)
+  const [currentAvatarUrl, setCurrentAvatarUrl] = useState<string | null>(
+    isDemo && demoCompanion?.avatarUrl ? demoCompanion.avatarUrl : null
+  );
   // Gallery images for random display on load
   const [galleryImages, setGalleryImages] = useState<GalleryImage[]>([]);
   const [sceneDescription, setSceneDescription] = useState<string | undefined>(undefined);
@@ -168,6 +224,42 @@ export function ChatSessionContent({ sessionId }: ChatSessionContentProps) {
   const [keyboardHeight, setKeyboardHeight] = useState(0);
   // Track if we've shown the initial pulse animation (only show once)
   const [hasShownPulse, setHasShownPulse] = useState(false);
+
+  // Demo mode: Show initial greeting from companion with typing delay
+  useEffect(() => {
+    if (!isDemo || !demoCompanion || messages.length > 0) return;
+
+    const greetings = [
+      `Hey there! I'm ${demoCompanion.name}... what are you up to? 😊`,
+      `Hi! I'm ${demoCompanion.name}. I've been waiting to meet someone like you... 💫`,
+      `Well hello... I'm ${demoCompanion.name}. Something tells me we're going to get along really well 😏`,
+      `*waves* Hey! I'm ${demoCompanion.name}. So... tell me about yourself? I'm curious 🌸`,
+      `Hi cutie! I'm ${demoCompanion.name}. What's on your mind tonight? ✨`,
+      `Oh hi! I'm ${demoCompanion.name}... I was just thinking about meeting someone new. Lucky me 😘`,
+    ];
+
+    const randomGreeting = greetings[Math.floor(Math.random() * greetings.length)];
+
+    // Show typing indicator first
+    setIsLoading(true);
+
+    // Random delay between 1.5-2.5 seconds for realism
+    const typingDelay = 1500 + Math.random() * 1000;
+
+    const timer = setTimeout(() => {
+      setMessages([
+        {
+          id: 'demo-greeting',
+          role: 'assistant',
+          content: randomGreeting,
+          timestamp: new Date(),
+        },
+      ]);
+      setIsLoading(false);
+    }, typingDelay);
+
+    return () => clearTimeout(timer);
+  }, [isDemo, demoCompanion, messages.length]);
 
   // Handle iOS keyboard - position input above keyboard
   useEffect(() => {
@@ -256,6 +348,7 @@ export function ChatSessionContent({ sessionId }: ChatSessionContentProps) {
     queueAudio,
     finishQueue,
     stop: stopTTS,
+    getAnalyserNode: getAudioAnalyserNode,
   } = useAudioPlayer({
     onPlaybackStart: () => {
       console.log('[Chat] TTS playback started');
@@ -267,6 +360,22 @@ export function ChatSessionContent({ sessionId }: ChatSessionContentProps) {
       console.error('[Chat] TTS playback error:', error);
     },
   });
+
+  // Create a ref for the audio player to pass to voice call hook
+  const audioPlayerRef = useRef<{
+    stop: () => void;
+    isPlaying: boolean;
+    getAnalyserNode: () => AnalyserNode | null;
+  } | null>(null);
+
+  // Keep audio player ref updated
+  useEffect(() => {
+    audioPlayerRef.current = {
+      stop: stopTTS,
+      isPlaying: isTTSPlaying,
+      getAnalyserNode: getAudioAnalyserNode,
+    };
+  }, [stopTTS, isTTSPlaying, getAudioAnalyserNode]);
 
   // Webcam capture hook for sending frames to AI
   const {
@@ -291,6 +400,44 @@ export function ChatSessionContent({ sessionId }: ChatSessionContentProps) {
       await enableWebcam();
     }
   }, [isWebcamEnabled, enableWebcam, disableWebcam]);
+
+  // Voice call hook for continuous listening voice calls
+  const {
+    callState,
+    isCallActive,
+    isMuted: isCallMuted,
+    currentTranscript,
+    error: voiceCallError,
+    startCall,
+    endCall,
+    toggleMute: toggleCallMute,
+    getAnalyserNode: getCallAnalyserNode,
+  } = useVoiceCall(wsRef, audioPlayerRef, {
+    onTranscription: (text, isFinal) => {
+      if (isFinal && text.trim()) {
+        // Add user's transcribed speech as a message
+        const userMessage: Message = {
+          id: crypto.randomUUID(),
+          role: 'user',
+          content: text,
+          timestamp: new Date(),
+        };
+        setMessages((prev) => [...prev, userMessage]);
+      }
+    },
+    onError: (error) => {
+      console.error('[Chat] Voice call error:', error);
+    },
+  });
+
+  // Handle voice call button click
+  const handleCallClick = useCallback(() => {
+    if (isDemo && onRequireAuth) {
+      onRequireAuth('call');
+      return;
+    }
+    startCall();
+  }, [isDemo, onRequireAuth, startCall]);
 
   // Refs to store stable references to audio functions for WebSocket callbacks
   const queueAudioRef = useRef(queueAudio);
@@ -332,8 +479,32 @@ export function ChatSessionContent({ sessionId }: ChatSessionContentProps) {
     scrollToBottom();
   }, [messages, streamingContent]);
 
-  // Load session, companion, and existing turns from API - wait for auth to be ready
+  // Load gallery images for mobile avatar modal
+  // Skip in demo mode since we don't have auth - just show current avatar
   useEffect(() => {
+    if (!showMobileAvatar || !sessionId || isDemo) return;
+
+    async function loadMobileGallery() {
+      setMobileGalleryLoading(true);
+      try {
+        const response = await getSessionGallery(sessionId, 20);
+        setMobileGalleryImages(response.images);
+        setMobileGalleryIndex(0);
+      } catch (err) {
+        console.error('Failed to load mobile gallery:', err);
+        // Silently fail - will show current avatar instead
+      } finally {
+        setMobileGalleryLoading(false);
+      }
+    }
+
+    loadMobileGallery();
+  }, [showMobileAvatar, sessionId, isDemo]);
+
+  // Load session, companion, and existing turns from API - wait for auth to be ready
+  // Skip in demo mode since we create the session ourselves
+  useEffect(() => {
+    if (isDemo) return; // Demo mode doesn't need to load session data
     if (authLoading || !isAuthenticated) return;
 
     async function loadSessionData() {
@@ -387,10 +558,12 @@ export function ChatSessionContent({ sessionId }: ChatSessionContentProps) {
     }
 
     loadSessionData();
-  }, [sessionId, authLoading, isAuthenticated]);
+  }, [sessionId, authLoading, isAuthenticated, isDemo]);
 
   // Fetch gallery images on load and pick a random one for display
+  // Skip in demo mode since demo sessions don't have gallery images
   useEffect(() => {
+    if (isDemo) return; // Demo mode doesn't need gallery
     if (authLoading || !isAuthenticated) return;
 
     async function loadGallery() {
@@ -408,7 +581,7 @@ export function ChatSessionContent({ sessionId }: ChatSessionContentProps) {
     }
 
     loadGallery();
-  }, [sessionId, authLoading, isAuthenticated]);
+  }, [sessionId, authLoading, isAuthenticated, isDemo]);
 
   // Fallback to companion avatar if no gallery images
   useEffect(() => {
@@ -417,12 +590,19 @@ export function ChatSessionContent({ sessionId }: ChatSessionContentProps) {
     }
   }, [companion?.avatarUrl, currentAvatarUrl]);
 
-  // Connect to WebSocket - wait for auth to be ready
+  // Connect to WebSocket - wait for auth to be ready (or demo mode)
   useEffect(() => {
-    if (authLoading || !isAuthenticated) return;
+    // In demo mode, we don't need to wait for auth
+    if (!isDemo && (authLoading || !isAuthenticated)) return;
+
+    // In demo mode, we need the fingerprint
+    if (isDemo && !demoFingerprint) {
+      console.error('[Chat] Demo mode requires fingerprint');
+      return;
+    }
 
     const accessToken = useAuthStore.getState().accessToken;
-    if (!accessToken) {
+    if (!isDemo && !accessToken) {
       console.error('[Chat] No access token available for WebSocket auth');
       return;
     }
@@ -433,13 +613,30 @@ export function ChatSessionContent({ sessionId }: ChatSessionContentProps) {
     // Subscribe to ping (connection established) - then authenticate
     const unsubPing = ws.on('ping', () => {
       console.log('[Chat] WebSocket connected, authenticating...');
-      ws.authenticate(accessToken);
+      if (isDemo && demoFingerprint) {
+        ws.authenticateAnonymous(demoFingerprint);
+      } else if (accessToken) {
+        ws.authenticate(accessToken);
+      }
     });
 
     // Subscribe to auth success - then resume session
     const unsubAuth = ws.on('auth_success', () => {
       console.log('[Chat] Authenticated via WebSocket, resuming session...');
       ws.resumeSession(sessionId);
+    });
+
+    // Subscribe to usage updates (demo mode)
+    const unsubUsage = ws.onUsageUpdate?.((data) => {
+      console.log('[Chat] Usage update:', data);
+      setDemoMessagesUsed(data.messagesUsed);
+    });
+
+    // Subscribe to limit reached (demo mode)
+    const unsubLimit = ws.onLimitReached?.((data) => {
+      console.log('[Chat] Limit reached:', data);
+      setDemoMessagesUsed(data.messagesUsed);
+      onLimitReached?.();
     });
 
     // Subscribe to session started
@@ -570,7 +767,13 @@ export function ChatSessionContent({ sessionId }: ChatSessionContentProps) {
 
     // Subscribe to like acknowledgments
     const unsubLikeAck = ws.onLikeAcknowledged(({ turnId, turnLikes, sessionLikes }) => {
-      setMessageLikes((prev) => ({ ...prev, [turnId]: turnLikes }));
+      // Store likes with both the raw turnId and the synthetic -agent suffix
+      // so lookups work for both new messages (raw UUID) and historical messages (uuid-agent)
+      setMessageLikes((prev) => ({
+        ...prev,
+        [turnId]: turnLikes,
+        [`${turnId}-agent`]: turnLikes,
+      }));
       setSessionTotalLikes(sessionLikes);
     });
 
@@ -690,6 +893,8 @@ export function ChatSessionContent({ sessionId }: ChatSessionContentProps) {
     return () => {
       unsubPing();
       unsubAuth();
+      unsubUsage?.();
+      unsubLimit?.();
       unsubSessionStarted();
       unsubAgent();
       unsubChunk();
@@ -708,10 +913,16 @@ export function ChatSessionContent({ sessionId }: ChatSessionContentProps) {
       unsubCompanionMsgEnd();
       ws.disconnect();
     };
-  }, [sessionId, authLoading, isAuthenticated]);
+  }, [sessionId, authLoading, isAuthenticated, isDemo, demoFingerprint, onLimitReached]);
 
   const handleSend = useCallback(() => {
     if (!input.trim() || isLoading) return;
+
+    // In demo mode, check if limit reached and show signup modal instead of sending
+    if (isDemo && demoMessagesUsed >= DEMO_MESSAGE_LIMIT) {
+      onLimitReached?.();
+      return;
+    }
 
     const userMessage: Message = {
       id: crypto.randomUUID(),
@@ -725,11 +936,11 @@ export function ChatSessionContent({ sessionId }: ChatSessionContentProps) {
     setIsLoading(true);
     setStreamingContent('');
 
-    // Send via WebSocket
-    if (wsRef.current?.isConnected) {
-      wsRef.current.sendMessage(input.trim());
+    // Send via WebSocket with auto-retry for iOS keyboard race condition
+    if (wsRef.current) {
+      wsRef.current.sendMessageWithRetry(input.trim());
     } else {
-      console.error('WebSocket not connected');
+      console.error('WebSocket not initialized');
       setIsLoading(false);
     }
 
@@ -737,11 +948,13 @@ export function ChatSessionContent({ sessionId }: ChatSessionContentProps) {
     setTimeout(() => {
       inputRef.current?.focus();
     }, 10);
-  }, [input, isLoading]);
+  }, [input, isLoading, isDemo, demoMessagesUsed, onLimitReached]);
 
   // Handle liking a message
-  const handleLikeMessage = useCallback((turnId: string) => {
+  const handleLikeMessage = useCallback((messageId: string) => {
     if (!wsRef.current?.isConnected) return;
+    // Strip -agent or -user suffix from synthetic message IDs to get the actual turn UUID
+    const turnId = messageId.replace(/-(agent|user)$/, '');
     wsRef.current.likeMessage(turnId);
   }, []);
 
@@ -929,7 +1142,7 @@ export function ChatSessionContent({ sessionId }: ChatSessionContentProps) {
   }
 
   return (
-    <div className="flex h-screen bg-background">
+    <div className="flex h-dvh bg-background overflow-x-hidden">
       {/* Companion Avatar Sidebar */}
       <div
         ref={sidebarRef}
@@ -938,17 +1151,36 @@ export function ChatSessionContent({ sessionId }: ChatSessionContentProps) {
         onMouseMove={handleMouseMoveNearGrabber}
         onMouseLeave={handleMouseLeaveGrabber}
       >
+        {/* Voice Call Sidebar - shown when call is active */}
+        {isCallActive && companion ? (
+          <CallSidebar
+            companionName={companion.name}
+            companionAvatarUrl={currentAvatarUrl || companion.avatarUrl}
+            callState={callState}
+            isMuted={isCallMuted}
+            currentTranscript={currentTranscript}
+            analyserNode={getCallAnalyserNode()}
+            onEndCall={endCall}
+            onToggleMute={toggleCallMute}
+          />
+        ) : (
+          <>
         {/* Only render CompanionAvatar once we have companion data with anchor image */}
         {companion?.avatarUrl ? (
           <button
-            onClick={() => setShowGallery(true)}
+            onClick={() => {
+              if (isDemo && onRequireAuth) {
+                onRequireAuth('gallery');
+              } else {
+                setShowGallery(true);
+              }
+            }}
             className="cursor-pointer hover:opacity-90 transition-opacity focus:outline-none focus:ring-2 focus:ring-campfire-500 focus:ring-offset-2 focus:ring-offset-background rounded-xl overflow-hidden"
             style={{ width: avatarDimensions.width, height: avatarDimensions.height }}
             aria-label="View gallery"
           >
             <CompanionAvatar
               emotionalState={currentEmotionalState}
-              style="stylized"
               customPrompt={customPrompt}
               width={avatarDimensions.genWidth}
               height={avatarDimensions.genHeight}
@@ -986,11 +1218,23 @@ export function ChatSessionContent({ sessionId }: ChatSessionContentProps) {
         <p className="mt-1 text-sm text-muted-foreground">
           Feeling: <span className="font-medium text-foreground capitalize">{currentEmotionalState}</span>
         </p>
+
+        {/* Voice Call Button */}
+        <div className="w-full px-2 mt-3">
+          <CallButton onClick={handleCallClick} disabled={isCallActive} />
+        </div>
+
         <div className="flex flex-col gap-2.5 mt-4 w-full px-2">
           <Button
             variant="outline"
             className="w-full justify-start gap-3 px-5 py-4 text-base"
-            onClick={() => setShowPersonality(true)}
+            onClick={() => {
+              if (isDemo && onRequireAuth) {
+                onRequireAuth('personality');
+              } else {
+                setShowPersonality(true);
+              }
+            }}
           >
             <Sparkles className="h-5 w-5" />
             Personality
@@ -999,7 +1243,13 @@ export function ChatSessionContent({ sessionId }: ChatSessionContentProps) {
             <Button
               variant="outline"
               className="w-full justify-start gap-3 px-5 py-4 text-base border-amber-700/30 text-amber-500 hover:bg-amber-900/20 hover:text-amber-400"
-              onClick={() => setShowBackstory(true)}
+              onClick={() => {
+                if (isDemo && onRequireAuth) {
+                  onRequireAuth('avatar');
+                } else {
+                  setShowBackstory(true);
+                }
+              }}
             >
               <BookOpen className="h-5 w-5" />
               Backstory
@@ -1007,8 +1257,14 @@ export function ChatSessionContent({ sessionId }: ChatSessionContentProps) {
           )}
           <Button
             variant="outline"
-            className="w-full justify-start gap-3 px-5 py-4 text-base border-emerald-700/30 text-emerald-500 hover:bg-emerald-900/20 hover:text-emerald-400"
-            onClick={() => setShowGames(true)}
+            className="w-full justify-start gap-3 px-5 py-4 text-base border-cyan-700/30 text-cyan-500 hover:bg-cyan-900/20 hover:text-cyan-400"
+            onClick={() => {
+              if (isDemo && onRequireAuth) {
+                onRequireAuth('games');
+              } else {
+                setShowGames(true);
+              }
+            }}
           >
             <Gamepad2 className="h-5 w-5" />
             Games
@@ -1016,7 +1272,13 @@ export function ChatSessionContent({ sessionId }: ChatSessionContentProps) {
           <Button
             variant="outline"
             className="w-full justify-start gap-3 px-5 py-4 text-base border-rose-700/30 text-rose-500 hover:bg-rose-900/20 hover:text-rose-400"
-            onClick={() => setShowGiftsPanel(true)}
+            onClick={() => {
+              if (isDemo && onRequireAuth) {
+                onRequireAuth('gifts');
+              } else {
+                setShowGiftsPanel(true);
+              }
+            }}
           >
             <Gift className="h-5 w-5" />
             Gifts
@@ -1024,7 +1286,13 @@ export function ChatSessionContent({ sessionId }: ChatSessionContentProps) {
           <Button
             variant="outline"
             className="w-full justify-start gap-3 px-5 py-4 text-base border-purple-700/30 text-purple-500 hover:bg-purple-900/20 hover:text-purple-400"
-            onClick={() => setShowFriendsPanel(true)}
+            onClick={() => {
+              if (isDemo && onRequireAuth) {
+                onRequireAuth('friends');
+              } else {
+                setShowFriendsPanel(true);
+              }
+            }}
           >
             <Users className="h-5 w-5" />
             Friends
@@ -1033,6 +1301,22 @@ export function ChatSessionContent({ sessionId }: ChatSessionContentProps) {
 
         {/* Spacer to push webcam to bottom */}
         <div className="flex-1" />
+
+        {/* Design Companion button at bottom */}
+        <div className="w-full px-2 mb-4">
+          <Button
+            variant="default"
+            className="w-full justify-center gap-2 py-5 text-base bg-gradient-to-r from-campfire-500 to-campfire-600 hover:from-campfire-600 hover:to-campfire-700 shadow-lg"
+            onClick={() => {
+              router.push('/onboard');
+            }}
+          >
+            <Sparkles className="h-5 w-5" />
+            Design Companion
+          </Button>
+        </div>
+          </>
+        )}
 
         {/* Webcam preview at bottom of sidebar */}
         {isWebcamEnabled && latestFrame && (
@@ -1076,7 +1360,7 @@ export function ChatSessionContent({ sessionId }: ChatSessionContentProps) {
       </div>
 
       {/* Main Chat Area */}
-      <div className="flex flex-col flex-1">
+      <div className="flex flex-col flex-1 min-w-0 overflow-x-hidden">
         {/* Header - fixed transparent on mobile */}
         <header className="px-4 py-3 flex items-center gap-4 lg:relative fixed top-0 left-0 right-0 z-50 lg:bg-transparent bg-transparent lg:backdrop-blur-none backdrop-blur-sm">
           <Link href="/chat" className="flex items-center gap-2">
@@ -1120,83 +1404,126 @@ export function ChatSessionContent({ sessionId }: ChatSessionContentProps) {
 
           {/* Mobile hamburger menu */}
           <div className="lg:hidden relative">
-            <Button
-              variant="ghost"
-              size="icon"
+            <motion.button
+              className="relative flex items-center justify-center w-10 h-10 rounded-lg hover:bg-accent/80 transition-colors"
               onClick={() => setShowMobileMenu(!showMobileMenu)}
               title="Menu"
+              whileTap={{ scale: 0.92 }}
             >
-              <Menu className="h-5 w-5" />
-            </Button>
+              <div className="flex flex-col justify-center items-center w-6 h-5">
+                <motion.span
+                  className="absolute block h-0.5 w-5 bg-foreground rounded-full"
+                  animate={{
+                    rotate: showMobileMenu ? 45 : 0,
+                    y: showMobileMenu ? 0 : -6,
+                  }}
+                  transition={{ type: 'spring', stiffness: 260, damping: 20 }}
+                />
+                <motion.span
+                  className="absolute block h-0.5 w-5 bg-foreground rounded-full"
+                  animate={{
+                    opacity: showMobileMenu ? 0 : 1,
+                    scaleX: showMobileMenu ? 0 : 1,
+                  }}
+                  transition={{ type: 'spring', stiffness: 260, damping: 20 }}
+                />
+                <motion.span
+                  className="absolute block h-0.5 w-5 bg-foreground rounded-full"
+                  animate={{
+                    rotate: showMobileMenu ? -45 : 0,
+                    y: showMobileMenu ? 0 : 6,
+                  }}
+                  transition={{ type: 'spring', stiffness: 260, damping: 20 }}
+                />
+              </div>
+            </motion.button>
 
             {/* Mobile dropdown menu */}
             <AnimatePresence>
               {showMobileMenu && (
                 <motion.div
-                  initial={{ opacity: 0, y: -10 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  exit={{ opacity: 0, y: -10 }}
-                  transition={{ duration: 0.15 }}
-                  className="absolute right-0 top-full mt-2 bg-background/95 backdrop-blur-md border rounded-lg shadow-lg p-2 min-w-[160px]"
+                  initial={{ opacity: 0, y: -10, scale: 0.95 }}
+                  animate={{ opacity: 1, y: 0, scale: 1 }}
+                  exit={{ opacity: 0, y: -10, scale: 0.95 }}
+                  transition={{ type: 'spring', stiffness: 300, damping: 25 }}
+                  className="absolute right-0 top-full mt-2 bg-background/95 backdrop-blur-md border rounded-xl shadow-xl p-3 min-w-[200px] space-y-1"
                 >
                   <Button
                     variant="ghost"
-                    size="sm"
-                    className="w-full justify-start gap-2"
+                    className="w-full justify-start gap-3 h-12 text-base px-4"
                     onClick={() => {
-                      setShowGallery(true);
                       setShowMobileMenu(false);
+                      if (isDemo && onRequireAuth) {
+                        onRequireAuth('gallery');
+                      } else {
+                        setShowGallery(true);
+                      }
                     }}
                   >
-                    <Images className="h-4 w-4" />
+                    <Images className="h-5 w-5" />
                     Gallery
                   </Button>
                   <Button
                     variant="ghost"
-                    size="sm"
-                    className="w-full justify-start gap-2"
+                    className="w-full justify-start gap-3 h-12 text-base px-4"
                     onClick={() => {
-                      setShowGiftsPanel(!showGiftsPanel);
                       setShowMobileMenu(false);
+                      if (isDemo && onRequireAuth) {
+                        onRequireAuth('gifts');
+                      } else {
+                        setShowGiftsPanel(!showGiftsPanel);
+                      }
                     }}
                   >
-                    <Gift className="h-4 w-4" />
+                    <Gift className="h-5 w-5" />
                     Gifts
                   </Button>
                   <Button
                     variant="ghost"
-                    size="sm"
-                    className="w-full justify-start gap-2"
+                    className="w-full justify-start gap-3 h-12 text-base px-4"
                     onClick={() => {
-                      setShowDebugPanel(!showDebugPanel);
                       setShowMobileMenu(false);
+                      if (isDemo && onRequireAuth) {
+                        onRequireAuth('debug');
+                      } else {
+                        setShowDebugPanel(!showDebugPanel);
+                      }
                     }}
                   >
-                    <Bug className="h-4 w-4" />
+                    <Bug className="h-5 w-5" />
                     Debug
                   </Button>
-                  <Link href="/account" className="block">
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      className="w-full justify-start gap-2"
-                      onClick={() => setShowMobileMenu(false)}
-                    >
-                      <User className="h-4 w-4" />
-                      Account
-                    </Button>
-                  </Link>
-                  <Link href="/dashboard" className="block">
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      className="w-full justify-start gap-2"
-                      onClick={() => setShowMobileMenu(false)}
-                    >
-                      <X className="h-4 w-4" />
-                      Close
-                    </Button>
-                  </Link>
+                  <Button
+                    variant="ghost"
+                    className="w-full justify-start gap-3 h-12 text-base px-4"
+                    onClick={() => {
+                      setShowMobileMenu(false);
+                      if (isDemo && onRequireAuth) {
+                        onRequireAuth('account');
+                      } else {
+                        router.push('/account');
+                      }
+                    }}
+                  >
+                    <User className="h-5 w-5" />
+                    Account
+                  </Button>
+                  <div className="border-t my-2" />
+                  <Button
+                    variant="ghost"
+                    className="w-full justify-start gap-3 h-12 text-base px-4 text-muted-foreground"
+                    onClick={() => {
+                      setShowMobileMenu(false);
+                      if (isDemo && onRequireAuth) {
+                        onRequireAuth('close');
+                      } else {
+                        router.push('/dashboard');
+                      }
+                    }}
+                  >
+                    <X className="h-5 w-5" />
+                    Close
+                  </Button>
                 </motion.div>
               )}
             </AnimatePresence>
@@ -1208,10 +1535,10 @@ export function ChatSessionContent({ sessionId }: ChatSessionContentProps) {
 
         {/* Messages */}
         <div
-          className="flex-1 overflow-y-auto p-4 space-y-4"
+          className="flex-1 overflow-y-auto py-4 px-6 lg:px-4 space-y-4 scrollbar-chat"
           style={{ paddingBottom: keyboardHeight > 0 ? `${keyboardHeight + 80}px` : undefined }}
         >
-          {messages.length === 0 && !streamingContent && (
+          {messages.length === 0 && !streamingContent && !isLoading && (
             <div className="flex items-center justify-center h-full text-muted-foreground">
               Start a conversation with your companion
             </div>
@@ -1228,7 +1555,7 @@ export function ChatSessionContent({ sessionId }: ChatSessionContentProps) {
                     : 'bg-muted'
                 }`}
               >
-                <p className="text-sm whitespace-pre-wrap">{message.content}</p>
+                <p className="text-base lg:text-sm whitespace-pre-wrap">{message.content}</p>
                 {message.role === 'assistant' && (
                   <div className="flex justify-end mt-1 -mb-1 -mr-1">
                     <LikeButton
@@ -1245,7 +1572,7 @@ export function ChatSessionContent({ sessionId }: ChatSessionContentProps) {
           {streamingContent && (
             <div className="flex justify-start">
               <Card className="bg-muted p-3 max-w-[80%]">
-                <p className="text-sm whitespace-pre-wrap">{streamingContent}</p>
+                <p className="text-base lg:text-sm whitespace-pre-wrap">{streamingContent}</p>
               </Card>
             </div>
           )}
@@ -1294,10 +1621,103 @@ export function ChatSessionContent({ sessionId }: ChatSessionContentProps) {
         </div>
 
         {/* Input */}
-        <div ref={inputContainerRef} className="p-4 bg-background z-40">
+        <div ref={inputContainerRef} className="py-4 px-6 lg:px-4 bg-background z-40">
+          {/* Mobile Action Bar - above input */}
+          <div className="lg:hidden pb-3 -mx-6 px-6 overflow-x-auto scrollbar-hide">
+            <div className="flex gap-2 w-max">
+              <Button
+                variant="outline"
+                size="sm"
+                className="flex-shrink-0 gap-2 px-3 py-2 border-emerald-700/30 text-emerald-500 hover:bg-emerald-900/20 hover:text-emerald-400"
+                onClick={handleCallClick}
+                disabled={isCallActive}
+              >
+                <Phone className="h-4 w-4" />
+                <span className="text-sm">Call</span>
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                className="flex-shrink-0 gap-2 px-3 py-2"
+                onClick={() => {
+                  if (isDemo && onRequireAuth) {
+                    onRequireAuth('personality');
+                  } else {
+                    setShowPersonality(true);
+                  }
+                }}
+              >
+                <Sparkles className="h-4 w-4" />
+                <span className="text-sm">Personality</span>
+              </Button>
+              {backstoryData?.hasBackstory && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="flex-shrink-0 gap-2 px-3 py-2 border-amber-700/30 text-amber-500 hover:bg-amber-900/20 hover:text-amber-400"
+                  onClick={() => {
+                    if (isDemo && onRequireAuth) {
+                      onRequireAuth('avatar');
+                    } else {
+                      setShowBackstory(true);
+                    }
+                  }}
+                >
+                  <BookOpen className="h-4 w-4" />
+                  <span className="text-sm">Backstory</span>
+                </Button>
+              )}
+              <Button
+                variant="outline"
+                size="sm"
+                className="flex-shrink-0 gap-2 px-3 py-2 border-cyan-700/30 text-cyan-500 hover:bg-cyan-900/20 hover:text-cyan-400"
+                onClick={() => {
+                  if (isDemo && onRequireAuth) {
+                    onRequireAuth('games');
+                  } else {
+                    setShowGames(true);
+                  }
+                }}
+              >
+                <Gamepad2 className="h-4 w-4" />
+                <span className="text-sm">Games</span>
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                className="flex-shrink-0 gap-2 px-3 py-2 border-rose-700/30 text-rose-500 hover:bg-rose-900/20 hover:text-rose-400"
+                onClick={() => {
+                  if (isDemo && onRequireAuth) {
+                    onRequireAuth('gifts');
+                  } else {
+                    setShowGiftsPanel(true);
+                  }
+                }}
+              >
+                <Gift className="h-4 w-4" />
+                <span className="text-sm">Gifts</span>
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                className="flex-shrink-0 gap-2 px-3 py-2 border-purple-700/30 text-purple-500 hover:bg-purple-900/20 hover:text-purple-400"
+                onClick={() => {
+                  if (isDemo && onRequireAuth) {
+                    onRequireAuth('friends');
+                  } else {
+                    setShowFriendsPanel(true);
+                  }
+                }}
+              >
+                <Users className="h-4 w-4" />
+                <span className="text-sm">Friends</span>
+              </Button>
+            </div>
+          </div>
+
           {/* Live transcription display */}
           {liveTranscription && (
-            <div className="max-w-4xl mx-auto mb-2">
+            <div className="w-full lg:max-w-4xl lg:mx-auto mb-2">
               <Card className="p-2 bg-muted/50 border-dashed">
                 <p className="text-sm text-muted-foreground italic">{liveTranscription}</p>
               </Card>
@@ -1306,7 +1726,7 @@ export function ChatSessionContent({ sessionId }: ChatSessionContentProps) {
 
           {/* Voice error display */}
           {voiceError && (
-            <div className="max-w-4xl mx-auto mb-2">
+            <div className="w-full lg:max-w-4xl lg:mx-auto mb-2">
               <Card className="p-2 bg-destructive/10 border-destructive/50">
                 <p className="text-sm text-destructive">{voiceError}</p>
               </Card>
@@ -1315,57 +1735,14 @@ export function ChatSessionContent({ sessionId }: ChatSessionContentProps) {
 
           {/* Webcam error display */}
           {webcamError && (
-            <div className="max-w-4xl mx-auto mb-2">
+            <div className="w-full lg:max-w-4xl lg:mx-auto mb-2">
               <Card className="p-2 bg-destructive/10 border-destructive/50">
                 <p className="text-sm text-destructive">{webcamError}</p>
               </Card>
             </div>
           )}
 
-          <div className="flex gap-2 max-w-4xl mx-auto">
-            {/* Voice mode toggle */}
-            <Button
-              variant={voiceModeEnabled ? 'secondary' : 'outline'}
-              size="icon"
-              onClick={toggleVoiceMode}
-              title={voiceModeEnabled ? 'Disable voice mode' : 'Enable voice mode'}
-            >
-              <Volume2 className={`h-5 w-5 ${voiceModeEnabled ? 'text-campfire-500' : ''}`} />
-            </Button>
-
-            {/* Webcam toggle */}
-            <Button
-              variant={isWebcamEnabled ? 'secondary' : 'outline'}
-              size="icon"
-              onClick={toggleWebcam}
-              title={isWebcamEnabled ? 'Disable webcam' : 'Enable webcam'}
-              className={isCapturing ? 'animate-pulse' : ''}
-            >
-              {isWebcamEnabled ? (
-                <Video className="h-5 w-5 text-campfire-500" />
-              ) : (
-                <VideoOff className="h-5 w-5" />
-              )}
-            </Button>
-
-            {/* Push-to-talk mic button */}
-            {voiceModeEnabled && (
-              <Button
-                variant={isRecording ? 'destructive' : 'outline'}
-                size="icon"
-                onMouseDown={handleVoiceStart}
-                onMouseUp={handleVoiceEnd}
-                onMouseLeave={handleVoiceEnd}
-                onTouchStart={handleVoiceStart}
-                onTouchEnd={handleVoiceEnd}
-                disabled={isLoading || isTTSPlaying}
-                title={isRecording ? 'Release to send' : 'Hold to speak'}
-                className={isRecording ? 'animate-pulse' : ''}
-              >
-                {isRecording ? <MicOff className="h-5 w-5" /> : <Mic className="h-5 w-5" />}
-              </Button>
-            )}
-
+          <div className="flex gap-2 w-full lg:max-w-4xl lg:mx-auto">
             <Input
               ref={inputRef}
               value={input}
@@ -1373,7 +1750,7 @@ export function ChatSessionContent({ sessionId }: ChatSessionContentProps) {
               onKeyDown={(e) => e.key === 'Enter' && !isLoading && handleSend()}
               placeholder={voiceModeEnabled ? 'Type or hold mic to speak...' : 'Type a message...'}
               readOnly={isLoading || isRecording}
-              className={`flex-1 transition-shadow duration-300 ${
+              className={`flex-1 min-w-0 h-12 lg:h-10 text-base lg:text-sm transition-shadow duration-300 ${
                 !hasShownPulse && input.length === 0
                   ? 'focus:animate-campfire-pulse'
                   : ''
@@ -1383,14 +1760,15 @@ export function ChatSessionContent({ sessionId }: ChatSessionContentProps) {
               onClick={handleSend}
               onMouseDown={(e) => e.preventDefault()}
               disabled={!input.trim() || isLoading || isRecording}
+              className="h-12 w-12 lg:h-10 lg:w-10 flex-shrink-0"
             >
-              <ArrowRight className="h-5 w-5" />
+              <ArrowRight className="h-6 w-6 lg:h-5 lg:w-5" />
             </Button>
           </div>
 
           {/* TTS playback indicator */}
           {isTTSPlaying && (
-            <div className="max-w-4xl mx-auto mt-2 flex items-center justify-center gap-2 text-sm text-muted-foreground">
+            <div className="w-full lg:max-w-4xl lg:mx-auto mt-2 flex items-center justify-center gap-2 text-sm text-muted-foreground">
               <div className="flex gap-1 items-end h-4">
                 {[1, 2, 3, 4, 5].map((i) => (
                   <motion.div
@@ -1416,18 +1794,49 @@ export function ChatSessionContent({ sessionId }: ChatSessionContentProps) {
 
         {/* Mobile/Tablet Floating Avatar Thumbnail */}
         {currentAvatarUrl && (
-          <button
-            onClick={() => setShowMobileAvatar(true)}
-            className="lg:hidden fixed bottom-24 right-4 z-40 w-20 h-24 rounded-xl overflow-hidden border-2 border-campfire-500 shadow-lg bg-muted/80 backdrop-blur-sm hover:scale-105 transition-transform"
-            aria-label="View companion"
+          <motion.div
+            initial={{ opacity: 0, scale: 0.8, y: 20 }}
+            animate={{ opacity: 1, scale: 1, y: 0 }}
+            transition={{ duration: 0.4, ease: "easeOut" }}
+            className="lg:hidden fixed right-4 z-40"
+            style={{ bottom: keyboardHeight > 0 ? `${keyboardHeight + 150}px` : '150px' }}
           >
-            <StaticCompanionAvatar
-              imageUrl={currentAvatarUrl}
-              width={80}
-              height={96}
-              className="w-full h-full"
+            {/* Animated glow ring */}
+            <motion.div
+              className="absolute -inset-1 bg-gradient-to-r from-campfire-500 via-orange-400 to-campfire-500 rounded-xl blur-sm"
+              animate={{
+                opacity: [0.4, 0.7, 0.4],
+                scale: [1, 1.02, 1],
+              }}
+              transition={{
+                duration: 2,
+                repeat: Infinity,
+                ease: "easeInOut",
+              }}
             />
-          </button>
+            <motion.button
+              onClick={() => setShowMobileAvatar(true)}
+              className="relative w-30 h-36 rounded-xl overflow-hidden border-2 border-campfire-500 shadow-lg bg-muted/80 backdrop-blur-sm"
+              aria-label="View companion"
+              animate={{
+                y: [0, -4, 0],
+              }}
+              transition={{
+                duration: 3,
+                repeat: Infinity,
+                ease: "easeInOut",
+              }}
+              whileHover={{ scale: 1.05 }}
+              whileTap={{ scale: 0.95 }}
+            >
+              <StaticCompanionAvatar
+                imageUrl={currentAvatarUrl}
+                width={120}
+                height={144}
+                className="w-full h-full"
+              />
+            </motion.button>
+          </motion.div>
         )}
       </div>
 
@@ -1520,14 +1929,14 @@ export function ChatSessionContent({ sessionId }: ChatSessionContentProps) {
         />
       )}
 
-      {/* Mobile Avatar Enlarged Modal */}
+      {/* Mobile Avatar Enlarged Modal with Gallery Swipe */}
       {showMobileAvatar && (
         <div
           className="lg:hidden fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm"
           onClick={() => setShowMobileAvatar(false)}
         >
           <div
-            className="relative flex flex-col items-center p-4"
+            className="relative flex flex-col items-center p-4 w-full max-w-[85vw] sm:max-w-sm"
             onClick={(e) => e.stopPropagation()}
           >
             <button
@@ -1537,53 +1946,177 @@ export function ChatSessionContent({ sessionId }: ChatSessionContentProps) {
             >
               <X className="h-5 w-5" />
             </button>
-            {currentAvatarUrl && (
-              <StaticCompanionAvatar
-                imageUrl={currentAvatarUrl}
-                width={280}
-                height={420}
-                className="shadow-2xl"
-              />
-            )}
+
+            {/* Swipeable Image Carousel */}
+            <div className="relative w-full overflow-hidden rounded-xl">
+              {/* Navigation arrows */}
+              {mobileGalleryImages.length > 1 && mobileGalleryIndex > 0 && (
+                <button
+                  onClick={() => {
+                    if (isDemo && onRequireAuth) {
+                      onRequireAuth('gallery');
+                    } else {
+                      setMobileGalleryIndex(mobileGalleryIndex - 1);
+                    }
+                  }}
+                  className="absolute left-2 top-1/2 -translate-y-1/2 z-10 p-2 rounded-full bg-black/50 text-white hover:bg-black/70"
+                >
+                  <ChevronLeft className="h-6 w-6" />
+                </button>
+              )}
+              {mobileGalleryImages.length > 1 && mobileGalleryIndex < mobileGalleryImages.length - 1 && (
+                <button
+                  onClick={() => {
+                    if (isDemo && onRequireAuth) {
+                      onRequireAuth('gallery');
+                    } else {
+                      setMobileGalleryIndex(mobileGalleryIndex + 1);
+                    }
+                  }}
+                  className="absolute right-2 top-1/2 -translate-y-1/2 z-10 p-2 rounded-full bg-black/50 text-white hover:bg-black/70"
+                >
+                  <ChevronRight className="h-6 w-6" />
+                </button>
+              )}
+
+              {/* Image with swipe gesture */}
+              <motion.div
+                key={mobileGalleryIndex}
+                initial={{ opacity: 0, x: 50 }}
+                animate={{ opacity: 1, x: 0 }}
+                exit={{ opacity: 0, x: -50 }}
+                transition={{ duration: 0.2 }}
+                drag="x"
+                dragConstraints={{ left: 0, right: 0 }}
+                dragElastic={0.2}
+                onDragEnd={(_, info) => {
+                  const swipeThreshold = 50;
+                  if (info.offset.x < -swipeThreshold && mobileGalleryIndex < mobileGalleryImages.length - 1) {
+                    if (isDemo && onRequireAuth) {
+                      onRequireAuth('gallery');
+                    } else {
+                      setMobileGalleryIndex(mobileGalleryIndex + 1);
+                    }
+                  } else if (info.offset.x > swipeThreshold && mobileGalleryIndex > 0) {
+                    if (isDemo && onRequireAuth) {
+                      onRequireAuth('gallery');
+                    } else {
+                      setMobileGalleryIndex(mobileGalleryIndex - 1);
+                    }
+                  }
+                }}
+                className="cursor-grab active:cursor-grabbing"
+              >
+                {mobileGalleryImages.length > 0 && mobileGalleryImages[mobileGalleryIndex] ? (
+                  <img
+                    src={mobileGalleryImages[mobileGalleryIndex].s3_url}
+                    alt={`${companion?.name} - ${mobileGalleryImages[mobileGalleryIndex].emotional_state}`}
+                    className="w-full max-h-[60vh] object-cover rounded-xl shadow-2xl"
+                    draggable={false}
+                  />
+                ) : currentAvatarUrl ? (
+                  <img
+                    src={currentAvatarUrl}
+                    alt={companion?.name || 'Companion'}
+                    className="w-full max-h-[60vh] object-cover rounded-xl shadow-2xl"
+                    draggable={false}
+                  />
+                ) : null}
+              </motion.div>
+
+              {/* Dot indicators */}
+              {mobileGalleryImages.length > 1 && (
+                <div className="flex justify-center gap-1.5 mt-3">
+                  {mobileGalleryImages.map((_, idx) => (
+                    <button
+                      key={idx}
+                      onClick={() => {
+                        if (isDemo && idx !== mobileGalleryIndex && onRequireAuth) {
+                          onRequireAuth('gallery');
+                        } else {
+                          setMobileGalleryIndex(idx);
+                        }
+                      }}
+                      className={`w-2 h-2 rounded-full transition-colors ${
+                        idx === mobileGalleryIndex
+                          ? 'bg-campfire-500'
+                          : 'bg-white/40 hover:bg-white/60'
+                      }`}
+                    />
+                  ))}
+                </div>
+              )}
+
+              {/* Loading state */}
+              {mobileGalleryLoading && (
+                <div className="absolute inset-0 flex items-center justify-center bg-black/30">
+                  <div className="w-8 h-8 border-2 border-campfire-500 border-t-transparent rounded-full animate-spin" />
+                </div>
+              )}
+            </div>
+
             <p className="mt-3 text-sm text-white/80">
               {companion?.name}
+              {mobileGalleryImages.length > 0 && mobileGalleryImages[mobileGalleryIndex] && (
+                <span className="ml-2 capitalize text-white/60">
+                  • {mobileGalleryImages[mobileGalleryIndex].emotional_state}
+                </span>
+              )}
             </p>
-            <div className="flex flex-wrap gap-2 mt-3">
+
+            {/* Swipe hint for demo mode */}
+            {isDemo && mobileGalleryImages.length > 1 && (
+              <p className="text-xs text-white/50 mt-1">Swipe to see more</p>
+            )}
+
+            <div className="flex flex-wrap gap-3 mt-4 justify-center">
               <Button
                 variant="secondary"
-                size="sm"
-                className="gap-1"
+                size="lg"
+                className="gap-2 px-6 py-3 text-base"
                 onClick={() => {
                   setShowMobileAvatar(false);
-                  setShowGallery(true);
+                  if (isDemo && onRequireAuth) {
+                    onRequireAuth('gallery');
+                  } else {
+                    setShowGallery(true);
+                  }
                 }}
               >
-                <Images className="h-4 w-4" />
+                <Images className="h-5 w-5" />
                 Gallery
               </Button>
               <Button
                 variant="secondary"
-                size="sm"
-                className="gap-1"
+                size="lg"
+                className="gap-2 px-6 py-3 text-base"
                 onClick={() => {
                   setShowMobileAvatar(false);
-                  setShowPersonality(true);
+                  if (isDemo && onRequireAuth) {
+                    onRequireAuth('personality');
+                  } else {
+                    setShowPersonality(true);
+                  }
                 }}
               >
-                <Sparkles className="h-4 w-4" />
+                <Sparkles className="h-5 w-5" />
                 Personality
               </Button>
               {backstoryData?.hasBackstory && (
                 <Button
                   variant="secondary"
-                  size="sm"
-                  className="gap-1 bg-amber-900/30 hover:bg-amber-900/50 text-amber-400 border-amber-700/30"
+                  size="lg"
+                  className="gap-2 px-6 py-3 text-base bg-amber-900/30 hover:bg-amber-900/50 text-amber-400 border-amber-700/30"
                   onClick={() => {
                     setShowMobileAvatar(false);
-                    setShowBackstory(true);
+                    if (isDemo && onRequireAuth) {
+                      onRequireAuth('avatar');
+                    } else {
+                      setShowBackstory(true);
+                    }
                   }}
                 >
-                  <BookOpen className="h-4 w-4" />
+                  <BookOpen className="h-5 w-5" />
                   Backstory
                 </Button>
               )}

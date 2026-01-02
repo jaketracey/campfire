@@ -28,6 +28,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Input } from '@/components/ui/input';
 import { Switch } from '@/components/ui/switch';
 import { Label } from '@/components/ui/label';
+import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { useRequireAuth, useAuth } from '@/hooks/use-auth';
 import { useAuthStore } from '@/stores/auth-store';
 import { getTokenBalance, type TokenBalance } from '@/lib/api/tokens';
@@ -52,6 +53,10 @@ export default function AccountPage() {
   const [consentToLearning, setConsentToLearning] = useState(true);
   const [isSavingPrivacy, setIsSavingPrivacy] = useState(false);
 
+  // Safety level state
+  const [safetyLevel, setSafetyLevel] = useState<string>('standard');
+  const [isSavingSafety, setIsSavingSafety] = useState(false);
+
   useEffect(() => {
     if (!isAuthenticated) return;
 
@@ -69,12 +74,13 @@ export default function AccountPage() {
     fetchTokenBalance();
   }, [isAuthenticated]);
 
-  // Load privacy settings from user preferences
+  // Load privacy and safety settings from user preferences
   useEffect(() => {
     if (user?.preferences) {
-      const prefs = user.preferences as Record<string, boolean>;
-      setConsentToMemory(prefs.consentToMemory ?? true);
-      setConsentToLearning(prefs.consentToLearning ?? true);
+      const prefs = user.preferences as Record<string, unknown>;
+      setConsentToMemory((prefs.consentToMemory as boolean) ?? true);
+      setConsentToLearning((prefs.consentToLearning as boolean) ?? true);
+      setSafetyLevel((prefs.safetyLevel as string) ?? 'standard');
     }
   }, [user?.preferences]);
 
@@ -145,6 +151,35 @@ export default function AccountPage() {
       if (key === 'consentToLearning') setConsentToLearning(!value);
     } finally {
       setIsSavingPrivacy(false);
+    }
+  };
+
+  const handleSafetyChange = async (value: string) => {
+    if (!user?.id) return;
+
+    // Update local state immediately for responsiveness
+    setSafetyLevel(value);
+
+    setIsSavingSafety(true);
+    try {
+      const currentPrefs = (user.preferences as Record<string, unknown>) || {};
+      await updateProfile(user.id, {
+        preferences: {
+          ...currentPrefs,
+          safetyLevel: value,
+        },
+      });
+      // Update local user state in auth store
+      updateUser({
+        preferences: { ...currentPrefs, safetyLevel: value },
+      } as Partial<typeof user>);
+    } catch (error) {
+      console.error('Failed to update safety level:', error);
+      // Revert on error
+      const currentPrefs = (user.preferences as Record<string, unknown>) || {};
+      setSafetyLevel((currentPrefs.safetyLevel as string) ?? 'standard');
+    } finally {
+      setIsSavingSafety(false);
     }
   };
 
@@ -350,6 +385,108 @@ export default function AccountPage() {
                   className="data-[state=checked]:bg-cyan-500"
                 />
               </div>
+            </CardContent>
+          </Card>
+
+          {/* Content & Safety Section */}
+          <Card className="bg-white/[0.02] border-white/10 backdrop-blur-xl overflow-hidden">
+            <CardHeader className="pb-3 sm:pb-4">
+              <div className="flex items-center gap-2 sm:gap-3">
+                <div className="h-8 w-8 sm:h-10 sm:w-10 rounded-xl bg-rose-500/20 flex items-center justify-center">
+                  <Shield className="h-4 w-4 sm:h-5 sm:w-5 text-rose-500" />
+                </div>
+                <div>
+                  <CardTitle className="text-lg sm:text-xl text-white">Content & Safety</CardTitle>
+                  <CardDescription className="text-xs sm:text-sm text-gray-500">
+                    Set your content preferences for conversations
+                  </CardDescription>
+                </div>
+              </div>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <p className="text-xs sm:text-sm text-gray-400">
+                Your safety preference works with each companion&apos;s content rating.
+                The more restrictive setting always applies.
+              </p>
+              <RadioGroup
+                value={safetyLevel}
+                onValueChange={handleSafetyChange}
+                disabled={isSavingSafety}
+                className="space-y-3"
+              >
+                {/* Strict (G) */}
+                <div className="flex items-start gap-3 p-3 rounded-xl bg-white/[0.02] border border-white/5 hover:bg-white/[0.04] transition-colors">
+                  <RadioGroupItem value="strict" id="safety-strict" className="mt-1" />
+                  <Label htmlFor="safety-strict" className="flex-1 cursor-pointer">
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm font-medium text-white">Strict</span>
+                      <span className="px-1.5 py-0.5 text-xs bg-green-500/20 text-green-400 rounded">
+                        G
+                      </span>
+                    </div>
+                    <p className="text-xs text-gray-500 mt-1">
+                      Clean, family-friendly content only. No mature themes.
+                    </p>
+                  </Label>
+                </div>
+
+                {/* Standard (PG) */}
+                <div className="flex items-start gap-3 p-3 rounded-xl bg-white/[0.02] border border-white/5 hover:bg-white/[0.04] transition-colors">
+                  <RadioGroupItem value="standard" id="safety-standard" className="mt-1" />
+                  <Label htmlFor="safety-standard" className="flex-1 cursor-pointer">
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm font-medium text-white">Standard</span>
+                      <span className="px-1.5 py-0.5 text-xs bg-blue-500/20 text-blue-400 rounded">
+                        PG
+                      </span>
+                      <span className="px-1.5 py-0.5 text-xs bg-gray-500/20 text-gray-400 rounded">
+                        Default
+                      </span>
+                    </div>
+                    <p className="text-xs text-gray-500 mt-1">
+                      Mild themes allowed. Suitable for general audiences.
+                    </p>
+                  </Label>
+                </div>
+
+                {/* Mature (PG-13) */}
+                <div className="flex items-start gap-3 p-3 rounded-xl bg-white/[0.02] border border-white/5 hover:bg-white/[0.04] transition-colors">
+                  <RadioGroupItem value="permissive" id="safety-permissive" className="mt-1" />
+                  <Label htmlFor="safety-permissive" className="flex-1 cursor-pointer">
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm font-medium text-white">Mature</span>
+                      <span className="px-1.5 py-0.5 text-xs bg-amber-500/20 text-amber-400 rounded">
+                        PG-13
+                      </span>
+                    </div>
+                    <p className="text-xs text-gray-500 mt-1">
+                      Teen-appropriate content. Some suggestive themes allowed.
+                    </p>
+                  </Label>
+                </div>
+
+                {/* Adult (R) */}
+                <div className="flex items-start gap-3 p-3 rounded-xl bg-white/[0.02] border border-white/5 hover:bg-white/[0.04] transition-colors">
+                  <RadioGroupItem value="adult" id="safety-adult" className="mt-1" />
+                  <Label htmlFor="safety-adult" className="flex-1 cursor-pointer">
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm font-medium text-white">Adult</span>
+                      <span className="px-1.5 py-0.5 text-xs bg-red-500/20 text-red-400 rounded">
+                        R
+                      </span>
+                    </div>
+                    <p className="text-xs text-gray-500 mt-1">
+                      Unrestricted adult content. No filtering applied.
+                    </p>
+                  </Label>
+                </div>
+              </RadioGroup>
+              {isSavingSafety && (
+                <div className="flex items-center gap-2 text-xs text-gray-500">
+                  <Loader2 className="h-3 w-3 animate-spin" />
+                  Saving...
+                </div>
+              )}
             </CardContent>
           </Card>
 

@@ -4,6 +4,8 @@ from orchestrator.providers.base import LLMProvider, LLMResponse, STTProvider, T
 from orchestrator.providers.anthropic import AnthropicProvider
 from orchestrator.providers.openai import OpenAIProvider
 from orchestrator.providers.ollama import OllamaProvider
+from orchestrator.providers.bedrock import BedrockProvider
+from orchestrator.providers.sagemaker import SageMakerProvider
 from orchestrator.providers.deepgram import DeepgramProvider
 from orchestrator.providers.elevenlabs import ElevenLabsProvider
 from orchestrator.providers.comfyui import ComfyUIProvider
@@ -19,6 +21,8 @@ __all__ = [
     "AnthropicProvider",
     "OpenAIProvider",
     "OllamaProvider",
+    "BedrockProvider",
+    "SageMakerProvider",
     "DeepgramProvider",
     "ElevenLabsProvider",
     "ComfyUIProvider",

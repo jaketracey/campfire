@@ -169,6 +169,24 @@ export type {
   TenetPriority,
 } from './tenets.js';
 
+// LLM Usage service
+import { getLLMUsageService as _getLLMUsageService } from './llm-usage.js';
+export {
+  LLMUsageService,
+  getLLMUsageService,
+  RecordLLMUsageInputSchema,
+  UpdateBudgetInputSchema,
+  CostQueryInputSchema,
+} from './llm-usage.js';
+export type {
+  RecordLLMUsageInput,
+  UpdateBudgetInput,
+  CostQueryInput,
+  BudgetCheckResult,
+  UsageAnalytics,
+  AlertConfig,
+} from './llm-usage.js';
+
 /**
  * Initialize all services
  * Call this at application startup to ensure singleton instances are created
@@ -184,6 +202,7 @@ export function initializeServices(): void {
   _getBillingService();
   _getVoiceService();
   _getTenetsService();
+  _getLLMUsageService();
 }
 
 /**
@@ -202,6 +221,7 @@ export function getServices() {
     billing: _getBillingService(),
     voice: _getVoiceService(),
     tenets: _getTenetsService(),
+    llmUsage: _getLLMUsageService(),
   };
 }
 
@@ -219,4 +239,5 @@ export interface ServiceContext {
   billing: ReturnType<typeof _getBillingService>;
   voice: ReturnType<typeof _getVoiceService>;
   tenets: ReturnType<typeof _getTenetsService>;
+  llmUsage: ReturnType<typeof _getLLMUsageService>;
 }

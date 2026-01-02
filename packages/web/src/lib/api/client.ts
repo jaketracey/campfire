@@ -101,9 +101,9 @@ export async function apiClient<T>(
     }
   }
 
-  // Default headers
+  // Default headers - only set Content-Type if there's a body
   const headers: HeadersInit = {
-    'Content-Type': 'application/json',
+    ...(fetchOptions.body ? { 'Content-Type': 'application/json' } : {}),
     ...fetchOptions.headers,
   };
 
@@ -162,6 +162,16 @@ export function post<T>(endpoint: string, body?: unknown): Promise<T> {
 export function patch<T>(endpoint: string, body?: unknown): Promise<T> {
   return apiClient<T>(endpoint, {
     method: 'PATCH',
+    body: body ? JSON.stringify(body) : undefined,
+  });
+}
+
+/**
+ * PUT request helper
+ */
+export function put<T>(endpoint: string, body?: unknown): Promise<T> {
+  return apiClient<T>(endpoint, {
+    method: 'PUT',
     body: body ? JSON.stringify(body) : undefined,
   });
 }

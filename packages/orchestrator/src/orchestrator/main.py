@@ -29,6 +29,8 @@ from orchestrator.safety.gate import SafetyGate, SafetyLevel
 from orchestrator.services.orchestrator import ConversationOrchestrator
 from orchestrator.services.prompt_enhancer import PromptEnhancer
 from orchestrator.tools.router import ToolRouter
+from orchestrator.api.test_runner import router as test_router
+from orchestrator.api.health import router as health_router
 
 logger = structlog.get_logger()
 
@@ -426,6 +428,10 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# Register API routers
+app.include_router(test_router)
+app.include_router(health_router)
+
 
 @app.get("/health", response_model=HealthResponse)
 async def health_check() -> HealthResponse:
@@ -561,6 +567,15 @@ async def stream_message(request: StreamMessageRequest) -> StreamingResponse:
                 # Parse multi-messages after stream completes
                 messages, image_prompt = app_state.orchestrator._parse_multi_messages(full_content)
 
+                # Log extraction result for debugging
+                logger.info(
+                    "stream_image_prompt_result",
+                    message_count=len(messages),
+                    image_prompt_found=image_prompt is not None,
+                    image_prompt=image_prompt[:200] if image_prompt else None,
+                    full_content_tail=full_content[-300:] if len(full_content) > 300 else full_content,
+                )
+
                 # Emit [MESSAGE] events for multi-message responses
                 if len(messages) > 1:
                     import json
@@ -579,12 +594,22 @@ async def stream_message(request: StreamMessageRequest) -> StreamingResponse:
                     # Send image_prompt after all messages
                     if image_prompt:
                         metadata = {"image_prompt": image_prompt}
+                        logger.info(
+                            "sending_image_prompt_metadata",
+                            image_prompt_length=len(image_prompt),
+                            image_prompt=image_prompt[:200],
+                        )
                         yield f"data: [METADATA]{json.dumps(metadata)}\n\n"
                 else:
                     # Single message - send image_prompt metadata if present
                     if image_prompt:
                         import json
                         metadata = {"image_prompt": image_prompt}
+                        logger.info(
+                            "sending_image_prompt_metadata",
+                            image_prompt_length=len(image_prompt),
+                            image_prompt=image_prompt[:200],
+                        )
                         yield f"data: [METADATA]{json.dumps(metadata)}\n\n"
 
                 yield "data: [DONE]\n\n"
@@ -692,6 +717,15 @@ async def generate_image(request: ImageGenRequest) -> ImageGenResponse:
     """
     import base64
 
+    # Log incoming prompt before any processing
+    logger.info(
+        "imagegen_prompt_received",
+        prompt_length=len(request.prompt) if request.prompt else 0,
+        prompt=request.prompt[:200] if request.prompt else None,
+        emotional_state=request.emotional_state,
+        style=request.style,
+    )
+
     # Enhance the prompt if prompt enhancer is available
     prompt = request.prompt
     prompt_was_enhanced = False
@@ -702,6 +736,14 @@ async def generate_image(request: ImageGenRequest) -> ImageGenResponse:
             style=request.style,
         )
         prompt_was_enhanced = prompt != request.prompt
+
+        # Log enhancement result
+        if prompt_was_enhanced:
+            logger.info(
+                "imagegen_prompt_enhanced",
+                original=request.prompt[:200],
+                enhanced=prompt[:200],
+            )
 
     # Add minimal quality suffix
     full_prompt = prompt + ", high quality, detailed"

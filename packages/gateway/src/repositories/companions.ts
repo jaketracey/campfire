@@ -157,6 +157,80 @@ export class CompanionsRepository {
     return { ...companion, activeAvatar };
   }
 
+  /**
+   * Get a random public companion with avatar (for demo/fallback)
+   */
+  async getRandomPublic(tx?: TransactionContext): Promise<CompanionWithAvatar | null> {
+    const db = this.getSql(tx);
+
+    const result = await db`
+      SELECT
+        c.id, c.user_id, c.name, c.spec, c.spec_version, c.status, c.is_public,
+        c.active_avatar_id, c.created_at, c.updated_at,
+        a.id as avatar_id, a.asset_url, a.asset_type, a.is_active,
+        a.is_identity_anchor, a.metadata as avatar_metadata,
+        a.generation_params, a.source_event_id as avatar_source_event_id,
+        a.created_at as avatar_created_at
+      FROM companions c
+      LEFT JOIN companion_avatars a ON c.active_avatar_id = a.id
+      WHERE c.is_public = TRUE AND c.status = 'active'
+      ORDER BY RANDOM()
+      LIMIT 1
+    `;
+
+    if (!result[0]) {
+      return null;
+    }
+
+    const companion = this.mapCompanion(result[0]);
+    const activeAvatar = result[0]['avatar_id']
+      ? this.mapAvatarFromJoin(result[0])
+      : null;
+
+    return { ...companion, activeAvatar };
+  }
+
+  /**
+   * Get a random companion that has both an anchor image AND a backstory
+   * Used for demo mode to ensure high-quality companion selection
+   * Selects from ALL companions (any user) that have the required data
+   */
+  async getRandomWithAnchorAndBackstory(tx?: TransactionContext): Promise<CompanionWithAvatar | null> {
+    const db = this.getSql(tx);
+
+    const result = await db`
+      SELECT DISTINCT ON (c.id)
+        c.id, c.user_id, c.name, c.spec, c.spec_version, c.status, c.is_public,
+        c.active_avatar_id, c.created_at, c.updated_at,
+        anchor.id as avatar_id, anchor.asset_url, anchor.asset_type, anchor.is_active,
+        anchor.is_identity_anchor, anchor.metadata as avatar_metadata,
+        anchor.generation_params, anchor.source_event_id as avatar_source_event_id,
+        anchor.created_at as avatar_created_at
+      FROM companions c
+      INNER JOIN companion_avatars anchor ON anchor.companion_id = c.id AND anchor.is_identity_anchor = TRUE
+      INNER JOIN kg_entities backstory ON backstory.companion_id = c.id
+        AND backstory.name = 'My Backstory'
+        AND backstory.entity_type = 'concept'
+      WHERE c.status = 'active'
+      ORDER BY c.id, RANDOM()
+    `;
+
+    if (result.length === 0) {
+      return null;
+    }
+
+    // Pick a random one from all qualifying companions
+    const randomIndex = Math.floor(Math.random() * result.length);
+    const row = result[randomIndex];
+
+    const companion = this.mapCompanion(row);
+    const activeAvatar = row['avatar_id']
+      ? this.mapAvatarFromJoin(row)
+      : null;
+
+    return { ...companion, activeAvatar };
+  }
+
   async create(data: CompanionInsert, tx?: TransactionContext): Promise<Companion> {
     const db = this.getSql(tx);
 

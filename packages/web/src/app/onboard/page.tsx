@@ -13,6 +13,7 @@ import { Step9Review as Step6Review } from '@/components/onboarding/steps/step-9
 import { Button } from '@/components/ui/button';
 import { ChevronLeft } from 'lucide-react';
 import { useAuth } from '@/hooks/use-auth';
+import { WelcomeTransition } from '@/components/auth/welcome-transition';
 
 export default function OnboardingPage() {
   const router = useRouter();
@@ -62,7 +63,26 @@ export default function OnboardingPage() {
   const progress = ((currentStep - 1) / 5) * 100;
 
   return (
+    <WelcomeTransition>
     <div className="relative min-h-screen w-full overflow-hidden text-white flex flex-col font-sans">
+      {/* Mobile step indicator - fixed in top-right, same row as logo */}
+      {currentStep > 1 && (
+        <div className="fixed top-0 right-0 z-50 flex items-center p-6 md:hidden">
+          <div className="flex flex-col gap-1.5 w-28">
+            <span className="text-[10px] font-bold tracking-widest text-muted-foreground uppercase font-display text-right">
+              Step {currentStep} <span className="text-vibes-cyan">/ 6</span>
+            </span>
+            <div className="h-1 w-full bg-white/5 rounded-full overflow-hidden border border-white/5">
+              <motion.div
+                initial={{ width: 0 }}
+                animate={{ width: `${progress}%` }}
+                className="h-full bg-gradient-to-r from-vibes-electric to-vibes-cyan shadow-[0_0_10px_rgba(6,182,212,0.5)]"
+              />
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Header / Nav */}
       <header className="relative z-10 flex items-center justify-between p-6 pt-20">
         <div className="flex items-center gap-4" data-hides-logo>
@@ -76,8 +96,9 @@ export default function OnboardingPage() {
               <ChevronLeft className="h-6 w-6" />
             </Button>
           )}
+          {/* Desktop only - step indicator next to back button */}
           {currentStep > 1 && (
-            <div className="flex flex-col gap-1.5 w-32 md:w-48">
+            <div className="hidden md:flex flex-col gap-1.5 w-48">
               <span className="text-[10px] font-bold tracking-widest text-muted-foreground uppercase font-display">
                 Step {currentStep} <span className="text-vibes-cyan">/ 6</span>
               </span>
@@ -114,5 +135,6 @@ export default function OnboardingPage() {
         </AnimatePresence>
       </main>
     </div>
+    </WelcomeTransition>
   );
 }

@@ -73,6 +73,27 @@ class Settings(BaseSettings):
     ollama_timeout: float = 120.0
     ollama_enabled: bool = True  # Prefer Ollama over OpenAI when available
 
+    # AWS Configuration (uses IAM role in ECS when keys are empty)
+    aws_region: str = "us-east-1"
+    aws_access_key_id: str = ""
+    aws_secret_access_key: str = ""
+    aws_session_token: str = ""
+
+    # AWS Bedrock (production LLM inference)
+    bedrock_enabled: bool = False  # Enable in staging/prod
+    bedrock_default_model: str = "anthropic.claude-3-5-sonnet-20241022-v2:0"
+    bedrock_fallback_model: str = "anthropic.claude-3-haiku-20240307-v1:0"
+    bedrock_max_tokens: int = 4096
+    bedrock_timeout: float = 60.0
+
+    # AWS SageMaker (custom fine-tuned models)
+    sagemaker_enabled: bool = False
+    sagemaker_endpoint_name: str = ""
+    sagemaker_content_type: str = "application/json"
+    sagemaker_accept: str = "application/json"
+    sagemaker_max_tokens: int = 4096
+    sagemaker_timeout: float = 120.0
+
     # Deepgram (STT)
     deepgram_api_key: str = ""
     deepgram_model: str = "nova-2"

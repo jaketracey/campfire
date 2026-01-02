@@ -111,17 +111,35 @@ export default function LoginPage() {
   };
 
   return (
-    <Card>
+    <Card className="bg-white/[0.03] backdrop-blur-xl border-white/10">
       <CardHeader className="space-y-1">
-        <CardTitle className="text-2xl font-bold">Welcome back</CardTitle>
-        <CardDescription>
+        <CardTitle className="text-2xl font-bold text-white">Welcome back</CardTitle>
+        <CardDescription className="text-white/60">
           Sign in to your account to continue
         </CardDescription>
       </CardHeader>
       <form onSubmit={handleSubmit(onSubmit)}>
         <CardContent className="space-y-4">
+          <GoogleSignInButton
+            onSuccess={handleGoogleSuccess}
+            onError={handleGoogleError}
+            text="signin"
+            disabled={isLoading}
+          />
+
+          <div className="relative w-full">
+            <div className="absolute inset-0 flex items-center">
+              <span className="w-full border-t border-white/10" />
+            </div>
+            <div className="relative flex justify-center text-xs uppercase">
+              <span className="bg-transparent px-2 text-white/40">
+                or
+              </span>
+            </div>
+          </div>
+
           <div className="space-y-2">
-            <Label htmlFor="email">Email</Label>
+            <Label htmlFor="email" className="text-white/80">Email</Label>
             <Input
               id="email"
               type="email"
@@ -136,10 +154,10 @@ export default function LoginPage() {
 
           <div className="space-y-2">
             <div className="flex items-center justify-between">
-              <Label htmlFor="password">Password</Label>
+              <Label htmlFor="password" className="text-white/80">Password</Label>
               <Link
                 href="/forgot-password"
-                className="text-sm text-muted-foreground hover:text-primary"
+                className="text-sm text-white/40 hover:text-white/60"
               >
                 Forgot password?
               </Link>
@@ -184,27 +202,9 @@ export default function LoginPage() {
             Sign in
           </Button>
 
-          <div className="relative w-full">
-            <div className="absolute inset-0 flex items-center">
-              <span className="w-full border-t" />
-            </div>
-            <div className="relative flex justify-center text-xs uppercase">
-              <span className="bg-card px-2 text-muted-foreground">
-                Or continue with
-              </span>
-            </div>
-          </div>
-
-          <GoogleSignInButton
-            onSuccess={handleGoogleSuccess}
-            onError={handleGoogleError}
-            text="signin"
-            disabled={isLoading}
-          />
-
-          <p className="text-sm text-muted-foreground text-center">
+          <p className="text-sm text-white/40 text-center">
             Don&apos;t have an account?{' '}
-            <Link href="/signup" className="text-primary hover:underline">
+            <Link href="/signup" className="text-campfire-400 hover:text-campfire-300 hover:underline">
               Sign up
             </Link>
           </p>

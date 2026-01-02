@@ -1,37 +1,108 @@
 'use client';
 
-import { useState } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
+import { useState, useRef, useCallback, useEffect } from 'react';
+import { motion } from 'framer-motion';
 import { useOnboardingStore, type VoiceOption } from '@/stores/onboarding-store';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
-import { Play, Pause, ArrowRight, AudioWaveform } from 'lucide-react';
+import { Play, Pause, ArrowRight, Loader2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
-// Mock data for voices
+// ElevenLabs voices for companion creation
 const voices: VoiceOption[] = [
-  { id: 'echo', name: 'Echo', description: 'Soft, calm, and soothing.', sampleUrl: '/samples/echo.mp3', gender: 'neutral' },
-  { id: 'alloy', name: 'Alloy', description: 'Versatile, neutral, and clear.', sampleUrl: '/samples/alloy.mp3', gender: 'neutral' },
-  { id: 'onyx', name: 'Onyx', description: 'Deep, resonant, and authoritative.', sampleUrl: '/samples/onyx.mp3', gender: 'masculine' },
-  { id: 'nova', name: 'Nova', description: 'Bright, energetic, and friendly.', sampleUrl: '/samples/nova.mp3', gender: 'feminine' },
-  { id: 'shimmer', name: 'Shimmer', description: 'Warm, expressive, and engaging.', sampleUrl: '/samples/shimmer.mp3', gender: 'feminine' },
+  { id: 'EXAVITQu4vr4xnSDxMaL', name: 'Sarah', description: 'Soft, warm, and naturally alluring.', sampleUrl: '', gender: 'feminine' },
+  { id: 'FGY2WhTYpPnrIDTdsKH5', name: 'Laura', description: 'Calm, soothing, with a hint of playfulness.', sampleUrl: '', gender: 'feminine' },
+  { id: 'XB0fDUnXU5powFXDhCwa', name: 'Charlotte', description: 'Elegant, seductive, and confident.', sampleUrl: '', gender: 'feminine' },
+  { id: 'pFZP5JQG7iQjIQuC4Bku', name: 'Lily', description: 'Sweet, youthful, and energetic.', sampleUrl: '', gender: 'feminine' },
+  { id: 'cgSgspJ2msm6clMCkdW9', name: 'Jessica', description: 'Expressive, friendly, and engaging.', sampleUrl: '', gender: 'feminine' },
+  { id: 'onwK4e9ZLuTAKqWW03F9', name: 'Daniel', description: 'Deep, resonant, and authoritative.', sampleUrl: '', gender: 'masculine' },
+  { id: 'cjVigY5qzO86Huf0OWal', name: 'Eric', description: 'Smooth, charming, and sophisticated.', sampleUrl: '', gender: 'masculine' },
+  { id: 'N2lVS1w4EtoT3dr4eOWO', name: 'Callum', description: 'Warm, intimate, and captivating.', sampleUrl: '', gender: 'masculine' },
+  { id: 'IKne3meq5aSn9XLyUdCD', name: 'Charlie', description: 'Friendly, playful, and inviting.', sampleUrl: '', gender: 'neutral' },
+  { id: 'JBFqnCBsd6RMkjVDRZzb', name: 'George', description: 'Rich, thoughtful, and comforting.', sampleUrl: '', gender: 'masculine' },
 ];
+
+// Build the voice sample URL with customization params
+function getVoiceSampleUrl(voiceId: string): string {
+  const baseUrl = typeof window !== 'undefined' && (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')
+    ? 'http://localhost:3002'
+    : '';
+  // Use flirty voice settings: lower stability for more expression, higher style for personality
+  const params = new URLSearchParams({
+    stability: '0.35',
+    similarityBoost: '0.75',
+    style: '0.45',
+    speed: '0.95',
+  });
+  return `${baseUrl}/api/v1/voice/${voiceId}/sample?${params.toString()}`;
+}
 
 export function Step4Voice() {
   const { voice, setVoice, nextStep } = useOnboardingStore();
   const [playingId, setPlayingId] = useState<string | null>(null);
+  const [loadingId, setLoadingId] = useState<string | null>(null);
+  const audioRef = useRef<HTMLAudioElement | null>(null);
 
-  // Mock audio player logic
-  const togglePlay = (id: string) => {
+  // Cleanup audio on unmount
+  useEffect(() => {
+    return () => {
+      if (audioRef.current) {
+        audioRef.current.pause();
+        audioRef.current = null;
+      }
+    };
+  }, []);
+
+  const togglePlay = useCallback(async (id: string) => {
+    // If already playing this voice, stop it
     if (playingId === id) {
+      if (audioRef.current) {
+        audioRef.current.pause();
+        audioRef.current = null;
+      }
       setPlayingId(null);
-    } else {
-      setPlayingId(id);
-      // In a real app, this would trigger an Audio object
-      // For now, we simulate playing for 3 seconds
-      setTimeout(() => setPlayingId(null), 3000);
+      return;
     }
-  };
+
+    // Stop any currently playing audio
+    if (audioRef.current) {
+      audioRef.current.pause();
+      audioRef.current = null;
+    }
+
+    setLoadingId(id);
+    setPlayingId(null);
+
+    try {
+      const sampleUrl = getVoiceSampleUrl(id);
+      const audio = new Audio(sampleUrl);
+      audioRef.current = audio;
+
+      audio.oncanplaythrough = () => {
+        setLoadingId(null);
+        setPlayingId(id);
+        audio.play().catch(console.error);
+      };
+
+      audio.onended = () => {
+        setPlayingId(null);
+        audioRef.current = null;
+      };
+
+      audio.onerror = () => {
+        setLoadingId(null);
+        setPlayingId(null);
+        audioRef.current = null;
+        console.error('Failed to load voice sample');
+      };
+
+      audio.load();
+    } catch (error) {
+      setLoadingId(null);
+      setPlayingId(null);
+      console.error('Failed to play voice sample:', error);
+    }
+  }, [playingId]);
 
   return (
     <div className="space-y-8">
@@ -59,6 +130,7 @@ export function Step4Voice() {
                   <Button
                     size="icon"
                     variant="ghost"
+                    disabled={loadingId === v.id}
                     className={cn(
                       "rounded-full h-14 w-14 transition-all duration-300",
                       playingId === v.id ? "bg-vibes-cyan text-black" : "bg-white/5 group-hover:bg-white/10 text-vibes-cyan"
@@ -68,7 +140,9 @@ export function Step4Voice() {
                       togglePlay(v.id);
                     }}
                   >
-                    {playingId === v.id ? (
+                    {loadingId === v.id ? (
+                      <Loader2 className="h-6 w-6 animate-spin" />
+                    ) : playingId === v.id ? (
                       <Pause className="h-6 w-6 fill-current" />
                     ) : (
                       <Play className="h-6 w-6 ml-1 fill-current" />
@@ -81,18 +155,23 @@ export function Step4Voice() {
                 </div>
               </div>
 
-              {playingId === v.id && (
+              {(playingId === v.id || loadingId === v.id) && (
                 <div className="flex items-center gap-1.5 px-6 animate-fade-in">
                   <div className="flex gap-1 items-end h-8">
                     {[1, 2, 3, 4, 5].map((i) => (
                       <motion.div
                         key={i}
-                        className="w-1.5 bg-gradient-to-t from-vibes-electric to-vibes-cyan rounded-full"
+                        className={cn(
+                          "w-1.5 rounded-full",
+                          loadingId === v.id
+                            ? "bg-gradient-to-t from-gray-600 to-gray-400"
+                            : "bg-gradient-to-t from-vibes-electric to-vibes-cyan"
+                        )}
                         animate={{
-                          height: [8, 24, 12, 28, 10],
+                          height: loadingId === v.id ? [8, 12, 8] : [8, 24, 12, 28, 10],
                         }}
                         transition={{
-                          duration: 0.6,
+                          duration: loadingId === v.id ? 0.8 : 0.6,
                           repeat: Infinity,
                           delay: i * 0.1,
                           ease: "easeInOut"

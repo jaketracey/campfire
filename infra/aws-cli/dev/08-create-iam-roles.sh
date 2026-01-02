@@ -344,8 +344,146 @@ aws iam attach-role-policy \
 
 log "Task role configured with S3, CloudWatch, SSM, and X-Ray access"
 
+# Create policy for Bedrock access (for LLM inference in staging/prod)
+cat > /tmp/bedrock-policy.json << EOF
+{
+    "Version": "2012-10-17",
+    "Statement": [
+        {
+            "Sid": "BedrockInvokeModel",
+            "Effect": "Allow",
+            "Action": [
+                "bedrock:InvokeModel",
+                "bedrock:InvokeModelWithResponseStream"
+            ],
+            "Resource": [
+                "arn:aws:bedrock:*::foundation-model/*"
+            ]
+        },
+        {
+            "Sid": "BedrockListModels",
+            "Effect": "Allow",
+            "Action": [
+                "bedrock:ListFoundationModels",
+                "bedrock:GetFoundationModel"
+            ],
+            "Resource": "*"
+        }
+    ]
+}
+EOF
+
+BEDROCK_POLICY_ARN="arn:aws:iam::${AWS_ACCOUNT_ID}:policy/${RESOURCE_PREFIX}-bedrock-policy"
+
+if aws iam get-policy --policy-arn "${BEDROCK_POLICY_ARN}" 2>/dev/null; then
+    aws iam create-policy-version \
+        --policy-arn "${BEDROCK_POLICY_ARN}" \
+        --policy-document file:///tmp/bedrock-policy.json \
+        --set-as-default
+else
+    aws iam create-policy \
+        --policy-name "${RESOURCE_PREFIX}-bedrock-policy" \
+        --policy-document file:///tmp/bedrock-policy.json \
+        --description "Allow ECS tasks to invoke Bedrock foundation models"
+fi
+
+aws iam attach-role-policy \
+    --role-name "${TASK_ROLE_NAME}" \
+    --policy-arn "${BEDROCK_POLICY_ARN}"
+
+log "Task role configured with Bedrock access"
+
+# Create policy for SageMaker endpoint access (for custom fine-tuned models)
+cat > /tmp/sagemaker-policy.json << EOF
+{
+    "Version": "2012-10-17",
+    "Statement": [
+        {
+            "Sid": "SageMakerInvokeEndpoint",
+            "Effect": "Allow",
+            "Action": [
+                "sagemaker:InvokeEndpoint",
+                "sagemaker:InvokeEndpointWithResponseStream"
+            ],
+            "Resource": [
+                "arn:aws:sagemaker:${AWS_REGION}:${AWS_ACCOUNT_ID}:endpoint/${RESOURCE_PREFIX}-*"
+            ]
+        },
+        {
+            "Sid": "SageMakerListEndpoints",
+            "Effect": "Allow",
+            "Action": [
+                "sagemaker:DescribeEndpoint",
+                "sagemaker:ListEndpoints"
+            ],
+            "Resource": "*"
+        }
+    ]
+}
+EOF
+
+SAGEMAKER_POLICY_ARN="arn:aws:iam::${AWS_ACCOUNT_ID}:policy/${RESOURCE_PREFIX}-sagemaker-policy"
+
+if aws iam get-policy --policy-arn "${SAGEMAKER_POLICY_ARN}" 2>/dev/null; then
+    aws iam create-policy-version \
+        --policy-arn "${SAGEMAKER_POLICY_ARN}" \
+        --policy-document file:///tmp/sagemaker-policy.json \
+        --set-as-default
+else
+    aws iam create-policy \
+        --policy-name "${RESOURCE_PREFIX}-sagemaker-policy" \
+        --policy-document file:///tmp/sagemaker-policy.json \
+        --description "Allow ECS tasks to invoke SageMaker endpoints for custom models"
+fi
+
+aws iam attach-role-policy \
+    --role-name "${TASK_ROLE_NAME}" \
+    --policy-arn "${SAGEMAKER_POLICY_ARN}"
+
+log "Task role configured with SageMaker access"
+
+# Create policy for Cost Explorer access (for cost tracking dashboards)
+cat > /tmp/cost-explorer-policy.json << EOF
+{
+    "Version": "2012-10-17",
+    "Statement": [
+        {
+            "Sid": "CostExplorerRead",
+            "Effect": "Allow",
+            "Action": [
+                "ce:GetCostAndUsage",
+                "ce:GetCostForecast",
+                "ce:GetDimensionValues",
+                "ce:GetTags"
+            ],
+            "Resource": "*"
+        }
+    ]
+}
+EOF
+
+COST_EXPLORER_POLICY_ARN="arn:aws:iam::${AWS_ACCOUNT_ID}:policy/${RESOURCE_PREFIX}-cost-explorer-policy"
+
+if aws iam get-policy --policy-arn "${COST_EXPLORER_POLICY_ARN}" 2>/dev/null; then
+    aws iam create-policy-version \
+        --policy-arn "${COST_EXPLORER_POLICY_ARN}" \
+        --policy-document file:///tmp/cost-explorer-policy.json \
+        --set-as-default
+else
+    aws iam create-policy \
+        --policy-name "${RESOURCE_PREFIX}-cost-explorer-policy" \
+        --policy-document file:///tmp/cost-explorer-policy.json \
+        --description "Allow ECS tasks to read Cost Explorer data for cost dashboards"
+fi
+
+aws iam attach-role-policy \
+    --role-name "${TASK_ROLE_NAME}" \
+    --policy-arn "${COST_EXPLORER_POLICY_ARN}"
+
+log "Task role configured with Cost Explorer access"
+
 # Clean up temp files
-rm -f /tmp/ecs-trust-policy.json /tmp/ssm-secrets-policy.json /tmp/s3-access-policy.json /tmp/cloudwatch-policy.json /tmp/ssm-read-policy.json /tmp/xray-policy.json
+rm -f /tmp/ecs-trust-policy.json /tmp/ssm-secrets-policy.json /tmp/s3-access-policy.json /tmp/cloudwatch-policy.json /tmp/ssm-read-policy.json /tmp/xray-policy.json /tmp/bedrock-policy.json /tmp/sagemaker-policy.json /tmp/cost-explorer-policy.json
 
 # -----------------------------------------------------------------------------
 # Save IAM Configuration
@@ -387,6 +525,9 @@ echo "    - CloudWatch Logs write"
 echo "    - CloudWatch Metrics publish"
 echo "    - SSM Parameter Store read (runtime access)"
 echo "    - X-Ray tracing"
+echo "    - Bedrock InvokeModel (for LLM inference)"
+echo "    - SageMaker InvokeEndpoint (for custom models)"
+echo "    - Cost Explorer read (for cost dashboards)"
 echo ""
 echo "Next step: ./09-create-cloudwatch.sh"
 echo "============================================================================="

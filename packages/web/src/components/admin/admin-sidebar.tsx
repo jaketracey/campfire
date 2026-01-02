@@ -3,7 +3,7 @@
 import Link from 'next/link';
 import type { Route } from 'next';
 import { usePathname } from 'next/navigation';
-import { Users, Mail, Settings, BarChart3, Flame } from 'lucide-react';
+import { Users, Mail, Settings, BarChart3, Flame, FlaskConical, DollarSign } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 interface NavItem {
@@ -23,6 +23,16 @@ const navItems: NavItem[] = [
     label: 'Invites',
     href: '/admin/invites' as Route,
     icon: Mail,
+  },
+  {
+    label: 'Orchestration',
+    href: '/admin/orchestration' as Route,
+    icon: FlaskConical,
+  },
+  {
+    label: 'Costs',
+    href: '/admin/costs' as Route,
+    icon: DollarSign,
   },
   {
     label: 'Analytics',

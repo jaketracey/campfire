@@ -21,6 +21,10 @@ import { imagegenRoutes } from './imagegen.js';
 import { debugRoutes } from './debug.js';
 import { personalityProfilesRoutes } from './personality-profiles.js';
 import { tenetsRoutes } from './tenets.js';
+import { demoRoutes } from './demo.js';
+import { adminOrchestrationRoutes } from './admin-orchestration.js';
+import { adminCostsRoutes, userCostsRoutes } from './admin-costs.js';
+import { voiceRoutes } from './voice.js';
 import { logger } from '../observability/logger.js';
 
 /**
@@ -74,6 +78,21 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
 
       // Personality profile routes (registered at root since they use /users and /admin prefixes)
       await api.register(personalityProfilesRoutes);
+
+      // Demo routes (public, no auth required)
+      await api.register(demoRoutes, { prefix: '/demo' });
+
+      // Voice routes (public, for voice preview/selection)
+      await api.register(voiceRoutes, { prefix: '/voice' });
+
+      // Admin orchestration routes
+      await api.register(adminOrchestrationRoutes, { prefix: '/admin/orchestration' });
+
+      // Admin cost routes
+      await api.register(adminCostsRoutes, { prefix: '/admin/costs' });
+
+      // User cost routes (nested under /users/me)
+      await api.register(userCostsRoutes, { prefix: '/users/me' });
     },
     { prefix: '/api/v1' }
   );

@@ -99,6 +99,18 @@ export ALB_INTERNAL="false"
 export LOG_RETENTION_DAYS="14"
 
 # -----------------------------------------------------------------------------
+# AI Inference Configuration
+# -----------------------------------------------------------------------------
+# Provider: ollama (local dev), bedrock (staging/prod)
+export AI_INFERENCE_PROVIDER="${AI_INFERENCE_PROVIDER:-ollama}"
+export BEDROCK_ENABLED="${BEDROCK_ENABLED:-false}"
+export SAGEMAKER_ENABLED="${SAGEMAKER_ENABLED:-false}"
+
+# Cost alert thresholds (USD)
+export COST_ALERT_DAILY_THRESHOLD="${COST_ALERT_DAILY_THRESHOLD:-50}"
+export COST_ALERT_MONTHLY_THRESHOLD="${COST_ALERT_MONTHLY_THRESHOLD:-500}"
+
+# -----------------------------------------------------------------------------
 # Tags
 # -----------------------------------------------------------------------------
 export TAG_PROJECT="${PROJECT_NAME}"

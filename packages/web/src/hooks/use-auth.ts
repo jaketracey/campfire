@@ -6,6 +6,7 @@ import type { Route } from 'next';
 import { useAuthStore } from '@/stores/auth-store';
 import * as authApi from '@/lib/api/auth';
 import type { LoginCredentials, SignupCredentials, GoogleAuthCredentials, User, AuthTokens } from '@/lib/auth/types';
+import { setWelcomeTransition } from '@/components/auth/welcome-transition';
 
 /**
  * Main auth hook providing auth state and actions
@@ -117,6 +118,9 @@ export function useAuth() {
         // Update Zustand state and set cookie
         setSession(user, tokens);
 
+        // Set welcome transition flag for the destination page
+        setWelcomeTransition({ type: 'signup', provider: 'email' });
+
         // Hard navigation to ensure cookie is sent to server middleware
         window.location.href = '/onboard';
         return { success: true };
@@ -125,7 +129,7 @@ export function useAuth() {
         throw error;
       }
     },
-    [router, setSession, setLoading]
+    [setSession, setLoading]
   );
 
   const logout = useCallback(async () => {
@@ -203,7 +207,15 @@ export function useAuth() {
 
         // Navigate to onboarding for new signups, dashboard for logins
         // We determine if it's a new user by checking if they have a displayName
-        const redirectPath = isSignup || !user.displayName ? '/onboard' : '/dashboard';
+        const isNewUser = isSignup || !user.displayName;
+        const redirectPath = isNewUser ? '/onboard' : '/dashboard';
+
+        // Set welcome transition flag for the destination page
+        setWelcomeTransition({
+          type: isNewUser ? 'signup' : 'login',
+          provider: 'google',
+        });
+
         window.location.href = redirectPath;
         return { success: true };
       } catch (error) {
@@ -230,13 +242,14 @@ export function useAuth() {
 /**
  * Hook for pages that require authentication
  * Redirects to login if not authenticated
+ * Pass null to skip redirect (useful for demo mode)
  */
-export function useRequireAuth(redirectTo: Route = '/login' as Route) {
+export function useRequireAuth(redirectTo: Route | null = '/login' as Route) {
   const router = useRouter();
   const { isAuthenticated, isInitialized, isLoading } = useAuth();
 
   useEffect(() => {
-    if (isInitialized && !isLoading && !isAuthenticated) {
+    if (isInitialized && !isLoading && !isAuthenticated && redirectTo) {
       router.replace(redirectTo);
     }
   }, [isInitialized, isLoading, isAuthenticated, router, redirectTo]);

@@ -24,6 +24,7 @@ interface GoogleIdConfig {
   callback: (response: GoogleCredentialResponse) => void;
   auto_select?: boolean;
   cancel_on_tap_outside?: boolean;
+  use_fedcm_for_prompt?: boolean;
 }
 
 interface GoogleButtonConfig {
@@ -34,6 +35,24 @@ interface GoogleButtonConfig {
   shape?: 'rectangular' | 'pill' | 'circle' | 'square';
   logo_alignment?: 'left' | 'center';
   width?: number;
+}
+
+/**
+ * Detect if running on iOS (iPhone, iPad, iPod)
+ * All iOS browsers use WebKit and have One Tap issues
+ */
+function isIOSDevice(): boolean {
+  if (typeof window === 'undefined') return false;
+
+  const userAgent = window.navigator.userAgent;
+
+  // Check for iOS devices
+  const isIOS = /iPad|iPhone|iPod/.test(userAgent);
+
+  // Also check for iPad on iOS 13+ which reports as Mac
+  const isIPadOS = userAgent.includes('Mac') && 'ontouchend' in document;
+
+  return isIOS || isIPadOS;
 }
 
 interface GoogleCredentialResponse {
@@ -68,11 +87,12 @@ interface PromptMomentNotification {
     | 'flow_restarted';
 }
 
-interface GoogleSignInButtonProps {
+export interface GoogleSignInButtonProps {
   onSuccess: (idToken: string) => Promise<void>;
   onError: (error: Error) => void;
   text?: 'signin' | 'signup';
   disabled?: boolean;
+  className?: string;
 }
 
 export function GoogleSignInButton({
@@ -80,11 +100,19 @@ export function GoogleSignInButton({
   onError,
   text = 'signin',
   disabled = false,
+  className,
 }: GoogleSignInButtonProps) {
   const [isLoading, setIsLoading] = useState(false);
   const [isScriptLoaded, setIsScriptLoaded] = useState(false);
+  const [isIOS, setIsIOS] = useState(false);
+  const googleButtonRef = useRef<HTMLDivElement>(null);
 
   const clientId = process.env.NEXT_PUBLIC_GOOGLE_OAUTH_CLIENT_ID;
+
+  // Detect iOS on mount
+  useEffect(() => {
+    setIsIOS(isIOSDevice());
+  }, []);
 
   const handleCredentialResponse = useCallback(
     async (response: GoogleCredentialResponse) => {
@@ -146,8 +174,26 @@ export function GoogleSignInButton({
       callback: handleCredentialResponse,
       auto_select: false,
       cancel_on_tap_outside: true,
+      // Enable FedCM for browsers that support it (improves compatibility)
+      use_fedcm_for_prompt: true,
     });
-  }, [isScriptLoaded, clientId, handleCredentialResponse]);
+
+    // On iOS, render Google's official button which handles the OAuth flow correctly
+    // The One Tap prompt() API doesn't work on iOS due to Safari's ITP blocking
+    if (isIOS && googleButtonRef.current) {
+      // Clear any existing button
+      googleButtonRef.current.innerHTML = '';
+
+      window.google.accounts.id.renderButton(googleButtonRef.current, {
+        type: 'standard',
+        theme: 'outline',
+        size: 'large',
+        text: text === 'signup' ? 'signup_with' : 'signin_with',
+        shape: 'rectangular',
+        width: googleButtonRef.current.offsetWidth || 300,
+      });
+    }
+  }, [isScriptLoaded, clientId, handleCredentialResponse, isIOS, text]);
 
   const handlePromptNotification = useCallback(
     (notification: PromptMomentNotification) => {
@@ -206,7 +252,8 @@ export function GoogleSignInButton({
       return;
     }
 
-    // Trigger the One Tap prompt with notification callback
+    // On iOS, the Google-rendered button handles the click, so this shouldn't be called
+    // But as a fallback, try prompt() anyway
     window.google.accounts.id.prompt(handlePromptNotification);
   }, [onError, handlePromptNotification]);
 
@@ -228,11 +275,38 @@ export function GoogleSignInButton({
 
   const buttonText = text === 'signup' ? 'Sign up with Google' : 'Sign in with Google';
 
+  // On iOS, show Google's rendered button (which handles OAuth correctly)
+  // We wrap it in a container that matches our button styling
+  if (isIOS) {
+    return (
+      <div className="w-full" data-google-signin>
+        {isLoading ? (
+          <Button
+            type="button"
+            variant="outline"
+            className={className || 'w-full'}
+            disabled
+          >
+            <Loader2 className="mr-2 h-5 w-5 animate-spin" />
+            Signing in...
+          </Button>
+        ) : (
+          <div
+            ref={googleButtonRef}
+            className={`w-full ${!isScriptLoaded ? 'opacity-50 pointer-events-none' : ''}`}
+            style={{ minHeight: '40px' }}
+          />
+        )}
+      </div>
+    );
+  }
+
+  // On desktop, use our custom button with One Tap prompt
   return (
     <Button
       type="button"
       variant="outline"
-      className="w-full"
+      className={className || 'w-full'}
       onClick={handleClick}
       disabled={disabled || isLoading || !isScriptLoaded}
       data-google-signin

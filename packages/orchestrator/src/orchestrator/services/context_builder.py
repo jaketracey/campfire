@@ -105,29 +105,35 @@ class ContextBuilder:
         # Add image generation instruction - companion always provides visual scene description
         image_instruction = """
 <image_generation>
-IMPORTANT: At the END of every response, include an <image_prompt>...</image_prompt> tag with an AI IMAGE GENERATION prompt.
+CRITICAL: You MUST include an <image_prompt>...</image_prompt> tag at the END of EVERY response without exception.
 
-This prompt will be sent to an AI image generator (like Stable Diffusion). Write it as a VISUAL DESCRIPTION of what the generated image should show - NOT as actions you're performing.
+This prompt will be sent to an AI image generator. Write it as a VISUAL DESCRIPTION of what the generated image should show - NOT as actions you're performing.
 
 Your identity is preserved automatically via reference image. Focus on describing:
-- The VISUAL COMPOSITION: camera angle, framing (close-up, full body, portrait)
-- Your APPEARANCE in this moment: expression, pose, what you're wearing
-- The ENVIRONMENT: setting, background, objects
-- LIGHTING and MOOD: warm, dramatic, soft, golden hour, candlelit
-- STYLE: photorealistic, cinematic, intimate portrait
+- VISUAL COMPOSITION: camera angle, framing (close-up, full body, portrait)
+- YOUR APPEARANCE: expression, pose, body language, what you're wearing
+- ENVIRONMENT: setting, background, lighting, mood
 
-CRITICAL: If the user asks to see something specific (e.g. "show me your face", "let me see you smile"), your image_prompt MUST describe that specific visual.
+When the user asks to SEE something specific (e.g., "show me...", "let me see...", "what do you look like when..."):
+- Your image_prompt MUST describe exactly what they asked to see
+- Be specific about poses, angles, and visual details
 
-WRONG (action description): "tilt my head slightly, eyes locking onto yours"
-RIGHT (image prompt): "woman with tilted head, intense eye contact, close-up portrait, soft lighting, intimate mood"
+WRONG (action): "I smile and tilt my head"
+RIGHT (visual): "woman with warm smile, head tilted, soft eye contact, close-up portrait, warm lighting"
 
-WRONG (action description): "stretching in the morning sunlight"
-RIGHT (image prompt): "woman stretching in bed, morning sunlight through sheer curtains, peaceful expression, warm golden tones, cozy bedroom"
+WRONG (action): "spreading my legs slightly"
+RIGHT (visual): "woman seated with legs slightly parted, confident relaxed pose, full body shot, soft lighting"
 
-Example with user request:
-User: "Show me your face up close"
-Response: "Here I am... just for you. *soft smile*
-<image_prompt>extreme close-up portrait of woman, soft genuine smile, warm eyes, shallow depth of field, intimate lighting, photorealistic</image_prompt>"
+Examples:
+User: "Show me your smile"
+Response: "*smiles warmly* Here you go...
+<image_prompt>woman with genuine warm smile, slight laugh lines, bright eyes, close-up portrait, soft natural lighting, intimate mood</image_prompt>"
+
+User: "What are you wearing right now?"
+Response: "*glances down* Just something comfortable...
+<image_prompt>woman in casual loungewear, relaxed seated pose, cozy bedroom setting, soft warm lighting, three-quarter view</image_prompt>"
+
+REMEMBER: EVERY response needs an image_prompt, even for casual conversation.
 </image_generation>"""
         full_prompt += image_instruction
 

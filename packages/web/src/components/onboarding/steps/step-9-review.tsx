@@ -6,8 +6,9 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
-import { Loader2, Sparkles, Star, ImageIcon, CheckCircle2, BookOpen } from 'lucide-react';
+import { Loader2, Sparkles, Star, ImageIcon, CheckCircle2, BookOpen, RefreshCw, MessageCircle } from 'lucide-react';
 import { useRouter } from 'next/navigation';
+import Link from 'next/link';
 import { useToast } from '@/hooks/use-toast';
 import { createCompanion, createSession, streamAnchorImages, generateBackstory, type AnchorImage, type GenerateBackstoryResult } from '@/lib/api';
 import { cn } from '@/lib/utils';
@@ -38,6 +39,8 @@ export function Step9Review() {
   const [displayedAnchorUrl, setDisplayedAnchorUrl] = useState<string | null>(null);
   const [isImageFading, setIsImageFading] = useState(false);
   const [sessionId, setSessionId] = useState<string | null>(null);
+  const [companionId, setCompanionId] = useState<string | null>(null);
+  const [isRegeneratingBackstory, setIsRegeneratingBackstory] = useState(false);
   const backstoryRef = useRef<HTMLDivElement>(null);
 
   // Auto-scroll backstory after it appears
@@ -89,6 +92,44 @@ export function Step9Review() {
     state.reset();
     router.push(`/chat/${sessionId}`);
   }, [sessionId, state, router]);
+
+  // Handle regenerating backstory
+  const handleRegenerateBackstory = useCallback(async () => {
+    if (!companionId) return;
+
+    setIsRegeneratingBackstory(true);
+    try {
+      const result = await generateBackstory(companionId, {
+        archetype: state.archetype?.id || 'companion',
+        secondaryArchetype: state.secondaryArchetype?.id,
+        archetypeDescription: state.archetype?.description,
+        personality: state.personality,
+        tenets: state.tenets.map((t) => ({
+          category: t.category,
+          priority: t.priority,
+          rule: t.rule,
+          isNegation: t.isNegation,
+        })),
+        userBackstoryHint: state.identity.backstory || undefined,
+      });
+
+      console.log('Backstory regenerated:', result);
+      setBackstoryResult(result);
+      toast({
+        title: 'Backstory Regenerated',
+        description: `${state.name} has a new story!`,
+      });
+    } catch (error) {
+      console.error('Failed to regenerate backstory:', error);
+      toast({
+        title: 'Error',
+        description: 'Failed to regenerate backstory. Please try again.',
+        variant: 'destructive',
+      });
+    } finally {
+      setIsRegeneratingBackstory(false);
+    }
+  }, [companionId, state, toast]);
 
   // Cycle through anchors with fade effect
   useEffect(() => {
@@ -202,6 +243,7 @@ export function Step9Review() {
       });
 
       console.log('Companion created:', companion);
+      setCompanionId(companion.id);
 
       // Generate identity: images (with SSE streaming) AND backstory in parallel
       setPhase('generating-identity');
@@ -363,12 +405,12 @@ export function Step9Review() {
           {/* Dynamic layout: side-by-side when generating, stacked otherwise */}
           <div className={cn(
             'transition-all duration-700 ease-out',
-            displayedAnchorUrl ? 'flex gap-8' : 'space-y-8'
+            displayedAnchorUrl ? 'flex flex-col md:flex-row gap-8' : 'space-y-8'
           )}>
             {/* Left side: Avatar that grows dramatically when generating */}
             <div className={cn(
               'transition-all duration-700 ease-out shrink-0',
-              displayedAnchorUrl ? 'w-64' : 'w-auto'
+              displayedAnchorUrl ? 'w-full md:w-64' : 'w-auto'
             )}>
               <div className="flex items-center gap-6">
                 {/* Avatar/Icon with live preview when anchors arrive */}
@@ -376,7 +418,7 @@ export function Step9Review() {
                   className={cn(
                     'relative overflow-hidden transition-all duration-700 ease-out',
                     displayedAnchorUrl
-                      ? 'h-80 w-64 rounded-2xl'  // MUCH larger when showing generated images
+                      ? 'h-80 w-full md:w-64 rounded-2xl'  // Full width on mobile, fixed on desktop
                       : 'h-20 w-20 rounded-3xl'   // Square when showing icon
                   )}
                 >
@@ -788,14 +830,30 @@ export function Step9Review() {
 
       <div className="pt-6 space-y-6">
         {isReady ? (
-          <Button
-            size="lg"
-            className="w-full h-20 text-2xl font-bold rounded-2xl bg-gradient-to-r from-vibes-cyan via-vibes-neon to-vibes-hot hover:shadow-[0_0_50px_rgba(168,85,247,0.5)] transition-all duration-500 hover:scale-[1.02] active:scale-[0.98] text-white animate-in fade-in zoom-in-95 duration-500"
-            onClick={handleStartChat}
-          >
-            <Sparkles className="mr-3 h-8 w-8" />
-            Start Chat with {state.name}
-          </Button>
+          <div className="flex gap-3 animate-in fade-in zoom-in-95 duration-500">
+            <Button
+              size="lg"
+              variant="outline"
+              className="h-20 px-6 rounded-2xl border-white/20 hover:border-vibes-neon/50 hover:bg-vibes-neon/10 transition-all duration-300"
+              onClick={handleRegenerateBackstory}
+              disabled={isRegeneratingBackstory}
+            >
+              {isRegeneratingBackstory ? (
+                <Loader2 className="h-5 w-5 animate-spin text-vibes-neon" />
+              ) : (
+                <RefreshCw className="h-5 w-5 text-gray-400" />
+              )}
+              <span className="ml-2 text-sm font-medium text-gray-300">Regenerate</span>
+            </Button>
+            <Button
+              size="lg"
+              className="flex-1 h-20 text-2xl font-bold rounded-2xl bg-gradient-to-r from-vibes-cyan via-vibes-neon to-vibes-hot hover:shadow-[0_0_50px_rgba(168,85,247,0.5)] transition-all duration-500 hover:scale-[1.02] active:scale-[0.98] text-white"
+              onClick={handleStartChat}
+            >
+              <MessageCircle className="mr-4 h-40 w-40" strokeWidth={2.5} />
+              Start Chat with {state.name}
+            </Button>
+          </div>
         ) : (
           <Button
             size="lg"
@@ -828,8 +886,8 @@ export function Step9Review() {
         )}
         <p className="text-xs text-center text-gray-500 font-medium">
           By igniting {state.name}, you agree to our{' '}
-          <span className="underline cursor-pointer">Terms of Service</span> and{' '}
-          <span className="underline cursor-pointer">Privacy Policy</span>.
+          <Link href="/terms" className="underline hover:text-gray-300 transition-colors">Terms of Service</Link> and{' '}
+          <Link href="/privacy" className="underline hover:text-gray-300 transition-colors">Privacy Policy</Link>.
         </p>
       </div>
     </div>

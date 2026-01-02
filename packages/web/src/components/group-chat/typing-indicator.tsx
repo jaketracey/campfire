@@ -7,6 +7,7 @@
 
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { cn } from '@/lib/utils';
+import { motion, AnimatePresence } from 'framer-motion';
 
 interface TypingCompanion {
   companionId: string;
@@ -24,10 +25,6 @@ export function TypingIndicator({
   typingCompanions,
   className,
 }: TypingIndicatorProps) {
-  if (typingCompanions.length === 0) {
-    return null;
-  }
-
   const getTypingText = () => {
     if (typingCompanions.length === 1) {
       return `${typingCompanions[0].companionName} is typing`;
@@ -39,48 +36,72 @@ export function TypingIndicator({
   };
 
   return (
-    <div
-      className={cn(
-        'flex items-center gap-2 text-sm text-muted-foreground',
-        className
-      )}
-    >
-      <div className="flex -space-x-1">
-        {typingCompanions.slice(0, 3).map((companion) => (
-          <Avatar
-            key={companion.companionId}
-            className="h-5 w-5 border border-background"
+    <AnimatePresence mode="wait">
+      {typingCompanions.length > 0 && (
+        <motion.div
+          initial={{ opacity: 0, y: 5, scale: 0.95 }}
+          animate={{ opacity: 1, y: 0, scale: 1 }}
+          exit={{ opacity: 0, scale: 0.95 }}
+          transition={{ duration: 0.2 }}
+          className={cn(
+            'flex items-center gap-2 text-sm text-muted-foreground py-1',
+            className
+          )}
+        >
+          <div className="flex -space-x-1.5">
+            <AnimatePresence>
+              {typingCompanions.slice(0, 3).map((companion) => (
+                <motion.div
+                  key={companion.companionId}
+                  initial={{ opacity: 0, scale: 0.5, x: -10 }}
+                  animate={{ opacity: 1, scale: 1, x: 0 }}
+                  exit={{ opacity: 0, scale: 0.5, x: -10 }}
+                  transition={{ type: 'spring', stiffness: 300, damping: 20 }}
+                >
+                  <Avatar className="h-5 w-5 border-2 border-background shadow-sm">
+                    <AvatarImage
+                      src={companion.avatarUrl || undefined}
+                      alt={companion.companionName}
+                    />
+                    <AvatarFallback
+                      style={{ backgroundColor: companion.themeColor }}
+                      className="text-white text-[8px] font-bold"
+                    >
+                      {companion.companionName.charAt(0).toUpperCase()}
+                    </AvatarFallback>
+                  </Avatar>
+                </motion.div>
+              ))}
+            </AnimatePresence>
+          </div>
+
+          <motion.span
+            layout
+            className="font-medium"
           >
-            <AvatarImage
-              src={companion.avatarUrl || undefined}
-              alt={companion.companionName}
-            />
-            <AvatarFallback
-              style={{ backgroundColor: companion.themeColor }}
-              className="text-white text-[10px]"
-            >
-              {companion.companionName.charAt(0).toUpperCase()}
-            </AvatarFallback>
-          </Avatar>
-        ))}
-      </div>
+            {getTypingText()}
+          </motion.span>
 
-      <span>{getTypingText()}</span>
-
-      <span className="flex gap-0.5">
-        <span
-          className="h-1.5 w-1.5 rounded-full bg-current animate-bounce"
-          style={{ animationDelay: '0ms' }}
-        />
-        <span
-          className="h-1.5 w-1.5 rounded-full bg-current animate-bounce"
-          style={{ animationDelay: '150ms' }}
-        />
-        <span
-          className="h-1.5 w-1.5 rounded-full bg-current animate-bounce"
-          style={{ animationDelay: '300ms' }}
-        />
-      </span>
-    </div>
+          <span className="flex gap-1 ml-0.5">
+            {[0, 1, 2].map((i) => (
+              <motion.span
+                key={i}
+                animate={{
+                  y: [0, -3, 0],
+                  opacity: [0.4, 1, 0.4],
+                }}
+                transition={{
+                  duration: 0.6,
+                  repeat: Infinity,
+                  delay: i * 0.15,
+                  ease: "easeInOut",
+                }}
+                className="h-1.5 w-1.5 rounded-full bg-campfire-400 dark:bg-campfire-500 shadow-[0_0_8px_rgba(249,115,22,0.3)]"
+              />
+            ))}
+          </span>
+        </motion.div>
+      )}
+    </AnimatePresence>
   );
 }

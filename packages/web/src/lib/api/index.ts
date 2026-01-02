@@ -7,3 +7,5 @@ export * from './referrals';
 export * from './gifts';
 export * from './tokens';
 export * from './personality-profile';
+export * from './demo';
+export * from './orchestration';

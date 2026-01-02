@@ -10,7 +10,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
-import { ArrowRight, Sparkles, Loader2 } from 'lucide-react';
+import { ArrowRight } from 'lucide-react';
 import { generateRandomIdentity } from '@/lib/api/companions';
 
 const identitySchema = z.object({
@@ -67,33 +67,11 @@ export function Step2Identity() {
     <Card className="w-full bg-white/[0.01] backdrop-blur-3xl border-white/10 shadow-[0_0_50px_rgba(0,0,0,0.5)] overflow-hidden">
       <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-vibes-neon via-vibes-hot to-vibes-cyan" />
       <CardHeader className="space-y-2 pb-8">
-        <div className="flex items-start justify-between">
-          <div>
-            <CardTitle className="text-3xl font-bold font-display tracking-tight text-white">Identity</CardTitle>
-            <CardDescription className="text-gray-400 mt-2">
-              Give your companion a name and a meaningful identity.
-            </CardDescription>
-          </div>
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            onClick={handleSurpriseMe}
-            disabled={isGenerating}
-            className="shrink-0 border-vibes-neon/30 text-vibes-neon hover:bg-vibes-neon/10 hover:border-vibes-neon/50"
-          >
-            {isGenerating ? (
-              <>
-                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                Generating...
-              </>
-            ) : (
-              <>
-                <Sparkles className="mr-2 h-4 w-4" />
-                Surprise Me
-              </>
-            )}
-          </Button>
+        <div>
+          <CardTitle className="text-3xl font-bold font-display tracking-tight text-white">Identity</CardTitle>
+          <CardDescription className="text-gray-400 mt-2">
+            Give your companion a name and a meaningful identity.
+          </CardDescription>
         </div>
       </CardHeader>
       <CardContent>
@@ -140,7 +118,16 @@ export function Step2Identity() {
             />
           </div>
 
-          <div className="pt-6 flex justify-end">
+          <div className="pt-6 flex justify-end gap-3">
+            <Button
+              type="button"
+              size="lg"
+              onClick={handleSurpriseMe}
+              disabled={isGenerating}
+              className="h-14 px-10 rounded-full border border-vibes-neon/30 bg-transparent text-vibes-neon hover:bg-vibes-neon/10 hover:border-vibes-neon/50 transition-all font-bold text-lg"
+            >
+              {isGenerating ? 'Generating...' : 'Surprise Me'}
+            </Button>
             <Button
               type="submit"
               size="lg"

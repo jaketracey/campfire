@@ -42,6 +42,10 @@ dependencies = [
     "opentelemetry-sdk>=1.22.0",
     "opentelemetry-instrumentation-fastapi>=0.43b0",
     "opentelemetry-instrumentation-httpx>=0.43b0",
+    # AWS SDK for Bedrock and SageMaker inference
+    "aioboto3>=13.0.0",
+    "boto3>=1.34.0",
+    "botocore>=1.34.0",
 ]
 
 [project.optional-dependencies]

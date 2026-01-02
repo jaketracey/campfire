@@ -192,6 +192,98 @@ export type {
   PersonalityTraits,
 } from './personality-profiles.js';
 
+// Admin Settings repository
+import { getAdminSettingsRepository as _getAdminSettingsRepository } from './admin-settings.js';
+export {
+  AdminSettingsRepository,
+  getAdminSettingsRepository,
+} from './admin-settings.js';
+export type {
+  AdminSetting,
+  AdminSettingInsert,
+} from './admin-settings.js';
+
+// Anonymous Usage repository
+import { getAnonymousUsageRepository as _getAnonymousUsageRepository } from './anonymous-usage.js';
+export {
+  AnonymousUsageRepository,
+  getAnonymousUsageRepository,
+} from './anonymous-usage.js';
+export type {
+  AnonymousUsage,
+  AnonymousUsageInsert,
+  AnonymousUsageListFilters,
+} from './anonymous-usage.js';
+
+// Demo Companions repository
+import { getDemoCompanionsRepository as _getDemoCompanionsRepository } from './demo-companions.js';
+export {
+  DemoCompanionsRepository,
+  getDemoCompanionsRepository,
+} from './demo-companions.js';
+export type {
+  DemoCompanion,
+  DemoCompanionWithDetails,
+  DemoCompanionInsert,
+} from './demo-companions.js';
+
+// Orchestration Tests repository
+import { getOrchestrationTestsRepository as _getOrchestrationTestsRepository } from './orchestration-tests.js';
+export {
+  OrchestrationTestsRepository,
+  getOrchestrationTestsRepository,
+} from './orchestration-tests.js';
+export type {
+  OrchestrationTestRun,
+  OrchestrationTestRunInsert,
+  OrchestrationTestRunUpdate,
+  OrchestrationTestResult,
+  OrchestrationTestResultInsert,
+  ProviderHealth,
+  TestRunStatus,
+  TestRunType,
+  TestResultStatus,
+  TestRunListFilters,
+  TestResultListFilters,
+} from './orchestration-tests.js';
+
+// Orchestration Metrics repository
+import { getOrchestrationMetricsRepository as _getOrchestrationMetricsRepository } from './orchestration-metrics.js';
+export {
+  OrchestrationMetricsRepository,
+  getOrchestrationMetricsRepository,
+} from './orchestration-metrics.js';
+export type {
+  OrchestrationMetricsSnapshot,
+  MetricsSnapshotInsert,
+  MetricsPeriod,
+  ProviderStats,
+  RoutingStats,
+  CostStats,
+  SafetyStats,
+  PerformanceStats,
+  MetricsListFilters,
+} from './orchestration-metrics.js';
+
+// LLM Usage repository
+import { getLLMUsageRepository as _getLLMUsageRepository } from './llm-usage.js';
+export {
+  LLMUsageRepository,
+  getLLMUsageRepository,
+} from './llm-usage.js';
+export type {
+  LLMUsageEvent,
+  LLMUsageEventInsert,
+  UserCostBudget,
+  UserCostSummary,
+  PlatformCostSummary,
+  DailyAggregate,
+  CostAlert,
+  UsageRecordResult,
+  UsageListFilters,
+  CostTrendPoint,
+} from './llm-usage.js';
+
 /**
  * Initialize all repositories
  * Call this at application startup to ensure singleton instances are created
@@ -208,6 +300,12 @@ export function initializeRepositories(): void {
   _getKnowledgeGraphRepository();
   _getGiftsRepository();
   _getPersonalityProfilesRepository();
+  _getAdminSettingsRepository();
+  _getAnonymousUsageRepository();
+  _getDemoCompanionsRepository();
+  _getOrchestrationTestsRepository();
+  _getOrchestrationMetricsRepository();
+  _getLLMUsageRepository();
 }
 
 /**
@@ -227,5 +325,11 @@ export function getRepositories() {
     knowledgeGraph: _getKnowledgeGraphRepository(),
     gifts: _getGiftsRepository(),
     personalityProfiles: _getPersonalityProfilesRepository(),
+    adminSettings: _getAdminSettingsRepository(),
+    anonymousUsage: _getAnonymousUsageRepository(),
+    demoCompanions: _getDemoCompanionsRepository(),
+    orchestrationTests: _getOrchestrationTestsRepository(),
+    orchestrationMetrics: _getOrchestrationMetricsRepository(),
+    llmUsage: _getLLMUsageRepository(),
   };
 }

@@ -17,8 +17,16 @@ import {
   type EventContext,
 } from '../services/index.js';
 import { getKnowledgeGraphRepository, getSessionsRepository } from '../repositories/index.js';
+import { getAnonymousUsageRepository } from '../repositories/anonymous-usage.js';
+import { getUsersRepository } from '../repositories/users.js';
+import { getAdminSettingsRepository } from '../repositories/admin-settings.js';
+
 import { enqueueSummaryJob } from '../utils/queue.js';
+
 import { uploadWebcamFrame } from '../utils/webcam-storage.js';
+
+// System anonymous user ID
+const ANONYMOUS_USER_ID = '00000000-0000-0000-0000-000000000000';
 
 // Orchestrator base URL
 const ORCHESTRATOR_URL = process.env['ORCHESTRATOR_URL'] || 'http://localhost:8000';
@@ -37,8 +45,11 @@ export type WSMessageType =
   | 'ping'
   | 'pong'
   | 'auth'
+  | 'auth_anonymous'
   | 'auth_success'
   | 'auth_error'
+  | 'limit_reached'
+  | 'usage_update'
   | 'session_start'
   | 'session_started'
   | 'session_end'
@@ -77,6 +88,12 @@ export type WSMessageType =
   | 'group_chat_state'
   | 'invite_companion'
   | 'dismiss_companion'
+  // Voice call message types
+  | 'voice_call_start'
+  | 'voice_call_end'
+  | 'voice_call_started'
+  | 'voice_call_ended'
+  | 'voice_call_interrupt'
   | 'error';
 
 /**
@@ -125,6 +142,12 @@ interface ConnectedClient {
   // Group chat state
   isGroupChat: boolean;
   groupParticipants: Map<string, GroupParticipantInfo>;
+  // Anonymous user state
+  isAnonymous: boolean;
+  fingerprint: string | null;
+  // Voice call state
+  voiceCallActive: boolean;
+  voiceCallStartedAt?: Date;
 }
 
 // Active connections
@@ -164,6 +187,9 @@ export async function registerWebSocketHandler(app: FastifyInstance): Promise<vo
       webcamEnabled: false,
       isGroupChat: false,
       groupParticipants: new Map(),
+      isAnonymous: false,
+      fingerprint: null,
+      voiceCallActive: false,
     };
 
     clients.set(clientId, client);
@@ -223,6 +249,10 @@ async function handleMessage(client: ConnectedClient, message: WSMessage): Promi
 
     case 'auth':
       await handleAuth(client, message.payload as { token: string });
+      break;
+
+    case 'auth_anonymous':
+      await handleAuthAnonymous(client, message.payload as { fingerprint: string });
       break;
 
     case 'session_start':
@@ -293,6 +323,18 @@ async function handleMessage(client: ConnectedClient, message: WSMessage): Promi
       await handleDismissCompanion(client, message.payload as { companionId: string });
       break;
 
+    case 'voice_call_start':
+      await handleVoiceCallStart(client);
+      break;
+
+    case 'voice_call_end':
+      await handleVoiceCallEnd(client);
+      break;
+
+    case 'voice_call_interrupt':
+      await handleVoiceCallInterrupt(client);
+      break;
+
     default:
       sendError(client, `Unknown message type: ${message.type}`);
   }
@@ -325,6 +367,105 @@ async function handleAuth(client: ConnectedClient, payload: { token: string }): 
     type: 'auth_success',
     payload: { userId: client.user.userId },
   });
+}
+
+/**
+ * Handle anonymous authentication message
+ */
+async function handleAuthAnonymous(client: ConnectedClient, payload: { fingerprint: string }): Promise<void> {
+  if (!payload.fingerprint || payload.fingerprint.length === 0 || payload.fingerprint.length > 64) {
+    send(client, {
+      type: 'auth_error',
+      payload: { message: 'Invalid fingerprint' },
+    });
+    return;
+  }
+
+  const anonymousUsageRepo = getAnonymousUsageRepository();
+  const adminSettingsRepo = getAdminSettingsRepository();
+
+  // Get or create usage record
+  const usage = await anonymousUsageRepo.getOrCreate(payload.fingerprint);
+
+  // Get the message limit from admin settings
+  const limitSetting = await adminSettingsRepo.getValue<{ value: number }>('free_trial_message_limit');
+  const limit = limitSetting?.value ?? 10;
+
+  // Set up client as anonymous user
+  client.user = {
+    userId: ANONYMOUS_USER_ID,
+    email: 'anonymous@demo.campfire.local',
+    role: 'user',
+  };
+  client.authenticated = true;
+  client.isAnonymous = true;
+  client.fingerprint = payload.fingerprint;
+
+  logger.info(
+    { clientId: client.id, fingerprint: payload.fingerprint.substring(0, 8) + '...', messagesUsed: usage.messages_used },
+    'WebSocket client authenticated as anonymous'
+  );
+
+  send(client, {
+    type: 'auth_success',
+    payload: {
+      userId: ANONYMOUS_USER_ID,
+      isAnonymous: true,
+      usage: {
+        messagesUsed: usage.messages_used,
+        messageLimit: limit,
+        remaining: Math.max(0, limit - usage.messages_used),
+      },
+    },
+  });
+}
+
+/**
+ * Check anonymous usage limits before processing a message
+ * Returns true if the user can send a message, false if limit reached
+ */
+async function checkAnonymousUsageLimit(client: ConnectedClient): Promise<boolean> {
+  if (!client.isAnonymous || !client.fingerprint) {
+    return true; // Not anonymous, no limit
+  }
+
+  const anonymousUsageRepo = getAnonymousUsageRepository();
+  const adminSettingsRepo = getAdminSettingsRepository();
+
+  // Get current usage
+  const usage = await anonymousUsageRepo.getByFingerprint(client.fingerprint);
+  const messagesUsed = usage?.messages_used ?? 0;
+
+  // Get the message limit from admin settings
+  const limitSetting = await adminSettingsRepo.getValue<{ value: number }>('free_trial_message_limit');
+  const limit = limitSetting?.value ?? 10;
+
+  if (messagesUsed >= limit) {
+    // Limit reached, send limit_reached message
+    send(client, {
+      type: 'limit_reached',
+      payload: {
+        messagesUsed,
+        messageLimit: limit,
+      },
+    });
+    return false;
+  }
+
+  // Increment usage
+  await anonymousUsageRepo.incrementMessages(client.fingerprint);
+
+  // Send usage update
+  send(client, {
+    type: 'usage_update',
+    payload: {
+      messagesUsed: messagesUsed + 1,
+      messageLimit: limit,
+      remaining: Math.max(0, limit - messagesUsed - 1),
+    },
+  });
+
+  return true;
 }
 
 /**
@@ -485,6 +626,14 @@ async function handleUserMessage(
     return;
   }
 
+  // Check anonymous usage limits before processing the message
+  if (client.isAnonymous) {
+    const canProceed = await checkAnonymousUsageLimit(client);
+    if (!canProceed) {
+      return; // Limit reached, message already sent to client
+    }
+  }
+
   const startTime = Date.now();
   const userId = client.user.userId;
   const sessionId = client.sessionId;
@@ -541,8 +690,20 @@ async function handleUserMessage(
       trigger_contexts: [],
     }));
 
-    // 6. Build CompanionSpec for orchestrator
+    // 6. Fetch user safety preference and compute effective safety level
     const spec = companion.spec;
+    const usersRepo = getUsersRepository();
+    const userProfile = await usersRepo.findProfileByUserId(userId);
+    const userSafetyLevel = (userProfile?.preferences as Record<string, unknown> | undefined)?.safetyLevel as string | undefined;
+    const companionSafetyLevel = mapContentRatingToSafetyLevel(spec?.boundaries?.content_rating);
+    const effectiveSafetyLevel = getEffectiveSafetyLevel(userSafetyLevel, companionSafetyLevel);
+
+    logger.debug(
+      { userId, companionId, userSafetyLevel, companionSafetyLevel, effectiveSafetyLevel },
+      'Computed effective safety level'
+    );
+
+    // 7. Build CompanionSpec for orchestrator
     const companionSpec = {
       id: companion.id,
       name: companion.name,
@@ -557,7 +718,7 @@ async function handleUserMessage(
       voice_id: spec?.voice?.voice_id || null,
       avatar_url: null,
       system_prompt: buildSystemPrompt(companion as unknown as { name: string; spec: Record<string, unknown> | null }),
-      safety_level: mapContentRatingToSafetyLevel(spec?.boundaries?.content_rating),
+      safety_level: effectiveSafetyLevel,
       allowed_tools: [],
       max_context_turns: 20,
       temperature: 0.7,
@@ -565,10 +726,10 @@ async function handleUserMessage(
       core_tenets: mappedTenets,
     };
 
-    // 7. Fetch companion self-knowledge from KG
+    // 8. Fetch companion self-knowledge from KG
     const selfKnowledge = await fetchCompanionSelfKnowledge(userId, companionId, companion.name);
 
-    // 7. Get recent turns for context (match max_context_turns in companion spec)
+    // 9. Get recent turns for context (match max_context_turns in companion spec)
     const recentTurns = await sessionsService.getRecentTurns(userId, sessionId, 20);
 
     const formattedTurns = recentTurns
@@ -815,7 +976,14 @@ async function handleUserMessage(
                 const metadata = JSON.parse(metadataJson);
                 if (metadata.image_prompt) {
                   imagePrompt = metadata.image_prompt;
-                  logger.debug({ sessionId, imagePromptLength: imagePrompt?.length }, 'Received image_prompt from orchestrator');
+                  logger.info(
+                    {
+                      sessionId,
+                      imagePromptLength: imagePrompt?.length,
+                      imagePrompt: imagePrompt?.slice(0, 200),
+                    },
+                    'Received image_prompt from orchestrator'
+                  );
                 }
               } catch (e) {
                 logger.warn({ error: e, data }, 'Failed to parse metadata');
@@ -1132,6 +1300,29 @@ function mapContentRatingToSafetyLevel(contentRating: string | undefined): strin
 }
 
 /**
+ * Safety level order (most restrictive to least restrictive)
+ */
+const SAFETY_LEVEL_ORDER = ['strict', 'standard', 'permissive', 'adult'];
+
+/**
+ * Get the more restrictive of two safety levels.
+ * Returns the level that appears earlier in the SAFETY_LEVEL_ORDER array.
+ */
+function getEffectiveSafetyLevel(userSafetyLevel: string | undefined, companionSafetyLevel: string): string {
+  const userLevel = userSafetyLevel || 'standard';
+
+  const userIndex = SAFETY_LEVEL_ORDER.indexOf(userLevel);
+  const companionIndex = SAFETY_LEVEL_ORDER.indexOf(companionSafetyLevel);
+
+  // If either level is invalid, default to the other
+  if (userIndex === -1) return companionSafetyLevel;
+  if (companionIndex === -1) return userLevel;
+
+  // Return the more restrictive (lower index = more restrictive)
+  return userIndex <= companionIndex ? userLevel : companionSafetyLevel;
+}
+
+/**
  * Companion self-knowledge entry from Knowledge Graph
  */
 interface CompanionSelfKnowledge {
@@ -1349,6 +1540,83 @@ async function handleWebcamFrame(
   } catch (error) {
     logger.error({ err: error, clientId: client.id }, 'Failed to store webcam frame');
   }
+}
+
+// ===========================================================================
+// Voice Call Handlers
+// ===========================================================================
+
+/**
+ * Handle voice call start
+ * Enables voice mode and starts the call session
+ */
+async function handleVoiceCallStart(client: ConnectedClient): Promise<void> {
+  if (!client.authenticated) {
+    sendError(client, 'Authentication required');
+    return;
+  }
+
+  if (!client.sessionId) {
+    sendError(client, 'No active session');
+    return;
+  }
+
+  // Enable voice mode and mark call as active
+  client.voiceEnabled = true;
+  client.voiceCallActive = true;
+  client.voiceCallStartedAt = new Date();
+
+  send(client, {
+    type: 'voice_call_started',
+    payload: { startedAt: client.voiceCallStartedAt.toISOString() },
+  });
+
+  logger.info(
+    { clientId: client.id, sessionId: client.sessionId },
+    'Voice call started'
+  );
+}
+
+/**
+ * Handle voice call end
+ * Cleans up voice call state
+ */
+async function handleVoiceCallEnd(client: ConnectedClient): Promise<void> {
+  if (!client.voiceCallActive) {
+    return; // Already ended
+  }
+
+  const duration = client.voiceCallStartedAt
+    ? Math.round((Date.now() - client.voiceCallStartedAt.getTime()) / 1000)
+    : 0;
+
+  // Reset call state
+  client.voiceCallActive = false;
+  client.voiceCallStartedAt = undefined;
+  client.voiceEnabled = false;
+
+  send(client, {
+    type: 'voice_call_ended',
+    payload: { duration },
+  });
+
+  logger.info(
+    { clientId: client.id, sessionId: client.sessionId, duration },
+    'Voice call ended'
+  );
+}
+
+/**
+ * Handle voice call interrupt
+ * Stops TTS playback when user starts speaking
+ * Note: TTS is stopped client-side; this logs the interrupt for analytics
+ */
+async function handleVoiceCallInterrupt(client: ConnectedClient): Promise<void> {
+  if (!client.voiceCallActive) {
+    return;
+  }
+
+  logger.debug({ clientId: client.id }, 'Voice call interrupted by user');
 }
 
 /**

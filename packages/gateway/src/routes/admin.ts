@@ -14,6 +14,10 @@ import {
   AdminUpdateStatusSchema,
 } from '../services/admin.js';
 import { logger } from '../observability/logger.js';
+import { getAdminSettingsRepository } from '../repositories/admin-settings.js';
+import { getDemoCompanionsRepository } from '../repositories/demo-companions.js';
+import { getCompanionsRepository } from '../repositories/companions.js';
+import type { JSONObject } from '../db/types.js';
 
 // Request schemas
 const UserIdParamsSchema = z.object({
@@ -22,6 +26,23 @@ const UserIdParamsSchema = z.object({
 
 const InviteIdParamsSchema = z.object({
   inviteId: z.string().uuid(),
+});
+
+const SettingKeyParamsSchema = z.object({
+  key: z.string().min(1).max(100),
+});
+
+const UpdateSettingBodySchema = z.object({
+  value: z.unknown(),
+  description: z.string().optional(),
+});
+
+const AddDemoCompanionBodySchema = z.object({
+  companionId: z.string().uuid(),
+});
+
+const DemoCompanionIdParamsSchema = z.object({
+  id: z.string().uuid(),
 });
 
 /**
@@ -348,6 +369,217 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
         return reply.status(404).send({
           error: 'Not Found',
           message: 'Invite not found or already accepted',
+        });
+      }
+      throw error;
+    }
+  });
+
+  // ===========================================================================
+  // Admin Settings Routes
+  // ===========================================================================
+
+  const settingsRepo = getAdminSettingsRepository();
+
+  /**
+   * GET /admin/settings/:key - Get a setting by key
+   */
+  app.get('/settings/:key', async (request: FastifyRequest, reply: FastifyReply) => {
+    const paramsResult = SettingKeyParamsSchema.safeParse(request.params);
+    if (!paramsResult.success) {
+      return reply.status(400).send({
+        error: 'Validation Error',
+        message: 'Invalid setting key',
+        details: paramsResult.error.issues,
+      });
+    }
+
+    const { key } = paramsResult.data;
+    const setting = await settingsRepo.get(key);
+
+    if (!setting) {
+      return reply.status(404).send({
+        error: 'Not Found',
+        message: `Setting '${key}' not found`,
+      });
+    }
+
+    return reply.send({
+      success: true,
+      data: {
+        key: setting.key,
+        value: setting.value,
+        description: setting.description,
+        updatedAt: setting.updated_at.toISOString(),
+      },
+    });
+  });
+
+  /**
+   * PUT /admin/settings/:key - Update a setting
+   */
+  app.put('/settings/:key', async (request: FastifyRequest, reply: FastifyReply) => {
+    const paramsResult = SettingKeyParamsSchema.safeParse(request.params);
+    if (!paramsResult.success) {
+      return reply.status(400).send({
+        error: 'Validation Error',
+        message: 'Invalid setting key',
+        details: paramsResult.error.issues,
+      });
+    }
+
+    const bodyResult = UpdateSettingBodySchema.safeParse(request.body);
+    if (!bodyResult.success) {
+      return reply.status(400).send({
+        error: 'Validation Error',
+        message: 'Invalid request body',
+        details: bodyResult.error.issues,
+      });
+    }
+
+    const { key } = paramsResult.data;
+    const { value, description } = bodyResult.data;
+    const adminUserId = request.user!.userId;
+
+    const setting = await settingsRepo.set(
+      key,
+      value as JSONObject,
+      {
+        description,
+        updatedBy: adminUserId,
+      }
+    );
+
+    logger.info({ key, adminUserId }, 'Admin setting updated');
+
+    return reply.send({
+      success: true,
+      data: {
+        key: setting.key,
+        value: setting.value,
+        description: setting.description,
+        updatedAt: setting.updated_at.toISOString(),
+      },
+    });
+  });
+
+  // ===========================================================================
+  // Demo Companions Routes
+  // ===========================================================================
+
+  const demoCompanionsRepo = getDemoCompanionsRepository();
+  const companionsRepo = getCompanionsRepository();
+
+  /**
+   * GET /admin/demo-companions - List all demo companions with details
+   */
+  app.get('/demo-companions', async (request: FastifyRequest, reply: FastifyReply) => {
+    const result = await demoCompanionsRepo.listWithDetails();
+
+    return reply.send({
+      success: true,
+      data: {
+        companions: result.data.map(dc => ({
+          id: dc.id,
+          companionId: dc.companion_id,
+          companionName: dc.companion_name,
+          companionAvatarUrl: dc.companion_avatar_url,
+          companionStatus: dc.companion_status,
+          isActive: dc.is_active,
+          displayOrder: dc.display_order,
+          createdAt: dc.created_at.toISOString(),
+        })),
+        hasMore: result.hasMore,
+      },
+    });
+  });
+
+  /**
+   * POST /admin/demo-companions - Add a companion to demo list
+   */
+  app.post('/demo-companions', async (request: FastifyRequest, reply: FastifyReply) => {
+    const bodyResult = AddDemoCompanionBodySchema.safeParse(request.body);
+    if (!bodyResult.success) {
+      return reply.status(400).send({
+        error: 'Validation Error',
+        message: 'Invalid request body',
+        details: bodyResult.error.issues,
+      });
+    }
+
+    const { companionId } = bodyResult.data;
+
+    // Verify companion exists
+    const companion = await companionsRepo.findById(companionId);
+    if (!companion) {
+      return reply.status(404).send({
+        error: 'Not Found',
+        message: 'Companion not found',
+      });
+    }
+
+    // Check if companion is public
+    if (!companion.is_public) {
+      return reply.status(400).send({
+        error: 'Invalid Operation',
+        message: 'Only public companions can be added to demo',
+      });
+    }
+
+    try {
+      const demoCompanion = await demoCompanionsRepo.create({ companion_id: companionId });
+
+      logger.info({ companionId, adminUserId: request.user!.userId }, 'Demo companion added');
+
+      return reply.status(201).send({
+        success: true,
+        data: {
+          id: demoCompanion.id,
+          companionId: demoCompanion.companion_id,
+          isActive: demoCompanion.is_active,
+          displayOrder: demoCompanion.display_order,
+          createdAt: demoCompanion.created_at.toISOString(),
+        },
+      });
+    } catch (error) {
+      const err = error as Error;
+      if (err.name === 'DuplicateError') {
+        return reply.status(409).send({
+          error: 'Conflict',
+          message: 'Companion is already in the demo list',
+        });
+      }
+      throw error;
+    }
+  });
+
+  /**
+   * DELETE /admin/demo-companions/:id - Remove a companion from demo list
+   */
+  app.delete('/demo-companions/:id', async (request: FastifyRequest, reply: FastifyReply) => {
+    const paramsResult = DemoCompanionIdParamsSchema.safeParse(request.params);
+    if (!paramsResult.success) {
+      return reply.status(400).send({
+        error: 'Validation Error',
+        message: 'Invalid demo companion ID',
+        details: paramsResult.error.issues,
+      });
+    }
+
+    const { id } = paramsResult.data;
+
+    try {
+      await demoCompanionsRepo.delete(id);
+
+      logger.info({ demoCompanionId: id, adminUserId: request.user!.userId }, 'Demo companion removed');
+
+      return reply.status(204).send();
+    } catch (error) {
+      const err = error as Error;
+      if (err.name === 'NotFoundError') {
+        return reply.status(404).send({
+          error: 'Not Found',
+          message: 'Demo companion not found',
         });
       }
       throw error;

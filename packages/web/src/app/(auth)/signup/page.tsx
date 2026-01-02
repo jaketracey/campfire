@@ -139,17 +139,35 @@ export default function SignupPage() {
   };
 
   return (
-    <Card>
+    <Card className="bg-white/[0.03] backdrop-blur-xl border-white/10">
       <CardHeader className="space-y-1">
-        <CardTitle className="text-2xl font-bold">Create an account</CardTitle>
-        <CardDescription>
+        <CardTitle className="text-2xl font-bold text-white">Create an account</CardTitle>
+        <CardDescription className="text-white/60">
           Start your journey with your AI companion
         </CardDescription>
       </CardHeader>
       <form onSubmit={handleSubmit(onSubmit)}>
         <CardContent className="space-y-4">
+          <GoogleSignInButton
+            onSuccess={handleGoogleSuccess}
+            onError={handleGoogleError}
+            text="signup"
+            disabled={isLoading}
+          />
+
+          <div className="relative w-full">
+            <div className="absolute inset-0 flex items-center">
+              <span className="w-full border-t border-white/10" />
+            </div>
+            <div className="relative flex justify-center text-xs uppercase">
+              <span className="bg-transparent px-2 text-white/40">
+                or
+              </span>
+            </div>
+          </div>
+
           <div className="space-y-2">
-            <Label htmlFor="name">Name</Label>
+            <Label htmlFor="name" className="text-white/80">Name</Label>
             <Input
               id="name"
               type="text"
@@ -163,7 +181,7 @@ export default function SignupPage() {
           </div>
 
           <div className="space-y-2">
-            <Label htmlFor="email">Email</Label>
+            <Label htmlFor="email" className="text-white/80">Email</Label>
             <Input
               id="email"
               type="email"
@@ -177,7 +195,7 @@ export default function SignupPage() {
           </div>
 
           <div className="space-y-2">
-            <Label htmlFor="password">Password</Label>
+            <Label htmlFor="password" className="text-white/80">Password</Label>
             <div className="relative">
               <Input
                 id="password"
@@ -234,7 +252,7 @@ export default function SignupPage() {
           </div>
 
           <div className="space-y-2">
-            <Label htmlFor="confirmPassword">Confirm Password</Label>
+            <Label htmlFor="confirmPassword" className="text-white/80">Confirm Password</Label>
             <div className="relative">
               <Input
                 id="confirmPassword"
@@ -273,15 +291,16 @@ export default function SignupPage() {
                 setValue('acceptTerms', checked as true)
               }
               disabled={isLoading}
+              className="border-white/30 data-[state=checked]:bg-campfire-500 data-[state=checked]:border-campfire-500"
             />
             <Label
               htmlFor="terms"
-              className="text-sm font-normal leading-none cursor-pointer"
+              className="text-sm font-normal leading-none cursor-pointer text-white/60"
             >
               I agree to the{' '}
               <a
                 href="https://campfire.app/terms"
-                className="text-primary hover:underline"
+                className="text-campfire-400 hover:text-campfire-300 hover:underline"
                 target="_blank"
                 rel="noopener noreferrer"
               >
@@ -290,7 +309,7 @@ export default function SignupPage() {
               and{' '}
               <a
                 href="https://campfire.app/privacy"
-                className="text-primary hover:underline"
+                className="text-campfire-400 hover:text-campfire-300 hover:underline"
                 target="_blank"
                 rel="noopener noreferrer"
               >
@@ -316,27 +335,9 @@ export default function SignupPage() {
             Create account
           </Button>
 
-          <div className="relative w-full">
-            <div className="absolute inset-0 flex items-center">
-              <span className="w-full border-t" />
-            </div>
-            <div className="relative flex justify-center text-xs uppercase">
-              <span className="bg-card px-2 text-muted-foreground">
-                Or continue with
-              </span>
-            </div>
-          </div>
-
-          <GoogleSignInButton
-            onSuccess={handleGoogleSuccess}
-            onError={handleGoogleError}
-            text="signup"
-            disabled={isLoading}
-          />
-
-          <p className="text-sm text-muted-foreground text-center">
+          <p className="text-sm text-white/40 text-center">
             Already have an account?{' '}
-            <Link href="/login" className="text-primary hover:underline">
+            <Link href="/login" className="text-campfire-400 hover:text-campfire-300 hover:underline">
               Sign in
             </Link>
           </p>

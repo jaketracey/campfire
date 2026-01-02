@@ -180,8 +180,11 @@ export class CompanionsService {
   ): Promise<Companion | null> {
     const companion = await this.companions.findById(companionId, tx);
 
-    // Verify ownership
-    if (companion && companion.user_id !== userId) {
+    // Anonymous users (demo mode) can access any active companion
+    const isAnonymous = userId === '00000000-0000-0000-0000-000000000000';
+
+    // Allow access if: user owns it, companion is public, or user is anonymous
+    if (companion && companion.user_id !== userId && !companion.is_public && !isAnonymous) {
       return null;
     }
 
@@ -198,7 +201,11 @@ export class CompanionsService {
   ): Promise<CompanionWithAvatar | null> {
     const companion = await this.companions.findByIdWithAvatar(companionId, tx);
 
-    if (companion && companion.user_id !== userId) {
+    // Anonymous users (demo mode) can access any active companion
+    const isAnonymous = userId === '00000000-0000-0000-0000-000000000000';
+
+    // Allow access if: user owns it, companion is public, or user is anonymous
+    if (companion && companion.user_id !== userId && !companion.is_public && !isAnonymous) {
       return null;
     }
 

@@ -9,6 +9,7 @@ export type WSMessageType =
   | 'ping'
   | 'pong'
   | 'auth'
+  | 'auth_anonymous'
   | 'auth_success'
   | 'auth_error'
   | 'session_start'
@@ -29,6 +30,12 @@ export type WSMessageType =
   | 'tts_audio_chunk'
   | 'tts_audio_end'
   | 'voice_enabled'
+  // Voice call message types
+  | 'voice_call_start'
+  | 'voice_call_end'
+  | 'voice_call_started'
+  | 'voice_call_ended'
+  | 'voice_call_interrupt'
   | 'webcam_enabled'
   | 'webcam_frame'
   | 'game_update'
@@ -47,6 +54,9 @@ export type WSMessageType =
   | 'group_chat_state'
   | 'invite_companion'
   | 'dismiss_companion'
+  // Demo/anonymous session types
+  | 'limit_reached'
+  | 'usage_update'
   | 'error';
 
 /**
@@ -97,6 +107,13 @@ export class CampfireWebSocket {
   private _sessionId: string | null = null;
   private _isGroupChat = false;
   private _groupParticipants: Map<string, GroupParticipant> = new Map();
+  private _hasConnectedOnce = false;
+  // Anonymous/demo session state
+  private _isAnonymous = false;
+  private _messagesUsed = 0;
+  private _messageLimit = 0;
+  // Pending messages queue for retry on iOS keyboard race condition
+  private pendingMessages: Array<{ content: string }> = [];
 
   constructor(options: CampfireWSOptions = {}) {
     this.options = {
@@ -130,6 +147,22 @@ export class CampfireWebSocket {
     return this._groupParticipants.get(companionId);
   }
 
+  get isAnonymous(): boolean {
+    return this._isAnonymous;
+  }
+
+  get messagesUsed(): number {
+    return this._messagesUsed;
+  }
+
+  get messageLimit(): number {
+    return this._messageLimit;
+  }
+
+  get remainingMessages(): number {
+    return Math.max(0, this._messageLimit - this._messagesUsed);
+  }
+
   /**
    * Connect to the WebSocket server
    */
@@ -142,6 +175,7 @@ export class CampfireWebSocket {
 
     this.ws.onopen = () => {
       this._isConnected = true;
+      this._hasConnectedOnce = true;
       console.log('[WS] Connected');
       this.options.onOpen?.();
     };
@@ -160,7 +194,11 @@ export class CampfireWebSocket {
     };
 
     this.ws.onerror = (error) => {
-      console.error('[WS] Error', error);
+      // Only log as error if we had a working connection before (genuine disconnect)
+      // Initial connection failures are expected in dev when gateway isn't running
+      if (this._hasConnectedOnce) {
+        console.error('[WS] Connection error');
+      }
       this.options.onError?.(error);
     };
 
@@ -193,6 +231,9 @@ export class CampfireWebSocket {
     this._sessionId = null;
     this._isGroupChat = false;
     this._groupParticipants.clear();
+    this._isAnonymous = false;
+    this._messagesUsed = 0;
+    this._messageLimit = 0;
   }
 
   /**
@@ -222,6 +263,14 @@ export class CampfireWebSocket {
   }
 
   /**
+   * Authenticate anonymously with a fingerprint (for demo sessions)
+   */
+  authenticateAnonymous(fingerprint: string): void {
+    this._isAnonymous = true;
+    this.send('auth_anonymous', { fingerprint });
+  }
+
+  /**
    * Start a new session with a companion
    */
   startSession(companionId: string): void {
@@ -247,6 +296,37 @@ export class CampfireWebSocket {
    */
   sendMessage(content: string): void {
     this.send('user_message', { content });
+  }
+
+  /**
+   * Send a user message with auto-retry for iOS keyboard race condition.
+   * If WebSocket is not ready, queues the message and sends when connection is restored.
+   */
+  sendMessageWithRetry(content: string): void {
+    if (this.ws?.readyState === WebSocket.OPEN) {
+      this.sendMessage(content);
+    } else {
+      // Queue message for retry - iOS Chrome can have transient disconnection during keyboard dismiss
+      console.log('[WS] Connection not ready, queuing message for retry');
+      this.pendingMessages.push({ content });
+      // Trigger reconnection if not already connecting
+      if (!this.ws || this.ws.readyState === WebSocket.CLOSED) {
+        this.connect();
+      }
+    }
+  }
+
+  /**
+   * Flush any pending messages (called after session is started)
+   */
+  flushPendingMessages(): void {
+    while (this.pendingMessages.length > 0) {
+      const msg = this.pendingMessages.shift();
+      if (msg && this.ws?.readyState === WebSocket.OPEN) {
+        console.log('[WS] Sending queued message');
+        this.sendMessage(msg.content);
+      }
+    }
   }
 
   /**
@@ -296,6 +376,31 @@ export class CampfireWebSocket {
    */
   endVoice(): void {
     this.send('voice_end', {});
+  }
+
+  // ===========================================================================
+  // Voice Call Methods
+  // ===========================================================================
+
+  /**
+   * Start a voice call session
+   */
+  startVoiceCall(): void {
+    this.send('voice_call_start', {});
+  }
+
+  /**
+   * End a voice call session
+   */
+  endVoiceCall(): void {
+    this.send('voice_call_end', {});
+  }
+
+  /**
+   * Interrupt voice call (stop companion TTS when user speaks)
+   */
+  interruptVoiceCall(): void {
+    this.send('voice_call_interrupt', {});
   }
 
   /**
@@ -464,6 +569,28 @@ export class CampfireWebSocket {
     });
   }
 
+  // ===========================================================================
+  // Voice Call Event Handlers
+  // ===========================================================================
+
+  /**
+   * Subscribe to voice call started confirmation
+   */
+  onVoiceCallStarted(handler: () => void): () => void {
+    return this.on('voice_call_started', () => {
+      handler();
+    });
+  }
+
+  /**
+   * Subscribe to voice call ended
+   */
+  onVoiceCallEnded(handler: (data: { duration?: number }) => void): () => void {
+    return this.on<{ duration?: number }>('voice_call_ended', (msg) => {
+      handler(msg.payload);
+    });
+  }
+
   /**
    * Subscribe to game updates
    */
@@ -597,6 +724,35 @@ export class CampfireWebSocket {
     });
   }
 
+  // ===========================================================================
+  // Demo/Anonymous Session Event Handlers
+  // ===========================================================================
+
+  /**
+   * Subscribe to usage updates (for anonymous sessions)
+   */
+  onUsageUpdate(
+    handler: (data: { messagesUsed: number; messageLimit: number; remaining: number }) => void
+  ): () => void {
+    return this.on<{ messagesUsed: number; messageLimit: number }>('usage_update', (msg) => {
+      handler({
+        ...msg.payload,
+        remaining: msg.payload.messageLimit - msg.payload.messagesUsed,
+      });
+    });
+  }
+
+  /**
+   * Subscribe to limit reached events (for anonymous sessions)
+   */
+  onLimitReached(
+    handler: (data: { messagesUsed: number; messageLimit: number }) => void
+  ): () => void {
+    return this.on<{ messagesUsed: number; messageLimit: number }>('limit_reached', (msg) => {
+      handler(msg.payload);
+    });
+  }
+
   private handleMessage(message: WSMessage): void {
     // Handle internal state updates
     switch (message.type) {
@@ -623,6 +779,8 @@ export class CampfireWebSocket {
           }
         }
         console.log('[WS] Session started', this._sessionId, 'isGroupChat:', this._isGroupChat);
+        // Flush any pending messages queued during iOS keyboard race condition
+        this.flushPendingMessages();
         break;
       }
       case 'session_ended':
@@ -663,6 +821,27 @@ export class CampfireWebSocket {
           this._groupParticipants.set(p.companionId, p);
         }
         console.log('[WS] Group chat state updated, participants:', payload.participants.length);
+        break;
+      }
+      // Demo/anonymous session state updates
+      case 'usage_update': {
+        const payload = message.payload as {
+          messagesUsed: number;
+          messageLimit: number;
+        };
+        this._messagesUsed = payload.messagesUsed;
+        this._messageLimit = payload.messageLimit;
+        console.log('[WS] Usage update:', this._messagesUsed, '/', this._messageLimit);
+        break;
+      }
+      case 'limit_reached': {
+        const payload = message.payload as {
+          messagesUsed: number;
+          messageLimit: number;
+        };
+        this._messagesUsed = payload.messagesUsed;
+        this._messageLimit = payload.messageLimit;
+        console.log('[WS] Message limit reached:', this._messagesUsed, '/', this._messageLimit);
         break;
       }
     }
