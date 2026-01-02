@@ -123,17 +123,17 @@ export function useVoiceCall(
       // Request microphone permission first
       await navigator.mediaDevices.getUserMedia({ audio: true });
 
-      // Initialize VAD with CDN-hosted assets
+      // Initialize VAD with self-hosted assets (avoids CDN loading issues)
       console.log('[VoiceCall] Initializing VAD...');
       const vad = await MicVAD.new({
         onSpeechStart: handleSpeechStart,
         onSpeechEnd: handleSpeechEnd,
         positiveSpeechThreshold: 0.8,
         negativeSpeechThreshold: 0.35,
-        model: 'legacy',
-        // Use CDN for ONNX runtime and VAD model/worklet files
-        onnxWASMBasePath: 'https://cdn.jsdelivr.net/npm/onnxruntime-web@1.19.0/dist/',
-        baseAssetPath: 'https://cdn.jsdelivr.net/npm/@ricky0123/vad-web@0.0.30/dist/',
+        model: 'v5', // Use newer v5 model for better accuracy
+        // Self-hosted ONNX runtime and VAD model files in /public/vad/
+        onnxWASMBasePath: '/vad/',
+        baseAssetPath: '/vad/',
       });
 
       vadRef.current = vad;

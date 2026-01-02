@@ -427,7 +427,7 @@ export function SignupModal({
         </DialogPrimitive.Overlay>
         <DialogPrimitive.Content
           ref={contentRef}
-          className="fixed left-0 right-0 top-0 bottom-0 sm:left-[50%] sm:top-[50%] sm:bottom-auto sm:right-auto z-50 sm:translate-x-[-50%] sm:translate-y-[-50%] sm:max-w-md lg:max-w-4xl rounded-none sm:rounded-3xl border-0 bg-gradient-to-b from-background to-muted/30 p-0 overflow-hidden sm:max-h-[90vh] overflow-y-auto data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 sm:data-[state=closed]:zoom-out-95 sm:data-[state=open]:zoom-in-95"
+          className="fixed left-0 right-0 top-0 bottom-0 sm:left-[50%] sm:top-[50%] sm:bottom-auto sm:right-auto z-50 sm:translate-x-[-50%] sm:translate-y-[-50%] sm:max-w-md lg:max-w-4xl lg:min-w-[56rem] rounded-none sm:rounded-3xl border-0 bg-gradient-to-b from-background to-muted/30 p-0 overflow-hidden sm:max-h-[90vh] overflow-y-auto data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 sm:data-[state=closed]:zoom-out-95 sm:data-[state=open]:zoom-in-95"
         >
           {/* Close button */}
           <DialogPrimitive.Close className="absolute right-4 top-4 z-10 rounded-full p-1 opacity-70 ring-offset-background transition-opacity hover:opacity-100 focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2">
@@ -436,17 +436,32 @@ export function SignupModal({
           </DialogPrimitive.Close>
         <div className="flex flex-col lg:flex-row">
           {/* Left side - Form */}
-          <div className="flex-1 lg:max-w-md">
-            {/* Header with Flame */}
+          <div className="flex-1 lg:w-1/2">
+            {/* Header with Logo */}
             <div className="relative pt-8 pb-4 px-6 bg-gradient-to-b from-campfire-500/10 to-transparent">
               <DialogHeader className="text-center sm:text-center">
+                {/* Animated Logo */}
                 <motion.div
-                  initial={{ scale: 0, rotate: -10 }}
-                  animate={{ scale: 1, rotate: 0 }}
-                  transition={{ type: 'spring', duration: 0.6, bounce: 0.4 }}
-                  className="mx-auto mb-4 flex h-20 w-20 items-center justify-center rounded-3xl bg-gradient-to-br from-campfire-500 to-campfire-600 shadow-lg shadow-campfire-500/30"
+                  initial={{ opacity: 0, y: -20 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ duration: 0.5, ease: 'easeOut' }}
+                  className="mx-auto mb-6 flex items-center justify-center gap-2"
                 >
-                  <Flame className="h-10 w-10 text-white" />
+                  <motion.div
+                    initial={{ scale: 0, rotate: -180 }}
+                    animate={{ scale: 1, rotate: 0 }}
+                    transition={{ type: 'spring', duration: 0.8, bounce: 0.5, delay: 0.1 }}
+                  >
+                    <Flame className="h-10 w-10 text-campfire-500" />
+                  </motion.div>
+                  <motion.span
+                    initial={{ opacity: 0, x: -10 }}
+                    animate={{ opacity: 1, x: 0 }}
+                    transition={{ duration: 0.4, delay: 0.3 }}
+                    className="text-3xl font-bold"
+                  >
+                    Campfire
+                  </motion.span>
                 </motion.div>
                 <DialogTitle className="text-2xl font-bold">
                   {mode === 'signup' ? content.title : 'Welcome Back'}
@@ -601,7 +616,7 @@ export function SignupModal({
 
           {/* Right side - Features (desktop only, signup mode only) */}
           {mode === 'signup' && (
-            <div className="hidden lg:flex flex-col justify-center border-l border-border/30 px-8 py-10 flex-1 bg-gradient-to-br from-campfire-500/5 to-campfire-600/10">
+            <div className="hidden lg:flex lg:w-1/2 flex-col justify-center border-l border-border/30 px-8 py-10 bg-gradient-to-br from-campfire-500/5 to-campfire-600/10">
               <h3 className="text-lg font-bold mb-2">What you'll get</h3>
               <p className="text-sm text-muted-foreground mb-6">
                 Unlock the full Campfire experience

@@ -6,7 +6,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card } from '@/components/ui/card';
-import { X, ArrowRight, Mic, MicOff, Bug, Images, Flame, Sparkles, Gift, BookOpen, GripVertical, Volume2, User, Video, VideoOff, Gamepad2, Heart, Users, ChevronLeft, ChevronRight, Phone } from 'lucide-react';
+import { X, ArrowRight, Mic, MicOff, Bug, Images, Flame, Sparkles, Gift, BookOpen, GripVertical, Volume2, User, Video, VideoOff, Gamepad2, Heart, Users, ChevronLeft, ChevronRight, Phone, HelpCircle } from 'lucide-react';
 import Link from 'next/link';
 import { getSessionTurns, getSession, getCompanion, getCompanionBackstory, type Companion, type CompanionBackstory } from '@/lib/api';
 import { CampfireWebSocket, connectWebSocket, type GroupParticipant } from '@/lib/ws';
@@ -17,6 +17,7 @@ import { GiftsPanel } from '@/components/gifts';
 import { FriendsPanel } from '@/components/friends';
 import { GamesModal, GameBoardContainer } from '@/components/games';
 import { LikeButton } from '@/components/likes';
+import { SupportModal } from '@/components/support/support-modal';
 import type { ActiveGame } from '@campfire/shared';
 import type { SignupTrigger } from '@/components/demo/signup-modal';
 import { useRequireAuth } from '@/hooks/use-auth';
@@ -164,6 +165,7 @@ export function ChatSessionContent({ sessionId, isDemo, demoFingerprint, demoCom
   const [mobileGalleryLoading, setMobileGalleryLoading] = useState(false);
   const [showMobileMenu, setShowMobileMenu] = useState(false);
   const [showGames, setShowGames] = useState(false);
+  const [showSupportModal, setShowSupportModal] = useState(false);
   const [activeGame, setActiveGame] = useState<ActiveGame | null>(null);
   const [waitingForCompanionMove, setWaitingForCompanionMove] = useState(false);
   const [debugRefreshTrigger, setDebugRefreshTrigger] = useState(0);
@@ -1363,7 +1365,7 @@ export function ChatSessionContent({ sessionId, isDemo, demoFingerprint, demoCom
       <div className="flex flex-col flex-1 min-w-0 overflow-x-hidden">
         {/* Header - fixed transparent on mobile */}
         <header className="px-4 py-3 flex items-center gap-4 lg:relative fixed top-0 left-0 right-0 z-50 lg:bg-transparent bg-transparent lg:backdrop-blur-none backdrop-blur-sm">
-          <Link href="/chat" className="flex items-center gap-2">
+          <Link href="/dashboard" className="flex items-center gap-2">
             <Flame className="h-7 w-7 text-campfire-500" />
             <span className="text-lg font-bold">Campfire</span>
           </Link>
@@ -1387,14 +1389,26 @@ export function ChatSessionContent({ sessionId, isDemo, demoFingerprint, demoCom
             >
               <Gift className="h-4 w-4" />
             </Button>
-            <Button
-              variant={showDebugPanel ? 'secondary' : 'ghost'}
-              size="icon"
-              onClick={() => setShowDebugPanel(!showDebugPanel)}
-              title="Toggle Debug Panel"
-            >
-              <Bug className="h-4 w-4" />
-            </Button>
+            {user?.role === 'admin' && (
+              <Button
+                variant={showDebugPanel ? 'secondary' : 'ghost'}
+                size="icon"
+                onClick={() => setShowDebugPanel(!showDebugPanel)}
+                title="Toggle Debug Panel"
+              >
+                <Bug className="h-4 w-4" />
+              </Button>
+            )}
+            {user?.role !== 'admin' && (
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={() => setShowSupportModal(true)}
+                title="Get Help"
+              >
+                <HelpCircle className="h-4 w-4" />
+              </Button>
+            )}
             <Link href="/dashboard">
               <Button variant="ghost" size="icon" title="Close">
                 <X className="h-4 w-4" />
@@ -1450,6 +1464,18 @@ export function ChatSessionContent({ sessionId, isDemo, demoFingerprint, demoCom
                 >
                   <Button
                     variant="ghost"
+                    className="w-full justify-start gap-3 h-12 text-base px-4 text-campfire-500"
+                    onClick={() => {
+                      setShowMobileMenu(false);
+                      router.push('/onboard');
+                    }}
+                  >
+                    <Sparkles className="h-5 w-5" />
+                    New Chat
+                  </Button>
+                  <div className="border-t my-2" />
+                  <Button
+                    variant="ghost"
                     className="w-full justify-start gap-3 h-12 text-base px-4"
                     onClick={() => {
                       setShowMobileMenu(false);
@@ -1478,21 +1504,36 @@ export function ChatSessionContent({ sessionId, isDemo, demoFingerprint, demoCom
                     <Gift className="h-5 w-5" />
                     Gifts
                   </Button>
-                  <Button
-                    variant="ghost"
-                    className="w-full justify-start gap-3 h-12 text-base px-4"
-                    onClick={() => {
-                      setShowMobileMenu(false);
-                      if (isDemo && onRequireAuth) {
-                        onRequireAuth('debug');
-                      } else {
-                        setShowDebugPanel(!showDebugPanel);
-                      }
-                    }}
-                  >
-                    <Bug className="h-5 w-5" />
-                    Debug
-                  </Button>
+                  {user?.role === 'admin' && (
+                    <Button
+                      variant="ghost"
+                      className="w-full justify-start gap-3 h-12 text-base px-4"
+                      onClick={() => {
+                        setShowMobileMenu(false);
+                        if (isDemo && onRequireAuth) {
+                          onRequireAuth('debug');
+                        } else {
+                          setShowDebugPanel(!showDebugPanel);
+                        }
+                      }}
+                    >
+                      <Bug className="h-5 w-5" />
+                      Debug
+                    </Button>
+                  )}
+                  {user?.role !== 'admin' && (
+                    <Button
+                      variant="ghost"
+                      className="w-full justify-start gap-3 h-12 text-base px-4"
+                      onClick={() => {
+                        setShowMobileMenu(false);
+                        setShowSupportModal(true);
+                      }}
+                    >
+                      <HelpCircle className="h-5 w-5" />
+                      Support
+                    </Button>
+                  )}
                   <Button
                     variant="ghost"
                     className="w-full justify-start gap-3 h-12 text-base px-4"
@@ -1627,8 +1668,7 @@ export function ChatSessionContent({ sessionId, isDemo, demoFingerprint, demoCom
             <div className="flex gap-2 w-max">
               <Button
                 variant="outline"
-                size="sm"
-                className="flex-shrink-0 gap-2 px-3 py-2 border-emerald-700/30 text-emerald-500 hover:bg-emerald-900/20 hover:text-emerald-400"
+                className="flex-shrink-0 gap-2 px-4 py-3 h-auto border-emerald-700/30 text-emerald-500 hover:bg-emerald-900/20 hover:text-emerald-400"
                 onClick={handleCallClick}
                 disabled={isCallActive}
               >
@@ -1637,8 +1677,7 @@ export function ChatSessionContent({ sessionId, isDemo, demoFingerprint, demoCom
               </Button>
               <Button
                 variant="outline"
-                size="sm"
-                className="flex-shrink-0 gap-2 px-3 py-2"
+                className="flex-shrink-0 gap-2 px-4 py-3 h-auto"
                 onClick={() => {
                   if (isDemo && onRequireAuth) {
                     onRequireAuth('personality');
@@ -1653,8 +1692,7 @@ export function ChatSessionContent({ sessionId, isDemo, demoFingerprint, demoCom
               {backstoryData?.hasBackstory && (
                 <Button
                   variant="outline"
-                  size="sm"
-                  className="flex-shrink-0 gap-2 px-3 py-2 border-amber-700/30 text-amber-500 hover:bg-amber-900/20 hover:text-amber-400"
+                  className="flex-shrink-0 gap-2 px-4 py-3 h-auto border-amber-700/30 text-amber-500 hover:bg-amber-900/20 hover:text-amber-400"
                   onClick={() => {
                     if (isDemo && onRequireAuth) {
                       onRequireAuth('avatar');
@@ -1669,8 +1707,7 @@ export function ChatSessionContent({ sessionId, isDemo, demoFingerprint, demoCom
               )}
               <Button
                 variant="outline"
-                size="sm"
-                className="flex-shrink-0 gap-2 px-3 py-2 border-cyan-700/30 text-cyan-500 hover:bg-cyan-900/20 hover:text-cyan-400"
+                className="flex-shrink-0 gap-2 px-4 py-3 h-auto border-cyan-700/30 text-cyan-500 hover:bg-cyan-900/20 hover:text-cyan-400"
                 onClick={() => {
                   if (isDemo && onRequireAuth) {
                     onRequireAuth('games');
@@ -1684,8 +1721,7 @@ export function ChatSessionContent({ sessionId, isDemo, demoFingerprint, demoCom
               </Button>
               <Button
                 variant="outline"
-                size="sm"
-                className="flex-shrink-0 gap-2 px-3 py-2 border-rose-700/30 text-rose-500 hover:bg-rose-900/20 hover:text-rose-400"
+                className="flex-shrink-0 gap-2 px-4 py-3 h-auto border-rose-700/30 text-rose-500 hover:bg-rose-900/20 hover:text-rose-400"
                 onClick={() => {
                   if (isDemo && onRequireAuth) {
                     onRequireAuth('gifts');
@@ -1699,8 +1735,7 @@ export function ChatSessionContent({ sessionId, isDemo, demoFingerprint, demoCom
               </Button>
               <Button
                 variant="outline"
-                size="sm"
-                className="flex-shrink-0 gap-2 px-3 py-2 border-purple-700/30 text-purple-500 hover:bg-purple-900/20 hover:text-purple-400"
+                className="flex-shrink-0 gap-2 px-4 py-3 h-auto border-purple-700/30 text-purple-500 hover:bg-purple-900/20 hover:text-purple-400"
                 onClick={() => {
                   if (isDemo && onRequireAuth) {
                     onRequireAuth('friends');
@@ -1760,9 +1795,9 @@ export function ChatSessionContent({ sessionId, isDemo, demoFingerprint, demoCom
               onClick={handleSend}
               onMouseDown={(e) => e.preventDefault()}
               disabled={!input.trim() || isLoading || isRecording}
-              className="h-12 w-12 lg:h-10 lg:w-10 flex-shrink-0"
+              className="h-12 w-12 lg:h-10 lg:w-10 flex-shrink-0 rounded-full"
             >
-              <ArrowRight className="h-6 w-6 lg:h-5 lg:w-5" />
+              <ArrowRight className="h-7 w-7 lg:h-5 lg:w-5" />
             </Button>
           </div>
 
@@ -1792,51 +1827,156 @@ export function ChatSessionContent({ sessionId, isDemo, demoFingerprint, demoCom
 
         </div>
 
-        {/* Mobile/Tablet Floating Avatar Thumbnail */}
+        {/* Mobile/Tablet Floating Avatar with Expandable Gallery */}
         {currentAvatarUrl && (
-          <motion.div
-            initial={{ opacity: 0, scale: 0.8, y: 20 }}
-            animate={{ opacity: 1, scale: 1, y: 0 }}
-            transition={{ duration: 0.4, ease: "easeOut" }}
-            className="lg:hidden fixed right-4 z-40"
-            style={{ bottom: keyboardHeight > 0 ? `${keyboardHeight + 150}px` : '150px' }}
-          >
-            {/* Animated glow ring */}
+          <>
+            {/* Backdrop when expanded */}
+            <AnimatePresence>
+              {showMobileAvatar && (
+                <motion.div
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  exit={{ opacity: 0 }}
+                  transition={{ duration: 0.2 }}
+                  className="lg:hidden fixed inset-0 z-40 bg-black/80 backdrop-blur-sm"
+                  onClick={() => setShowMobileAvatar(false)}
+                />
+              )}
+            </AnimatePresence>
+
+            {/* Avatar container - expands in place */}
             <motion.div
-              className="absolute -inset-1 bg-gradient-to-r from-campfire-500 via-orange-400 to-campfire-500 rounded-xl blur-sm"
-              animate={{
-                opacity: [0.4, 0.7, 0.4],
-                scale: [1, 1.02, 1],
-              }}
-              transition={{
-                duration: 2,
-                repeat: Infinity,
-                ease: "easeInOut",
-              }}
-            />
-            <motion.button
-              onClick={() => setShowMobileAvatar(true)}
-              className="relative w-30 h-36 rounded-xl overflow-hidden border-2 border-campfire-500 shadow-lg bg-muted/80 backdrop-blur-sm"
-              aria-label="View companion"
-              animate={{
-                y: [0, -4, 0],
-              }}
-              transition={{
-                duration: 3,
-                repeat: Infinity,
-                ease: "easeInOut",
-              }}
-              whileHover={{ scale: 1.05 }}
-              whileTap={{ scale: 0.95 }}
+              layoutId="mobile-avatar"
+              onClick={() => setShowMobileAvatar(!showMobileAvatar)}
+              className={`lg:hidden fixed z-50 rounded-xl overflow-hidden border-2 border-campfire-500 shadow-xl bg-muted cursor-pointer ${
+                showMobileAvatar
+                  ? 'inset-4 top-16 bottom-auto max-h-[70vh]'
+                  : 'right-4 w-[120px] h-[144px]'
+              }`}
+              style={!showMobileAvatar ? { bottom: keyboardHeight > 0 ? `${keyboardHeight + 150}px` : '150px' } : undefined}
+              transition={{ type: 'spring', stiffness: 300, damping: 30 }}
             >
-              <StaticCompanionAvatar
-                imageUrl={currentAvatarUrl}
-                width={120}
-                height={144}
-                className="w-full h-full"
-              />
-            </motion.button>
-          </motion.div>
+              {/* Swipeable gallery when expanded */}
+              {showMobileAvatar ? (
+                <motion.div
+                  className="w-full h-full"
+                  drag="x"
+                  dragConstraints={{ left: 0, right: 0 }}
+                  dragElastic={0.2}
+                  onDragEnd={(_, info) => {
+                    const swipeThreshold = 50;
+                    if (info.offset.x < -swipeThreshold && mobileGalleryIndex < mobileGalleryImages.length - 1) {
+                      if (isDemo && onRequireAuth) {
+                        onRequireAuth('gallery');
+                      } else {
+                        setMobileGalleryIndex(mobileGalleryIndex + 1);
+                      }
+                    } else if (info.offset.x > swipeThreshold && mobileGalleryIndex > 0) {
+                      if (isDemo && onRequireAuth) {
+                        onRequireAuth('gallery');
+                      } else {
+                        setMobileGalleryIndex(mobileGalleryIndex - 1);
+                      }
+                    }
+                  }}
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  <AnimatePresence mode="wait">
+                    <motion.img
+                      key={mobileGalleryIndex}
+                      src={mobileGalleryImages.length > 0 && mobileGalleryImages[mobileGalleryIndex]
+                        ? mobileGalleryImages[mobileGalleryIndex].s3_url
+                        : currentAvatarUrl}
+                      alt={companion?.name || 'Companion'}
+                      className="w-full h-full object-cover"
+                      initial={{ opacity: 0 }}
+                      animate={{ opacity: 1 }}
+                      exit={{ opacity: 0 }}
+                      transition={{ duration: 0.15 }}
+                      draggable={false}
+                    />
+                  </AnimatePresence>
+
+                  {/* Close button */}
+                  <button
+                    onClick={() => setShowMobileAvatar(false)}
+                    className="absolute top-3 right-3 p-2 rounded-full bg-black/50 text-white hover:bg-black/70"
+                  >
+                    <X className="h-5 w-5" />
+                  </button>
+
+                  {/* Navigation arrows */}
+                  {mobileGalleryImages.length > 1 && mobileGalleryIndex > 0 && (
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setMobileGalleryIndex(mobileGalleryIndex - 1);
+                      }}
+                      className="absolute left-3 top-1/2 -translate-y-1/2 p-2 rounded-full bg-black/50 text-white hover:bg-black/70"
+                    >
+                      <ChevronLeft className="h-6 w-6" />
+                    </button>
+                  )}
+                  {mobileGalleryImages.length > 1 && mobileGalleryIndex < mobileGalleryImages.length - 1 && (
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setMobileGalleryIndex(mobileGalleryIndex + 1);
+                      }}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 p-2 rounded-full bg-black/50 text-white hover:bg-black/70"
+                    >
+                      <ChevronRight className="h-6 w-6" />
+                    </button>
+                  )}
+
+                  {/* Dot indicators */}
+                  {mobileGalleryImages.length > 1 && (
+                    <div className="absolute bottom-4 left-0 right-0 flex justify-center gap-1.5">
+                      {mobileGalleryImages.map((_, idx) => (
+                        <button
+                          key={idx}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setMobileGalleryIndex(idx);
+                          }}
+                          className={`w-2 h-2 rounded-full transition-colors ${
+                            idx === mobileGalleryIndex
+                              ? 'bg-campfire-500'
+                              : 'bg-white/40 hover:bg-white/60'
+                          }`}
+                        />
+                      ))}
+                    </div>
+                  )}
+
+                  {/* Companion name overlay */}
+                  <div className="absolute bottom-0 left-0 right-0 p-4 bg-gradient-to-t from-black/60 to-transparent">
+                    <p className="text-white font-medium">
+                      {companion?.name}
+                      {mobileGalleryImages.length > 0 && mobileGalleryImages[mobileGalleryIndex] && (
+                        <span className="ml-2 text-white/70 capitalize font-normal">
+                          • {mobileGalleryImages[mobileGalleryIndex].emotional_state}
+                        </span>
+                      )}
+                    </p>
+                  </div>
+
+                  {/* Loading state */}
+                  {mobileGalleryLoading && (
+                    <div className="absolute inset-0 flex items-center justify-center bg-black/30">
+                      <div className="w-8 h-8 border-2 border-campfire-500 border-t-transparent rounded-full animate-spin" />
+                    </div>
+                  )}
+                </motion.div>
+              ) : (
+                <img
+                  src={currentAvatarUrl}
+                  alt={companion?.name || 'Companion'}
+                  className="w-full h-full object-cover"
+                />
+              )}
+            </motion.div>
+          </>
         )}
       </div>
 
@@ -1929,201 +2069,11 @@ export function ChatSessionContent({ sessionId, isDemo, demoFingerprint, demoCom
         />
       )}
 
-      {/* Mobile Avatar Enlarged Modal with Gallery Swipe */}
-      {showMobileAvatar && (
-        <div
-          className="lg:hidden fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm"
-          onClick={() => setShowMobileAvatar(false)}
-        >
-          <div
-            className="relative flex flex-col items-center p-4 w-full max-w-[85vw] sm:max-w-sm"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <button
-              onClick={() => setShowMobileAvatar(false)}
-              className="absolute top-2 right-2 z-10 p-2 rounded-full bg-black/50 text-white hover:bg-black/70"
-              aria-label="Close"
-            >
-              <X className="h-5 w-5" />
-            </button>
-
-            {/* Swipeable Image Carousel */}
-            <div className="relative w-full overflow-hidden rounded-xl">
-              {/* Navigation arrows */}
-              {mobileGalleryImages.length > 1 && mobileGalleryIndex > 0 && (
-                <button
-                  onClick={() => {
-                    if (isDemo && onRequireAuth) {
-                      onRequireAuth('gallery');
-                    } else {
-                      setMobileGalleryIndex(mobileGalleryIndex - 1);
-                    }
-                  }}
-                  className="absolute left-2 top-1/2 -translate-y-1/2 z-10 p-2 rounded-full bg-black/50 text-white hover:bg-black/70"
-                >
-                  <ChevronLeft className="h-6 w-6" />
-                </button>
-              )}
-              {mobileGalleryImages.length > 1 && mobileGalleryIndex < mobileGalleryImages.length - 1 && (
-                <button
-                  onClick={() => {
-                    if (isDemo && onRequireAuth) {
-                      onRequireAuth('gallery');
-                    } else {
-                      setMobileGalleryIndex(mobileGalleryIndex + 1);
-                    }
-                  }}
-                  className="absolute right-2 top-1/2 -translate-y-1/2 z-10 p-2 rounded-full bg-black/50 text-white hover:bg-black/70"
-                >
-                  <ChevronRight className="h-6 w-6" />
-                </button>
-              )}
-
-              {/* Image with swipe gesture */}
-              <motion.div
-                key={mobileGalleryIndex}
-                initial={{ opacity: 0, x: 50 }}
-                animate={{ opacity: 1, x: 0 }}
-                exit={{ opacity: 0, x: -50 }}
-                transition={{ duration: 0.2 }}
-                drag="x"
-                dragConstraints={{ left: 0, right: 0 }}
-                dragElastic={0.2}
-                onDragEnd={(_, info) => {
-                  const swipeThreshold = 50;
-                  if (info.offset.x < -swipeThreshold && mobileGalleryIndex < mobileGalleryImages.length - 1) {
-                    if (isDemo && onRequireAuth) {
-                      onRequireAuth('gallery');
-                    } else {
-                      setMobileGalleryIndex(mobileGalleryIndex + 1);
-                    }
-                  } else if (info.offset.x > swipeThreshold && mobileGalleryIndex > 0) {
-                    if (isDemo && onRequireAuth) {
-                      onRequireAuth('gallery');
-                    } else {
-                      setMobileGalleryIndex(mobileGalleryIndex - 1);
-                    }
-                  }
-                }}
-                className="cursor-grab active:cursor-grabbing"
-              >
-                {mobileGalleryImages.length > 0 && mobileGalleryImages[mobileGalleryIndex] ? (
-                  <img
-                    src={mobileGalleryImages[mobileGalleryIndex].s3_url}
-                    alt={`${companion?.name} - ${mobileGalleryImages[mobileGalleryIndex].emotional_state}`}
-                    className="w-full max-h-[60vh] object-cover rounded-xl shadow-2xl"
-                    draggable={false}
-                  />
-                ) : currentAvatarUrl ? (
-                  <img
-                    src={currentAvatarUrl}
-                    alt={companion?.name || 'Companion'}
-                    className="w-full max-h-[60vh] object-cover rounded-xl shadow-2xl"
-                    draggable={false}
-                  />
-                ) : null}
-              </motion.div>
-
-              {/* Dot indicators */}
-              {mobileGalleryImages.length > 1 && (
-                <div className="flex justify-center gap-1.5 mt-3">
-                  {mobileGalleryImages.map((_, idx) => (
-                    <button
-                      key={idx}
-                      onClick={() => {
-                        if (isDemo && idx !== mobileGalleryIndex && onRequireAuth) {
-                          onRequireAuth('gallery');
-                        } else {
-                          setMobileGalleryIndex(idx);
-                        }
-                      }}
-                      className={`w-2 h-2 rounded-full transition-colors ${
-                        idx === mobileGalleryIndex
-                          ? 'bg-campfire-500'
-                          : 'bg-white/40 hover:bg-white/60'
-                      }`}
-                    />
-                  ))}
-                </div>
-              )}
-
-              {/* Loading state */}
-              {mobileGalleryLoading && (
-                <div className="absolute inset-0 flex items-center justify-center bg-black/30">
-                  <div className="w-8 h-8 border-2 border-campfire-500 border-t-transparent rounded-full animate-spin" />
-                </div>
-              )}
-            </div>
-
-            <p className="mt-3 text-sm text-white/80">
-              {companion?.name}
-              {mobileGalleryImages.length > 0 && mobileGalleryImages[mobileGalleryIndex] && (
-                <span className="ml-2 capitalize text-white/60">
-                  • {mobileGalleryImages[mobileGalleryIndex].emotional_state}
-                </span>
-              )}
-            </p>
-
-            {/* Swipe hint for demo mode */}
-            {isDemo && mobileGalleryImages.length > 1 && (
-              <p className="text-xs text-white/50 mt-1">Swipe to see more</p>
-            )}
-
-            <div className="flex flex-wrap gap-3 mt-4 justify-center">
-              <Button
-                variant="secondary"
-                size="lg"
-                className="gap-2 px-6 py-3 text-base"
-                onClick={() => {
-                  setShowMobileAvatar(false);
-                  if (isDemo && onRequireAuth) {
-                    onRequireAuth('gallery');
-                  } else {
-                    setShowGallery(true);
-                  }
-                }}
-              >
-                <Images className="h-5 w-5" />
-                Gallery
-              </Button>
-              <Button
-                variant="secondary"
-                size="lg"
-                className="gap-2 px-6 py-3 text-base"
-                onClick={() => {
-                  setShowMobileAvatar(false);
-                  if (isDemo && onRequireAuth) {
-                    onRequireAuth('personality');
-                  } else {
-                    setShowPersonality(true);
-                  }
-                }}
-              >
-                <Sparkles className="h-5 w-5" />
-                Personality
-              </Button>
-              {backstoryData?.hasBackstory && (
-                <Button
-                  variant="secondary"
-                  size="lg"
-                  className="gap-2 px-6 py-3 text-base bg-amber-900/30 hover:bg-amber-900/50 text-amber-400 border-amber-700/30"
-                  onClick={() => {
-                    setShowMobileAvatar(false);
-                    if (isDemo && onRequireAuth) {
-                      onRequireAuth('avatar');
-                    } else {
-                      setShowBackstory(true);
-                    }
-                  }}
-                >
-                  <BookOpen className="h-5 w-5" />
-                  Backstory
-                </Button>
-              )}
-            </div>
-          </div>
-        </div>
-      )}
+      {/* Support Modal */}
+      <SupportModal
+        open={showSupportModal}
+        onOpenChange={setShowSupportModal}
+      />
     </div>
   );
 }

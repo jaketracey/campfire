@@ -5,12 +5,11 @@ import { useOnboardingStore, type TenetCategory } from '@/stores/onboarding-stor
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { Separator } from '@/components/ui/separator';
-import { Loader2, Sparkles, Star, ImageIcon, CheckCircle2, BookOpen, RefreshCw, MessageCircle } from 'lucide-react';
+import { Loader2, Sparkles, Star, CheckCircle2, BookOpen, RefreshCw, MessageCircle } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { useToast } from '@/hooks/use-toast';
-import { createCompanion, createSession, streamAnchorImages, generateBackstory, type AnchorImage, type GenerateBackstoryResult } from '@/lib/api';
+import { createSession, streamAnchorImages, generateBackstory, type AnchorImage, type GenerateBackstoryResult } from '@/lib/api';
 import { cn } from '@/lib/utils';
 import Image from 'next/image';
 
@@ -24,13 +23,16 @@ const TENET_CATEGORY_META: Record<TenetCategory, { label: string; color: string 
   autonomy: { label: 'Autonomy', color: 'amber' },
 };
 
-type CreationPhase = 'idle' | 'creating' | 'generating-identity' | 'creating-session' | 'complete';
+type CreationPhase = 'generating-identity' | 'creating-session' | 'complete';
 
 export function Step9Review() {
   const router = useRouter();
   const { toast } = useToast();
   const state = useOnboardingStore();
-  const [phase, setPhase] = useState<CreationPhase>('idle');
+  const { companionId, sessionId: storedSessionId, setSessionId: storeSetSessionId, generationStarted } = state;
+
+  // Start in generating-identity phase since companion is created in voice step
+  const [phase, setPhase] = useState<CreationPhase>('generating-identity');
   const [generatedAnchors, setGeneratedAnchors] = useState<AnchorImage[]>([]);
   const [currentAnchorIndex, setCurrentAnchorIndex] = useState(0);
   const [backstoryGenerated, setBackstoryGenerated] = useState(false);
@@ -38,10 +40,10 @@ export function Step9Review() {
   const [imagesGenerated, setImagesGenerated] = useState(false);
   const [displayedAnchorUrl, setDisplayedAnchorUrl] = useState<string | null>(null);
   const [isImageFading, setIsImageFading] = useState(false);
-  const [sessionId, setSessionId] = useState<string | null>(null);
-  const [companionId, setCompanionId] = useState<string | null>(null);
+  const [localSessionId, setLocalSessionId] = useState<string | null>(storedSessionId);
   const [isRegeneratingBackstory, setIsRegeneratingBackstory] = useState(false);
   const backstoryRef = useRef<HTMLDivElement>(null);
+  const hasConnectedRef = useRef(false);
 
   // Auto-scroll backstory after it appears
   useEffect(() => {
@@ -83,15 +85,113 @@ export function Step9Review() {
   }, [backstoryResult]);
 
   const coreTenets = state.tenets.filter((t) => t.priority === 'core');
-  const isCreating = phase !== 'idle' && phase !== 'complete';
-  const isReady = phase === 'complete' && sessionId;
+  const isCreating = phase !== 'complete';
+  const isReady = phase === 'complete' && localSessionId;
+
+  // Auto-connect to generation stream on mount
+  useEffect(() => {
+    if (!companionId || hasConnectedRef.current) return;
+    hasConnectedRef.current = true;
+
+    // Connect to anchor image stream
+    streamAnchorImages(
+      {
+        companionId: companionId,
+        appearance: {
+          ethnicity: state.visualStyle.appearance.ethnicity,
+          bodyType: state.visualStyle.appearance.bodyType,
+          hairColor: state.visualStyle.appearance.hairColor,
+          breastSize: state.visualStyle.appearance.breastSize,
+        },
+        style: state.visualStyle.avatarStyle,
+        personality: {
+          warmth: state.personality.warmth,
+          playfulness: state.personality.playfulness,
+          directness: state.personality.directness,
+          curiosity: state.personality.curiosity,
+          empathy: state.personality.empathy,
+          assertiveness: state.personality.assertiveness,
+        },
+      },
+      {
+        onProgress: (data) => {
+          console.log('Anchor progress:', data);
+        },
+        onAnchor: (anchor) => {
+          console.log('Anchor received:', anchor);
+          setGeneratedAnchors((prev) => [...prev, anchor]);
+        },
+        onComplete: (result) => {
+          console.log('Anchor generation complete:', result);
+          setImagesGenerated(true);
+        },
+        onError: (error) => {
+          console.error('Anchor generation error:', error);
+          if (error.partialAnchors && error.partialAnchors.length > 0) {
+            setImagesGenerated(true);
+          }
+        },
+      }
+    );
+
+    // Generate backstory (or reconnect if already started)
+    generateBackstory(companionId, {
+      archetype: state.archetype?.id || 'companion',
+      secondaryArchetype: state.secondaryArchetype?.id,
+      archetypeDescription: state.archetype?.description,
+      personality: state.personality,
+      tenets: state.tenets.map((t) => ({
+        category: t.category,
+        priority: t.priority,
+        rule: t.rule,
+        isNegation: t.isNegation,
+      })),
+      userBackstoryHint: state.identity.backstory || undefined,
+    }).then((result) => {
+      console.log('Backstory generated:', result);
+      setBackstoryResult(result);
+      setBackstoryGenerated(true);
+    }).catch((error) => {
+      console.error('Backstory generation failed:', error);
+      toast({
+        title: 'Note',
+        description: 'Could not generate backstory. Your companion will still work normally.',
+        variant: 'default',
+      });
+    });
+  }, [companionId, state, toast]);
+
+  // Create session once we have at least one anchor
+  useEffect(() => {
+    if (!companionId || localSessionId) return;
+    if (generatedAnchors.length === 0 && !imagesGenerated) return;
+
+    // Create session
+    setPhase('creating-session');
+    createSession({
+      companionId: companionId,
+      title: `Chat with ${state.name}`,
+    }).then((session) => {
+      console.log('Session created:', session);
+      setLocalSessionId(session.id);
+      storeSetSessionId(session.id);
+      setPhase('complete');
+    }).catch((error) => {
+      console.error('Failed to create session:', error);
+      toast({
+        title: 'Error',
+        description: 'Failed to prepare chat. Please try again.',
+        variant: 'destructive',
+      });
+    });
+  }, [companionId, generatedAnchors.length, imagesGenerated, localSessionId, state.name, storeSetSessionId, toast]);
 
   // Handle starting the chat
   const handleStartChat = useCallback(() => {
-    if (!sessionId) return;
+    if (!localSessionId) return;
     state.reset();
-    router.push(`/chat/${sessionId}`);
-  }, [sessionId, state, router]);
+    router.push(`/chat/${localSessionId}`);
+  }, [localSessionId, state, router]);
 
   // Handle regenerating backstory
   const handleRegenerateBackstory = useCallback(async () => {
@@ -165,215 +265,6 @@ export function Step9Review() {
     }
   }, [currentAnchorIndex, generatedAnchors]);
 
-  const handleCreate = async () => {
-    setPhase('creating');
-    setGeneratedAnchors([]);
-    setCurrentAnchorIndex(0);
-    setBackstoryGenerated(false);
-    setImagesGenerated(false);
-
-    try {
-      // Build personality description from archetype and sliders
-      const personalityDescription = [
-        state.archetype?.description || '',
-        state.secondaryArchetype
-          ? `Secondary archetype: ${state.secondaryArchetype.name}`
-          : '',
-        `Traits: ${state.archetype?.traits.join(', ') || 'friendly'}`,
-        `Warmth: ${state.personality.warmth}%, Playfulness: ${state.personality.playfulness}%`,
-        `Empathy: ${state.personality.empathy}%, Energy: ${state.personality.energy}%`,
-        state.identity.backstory ? `Background: ${state.identity.backstory}` : '',
-        coreTenets.length > 0
-          ? `Core behavioral rules:\n${coreTenets.map((t) => `- ${t.isNegation ? 'NEVER: ' : ''}${t.rule}`).join('\n')}`
-          : '',
-      ]
-        .filter(Boolean)
-        .join('\n');
-
-      // Create companion via API with full spec including visual_style
-      const companion = await createCompanion({
-        name: state.name,
-        description: state.archetype?.description,
-        personality: personalityDescription,
-        voiceId: state.voice?.id,
-        isPublic: false,
-        spec: {
-          identity: {
-            name: state.name,
-            pronouns: state.identity.pronouns,
-          },
-          personality: {
-            archetype: state.archetype?.id || 'companion',
-            secondary_archetype: state.secondaryArchetype?.id,
-            // Store traits in 0-1 range (personality modal expects this format)
-            traits: {
-              warmth: state.personality.warmth / 100,
-              energy: state.personality.energy / 100,
-              playfulness: state.personality.playfulness / 100,
-              formality: state.personality.formality / 100,
-              assertiveness: state.personality.assertiveness / 100,
-              curiosity: state.personality.curiosity / 100,
-              empathy: state.personality.empathy / 100,
-              spontaneity: state.personality.spontaneity / 100,
-              optimism: state.personality.optimism / 100,
-              directness: state.personality.directness / 100,
-            },
-          },
-          voice: {
-            provider: 'elevenlabs',
-            voice_id: state.voice?.id || 'default',
-          },
-          visual_style: {
-            style_type: state.visualStyle.avatarStyle,
-            appearance: {
-              ethnicity: state.visualStyle.appearance.ethnicity,
-              bodyType: state.visualStyle.appearance.bodyType,
-              hairColor: state.visualStyle.appearance.hairColor,
-              breastSize: state.visualStyle.appearance.breastSize,
-            },
-          },
-          boundaries: {
-            relationship_pacing: 'moderate',
-            content_rating: 'R',
-            emotional_depth: state.boundaries.emotionalDepth,
-            topics_avoid: state.boundaries.avoidTopics,
-            safe_topics: state.boundaries.safeTopics,
-          },
-        },
-      });
-
-      console.log('Companion created:', companion);
-      setCompanionId(companion.id);
-
-      // Generate identity: images (with SSE streaming) AND backstory in parallel
-      setPhase('generating-identity');
-
-      // Start streaming anchor images - resolve after FIRST anchor arrives
-      // Additional anchors will continue generating in background
-      let firstAnchorResolve: (() => void) | null = null;
-      let firstAnchorReject: ((err: Error) => void) | null = null;
-      const firstAnchorPromise = new Promise<void>((resolve, reject) => {
-        firstAnchorResolve = resolve;
-        firstAnchorReject = reject;
-      });
-
-      // Start the stream (continues in background even after we navigate away)
-      streamAnchorImages(
-        {
-          companionId: companion.id,
-          appearance: {
-            ethnicity: state.visualStyle.appearance.ethnicity,
-            bodyType: state.visualStyle.appearance.bodyType,
-            hairColor: state.visualStyle.appearance.hairColor,
-            breastSize: state.visualStyle.appearance.breastSize,
-          },
-          style: state.visualStyle.avatarStyle,
-          personality: {
-            warmth: state.personality.warmth,
-            playfulness: state.personality.playfulness,
-            directness: state.personality.directness,
-            curiosity: state.personality.curiosity,
-            empathy: state.personality.empathy,
-            assertiveness: state.personality.assertiveness,
-          },
-        },
-        {
-          onProgress: (data) => {
-            console.log('Anchor progress:', data);
-          },
-          onAnchor: (anchor) => {
-            console.log('Anchor received:', anchor);
-            setGeneratedAnchors((prev) => [...prev, anchor]);
-            // Resolve after first anchor - user can proceed
-            if (firstAnchorResolve) {
-              firstAnchorResolve();
-              firstAnchorResolve = null; // Only resolve once
-            }
-          },
-          onComplete: (result) => {
-            console.log('Anchor generation complete:', result);
-            setImagesGenerated(true);
-          },
-          onError: (error) => {
-            console.error('Anchor generation error:', error);
-            // If we haven't gotten any anchors yet, reject
-            if (firstAnchorReject) {
-              firstAnchorReject(new Error(error.message));
-              firstAnchorReject = null;
-            }
-            // Mark as complete if we got partial anchors
-            if (error.partialAnchors && error.partialAnchors.length > 0) {
-              setImagesGenerated(true);
-            }
-          },
-        }
-      );
-
-      // Wait for FIRST anchor + backstory in parallel
-      // Additional anchors continue generating in background (saved on server)
-      const [anchorsResult, backstoryResultSettled] = await Promise.allSettled([
-        firstAnchorPromise,
-        // Generate backstory and save to knowledge graph
-        generateBackstory(companion.id, {
-          archetype: state.archetype?.id || 'companion',
-          secondaryArchetype: state.secondaryArchetype?.id,
-          archetypeDescription: state.archetype?.description,
-          personality: state.personality,
-          tenets: state.tenets.map((t) => ({
-            category: t.category,
-            priority: t.priority,
-            rule: t.rule,
-            isNegation: t.isNegation,
-          })),
-          userBackstoryHint: state.identity.backstory || undefined,
-        }).then((result) => {
-          console.log('Backstory generated:', result);
-          setBackstoryResult(result);
-          setBackstoryGenerated(true);
-          return result;
-        }),
-      ]);
-
-      // Handle any failures gracefully
-      if (anchorsResult.status === 'rejected') {
-        console.warn('Anchor generation failed:', anchorsResult.reason);
-        toast({
-          title: 'Note',
-          description: 'Could not generate anchor images. Your companion will still work normally.',
-          variant: 'default',
-        });
-      }
-
-      if (backstoryResultSettled.status === 'rejected') {
-        console.warn('Backstory generation failed:', backstoryResultSettled.reason);
-        toast({
-          title: 'Note',
-          description: 'Could not generate backstory. Your companion will still work normally.',
-          variant: 'default',
-        });
-      }
-
-      // Create a session with the new companion
-      setPhase('creating-session');
-      const session = await createSession({
-        companionId: companion.id,
-        title: `Chat with ${companion.name}`,
-      });
-
-      console.log('Session created:', session);
-      setSessionId(session.id);
-      setPhase('complete');
-    } catch (error) {
-      console.error('Failed to create companion:', error);
-      toast({
-        title: 'Error',
-        description: 'Failed to create companion. Please try again.',
-        variant: 'destructive',
-      });
-      setPhase('idle');
-    }
-  };
-
   const getCategoryStyle = (category: string) => {
     const meta = TENET_CATEGORY_META[category as keyof typeof TENET_CATEGORY_META];
     if (!meta) return 'bg-gray-500/20 text-gray-400';
@@ -418,7 +309,7 @@ export function Step9Review() {
                   className={cn(
                     'relative overflow-hidden transition-all duration-700 ease-out',
                     displayedAnchorUrl
-                      ? 'h-80 w-full md:w-64 rounded-2xl'  // Full width on mobile, fixed on desktop
+                      ? 'aspect-[3/4] w-full md:w-64 rounded-2xl'  // Portrait aspect ratio
                       : 'h-20 w-20 rounded-3xl'   // Square when showing icon
                   )}
                 >
@@ -551,7 +442,7 @@ export function Step9Review() {
                               {backstoryResult.motivations.slice(0, 3).map((m, i) => (
                                 <span
                                   key={i}
-                                  className="px-2 py-0.5 rounded-full bg-vibes-cyan/10 border border-vibes-cyan/20 text-vibes-cyan text-xs"
+                                  className="px-4 py-1.5 rounded-full bg-white/[0.05] border border-white/5 text-gray-300 text-xs font-bold"
                                 >
                                   {m}
                                 </span>
@@ -628,69 +519,53 @@ export function Step9Review() {
               ) : (
                 /* Default review content */
                 <>
-                  {displayedAnchorUrl && <Separator className="bg-white/5 mb-8" />}
-                  {!displayedAnchorUrl && <Separator className="bg-white/5" />}
-                  <div className={cn("grid grid-cols-2 gap-8 text-sm", displayedAnchorUrl && "mt-0")}>
-                    <div className="space-y-1">
-                      <span className="text-[10px] font-bold tracking-widest text-gray-500 uppercase font-display">
-                        Voice
-                      </span>
-                      <span className="text-lg font-bold text-gray-200 block">{state.voice?.name}</span>
-                    </div>
-                    <div className="space-y-1">
-                      <span className="text-[10px] font-bold tracking-widest text-gray-500 uppercase font-display">
-                        Visual Style
-                      </span>
-                      <span className="text-lg font-bold text-gray-200 block capitalize">
-                        {state.visualStyle.avatarStyle}
-                      </span>
-                    </div>
-
+                  <div className={cn("grid grid-cols-1 gap-8 text-sm", displayedAnchorUrl && "mt-0")}>
                     {/* Backstory - shown when available */}
                     {backstoryResult && (
-                      <div className="col-span-2 space-y-3 animate-in fade-in slide-in-from-bottom-2 duration-500">
-                        <div className="flex items-center gap-2">
-                          <BookOpen className="h-3 w-3 text-vibes-cyan" />
-                          <span className="text-[10px] font-bold tracking-widest text-gray-500 uppercase font-display">
-                            Backstory
-                          </span>
+                      <div className="animate-in fade-in slide-in-from-bottom-2 duration-500">
+                        <div className="max-h-64 overflow-y-auto scrollbar-subtle pr-2 py-4">
+                          <p className="text-base text-gray-300 leading-relaxed">
+                            {backstoryResult.backstory}
+                          </p>
                         </div>
-                        <p className="text-sm text-gray-300 leading-relaxed">
-                          {backstoryResult.backstory}
-                        </p>
-                        {backstoryResult.motivations && backstoryResult.motivations.length > 0 && (
-                          <div className="flex gap-2 flex-wrap pt-1">
-                            {backstoryResult.motivations.slice(0, 3).map((m, i) => (
+                        <div className="space-y-3 mt-6">
+                          <span className="text-[10px] font-bold tracking-widest text-gray-500 uppercase font-display">
+                            Personality Traits
+                          </span>
+                          <div className="flex gap-2 flex-wrap">
+                            {state.archetype?.traits.map((t) => (
                               <span
-                                key={i}
-                                className="px-2 py-0.5 rounded-full bg-vibes-cyan/10 border border-vibes-cyan/20 text-vibes-cyan text-xs"
+                                key={t}
+                                className="px-4 py-1.5 rounded-full bg-white/[0.05] border border-white/5 text-gray-300 text-xs font-bold"
                               >
-                                {m}
+                                {t}
                               </span>
                             ))}
+                          </div>
+                        </div>
+
+                        {backstoryResult.motivations && backstoryResult.motivations.length > 0 && (
+                          <div className="space-y-3 mt-6">
+                            <span className="text-[10px] font-bold tracking-widest text-gray-500 uppercase font-display">
+                              Motivations
+                            </span>
+                            <div className="flex gap-2 flex-wrap">
+                              {backstoryResult.motivations.slice(0, 3).map((m, i) => (
+                                <span
+                                  key={i}
+                                  className="px-4 py-1.5 rounded-full bg-white/[0.05] border border-white/5 text-gray-300 text-xs font-bold"
+                                >
+                                  {m}
+                                </span>
+                              ))}
+                            </div>
                           </div>
                         )}
                       </div>
                     )}
 
-                    <div className="col-span-2 space-y-3">
-                      <span className="text-[10px] font-bold tracking-widest text-gray-500 uppercase font-display">
-                        Personality Traits
-                      </span>
-                      <div className="flex gap-2 flex-wrap">
-                        {state.archetype?.traits.map((t) => (
-                          <span
-                            key={t}
-                            className="px-4 py-1.5 rounded-full bg-white/[0.05] border border-white/5 text-gray-300 text-xs font-bold"
-                          >
-                            {t}
-                          </span>
-                        ))}
-                      </div>
-                    </div>
-
                     {coreTenets.length > 0 && (
-                      <div className="col-span-2 space-y-3">
+                      <div className="space-y-3">
                         <div className="flex items-center gap-2">
                           <Star className="h-3 w-3 text-vibes-acid" />
                           <span className="text-[10px] font-bold tracking-widest text-gray-500 uppercase font-display">
@@ -723,118 +598,14 @@ export function Step9Review() {
         </CardContent>
       </Card>
 
-      {/* Identity Generation Progress - only show when no image yet */}
-      {phase === 'generating-identity' && !displayedAnchorUrl && (
-        <Card className="bg-white/[0.02] backdrop-blur-3xl border-white/10 overflow-hidden">
-          <CardContent className="p-6 space-y-6">
-            <div className="flex items-center gap-3">
-              <div className="relative">
-                <Sparkles className="h-6 w-6 text-vibes-neon animate-pulse" />
-              </div>
-              <div>
-                <h4 className="text-lg font-bold text-white">Creating {state.name}&apos;s Identity</h4>
-                <p className="text-sm text-gray-400">
-                  Generating unique visuals and backstory...
-                </p>
-              </div>
-            </div>
-
-            {/* Two parallel progress sections */}
-            <div className="grid grid-cols-2 gap-6">
-              {/* Images progress */}
-              <div className="space-y-3">
-                <div className="flex items-center gap-2">
-                  {imagesGenerated ? (
-                    <CheckCircle2 className="h-4 w-4 text-vibes-neon" />
-                  ) : (
-                    <ImageIcon className="h-4 w-4 text-vibes-neon animate-pulse" />
-                  )}
-                  <span className="text-sm font-medium text-gray-300">Visual Identity</span>
-                </div>
-
-                {/* Progress indicator */}
-                <div className="flex gap-1.5">
-                  {['neutral', 'happy', 'thoughtful'].map((emotionalState, index) => {
-                    const isComplete = generatedAnchors.some((a) => a.emotionalState === emotionalState);
-                    const isCurrent = index === generatedAnchors.length && !imagesGenerated;
-
-                    return (
-                      <div
-                        key={emotionalState}
-                        className={cn(
-                          'flex-1 h-1.5 rounded-full transition-all duration-500',
-                          isComplete
-                            ? 'bg-vibes-neon'
-                            : isCurrent
-                              ? 'bg-vibes-neon/50 animate-pulse'
-                              : 'bg-white/10'
-                        )}
-                      />
-                    );
-                  })}
-                </div>
-
-                {/* Generated anchors preview */}
-                {generatedAnchors.length > 0 && (
-                  <div className="flex gap-2 justify-center pt-1">
-                    {generatedAnchors.map((anchor) => (
-                      <div
-                        key={anchor.id}
-                        className="relative w-12 h-18 rounded-md overflow-hidden border border-vibes-neon/30 shadow-[0_0_8px_rgba(168,85,247,0.2)]"
-                      >
-                        <Image
-                          src={anchor.url}
-                          alt={`${state.name} - ${anchor.emotionalState}`}
-                          fill
-                          className="object-cover"
-                        />
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-
-              {/* Backstory progress */}
-              <div className="space-y-3">
-                <div className="flex items-center gap-2">
-                  {backstoryGenerated ? (
-                    <CheckCircle2 className="h-4 w-4 text-vibes-cyan" />
-                  ) : (
-                    <BookOpen className="h-4 w-4 text-vibes-cyan animate-pulse" />
-                  )}
-                  <span className="text-sm font-medium text-gray-300">Backstory & Memories</span>
-                </div>
-
-                {/* Single progress bar for backstory */}
-                <div className="h-1.5 rounded-full bg-white/10 overflow-hidden">
-                  <div
-                    className={cn(
-                      'h-full rounded-full transition-all duration-1000',
-                      backstoryGenerated
-                        ? 'w-full bg-vibes-cyan'
-                        : 'w-2/3 bg-vibes-cyan/50 animate-pulse'
-                    )}
-                  />
-                </div>
-
-                {backstoryGenerated && (
-                  <p className="text-xs text-gray-500 pt-1">
-                    Motivations, memories, and personality saved ✓
-                  </p>
-                )}
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-      )}
 
       <div className="pt-6 space-y-6">
         {isReady ? (
-          <div className="flex gap-3 animate-in fade-in zoom-in-95 duration-500">
+          <div className="flex flex-col md:flex-row gap-3 animate-in fade-in zoom-in-95 duration-500">
             <Button
               size="lg"
               variant="outline"
-              className="h-20 px-6 rounded-2xl border-white/20 hover:border-vibes-neon/50 hover:bg-vibes-neon/10 transition-all duration-300"
+              className="h-14 md:h-20 px-6 rounded-2xl border-white/20 hover:border-vibes-neon/50 hover:bg-vibes-neon/10 transition-all duration-300"
               onClick={handleRegenerateBackstory}
               disabled={isRegeneratingBackstory}
             >
@@ -847,38 +618,27 @@ export function Step9Review() {
             </Button>
             <Button
               size="lg"
-              className="flex-1 h-20 text-2xl font-bold rounded-2xl bg-gradient-to-r from-vibes-cyan via-vibes-neon to-vibes-hot hover:shadow-[0_0_50px_rgba(168,85,247,0.5)] transition-all duration-500 hover:scale-[1.02] active:scale-[0.98] text-white"
+              className="flex-1 h-14 md:h-20 text-base md:text-xl font-bold rounded-2xl bg-gradient-to-r from-vibes-cyan via-vibes-neon to-vibes-hot hover:shadow-[0_0_50px_rgba(168,85,247,0.5)] transition-all duration-500 hover:scale-[1.02] active:scale-[0.98] text-white"
               onClick={handleStartChat}
             >
-              <MessageCircle className="mr-4 h-40 w-40" strokeWidth={2.5} />
+              <MessageCircle className="mr-2 md:mr-4 h-5 w-5 md:h-7 md:w-7" strokeWidth={2.5} />
               Start Chat with {state.name}
             </Button>
           </div>
         ) : (
           <Button
             size="lg"
-            className="w-full h-20 text-2xl font-bold rounded-2xl bg-gradient-to-r from-vibes-neon via-vibes-hot to-vibes-cyan hover:shadow-[0_0_50px_rgba(168,85,247,0.5)] transition-all duration-500 hover:scale-[1.02] active:scale-[0.98] text-white"
-            onClick={handleCreate}
-            disabled={isCreating}
+            className="w-full h-14 md:h-20 text-lg md:text-2xl font-bold rounded-2xl bg-gradient-to-r from-vibes-neon via-vibes-hot to-vibes-cyan transition-all duration-500 text-white cursor-wait"
+            disabled
           >
-            {phase === 'idle' ? (
+            {phase === 'generating-identity' ? (
               <>
-                <Sparkles className="mr-3 h-8 w-8" />
-                Bring to Life
-              </>
-            ) : phase === 'creating' ? (
-              <>
-                <Loader2 className="mr-3 h-8 w-8 animate-spin" />
-                Creating {state.name}...
-              </>
-            ) : phase === 'generating-identity' ? (
-              <>
-                <Loader2 className="mr-3 h-8 w-8 animate-spin" />
+                <Loader2 className="mr-2 md:mr-3 h-6 w-6 md:h-8 md:w-8 animate-spin" />
                 Building Identity...
               </>
             ) : (
               <>
-                <Loader2 className="mr-3 h-8 w-8 animate-spin" />
+                <Loader2 className="mr-2 md:mr-3 h-6 w-6 md:h-8 md:w-8 animate-spin" />
                 Preparing Chat...
               </>
             )}

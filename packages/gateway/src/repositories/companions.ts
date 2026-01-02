@@ -468,6 +468,15 @@ export class CompanionsRepository {
   async createAvatar(data: CompanionAvatarInsert, tx?: TransactionContext): Promise<CompanionAvatar> {
     const db = this.getSql(tx);
 
+    // Deactivate existing active avatar if inserting a new active one
+    if (data.is_active) {
+      await db`
+        UPDATE companion_avatars
+        SET is_active = false
+        WHERE companion_id = ${data.companion_id} AND is_active = true
+      `;
+    }
+
     const result = await db`
       INSERT INTO companion_avatars (
         companion_id, asset_url, asset_type, is_active, is_identity_anchor,

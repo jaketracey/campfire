@@ -101,6 +101,11 @@ export interface OnboardingState {
   visualStyle: VisualStyle;
   boundaries: Boundaries;
 
+  // Generation state (persists across steps)
+  companionId: string | null;
+  sessionId: string | null;
+  generationStarted: boolean;
+
   // Actions
   setStep: (step: number) => void;
   nextStep: () => void;
@@ -117,6 +122,9 @@ export interface OnboardingState {
   setVisualStyle: (style: Partial<VisualStyle>) => void;
   setAppearance: (appearance: Partial<PhysicalAppearance>) => void;
   setBoundaries: (boundaries: Partial<Boundaries>) => void;
+  setCompanionId: (id: string | null) => void;
+  setSessionId: (id: string | null) => void;
+  setGenerationStarted: (started: boolean) => void;
   reset: () => void;
 }
 
@@ -172,6 +180,9 @@ export const useOnboardingStore = create<OnboardingState>()(
       voice: null,
       visualStyle: initialVisualStyle,
       boundaries: initialBoundaries,
+      companionId: null,
+      sessionId: null,
+      generationStarted: false,
 
       setStep: (step) => set({ currentStep: step }),
       nextStep: () => {
@@ -227,6 +238,9 @@ export const useOnboardingStore = create<OnboardingState>()(
         set((state) => ({
           boundaries: { ...state.boundaries, ...boundaries },
         })),
+      setCompanionId: (id) => set({ companionId: id }),
+      setSessionId: (id) => set({ sessionId: id }),
+      setGenerationStarted: (started) => set({ generationStarted: started }),
       reset: () =>
         set({
           currentStep: 1,
@@ -242,6 +256,9 @@ export const useOnboardingStore = create<OnboardingState>()(
           voice: null,
           visualStyle: { ...initialVisualStyle, appearance: { ...initialAppearance } },
           boundaries: initialBoundaries,
+          companionId: null,
+          sessionId: null,
+          generationStarted: false,
         }),
     }),
     {

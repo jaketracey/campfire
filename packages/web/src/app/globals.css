@@ -109,10 +109,10 @@
   background: rgba(255, 255, 255, 0.2);
 }
 
-/* Chat scrollbar - sleek campfire themed */
+/* Chat scrollbar - subtle and stylish */
 .scrollbar-chat {
   scrollbar-width: thin;
-  scrollbar-color: rgba(249, 115, 22, 0.3) transparent;
+  scrollbar-color: rgba(255, 255, 255, 0.15) transparent;
 }
 
 .scrollbar-chat::-webkit-scrollbar {
@@ -125,17 +125,17 @@
 }
 
 .scrollbar-chat::-webkit-scrollbar-thumb {
-  background: rgba(249, 115, 22, 0.25);
+  background: rgba(255, 255, 255, 0.12);
   border-radius: 9999px;
   transition: background 0.2s ease;
 }
 
 .scrollbar-chat::-webkit-scrollbar-thumb:hover {
-  background: rgba(249, 115, 22, 0.5);
+  background: rgba(255, 255, 255, 0.25);
 }
 
 .scrollbar-chat::-webkit-scrollbar-thumb:active {
-  background: rgba(249, 115, 22, 0.7);
+  background: rgba(255, 255, 255, 0.35);
 }
 
 /* Gradient backgrounds */

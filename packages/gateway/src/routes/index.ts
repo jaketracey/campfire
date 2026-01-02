@@ -25,6 +25,13 @@ import { demoRoutes } from './demo.js';
 import { adminOrchestrationRoutes } from './admin-orchestration.js';
 import { adminCostsRoutes, userCostsRoutes } from './admin-costs.js';
 import { voiceRoutes } from './voice.js';
+import { supportRoutes, adminSupportRoutes } from './support.js';
+import {
+  adminProvidersRoutes,
+  adminModelsRoutes,
+  adminRoutingRoutes,
+  adminCompanionRoutingRoutes,
+} from './admin-providers.js';
 import { logger } from '../observability/logger.js';
 
 /**
@@ -93,6 +100,18 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
 
       // User cost routes (nested under /users/me)
       await api.register(userCostsRoutes, { prefix: '/users/me' });
+
+      // Support routes (user-facing)
+      await api.register(supportRoutes, { prefix: '/support' });
+
+      // Admin support routes
+      await api.register(adminSupportRoutes, { prefix: '/admin/support' });
+
+      // Admin provider settings routes
+      await api.register(adminProvidersRoutes, { prefix: '/admin/providers' });
+      await api.register(adminModelsRoutes, { prefix: '/admin/models' });
+      await api.register(adminRoutingRoutes, { prefix: '/admin/routing' });
+      await api.register(adminCompanionRoutingRoutes, { prefix: '/admin/companions' });
     },
     { prefix: '/api/v1' }
   );

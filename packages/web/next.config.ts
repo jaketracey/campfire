@@ -3,7 +3,7 @@ import type { NextConfig } from 'next';
 const nextConfig: NextConfig = {
   reactStrictMode: true,
   reactCompiler: true,
-  devIndicators: false,
+  devIndicators: {},
   cacheComponents: true,
   typedRoutes: true,
   transpilePackages: ['@campfire/shared'],
@@ -13,6 +13,22 @@ const nextConfig: NextConfig = {
       {
         source: '/api/v1/:path*',
         destination: 'http://localhost:3002/api/v1/:path*',
+      },
+    ];
+  },
+  // Headers for WASM/SharedArrayBuffer support (required for VAD voice calls)
+  // COOP/COEP must be set on pages that use voice, not just the resources
+  // Using 'same-origin-allow-popups' to allow OAuth popups while enabling SharedArrayBuffer
+  // Using 'credentialless' instead of 'require-corp' to allow S3 images without CORS headers
+  async headers() {
+    return [
+      {
+        // Apply to chat pages where voice calls are used
+        source: '/chat/:path*',
+        headers: [
+          { key: 'Cross-Origin-Opener-Policy', value: 'same-origin-allow-popups' },
+          { key: 'Cross-Origin-Embedder-Policy', value: 'credentialless' },
+        ],
       },
     ];
   },

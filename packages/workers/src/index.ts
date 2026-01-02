@@ -19,6 +19,7 @@ async function bootstrap() {
   const { PersonalityProfileProjectionWorker } = await import('./projections/personality-profile.js');
   const { EmailProjectionWorker } = await import('./email/worker.js');
   const { getEmailService } = await import('./email/service.js');
+  const { ImageRenditionWorker } = await import('./image/worker.js');
   const { createDbClient } = await import('./db/client.js');
   const { createS3Client } = await import('./storage/s3.js');
 
@@ -90,6 +91,14 @@ async function bootstrap() {
     rateLimitPerSecond: parseInt(process.env.SES_MAX_SEND_RATE || '14'),
   });
 
+  // Image rendition worker - generates optimized image sizes/formats
+  const imageRenditionWorker = new ImageRenditionWorker({
+    connection,
+    db,
+    logger: logger.child({ worker: 'image-rendition' }),
+    concurrency: 2, // CPU-intensive, limit concurrency
+  });
+
   // Start all workers
   await Promise.all([
     vaultWorker.start(),
@@ -98,6 +107,7 @@ async function bootstrap() {
     summaryWorker.start(),
     personalityProfileWorker.start(),
     emailWorker.start(),
+    imageRenditionWorker.start(),
   ]);
 
   logger.info('All projection workers started successfully');
@@ -112,6 +122,7 @@ async function bootstrap() {
       summaryWorker.stop(),
       personalityProfileWorker.stop(),
       emailWorker.stop(),
+      imageRenditionWorker.stop(),
     ]);
     await connection.quit();
     process.exit(0);

@@ -18,7 +18,12 @@ import { WelcomeTransition } from '@/components/auth/welcome-transition';
 export default function OnboardingPage() {
   const router = useRouter();
   const { isAuthenticated, isInitialized, isLoading: authLoading } = useAuth();
-  const { currentStep, prevStep } = useOnboardingStore();
+  const { currentStep, prevStep, reset } = useOnboardingStore();
+
+  // Reset onboarding state when page mounts fresh
+  useEffect(() => {
+    reset();
+  }, [reset]);
 
   // Redirect to login if not authenticated
   useEffect(() => {

@@ -1,9 +1,10 @@
 'use client';
 
+import { useState, useCallback } from 'react';
 import { useOnboardingStore } from '@/stores/onboarding-store';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardTitle } from '@/components/ui/card';
-import { ArrowRight, Sparkles } from 'lucide-react';
+import { ArrowRight, Sparkles, Shuffle } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { motion, AnimatePresence } from 'framer-motion';
 
@@ -100,6 +101,57 @@ const archetypes = [
 export function Step4Archetype() {
   const { archetype, secondaryArchetype, setArchetype, setSecondaryArchetype, nextStep } =
     useOnboardingStore();
+  const [isSurprising, setIsSurprising] = useState(false);
+  const [highlightedPrimary, setHighlightedPrimary] = useState<string | null>(null);
+  const [highlightedSecondary, setHighlightedSecondary] = useState<string | null>(null);
+
+  const handleSurpriseMe = useCallback(async () => {
+    setIsSurprising(true);
+
+    // Pick random archetypes
+    const primaryIndex = Math.floor(Math.random() * archetypes.length);
+    const remainingIndices = archetypes
+      .map((_, i) => i)
+      .filter((i) => i !== primaryIndex);
+    const secondaryIndex = remainingIndices[Math.floor(Math.random() * remainingIndices.length)];
+
+    const targetPrimary = archetypes[primaryIndex];
+    const targetSecondary = archetypes[secondaryIndex];
+
+    // Animate through primary archetypes rapidly
+    const primarySteps = 12;
+    for (let i = 0; i < primarySteps; i++) {
+      const randomIndex = Math.floor(Math.random() * archetypes.length);
+      setHighlightedPrimary(archetypes[randomIndex].id);
+      await new Promise((r) => setTimeout(r, 60 + i * 8)); // Speed up then slow down
+    }
+    // Land on the target primary
+    setHighlightedPrimary(targetPrimary.id);
+    setArchetype(targetPrimary);
+
+    // Small pause before secondary animation
+    await new Promise((r) => setTimeout(r, 200));
+
+    // Animate through secondary archetypes
+    const secondarySteps = 8;
+    for (let i = 0; i < secondarySteps; i++) {
+      const randomIndex = Math.floor(Math.random() * archetypes.length);
+      if (archetypes[randomIndex].id !== targetPrimary.id) {
+        setHighlightedSecondary(archetypes[randomIndex].id);
+      }
+      await new Promise((r) => setTimeout(r, 80 + i * 12));
+    }
+    // Land on the target secondary
+    setHighlightedSecondary(targetSecondary.id);
+    setSecondaryArchetype(targetSecondary);
+
+    // Wait a moment to show the selection, then proceed
+    await new Promise((r) => setTimeout(r, 600));
+    setIsSurprising(false);
+    setHighlightedPrimary(null);
+    setHighlightedSecondary(null);
+    nextStep();
+  }, [setArchetype, setSecondaryArchetype, nextStep]);
 
   return (
     <div className="space-y-8">
@@ -113,26 +165,56 @@ export function Step4Archetype() {
         </p>
       </div>
 
+      {/* Surprise Me - centered above archetypes */}
+      <div className="flex justify-center">
+        <Button
+          size="lg"
+          disabled={isSurprising}
+          onClick={handleSurpriseMe}
+          className="group h-20 px-16 rounded-full bg-white/[0.03] border-2 border-dashed border-white/20 hover:border-vibes-cyan/50 hover:bg-vibes-cyan/10 hover:shadow-[0_0_40px_rgba(6,182,212,0.2)] transition-all font-bold text-xl relative overflow-hidden"
+        >
+          {isSurprising && (
+            <motion.div
+              className="absolute inset-0 bg-gradient-to-r from-transparent via-white/20 to-transparent"
+              initial={{ x: '-100%' }}
+              animate={{ x: '100%' }}
+              transition={{ repeat: Infinity, duration: 0.8, ease: 'linear' }}
+            />
+          )}
+          <Shuffle className={cn("mr-3 h-7 w-7", isSurprising && "animate-spin")} />
+          {isSurprising ? 'Choosing...' : 'Surprise Me'}
+        </Button>
+      </div>
+
       {/* Primary Archetype Selection */}
       <div className="space-y-4">
         <h3 className="text-sm font-bold tracking-widest uppercase text-gray-500">
           Primary Archetype
         </h3>
         <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
-          {archetypes.map((type) => (
+          {archetypes.map((type) => {
+            const isHighlighted = highlightedPrimary === type.id;
+            const isSelected = archetype?.id === type.id;
+            return (
             <motion.div
               key={type.id}
-              whileHover={{ scale: 1.02 }}
-              whileTap={{ scale: 0.98 }}
+              whileHover={isSurprising ? {} : { scale: 1.02 }}
+              whileTap={isSurprising ? {} : { scale: 0.98 }}
+              animate={isHighlighted ? {
+                scale: [1, 1.08, 1.05],
+                transition: { duration: 0.15 }
+              } : {}}
             >
               <Card
                 className={cn(
                   'cursor-pointer transition-all border-white/10 h-full',
-                  archetype?.id === type.id
+                  isHighlighted
+                    ? 'bg-vibes-neon/20 border-vibes-neon ring-2 ring-vibes-neon shadow-[0_0_30px_rgba(168,85,247,0.4)]'
+                    : isSelected
                     ? 'bg-white/[0.08] border-vibes-neon/50 ring-1 ring-vibes-neon/30 shadow-[0_0_20px_rgba(168,85,247,0.1)]'
                     : 'bg-white/[0.01] hover:bg-white/[0.03] hover:border-white/20'
                 )}
-                onClick={() => setArchetype(type)}
+                onClick={() => !isSurprising && setArchetype(type)}
               >
                 <CardContent className="p-4">
                   <div className="text-3xl mb-2 filter drop-shadow-[0_0_10px_rgba(255,255,255,0.2)]">
@@ -155,7 +237,8 @@ export function Step4Archetype() {
                 </CardContent>
               </Card>
             </motion.div>
-          ))}
+          );
+          })}
         </div>
       </div>
 
@@ -178,21 +261,30 @@ export function Step4Archetype() {
             <div className="grid grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-2">
               {archetypes
                 .filter((t) => t.id !== archetype.id)
-                .map((type) => (
+                .map((type) => {
+                  const isHighlighted = highlightedSecondary === type.id;
+                  const isSelected = secondaryArchetype?.id === type.id;
+                  return (
                   <motion.div
                     key={type.id}
-                    whileHover={{ scale: 1.02 }}
-                    whileTap={{ scale: 0.98 }}
+                    whileHover={isSurprising ? {} : { scale: 1.02 }}
+                    whileTap={isSurprising ? {} : { scale: 0.98 }}
+                    animate={isHighlighted ? {
+                      scale: [1, 1.1, 1.05],
+                      transition: { duration: 0.12 }
+                    } : {}}
                   >
                     <Card
                       className={cn(
                         'cursor-pointer transition-all border-white/10',
-                        secondaryArchetype?.id === type.id
+                        isHighlighted
+                          ? 'bg-vibes-cyan/20 border-vibes-cyan ring-2 ring-vibes-cyan shadow-[0_0_25px_rgba(6,182,212,0.4)]'
+                          : isSelected
                           ? 'bg-white/[0.06] border-vibes-cyan/50 ring-1 ring-vibes-cyan/30'
                           : 'bg-white/[0.01] hover:bg-white/[0.03] hover:border-white/20'
                       )}
                       onClick={() =>
-                        setSecondaryArchetype(
+                        !isSurprising && setSecondaryArchetype(
                           secondaryArchetype?.id === type.id ? null : type
                         )
                       }
@@ -205,7 +297,8 @@ export function Step4Archetype() {
                       </CardContent>
                     </Card>
                   </motion.div>
-                ))}
+                );
+                })}
             </div>
             {secondaryArchetype && (
               <p className="text-xs text-gray-500 text-center">
@@ -221,12 +314,12 @@ export function Step4Archetype() {
       <div className="flex justify-end pt-4">
         <Button
           size="lg"
-          disabled={!archetype}
+          disabled={!archetype || isSurprising}
           onClick={nextStep}
-          className="group h-14 px-12 rounded-full bg-gradient-to-r from-vibes-neon to-vibes-hot hover:shadow-[0_0_30px_rgba(236,72,153,0.3)] transition-all font-bold text-lg disabled:opacity-50"
+          className="group h-16 px-14 rounded-full bg-gradient-to-r from-vibes-neon to-vibes-hot hover:shadow-[0_0_30px_rgba(236,72,153,0.3)] transition-all font-bold text-xl disabled:opacity-50"
         >
           Next: Voice
-          <ArrowRight className="ml-2 h-5 w-5 group-hover:translate-x-2 transition-transform duration-300" />
+          <ArrowRight className="ml-3 h-6 w-6 group-hover:translate-x-2 transition-transform duration-300" />
         </Button>
       </div>
     </div>

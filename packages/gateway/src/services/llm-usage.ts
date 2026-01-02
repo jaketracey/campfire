@@ -6,6 +6,7 @@
 import { z } from 'zod';
 import {
   getLLMUsageRepository,
+  getProviderSettingsRepository,
   type LLMUsageEventInsert,
   type UserCostSummary,
   type PlatformCostSummary,
@@ -19,6 +20,15 @@ import {
 } from '../repositories/index.js';
 import { getEventsService, type EventContext } from './events.js';
 import { logger } from '../observability/logger.js';
+
+// Cache for model pricing from database (TTL: 5 minutes)
+interface PricingCacheEntry {
+  input: number;
+  output: number;
+  fetchedAt: number;
+}
+const pricingCache = new Map<string, PricingCacheEntry>();
+const PRICING_CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
 import type { UUID, Timestamp } from '../db/types.js';
 import type { TransactionContext, PaginatedResult } from '../repositories/types.js';
 
@@ -131,6 +141,7 @@ const MODEL_PRICING: Record<string, { input: number; output: number }> = {
 
 export class LLMUsageService {
   private repo = getLLMUsageRepository();
+  private providerRepo = getProviderSettingsRepository();
   private events = getEventsService();
 
   // ===========================================================================
@@ -234,9 +245,18 @@ export class LLMUsageService {
 
   /**
    * Calculate cost for a model based on token usage
+   * Uses database pricing first, falls back to hardcoded pricing
    */
   calculateCost(model: string, inputTokens: number, outputTokens: number): number {
-    // Check for exact match first
+    // Check cache first
+    const cached = pricingCache.get(model);
+    if (cached && Date.now() - cached.fetchedAt < PRICING_CACHE_TTL_MS) {
+      const inputCost = (inputTokens / 1_000_000) * cached.input;
+      const outputCost = (outputTokens / 1_000_000) * cached.output;
+      return Number((inputCost + outputCost).toFixed(6));
+    }
+
+    // Check for exact match in hardcoded pricing
     let pricing = MODEL_PRICING[model];
 
     // Try partial match for model families
@@ -259,6 +279,85 @@ export class LLMUsageService {
     const outputCost = (outputTokens / 1_000_000) * pricing.output;
 
     return Number((inputCost + outputCost).toFixed(6));
+  }
+
+  /**
+   * Calculate cost asynchronously using database pricing with fallback
+   * This method should be used when database lookup is acceptable
+   */
+  async calculateCostAsync(model: string, inputTokens: number, outputTokens: number): Promise<number> {
+    // Check cache first
+    const cached = pricingCache.get(model);
+    if (cached && Date.now() - cached.fetchedAt < PRICING_CACHE_TTL_MS) {
+      const inputCost = (inputTokens / 1_000_000) * cached.input;
+      const outputCost = (outputTokens / 1_000_000) * cached.output;
+      return Number((inputCost + outputCost).toFixed(6));
+    }
+
+    // Try to get pricing from database
+    try {
+      const { data: models } = await this.providerRepo.listModels({ is_enabled: true });
+
+      // Find exact match first
+      let modelConfig = models.find(m => m.model_id === model);
+
+      // Try partial match
+      if (!modelConfig) {
+        modelConfig = models.find(m =>
+          model.includes(m.model_id) || m.model_id.includes(model)
+        );
+      }
+
+      if (modelConfig && modelConfig.input_cost_per_million != null && modelConfig.output_cost_per_million != null) {
+        // Cache the result
+        pricingCache.set(model, {
+          input: modelConfig.input_cost_per_million,
+          output: modelConfig.output_cost_per_million,
+          fetchedAt: Date.now(),
+        });
+
+        const inputCost = (inputTokens / 1_000_000) * modelConfig.input_cost_per_million;
+        const outputCost = (outputTokens / 1_000_000) * modelConfig.output_cost_per_million;
+        return Number((inputCost + outputCost).toFixed(6));
+      }
+    } catch (error) {
+      logger.warn({ error, model }, 'Failed to fetch model pricing from database, using fallback');
+    }
+
+    // Fall back to synchronous calculation with hardcoded pricing
+    return this.calculateCost(model, inputTokens, outputTokens);
+  }
+
+  /**
+   * Preload model pricing from database into cache
+   * Call this at startup or periodically to keep cache warm
+   */
+  async preloadPricingCache(): Promise<void> {
+    try {
+      const { data: models } = await this.providerRepo.listModels({ is_enabled: true });
+
+      for (const model of models) {
+        if (model.input_cost_per_million != null && model.output_cost_per_million != null) {
+          pricingCache.set(model.model_id, {
+            input: model.input_cost_per_million,
+            output: model.output_cost_per_million,
+            fetchedAt: Date.now(),
+          });
+        }
+      }
+
+      logger.info({ count: pricingCache.size }, 'Model pricing cache preloaded');
+    } catch (error) {
+      logger.warn({ error }, 'Failed to preload model pricing cache');
+    }
+  }
+
+  /**
+   * Clear the pricing cache (useful after admin updates pricing)
+   */
+  clearPricingCache(): void {
+    pricingCache.clear();
+    logger.info('Model pricing cache cleared');
   }
 
   /**

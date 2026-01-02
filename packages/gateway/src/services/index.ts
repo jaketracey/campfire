@@ -187,6 +187,56 @@ export type {
   AlertConfig,
 } from './llm-usage.js';
 
+// Support service
+import { getSupportService as _getSupportService } from './support.js';
+export {
+  SupportService,
+  getSupportService,
+  CreateTicketInputSchema,
+  UpdateTicketStatusInputSchema,
+  ListTicketsQuerySchema,
+} from './support.js';
+export type {
+  CreateTicketInput,
+  UpdateTicketStatusInput,
+  ListTicketsQuery,
+} from './support.js';
+
+// Provider Settings service
+import { getProviderSettingsService as _getProviderSettingsService } from './provider-settings.js';
+export {
+  ProviderSettingsService,
+  getProviderSettingsService,
+  CreateProviderSchema,
+  UpdateProviderSchema,
+  CreateModelSchema,
+  UpdateModelSchema,
+  CreateRoutingRuleSchema,
+  UpdateRoutingRuleSchema,
+  CreateCompanionOverrideSchema,
+  UpdateCompanionOverrideSchema,
+  ProviderListQuerySchema,
+  ModelListQuerySchema,
+  RoutingRuleListQuerySchema,
+} from './provider-settings.js';
+export type {
+  CreateProviderInput,
+  UpdateProviderInput,
+  CreateModelInput,
+  UpdateModelInput,
+  CreateRoutingRuleInput,
+  UpdateRoutingRuleInput,
+  CreateCompanionOverrideInput,
+  UpdateCompanionOverrideInput,
+  ProviderListQuery,
+  ModelListQuery,
+  RoutingRuleListQuery,
+  ConfigurationExport,
+  ValidationResult,
+  ConnectionTestResult,
+  SyncResult,
+} from './provider-settings.js';
+
 /**
  * Initialize all services
  * Call this at application startup to ensure singleton instances are created
@@ -203,6 +253,8 @@ export function initializeServices(): void {
   _getVoiceService();
   _getTenetsService();
   _getLLMUsageService();
+  _getSupportService();
+  _getProviderSettingsService();
 }
 
 /**
@@ -222,6 +274,8 @@ export function getServices() {
     voice: _getVoiceService(),
     tenets: _getTenetsService(),
     llmUsage: _getLLMUsageService(),
+    support: _getSupportService(),
+    providerSettings: _getProviderSettingsService(),
   };
 }
 
@@ -240,4 +294,6 @@ export interface ServiceContext {
   voice: ReturnType<typeof _getVoiceService>;
   tenets: ReturnType<typeof _getTenetsService>;
   llmUsage: ReturnType<typeof _getLLMUsageService>;
+  support: ReturnType<typeof _getSupportService>;
+  providerSettings: ReturnType<typeof _getProviderSettingsService>;
 }

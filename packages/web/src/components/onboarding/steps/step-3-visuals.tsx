@@ -4,7 +4,7 @@ import { useState, useMemo, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useOnboardingStore, AppearanceEthnicity, AppearanceBodyType, AppearanceHairColor } from '@/stores/onboarding-store';
 import { Button } from '@/components/ui/button';
-import { ArrowRight, Check, Sparkles } from 'lucide-react';
+import { ArrowRight, Check, Sparkles, Shuffle } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import Image from 'next/image';
 import { Slider } from '@/components/ui/slider';
@@ -102,7 +102,46 @@ export function Step3Visuals() {
   const [imageError, setImageError] = useState(false);
   const [isTransitioning, setIsTransitioning] = useState(false);
   const [displayedImage, setDisplayedImage] = useState<string | null>(null);
+  const [isSurprising, setIsSurprising] = useState(false);
   const transitionTimeout = useRef<NodeJS.Timeout | null>(null);
+
+  // Surprise Me handler
+  const handleSurpriseMe = async () => {
+    setIsSurprising(true);
+
+    // Pick random values
+    const targetEthnicity = ethnicityOptions[Math.floor(Math.random() * ethnicityOptions.length)].id;
+    const targetBodyType = bodyTypeOptions[Math.floor(Math.random() * bodyTypeOptions.length)].id;
+    const targetHairColor = hairColorOptions[Math.floor(Math.random() * hairColorOptions.length)].id;
+    const targetArtStyle = artStyles[Math.floor(Math.random() * artStyles.length)].id;
+    const targetBreastSize = Math.floor(Math.random() * 100);
+
+    // Animate through options rapidly
+    const steps = 8;
+    for (let i = 0; i < steps; i++) {
+      setAppearance({
+        ethnicity: ethnicityOptions[Math.floor(Math.random() * ethnicityOptions.length)].id,
+        bodyType: bodyTypeOptions[Math.floor(Math.random() * bodyTypeOptions.length)].id,
+        hairColor: hairColorOptions[Math.floor(Math.random() * hairColorOptions.length)].id,
+      });
+      setVisualStyle({ avatarStyle: artStyles[Math.floor(Math.random() * artStyles.length)].id as any });
+      await new Promise((r) => setTimeout(r, 100 + i * 20));
+    }
+
+    // Land on final values
+    setAppearance({
+      ethnicity: targetEthnicity,
+      bodyType: targetBodyType,
+      hairColor: targetHairColor,
+      breastSize: targetBreastSize,
+    });
+    setVisualStyle({ avatarStyle: targetArtStyle as any });
+
+    // Wait a moment then proceed
+    await new Promise((r) => setTimeout(r, 500));
+    setIsSurprising(false);
+    nextStep();
+  };
 
   // Handle migration from old store format without appearance
   const appearance = visualStyle.appearance || defaultAppearance;
@@ -165,9 +204,39 @@ export function Step3Visuals() {
 
   return (
     <div className="space-y-8">
-      <div className="text-center space-y-3">
-        <h2 className="text-4xl md:text-5xl font-bold font-display tracking-tight text-white">Visual Identity</h2>
+      {/* Mobile: centered title */}
+      <div className="text-center space-y-3 lg:hidden">
+        <h2 className="text-4xl font-bold font-display tracking-tight text-white">Visual Identity</h2>
         <p className="text-gray-400 max-w-md mx-auto">Design your companion&apos;s physical appearance and art style.</p>
+      </div>
+
+      {/* Desktop: title positioned top-right */}
+      <div className="hidden lg:flex lg:justify-end lg:text-right lg:-mt-4 lg:mb-2">
+        <div className="space-y-1">
+          <h2 className="text-3xl font-bold font-display tracking-tight text-white">Visual Identity</h2>
+          <p className="text-gray-500 text-sm">Design your companion&apos;s physical appearance and art style.</p>
+        </div>
+      </div>
+
+      {/* Surprise Me - centered */}
+      <div className="flex justify-center">
+        <Button
+          size="lg"
+          disabled={isSurprising}
+          onClick={handleSurpriseMe}
+          className="group h-20 px-16 rounded-full bg-white/[0.03] border-2 border-dashed border-white/20 hover:border-vibes-cyan/50 hover:bg-vibes-cyan/10 hover:shadow-[0_0_40px_rgba(6,182,212,0.2)] transition-all font-bold text-xl relative overflow-hidden"
+        >
+          {isSurprising && (
+            <motion.div
+              className="absolute inset-0 bg-gradient-to-r from-transparent via-white/20 to-transparent"
+              initial={{ x: '-100%' }}
+              animate={{ x: '100%' }}
+              transition={{ repeat: Infinity, duration: 0.8, ease: 'linear' }}
+            />
+          )}
+          <Shuffle className={cn("mr-3 h-7 w-7", isSurprising && "animate-spin")} />
+          {isSurprising ? 'Choosing...' : 'Surprise Me'}
+        </Button>
       </div>
 
       <div className="grid lg:grid-cols-3 gap-8">
@@ -357,11 +426,12 @@ export function Step3Visuals() {
       <div className="flex justify-end pt-8">
         <Button
           size="lg"
+          disabled={isSurprising}
           onClick={nextStep}
-          className="group h-14 px-12 rounded-full bg-gradient-to-r from-vibes-cyan to-vibes-electric hover:shadow-[0_0_30px_rgba(6,182,212,0.3)] transition-all font-bold text-lg"
+          className="group h-16 px-14 rounded-full bg-gradient-to-r from-vibes-cyan to-vibes-electric hover:shadow-[0_0_30px_rgba(6,182,212,0.3)] transition-all font-bold text-xl disabled:opacity-50"
         >
           Next: Archetype
-          <ArrowRight className="ml-2 h-5 w-5 group-hover:translate-x-2 transition-transform duration-300" />
+          <ArrowRight className="ml-3 h-6 w-6 group-hover:translate-x-2 transition-transform duration-300" />
         </Button>
       </div>
     </div>

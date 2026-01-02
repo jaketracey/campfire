@@ -11,13 +11,15 @@ import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { requireAuth } from '../middleware/auth.js';
 import { logger } from '../observability/logger.js';
 import { db } from '../db/index.js';
-import type { CompanionAvatar } from '../db/types.js';
+import type { CompanionAvatar, CompanionImage } from '../db/types.js';
 import { getCompanionsRepository } from '../repositories/companions.js';
 import { getSessionsRepository } from '../repositories/sessions.js';
 import {
   getAppearanceFromSpec,
   getVariationUrl,
 } from '../utils/companion-assets.js';
+import { enqueueImageRenditionJob } from '../utils/queue.js';
+import { getRenditionKeyPrefix, type ImageRenditions } from '@campfire/shared';
 
 // Orchestrator configuration
 const ORCHESTRATOR_URL = process.env['ORCHESTRATOR_URL'] || 'http://localhost:8000';
@@ -93,26 +95,7 @@ interface ImageGenResult {
   cached: boolean;
   s3Key?: string;
   imageId?: string;
-}
-
-interface CompanionImage {
-  id: string;
-  user_id: string;
-  session_id: string;
-  companion_id: string | null;
-  s3_key: string;
-  s3_url: string;
-  width: number;
-  height: number;
-  format: string;
-  size_bytes: number | null;
-  emotional_state: string;
-  style: string;
-  prompt: string | null;
-  cache_key: string;
-  provider: string;
-  latency_ms: number | null;
-  created_at: Date;
+  renditions?: ImageRenditions;
 }
 
 // In-memory cache for generated images (in production, use Redis)
@@ -376,14 +359,18 @@ async function downloadImage(url: string): Promise<Buffer> {
 
 /**
  * Upload image to S3 and return the key
+ * Uses directory structure: companions/{userId}/{sessionId}/{cacheKey}/original.png
+ * This allows renditions to be stored alongside: thumb.webp, small.webp, etc.
  */
 async function uploadToS3(
   imageBuffer: Buffer,
   userId: string,
   sessionId: string,
   cacheKey: string
-): Promise<{ s3Key: string; s3Url: string; sizeBytes: number }> {
-  const s3Key = `companions/${userId}/${sessionId}/${cacheKey}.png`;
+): Promise<{ s3Key: string; s3Url: string; sizeBytes: number; keyPrefix: string }> {
+  // Use directory structure for renditions
+  const keyPrefix = getRenditionKeyPrefix(userId, sessionId, cacheKey);
+  const s3Key = `${keyPrefix}/original.png`;
 
   await s3Client.send(
     new PutObjectCommand({
@@ -406,6 +393,7 @@ async function uploadToS3(
     s3Key,
     s3Url,
     sizeBytes: imageBuffer.length,
+    keyPrefix,
   };
 }
 
@@ -660,6 +648,21 @@ export async function imagegenRoutes(app: FastifyInstance): Promise<void> {
             );
 
             logger.info({ imageId, s3Key, latencyMs, provider }, 'Image saved to S3 and database');
+
+            // Queue rendition processing job (async, non-blocking)
+            if (imageId) {
+              enqueueImageRenditionJob({
+                originalS3Key: s3Key,
+                bucket: S3_MEDIA_BUCKET,
+                userId: params.userId,
+                sessionId: params.sessionId,
+                cacheKey,
+                imageId,
+                companionId: params.companionId,
+              }).catch((err) => {
+                logger.warn({ error: err, imageId }, 'Failed to queue rendition job');
+              });
+            }
           } catch (s3Error) {
             // Log S3 error but don't fail - create data URL as fallback
             logger.error({ error: s3Error }, 'Failed to save image to S3, using data URL');
@@ -894,9 +897,10 @@ export async function imagegenRoutes(app: FastifyInstance): Promise<void> {
             true  // isAnchor - use high quality anchor workflow
           );
 
-          // Upload to S3 under anchors path
+          // Upload to S3 under anchors path with directory structure for renditions
           const cacheKey = `anchor-${emotionalState}-${Date.now()}`;
-          const s3Key = `companions/${userId}/anchors/${companionId}/${cacheKey}.png`;
+          const keyPrefix = `companions/${userId}/anchors/${companionId}/${cacheKey}`;
+          const s3Key = `${keyPrefix}/original.png`;
 
           await s3Client.send(
             new PutObjectCommand({
@@ -927,6 +931,7 @@ export async function imagegenRoutes(app: FastifyInstance): Promise<void> {
               style,
               appearance,
               s3Key,
+              s3_key: s3Key, // Use consistent naming
               s3Bucket: S3_MEDIA_BUCKET,
             },
             generation_params: {
@@ -948,7 +953,7 @@ export async function imagegenRoutes(app: FastifyInstance): Promise<void> {
 
           // Also save to companion_images table for gallery display
           const anchorSessionId = `anchors-${companionId}`;
-          await saveImageMetadata(
+          const imageId = await saveImageMetadata(
             userId,
             anchorSessionId,
             companionId,
@@ -964,6 +969,22 @@ export async function imagegenRoutes(app: FastifyInstance): Promise<void> {
             latencyMs,
             provider
           );
+
+          // Queue rendition processing for anchor images
+          if (imageId) {
+            enqueueImageRenditionJob({
+              originalS3Key: s3Key,
+              bucket: S3_MEDIA_BUCKET,
+              userId,
+              sessionId: anchorSessionId,
+              cacheKey,
+              imageId,
+              isAnchor: true,
+              companionId,
+            }).catch((err) => {
+              logger.warn({ error: err, imageId }, 'Failed to queue anchor rendition job');
+            });
+          }
 
           generatedAnchors.push({
             id: avatar.id,
@@ -1163,7 +1184,8 @@ export async function imagegenRoutes(app: FastifyInstance): Promise<void> {
             );
 
             const cacheKey = `anchor-${emotionalState}-${Date.now()}`;
-            const s3Key = `companions/${userId}/anchors/${companionId}/${cacheKey}.png`;
+            const keyPrefix = `companions/${userId}/anchors/${companionId}/${cacheKey}`;
+            const s3Key = `${keyPrefix}/original.png`;
 
             await s3Client.send(
               new PutObjectCommand({
@@ -1192,6 +1214,7 @@ export async function imagegenRoutes(app: FastifyInstance): Promise<void> {
                 style,
                 appearance,
                 s3Key,
+                s3_key: s3Key,
                 s3Bucket: S3_MEDIA_BUCKET,
               },
               generation_params: {
@@ -1213,7 +1236,7 @@ export async function imagegenRoutes(app: FastifyInstance): Promise<void> {
             // Also save to companion_images table for gallery display
             // Use a special session_id format for anchor images
             const anchorSessionId = `anchors-${companionId}`;
-            await saveImageMetadata(
+            const imageId = await saveImageMetadata(
               userId,
               anchorSessionId,
               companionId,
@@ -1229,6 +1252,22 @@ export async function imagegenRoutes(app: FastifyInstance): Promise<void> {
               latencyMs,
               provider
             );
+
+            // Queue rendition processing for anchor images
+            if (imageId) {
+              enqueueImageRenditionJob({
+                originalS3Key: s3Key,
+                bucket: S3_MEDIA_BUCKET,
+                userId,
+                sessionId: anchorSessionId,
+                cacheKey,
+                imageId,
+                isAnchor: true,
+                companionId,
+              }).catch((err) => {
+                logger.warn({ error: err, imageId }, 'Failed to queue anchor rendition job (SSE)');
+              });
+            }
 
             const anchor: AnchorImage = {
               id: avatar.id,

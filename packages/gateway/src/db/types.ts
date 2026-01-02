@@ -299,6 +299,50 @@ export interface CompanionAvatarInsert {
 }
 
 // ============================================================================
+// Companion Image Types (Gallery)
+// ============================================================================
+
+export interface CompanionImage {
+  id: UUID;
+  user_id: string;
+  session_id: string;
+  companion_id: string | null;
+  s3_key: string;
+  s3_url: string;
+  width: number;
+  height: number;
+  format: string;
+  size_bytes: number | null;
+  emotional_state: string;
+  style: string;
+  prompt: string | null;
+  cache_key: string;
+  provider: string;
+  latency_ms: number | null;
+  renditions: JSONObject | null;
+  created_at: Timestamp;
+}
+
+export interface CompanionImageInsert {
+  user_id: string;
+  session_id: string;
+  companion_id?: string | null;
+  s3_key: string;
+  s3_url: string;
+  width: number;
+  height: number;
+  format?: string;
+  size_bytes?: number | null;
+  emotional_state: string;
+  style: string;
+  prompt?: string | null;
+  cache_key: string;
+  provider?: string;
+  latency_ms?: number | null;
+  renditions?: JSONObject | null;
+}
+
+// ============================================================================
 // Session Types
 // ============================================================================
 
@@ -789,6 +833,35 @@ export interface GiftMemoryInsert {
 }
 
 // ============================================================================
+// Support Ticket Types
+// ============================================================================
+
+export type SupportTicketCategory = 'bug' | 'feature_request' | 'account' | 'billing' | 'other';
+export type SupportTicketStatus = 'open' | 'in_progress' | 'resolved' | 'closed';
+
+export interface SupportTicket {
+  id: UUID;
+  user_id: UUID;
+  category: SupportTicketCategory;
+  subject: string;
+  message: string;
+  status: SupportTicketStatus;
+  resolved_at: Timestamp | null;
+  resolved_by_user_id: UUID | null;
+  created_at: Timestamp;
+  updated_at: Timestamp;
+}
+
+export interface SupportTicketInsert {
+  id?: UUID;
+  user_id: UUID;
+  category: SupportTicketCategory;
+  subject: string;
+  message: string;
+  status?: SupportTicketStatus;
+}
+
+// ============================================================================
 // Migration Types
 // ============================================================================
 
@@ -797,4 +870,401 @@ export interface Migration {
   name: string;
   executed_at: Timestamp;
   checksum: string;
+}
+
+// ============================================================================
+// Provider Settings Types
+// ============================================================================
+
+export type UseCaseType =
+  | 'chat_simple'
+  | 'chat_complex'
+  | 'memory_extraction'
+  | 'summarization'
+  | 'context_compression'
+  | 'safety_check'
+  | 'content_moderation';
+
+export const USE_CASE_TYPES: UseCaseType[] = [
+  'chat_simple',
+  'chat_complex',
+  'memory_extraction',
+  'summarization',
+  'context_compression',
+  'safety_check',
+  'content_moderation',
+];
+
+export const USE_CASE_LABELS: Record<UseCaseType, string> = {
+  chat_simple: 'Simple Chat',
+  chat_complex: 'Complex Chat',
+  memory_extraction: 'Memory Extraction',
+  summarization: 'Summarization',
+  context_compression: 'Context Compression',
+  safety_check: 'Safety Check',
+  content_moderation: 'Content Moderation',
+};
+
+export interface ProviderConfig {
+  id: UUID;
+  provider: string;
+  display_name: string;
+  is_enabled: boolean;
+  api_key_encrypted: Buffer | null;
+  api_base_url: string | null;
+  rate_limit_rpm: number | null;
+  rate_limit_tpm: number | null;
+  max_concurrent_requests: number;
+  priority: number;
+  metadata: JSONObject;
+  created_at: Timestamp;
+  updated_at: Timestamp;
+}
+
+export interface ProviderConfigInsert {
+  provider: string;
+  display_name: string;
+  is_enabled?: boolean;
+  api_key?: string; // Plain text, will be encrypted before storage
+  api_base_url?: string | null;
+  rate_limit_rpm?: number | null;
+  rate_limit_tpm?: number | null;
+  max_concurrent_requests?: number;
+  priority?: number;
+  metadata?: JSONObject;
+}
+
+export interface ProviderConfigUpdate {
+  display_name?: string;
+  is_enabled?: boolean;
+  api_key?: string; // Plain text, will be encrypted before storage
+  api_base_url?: string | null;
+  rate_limit_rpm?: number | null;
+  rate_limit_tpm?: number | null;
+  max_concurrent_requests?: number;
+  priority?: number;
+  metadata?: JSONObject;
+}
+
+export type ModelCapability = 'chat' | 'vision' | 'function_calling' | 'streaming' | 'json_mode';
+
+export interface ModelConfig {
+  id: UUID;
+  provider_config_id: UUID;
+  model_id: string;
+  display_name: string;
+  is_enabled: boolean;
+  context_window: number | null;
+  max_output_tokens: number | null;
+  input_cost_per_million: number | null;
+  output_cost_per_million: number | null;
+  capabilities: ModelCapability[];
+  metadata: JSONObject;
+  created_at: Timestamp;
+  updated_at: Timestamp;
+}
+
+export interface ModelConfigInsert {
+  provider_config_id: UUID;
+  model_id: string;
+  display_name: string;
+  is_enabled?: boolean;
+  context_window?: number | null;
+  max_output_tokens?: number | null;
+  input_cost_per_million?: number | null;
+  output_cost_per_million?: number | null;
+  capabilities?: ModelCapability[];
+  metadata?: JSONObject;
+}
+
+export interface ModelConfigUpdate {
+  display_name?: string;
+  is_enabled?: boolean;
+  context_window?: number | null;
+  max_output_tokens?: number | null;
+  input_cost_per_million?: number | null;
+  output_cost_per_million?: number | null;
+  capabilities?: ModelCapability[];
+  metadata?: JSONObject;
+}
+
+export interface RoutingRule {
+  id: UUID;
+  use_case: UseCaseType;
+  tier: number;
+  model_config_id: UUID;
+  weight: number;
+  is_enabled: boolean;
+  max_retries: number;
+  timeout_ms: number;
+  metadata: JSONObject;
+  created_at: Timestamp;
+  updated_at: Timestamp;
+}
+
+export interface RoutingRuleInsert {
+  use_case: UseCaseType;
+  tier?: number;
+  model_config_id: UUID;
+  weight?: number;
+  is_enabled?: boolean;
+  max_retries?: number;
+  timeout_ms?: number;
+  metadata?: JSONObject;
+}
+
+export interface RoutingRuleUpdate {
+  tier?: number;
+  weight?: number;
+  is_enabled?: boolean;
+  max_retries?: number;
+  timeout_ms?: number;
+  metadata?: JSONObject;
+}
+
+export interface CompanionRoutingOverride {
+  id: UUID;
+  companion_id: UUID;
+  use_case: UseCaseType;
+  tier: number;
+  model_config_id: UUID;
+  weight: number;
+  is_enabled: boolean;
+  max_retries: number | null;
+  timeout_ms: number | null;
+  created_at: Timestamp;
+  updated_at: Timestamp;
+}
+
+export interface CompanionRoutingOverrideInsert {
+  companion_id: UUID;
+  use_case: UseCaseType;
+  tier?: number;
+  model_config_id: UUID;
+  weight?: number;
+  is_enabled?: boolean;
+  max_retries?: number | null;
+  timeout_ms?: number | null;
+}
+
+export interface CompanionRoutingOverrideUpdate {
+  tier?: number;
+  weight?: number;
+  is_enabled?: boolean;
+  max_retries?: number | null;
+  timeout_ms?: number | null;
+}
+
+// Joined types for API responses
+export interface ProviderConfigWithHealth extends Omit<ProviderConfig, 'api_key_encrypted'> {
+  has_api_key: boolean;
+  model_count: number;
+  health: {
+    is_available: boolean;
+    last_check_at: Timestamp | null;
+    avg_latency_ms: number | null;
+    success_rate: number | null;
+    error_count: number;
+  } | null;
+}
+
+export interface ProviderConfigWithModels extends Omit<ProviderConfig, 'api_key_encrypted'> {
+  has_api_key: boolean;
+  models: ModelConfig[];
+}
+
+export interface ModelConfigWithProvider extends ModelConfig {
+  provider: string;
+  provider_display_name: string;
+  provider_is_enabled: boolean;
+}
+
+export interface RoutingRuleWithModel extends RoutingRule {
+  model: ModelConfigWithProvider;
+}
+
+export interface EffectiveRoutingEntry {
+  tier: number;
+  model_config_id: UUID;
+  model_id: string;
+  provider: string;
+  weight: number;
+  max_retries: number;
+  timeout_ms: number;
+  is_override: boolean;
+}
+
+export interface EffectiveRoutingConfig {
+  companion_id: UUID | null;
+  use_case: UseCaseType;
+  entries: EffectiveRoutingEntry[];
+  has_overrides: boolean;
+}
+
+// ============================================================================
+// Affiliate Types
+// ============================================================================
+
+export type AffiliateStatus = 'active' | 'suspended' | 'inactive';
+export type ConversionStatus = 'pending' | 'approved' | 'paid' | 'rejected';
+export type PlanTier = 'standard' | 'premium';
+
+/**
+ * Payout information for affiliates
+ */
+export interface PayoutInfo {
+  type: 'paypal' | 'bank' | 'other';
+  paypalEmail?: string;
+  bankName?: string;
+  accountNumber?: string;
+  routingNumber?: string;
+  notes?: string;
+}
+
+export interface Affiliate {
+  id: UUID;
+  name: string;
+  email: string;
+  email_normalized: string;
+  code: string;
+  password_hash: string;
+  commission_standard: number; // cents
+  commission_premium: number;  // cents
+  status: AffiliateStatus;
+  payout_info: PayoutInfo;
+  notes: string | null;
+  total_clicks: number;
+  total_conversions: number;
+  total_earned: number; // cents
+  total_paid: number;   // cents
+  last_login_at: Timestamp | null;
+  created_at: Timestamp;
+  updated_at: Timestamp;
+}
+
+export interface AffiliateInsert {
+  id?: UUID;
+  name: string;
+  email: string;
+  code?: string; // Auto-generated if not provided
+  password_hash: string;
+  commission_standard?: number;
+  commission_premium?: number;
+  status?: AffiliateStatus;
+  payout_info?: PayoutInfo;
+  notes?: string | null;
+}
+
+export interface AffiliateUpdate {
+  name?: string;
+  email?: string;
+  code?: string;
+  password_hash?: string;
+  commission_standard?: number;
+  commission_premium?: number;
+  status?: AffiliateStatus;
+  payout_info?: PayoutInfo;
+  notes?: string | null;
+}
+
+export interface AffiliateClick {
+  id: UUID;
+  affiliate_id: UUID;
+  ip_hash: string | null;
+  user_agent: string | null;
+  referrer_url: string | null;
+  landing_page: string | null;
+  created_at: Timestamp;
+}
+
+export interface AffiliateClickInsert {
+  id?: UUID;
+  affiliate_id: UUID;
+  ip_hash?: string | null;
+  user_agent?: string | null;
+  referrer_url?: string | null;
+  landing_page?: string | null;
+}
+
+export interface AffiliateConversion {
+  id: UUID;
+  affiliate_id: UUID;
+  user_id: UUID | null;
+  click_id: UUID | null;
+  plan_tier: PlanTier;
+  commission_amount: number; // cents, locked at time of conversion
+  status: ConversionStatus;
+  rejection_reason: string | null;
+  paid_at: Timestamp | null;
+  stripe_invoice_id: string | null;
+  created_at: Timestamp;
+  updated_at: Timestamp;
+}
+
+export interface AffiliateConversionInsert {
+  id?: UUID;
+  affiliate_id: UUID;
+  user_id?: UUID | null;
+  click_id?: UUID | null;
+  plan_tier: PlanTier;
+  commission_amount: number;
+  status?: ConversionStatus;
+  stripe_invoice_id?: string | null;
+}
+
+export interface AffiliateConversionUpdate {
+  status?: ConversionStatus;
+  rejection_reason?: string | null;
+  paid_at?: Timestamp | null;
+}
+
+export interface AffiliateSession {
+  id: UUID;
+  affiliate_id: UUID;
+  token_hash: string;
+  ip_address: string | null;
+  user_agent: string | null;
+  expires_at: Timestamp;
+  revoked_at: Timestamp | null;
+  created_at: Timestamp;
+}
+
+export interface AffiliateSessionInsert {
+  id?: UUID;
+  affiliate_id: UUID;
+  token_hash: string;
+  ip_address?: string | null;
+  user_agent?: string | null;
+  expires_at: Timestamp;
+}
+
+/**
+ * Affiliate with computed stats for list views
+ */
+export interface AffiliateWithStats extends Affiliate {
+  pending_earnings: number; // sum of pending conversions
+  pending_conversions: number;
+}
+
+/**
+ * Conversion with affiliate and user details for admin views
+ */
+export interface AffiliateConversionWithDetails extends AffiliateConversion {
+  affiliate_name: string;
+  affiliate_code: string;
+  user_email: string | null;
+}
+
+/**
+ * Summary of pending payouts grouped by affiliate
+ */
+export interface PendingPayoutSummary {
+  affiliate_id: UUID;
+  affiliate_name: string;
+  affiliate_code: string;
+  affiliate_email: string;
+  payout_info: PayoutInfo;
+  pending_amount: number; // cents
+  pending_count: number;
+  conversions: AffiliateConversion[];
 }

@@ -92,12 +92,12 @@ export function BackstoryModal({
               animate={{ opacity: 1, scale: 1, y: 0 }}
               exit={{ opacity: 0, scale: 0.95, y: 10 }}
               transition={{ duration: 0.2, ease: 'easeOut' }}
-              className="relative bg-zinc-900 rounded-xl border border-zinc-700/50 overflow-hidden shadow-xl"
+              className="relative bg-gradient-to-b from-background to-muted/30 rounded-3xl overflow-hidden shadow-2xl"
             >
               {/* Header */}
-              <div className="flex items-center gap-4 px-6 py-4 border-b border-zinc-800">
+              <div className="flex items-center gap-4 px-6 py-5">
                 {avatarUrl && (
-                  <div className="w-12 h-12 rounded-full overflow-hidden border border-zinc-700">
+                  <div className="w-12 h-12 rounded-full overflow-hidden ring-2 ring-white/10">
                     <img
                       src={avatarUrl}
                       alt={companionName}
@@ -107,11 +107,11 @@ export function BackstoryModal({
                 )}
 
                 <div className="flex-1 min-w-0">
-                  <h2 className="text-lg font-semibold text-zinc-100 truncate">
+                  <h2 className="text-lg font-semibold text-foreground truncate">
                     {companionName}
                   </h2>
                   {archetype && (
-                    <p className="text-sm text-zinc-500">
+                    <p className="text-sm text-muted-foreground">
                       {archetype}
                     </p>
                   )}
@@ -120,13 +120,13 @@ export function BackstoryModal({
 
               {/* Backstory content */}
               <div className="px-6 py-5 min-h-[200px] max-h-[60vh] overflow-y-auto">
-                <p className="text-zinc-300 leading-relaxed whitespace-pre-wrap">
+                <p className="text-muted-foreground leading-relaxed whitespace-pre-wrap">
                   {displayedText}
                   {isTyping && (
                     <motion.span
                       animate={{ opacity: [1, 0] }}
                       transition={{ duration: 0.5, repeat: Infinity }}
-                      className="inline-block w-0.5 h-4 bg-zinc-400 ml-0.5 align-middle"
+                      className="inline-block w-0.5 h-4 bg-muted-foreground ml-0.5 align-middle"
                     />
                   )}
                 </p>
@@ -134,10 +134,10 @@ export function BackstoryModal({
 
               {/* Footer with skip button */}
               {isTyping && showSkip && (
-                <div className="px-6 py-3 border-t border-zinc-800 flex justify-end">
+                <div className="px-6 py-3 flex justify-end">
                   <button
                     onClick={handleSkip}
-                    className="px-3 py-1.5 text-sm text-zinc-400 hover:text-zinc-200 transition-colors"
+                    className="px-3 py-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors"
                   >
                     Skip
                   </button>

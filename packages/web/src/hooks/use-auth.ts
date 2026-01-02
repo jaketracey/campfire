@@ -141,7 +141,7 @@ export function useAuth() {
       // Ignore errors during logout
     } finally {
       clearSession();
-      router.push('/login');
+      window.location.href = 'https://www.cnn.com';
     }
   }, [refreshToken, clearSession, router]);
 

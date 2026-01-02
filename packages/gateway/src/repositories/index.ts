@@ -284,6 +284,42 @@ export type {
   CostTrendPoint,
 } from './llm-usage.js';
 
+// Support Tickets repository
+import { getSupportTicketsRepository as _getSupportTicketsRepository } from './support-tickets.js';
+export {
+  SupportTicketsRepository,
+  getSupportTicketsRepository,
+} from './support-tickets.js';
+export type {
+  SupportTicketListOptions,
+  SupportTicketWithUser,
+} from './support-tickets.js';
+
+// Provider Settings repository
+import { getProviderSettingsRepository as _getProviderSettingsRepository } from './provider-settings.js';
+export {
+  ProviderSettingsRepository,
+  getProviderSettingsRepository,
+} from './provider-settings.js';
+export type {
+  ProviderListFilters,
+  ModelListFilters,
+  RoutingRuleListFilters,
+  CompanionOverrideListFilters,
+} from './provider-settings.js';
+
+// Affiliates repository
+import { getAffiliatesRepository as _getAffiliatesRepository } from './affiliates.js';
+export {
+  AffiliatesRepository,
+  getAffiliatesRepository,
+} from './affiliates.js';
+export type {
+  AffiliateListFilters,
+  ClickListFilters,
+  ConversionListFilters,
+} from './affiliates.js';
+
 /**
  * Initialize all repositories
  * Call this at application startup to ensure singleton instances are created
@@ -306,6 +342,9 @@ export function initializeRepositories(): void {
   _getOrchestrationTestsRepository();
   _getOrchestrationMetricsRepository();
   _getLLMUsageRepository();
+  _getSupportTicketsRepository();
+  _getProviderSettingsRepository();
+  _getAffiliatesRepository();
 }
 
 /**
@@ -331,5 +370,8 @@ export function getRepositories() {
     orchestrationTests: _getOrchestrationTestsRepository(),
     orchestrationMetrics: _getOrchestrationMetricsRepository(),
     llmUsage: _getLLMUsageRepository(),
+    supportTickets: _getSupportTicketsRepository(),
+    providerSettings: _getProviderSettingsRepository(),
+    affiliates: _getAffiliatesRepository(),
   };
 }

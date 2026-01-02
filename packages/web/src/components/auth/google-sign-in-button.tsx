@@ -11,7 +11,6 @@ declare global {
         id: {
           initialize: (config: GoogleIdConfig) => void;
           renderButton: (element: HTMLElement, config: GoogleButtonConfig) => void;
-          prompt: (callback?: (notification: PromptMomentNotification) => void) => void;
           cancel: () => void;
         };
       };
@@ -37,54 +36,10 @@ interface GoogleButtonConfig {
   width?: number;
 }
 
-/**
- * Detect if running on iOS (iPhone, iPad, iPod)
- * All iOS browsers use WebKit and have One Tap issues
- */
-function isIOSDevice(): boolean {
-  if (typeof window === 'undefined') return false;
-
-  const userAgent = window.navigator.userAgent;
-
-  // Check for iOS devices
-  const isIOS = /iPad|iPhone|iPod/.test(userAgent);
-
-  // Also check for iPad on iOS 13+ which reports as Mac
-  const isIPadOS = userAgent.includes('Mac') && 'ontouchend' in document;
-
-  return isIOS || isIPadOS;
-}
-
 interface GoogleCredentialResponse {
   credential: string;
   select_by: string;
   clientId?: string;
-}
-
-interface PromptMomentNotification {
-  isDisplayMoment: () => boolean;
-  isDisplayed: () => boolean;
-  isNotDisplayed: () => boolean;
-  getNotDisplayedReason: () =>
-    | 'browser_not_supported'
-    | 'invalid_client'
-    | 'missing_client_id'
-    | 'opt_out_or_no_session'
-    | 'secure_http_required'
-    | 'suppressed_by_user'
-    | 'unregistered_origin'
-    | 'unknown_reason';
-  isSkippedMoment: () => boolean;
-  getSkippedReason: () =>
-    | 'auto_cancel'
-    | 'user_cancel'
-    | 'tap_outside'
-    | 'issuing_failed';
-  isDismissedMoment: () => boolean;
-  getDismissedReason: () =>
-    | 'credential_returned'
-    | 'cancel_called'
-    | 'flow_restarted';
 }
 
 export interface GoogleSignInButtonProps {
@@ -99,20 +54,13 @@ export function GoogleSignInButton({
   onSuccess,
   onError,
   text = 'signin',
-  disabled = false,
   className,
 }: GoogleSignInButtonProps) {
   const [isLoading, setIsLoading] = useState(false);
   const [isScriptLoaded, setIsScriptLoaded] = useState(false);
-  const [isIOS, setIsIOS] = useState(false);
   const googleButtonRef = useRef<HTMLDivElement>(null);
 
   const clientId = process.env.NEXT_PUBLIC_GOOGLE_OAUTH_CLIENT_ID;
-
-  // Detect iOS on mount
-  useEffect(() => {
-    setIsIOS(isIOSDevice());
-  }, []);
 
   const handleCredentialResponse = useCallback(
     async (response: GoogleCredentialResponse) => {
@@ -166,7 +114,7 @@ export function GoogleSignInButton({
   }, [clientId, onError]);
 
   useEffect(() => {
-    if (!isScriptLoaded || !clientId || !window.google?.accounts?.id) return;
+    if (!isScriptLoaded || !clientId || !window.google?.accounts?.id || !googleButtonRef.current) return;
 
     // Initialize Google Identity Services
     window.google.accounts.id.initialize({
@@ -174,88 +122,24 @@ export function GoogleSignInButton({
       callback: handleCredentialResponse,
       auto_select: false,
       cancel_on_tap_outside: true,
-      // Enable FedCM for browsers that support it (improves compatibility)
-      use_fedcm_for_prompt: true,
+      // Disable FedCM - it causes AbortError when prompt is dismissed
+      use_fedcm_for_prompt: false,
     });
 
-    // On iOS, render Google's official button which handles the OAuth flow correctly
-    // The One Tap prompt() API doesn't work on iOS due to Safari's ITP blocking
-    if (isIOS && googleButtonRef.current) {
-      // Clear any existing button
-      googleButtonRef.current.innerHTML = '';
+    // Clear any existing button
+    googleButtonRef.current.innerHTML = '';
 
-      window.google.accounts.id.renderButton(googleButtonRef.current, {
-        type: 'standard',
-        theme: 'outline',
-        size: 'large',
-        text: text === 'signup' ? 'signup_with' : 'signin_with',
-        shape: 'rectangular',
-        width: googleButtonRef.current.offsetWidth || 300,
-      });
-    }
-  }, [isScriptLoaded, clientId, handleCredentialResponse, isIOS, text]);
-
-  const handlePromptNotification = useCallback(
-    (notification: PromptMomentNotification) => {
-      if (notification.isNotDisplayed()) {
-        const reason = notification.getNotDisplayedReason();
-        let errorMessage = 'Google sign-in is not available';
-
-        switch (reason) {
-          case 'browser_not_supported':
-            errorMessage = 'Your browser does not support Google sign-in';
-            break;
-          case 'invalid_client':
-          case 'missing_client_id':
-            errorMessage = 'Google sign-in is not properly configured';
-            break;
-          case 'opt_out_or_no_session':
-            errorMessage = 'Please sign in to your Google account first';
-            break;
-          case 'secure_http_required':
-            errorMessage = 'Google sign-in requires a secure connection (HTTPS)';
-            break;
-          case 'suppressed_by_user':
-            errorMessage = 'Google sign-in was previously dismissed. Please try again.';
-            break;
-          case 'unregistered_origin':
-            errorMessage = 'This website is not authorized for Google sign-in';
-            break;
-        }
-
-        console.warn('Google prompt not displayed:', reason);
-        // Don't show error for opt_out_or_no_session as user might just click again
-        if (reason !== 'opt_out_or_no_session' && reason !== 'suppressed_by_user') {
-          onError(new Error(errorMessage));
-        }
-      }
-
-      if (notification.isSkippedMoment()) {
-        const reason = notification.getSkippedReason();
-        // User cancelled or tapped outside - this is expected behavior, don't show error
-        if (reason === 'user_cancel' || reason === 'tap_outside' || reason === 'auto_cancel') {
-          console.debug('Google prompt skipped:', reason);
-          return;
-        }
-
-        if (reason === 'issuing_failed') {
-          onError(new Error('Failed to get Google credentials. Please try again.'));
-        }
-      }
-    },
-    [onError]
-  );
-
-  const handleClick = useCallback(() => {
-    if (!window.google?.accounts?.id) {
-      onError(new Error('Google sign-in is not available. Please refresh the page and try again.'));
-      return;
-    }
-
-    // On iOS, the Google-rendered button handles the click, so this shouldn't be called
-    // But as a fallback, try prompt() anyway
-    window.google.accounts.id.prompt(handlePromptNotification);
-  }, [onError, handlePromptNotification]);
+    // Use renderButton for both iOS and desktop - it provides a proper OAuth popup flow
+    // The One Tap prompt() API is unreliable and shows a separate UI in the corner
+    window.google.accounts.id.renderButton(googleButtonRef.current, {
+      type: 'standard',
+      theme: 'outline',
+      size: 'large',
+      text: text === 'signup' ? 'signup_with' : 'signin_with',
+      shape: 'pill',
+      width: googleButtonRef.current.offsetWidth || 300,
+    });
+  }, [isScriptLoaded, clientId, handleCredentialResponse, text]);
 
   // If client ID is not configured, show a disabled button
   if (!clientId) {
@@ -273,51 +157,28 @@ export function GoogleSignInButton({
     );
   }
 
-  const buttonText = text === 'signup' ? 'Sign up with Google' : 'Sign in with Google';
-
-  // On iOS, show Google's rendered button (which handles OAuth correctly)
-  // We wrap it in a container that matches our button styling
-  if (isIOS) {
-    return (
-      <div className="w-full" data-google-signin>
-        {isLoading ? (
-          <Button
-            type="button"
-            variant="outline"
-            className={className || 'w-full'}
-            disabled
-          >
-            <Loader2 className="mr-2 h-5 w-5 animate-spin" />
-            Signing in...
-          </Button>
-        ) : (
-          <div
-            ref={googleButtonRef}
-            className={`w-full ${!isScriptLoaded ? 'opacity-50 pointer-events-none' : ''}`}
-            style={{ minHeight: '40px' }}
-          />
-        )}
-      </div>
-    );
-  }
-
-  // On desktop, use our custom button with One Tap prompt
+  // Use Google's rendered button for both iOS and desktop
+  // This provides a proper OAuth popup flow that works reliably
   return (
-    <Button
-      type="button"
-      variant="outline"
-      className={className || 'w-full'}
-      onClick={handleClick}
-      disabled={disabled || isLoading || !isScriptLoaded}
-      data-google-signin
-    >
+    <div className={className || 'w-full'} data-google-signin>
       {isLoading ? (
-        <Loader2 className="mr-2 h-5 w-5 animate-spin" />
+        <Button
+          type="button"
+          variant="outline"
+          className="w-full h-full"
+          disabled
+        >
+          <Loader2 className="mr-2 h-5 w-5 animate-spin" />
+          Signing in...
+        </Button>
       ) : (
-        <GoogleIcon className="mr-2 h-5 w-5" />
+        <div
+          ref={googleButtonRef}
+          className={`w-full flex items-center justify-center ${!isScriptLoaded ? 'opacity-50 pointer-events-none' : ''}`}
+          style={{ minHeight: '44px' }}
+        />
       )}
-      {isLoading ? 'Signing in...' : buttonText}
-    </Button>
+    </div>
   );
 }
 

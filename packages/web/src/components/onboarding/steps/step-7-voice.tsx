@@ -5,8 +5,10 @@ import { motion } from 'framer-motion';
 import { useOnboardingStore, type VoiceOption } from '@/stores/onboarding-store';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
-import { Play, Pause, ArrowRight, Loader2 } from 'lucide-react';
+import { Play, Pause, ArrowRight, Loader2, Sparkles, Shuffle } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { createCompanion, streamAnchorImages, generateBackstory } from '@/lib/api';
+import { useToast } from '@/hooks/use-toast';
 
 // ElevenLabs voices for companion creation
 const voices: VoiceOption[] = [
@@ -38,9 +40,14 @@ function getVoiceSampleUrl(voiceId: string): string {
 }
 
 export function Step7Voice() {
-  const { voice, setVoice, nextStep } = useOnboardingStore();
+  const state = useOnboardingStore();
+  const { voice, setVoice, nextStep, setCompanionId, setGenerationStarted } = state;
+  const { toast } = useToast();
   const [playingId, setPlayingId] = useState<string | null>(null);
   const [loadingId, setLoadingId] = useState<string | null>(null);
+  const [isCreating, setIsCreating] = useState(false);
+  const [isSurprising, setIsSurprising] = useState(false);
+  const [highlightedVoice, setHighlightedVoice] = useState<string | null>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
 
   // Cleanup audio on unmount
@@ -52,6 +59,309 @@ export function Step7Voice() {
       }
     };
   }, []);
+
+  const coreTenets = state.tenets.filter((t) => t.priority === 'core');
+
+  // Create companion and start generation, then proceed to next step
+  const handleProceed = useCallback(async () => {
+    if (!voice) return;
+
+    setIsCreating(true);
+
+    try {
+      // Build personality description from archetype and sliders
+      const personalityDescription = [
+        state.archetype?.description || '',
+        state.secondaryArchetype
+          ? `Secondary archetype: ${state.secondaryArchetype.name}`
+          : '',
+        `Traits: ${state.archetype?.traits.join(', ') || 'friendly'}`,
+        `Warmth: ${state.personality.warmth}%, Playfulness: ${state.personality.playfulness}%`,
+        `Empathy: ${state.personality.empathy}%, Energy: ${state.personality.energy}%`,
+        state.identity.backstory ? `Background: ${state.identity.backstory}` : '',
+        coreTenets.length > 0
+          ? `Core behavioral rules:\n${coreTenets.map((t) => `- ${t.isNegation ? 'NEVER: ' : ''}${t.rule}`).join('\n')}`
+          : '',
+      ]
+        .filter(Boolean)
+        .join('\n');
+
+      // Create companion via API
+      const companion = await createCompanion({
+        name: state.name,
+        description: state.archetype?.description,
+        personality: personalityDescription,
+        voiceId: voice.id,
+        isPublic: false,
+        spec: {
+          identity: {
+            name: state.name,
+            pronouns: state.identity.pronouns,
+          },
+          personality: {
+            archetype: state.archetype?.id || 'companion',
+            secondary_archetype: state.secondaryArchetype?.id,
+            traits: {
+              warmth: state.personality.warmth / 100,
+              energy: state.personality.energy / 100,
+              playfulness: state.personality.playfulness / 100,
+              formality: state.personality.formality / 100,
+              assertiveness: state.personality.assertiveness / 100,
+              curiosity: state.personality.curiosity / 100,
+              empathy: state.personality.empathy / 100,
+              spontaneity: state.personality.spontaneity / 100,
+              optimism: state.personality.optimism / 100,
+              directness: state.personality.directness / 100,
+            },
+          },
+          voice: {
+            provider: 'elevenlabs',
+            voice_id: voice.id,
+          },
+          visual_style: {
+            style_type: state.visualStyle.avatarStyle,
+            appearance: {
+              ethnicity: state.visualStyle.appearance.ethnicity,
+              bodyType: state.visualStyle.appearance.bodyType,
+              hairColor: state.visualStyle.appearance.hairColor,
+              breastSize: state.visualStyle.appearance.breastSize,
+            },
+          },
+          boundaries: {
+            relationship_pacing: 'moderate',
+            content_rating: 'R',
+            emotional_depth: state.boundaries.emotionalDepth,
+            topics_avoid: state.boundaries.avoidTopics,
+            safe_topics: state.boundaries.safeTopics,
+          },
+        },
+      });
+
+      // Store companion ID in the store for the review step
+      setCompanionId(companion.id);
+      setGenerationStarted(true);
+
+      // Fire off image generation (don't await - runs in background)
+      streamAnchorImages(
+        {
+          companionId: companion.id,
+          appearance: {
+            ethnicity: state.visualStyle.appearance.ethnicity,
+            bodyType: state.visualStyle.appearance.bodyType,
+            hairColor: state.visualStyle.appearance.hairColor,
+            breastSize: state.visualStyle.appearance.breastSize,
+          },
+          style: state.visualStyle.avatarStyle,
+          personality: {
+            warmth: state.personality.warmth,
+            playfulness: state.personality.playfulness,
+            directness: state.personality.directness,
+            curiosity: state.personality.curiosity,
+            empathy: state.personality.empathy,
+            assertiveness: state.personality.assertiveness,
+          },
+        },
+        {
+          onProgress: (data) => console.log('Anchor progress:', data),
+          onAnchor: (anchor) => console.log('Anchor received:', anchor),
+          onComplete: (result) => console.log('Anchor generation complete:', result),
+          onError: (error) => console.error('Anchor generation error:', error),
+        }
+      );
+
+      // Fire off backstory generation (don't await - runs in background)
+      generateBackstory(companion.id, {
+        archetype: state.archetype?.id || 'companion',
+        secondaryArchetype: state.secondaryArchetype?.id,
+        archetypeDescription: state.archetype?.description,
+        personality: state.personality,
+        tenets: state.tenets.map((t) => ({
+          category: t.category,
+          priority: t.priority,
+          rule: t.rule,
+          isNegation: t.isNegation,
+        })),
+        userBackstoryHint: state.identity.backstory || undefined,
+      }).then((result) => {
+        console.log('Backstory generated:', result);
+      }).catch((error) => {
+        console.error('Backstory generation failed:', error);
+      });
+
+      // Navigate to review step immediately
+      nextStep();
+    } catch (error) {
+      console.error('Failed to create companion:', error);
+      toast({
+        title: 'Error',
+        description: 'Failed to create companion. Please try again.',
+        variant: 'destructive',
+      });
+      setIsCreating(false);
+    }
+  }, [voice, state, coreTenets, setCompanionId, setGenerationStarted, nextStep, toast]);
+
+  // Surprise Me - randomly select a voice with animation, then proceed
+  const handleSurpriseMe = useCallback(async () => {
+    setIsSurprising(true);
+
+    // Stop any playing audio
+    if (audioRef.current) {
+      audioRef.current.pause();
+      audioRef.current = null;
+      setPlayingId(null);
+    }
+
+    // Pick a random voice
+    const targetIndex = Math.floor(Math.random() * voices.length);
+    const targetVoice = voices[targetIndex];
+
+    // Animate through voices rapidly
+    const steps = 10;
+    for (let i = 0; i < steps; i++) {
+      const randomIndex = Math.floor(Math.random() * voices.length);
+      setHighlightedVoice(voices[randomIndex].id);
+      await new Promise((r) => setTimeout(r, 80 + i * 15));
+    }
+
+    // Land on the target voice
+    setHighlightedVoice(targetVoice.id);
+    setVoice(targetVoice);
+
+    // Wait a moment to show the selection
+    await new Promise((r) => setTimeout(r, 400));
+    setIsSurprising(false);
+    setHighlightedVoice(null);
+
+    // Now proceed (create companion and start generation)
+    setIsCreating(true);
+
+    try {
+      const personalityDescription = [
+        state.archetype?.description || '',
+        state.secondaryArchetype
+          ? `Secondary archetype: ${state.secondaryArchetype.name}`
+          : '',
+        `Traits: ${state.archetype?.traits.join(', ') || 'friendly'}`,
+        `Warmth: ${state.personality.warmth}%, Playfulness: ${state.personality.playfulness}%`,
+        `Empathy: ${state.personality.empathy}%, Energy: ${state.personality.energy}%`,
+        state.identity.backstory ? `Background: ${state.identity.backstory}` : '',
+        coreTenets.length > 0
+          ? `Core behavioral rules:\n${coreTenets.map((t) => `- ${t.isNegation ? 'NEVER: ' : ''}${t.rule}`).join('\n')}`
+          : '',
+      ]
+        .filter(Boolean)
+        .join('\n');
+
+      const companion = await createCompanion({
+        name: state.name,
+        description: state.archetype?.description,
+        personality: personalityDescription,
+        voiceId: targetVoice.id,
+        isPublic: false,
+        spec: {
+          identity: {
+            name: state.name,
+            pronouns: state.identity.pronouns,
+          },
+          personality: {
+            archetype: state.archetype?.id || 'companion',
+            secondary_archetype: state.secondaryArchetype?.id,
+            traits: {
+              warmth: state.personality.warmth / 100,
+              energy: state.personality.energy / 100,
+              playfulness: state.personality.playfulness / 100,
+              formality: state.personality.formality / 100,
+              assertiveness: state.personality.assertiveness / 100,
+              curiosity: state.personality.curiosity / 100,
+              empathy: state.personality.empathy / 100,
+              spontaneity: state.personality.spontaneity / 100,
+              optimism: state.personality.optimism / 100,
+              directness: state.personality.directness / 100,
+            },
+          },
+          voice: {
+            provider: 'elevenlabs',
+            voice_id: targetVoice.id,
+          },
+          visual_style: {
+            style_type: state.visualStyle.avatarStyle,
+            appearance: {
+              ethnicity: state.visualStyle.appearance.ethnicity,
+              bodyType: state.visualStyle.appearance.bodyType,
+              hairColor: state.visualStyle.appearance.hairColor,
+              breastSize: state.visualStyle.appearance.breastSize,
+            },
+          },
+          boundaries: {
+            relationship_pacing: 'moderate',
+            content_rating: 'R',
+            emotional_depth: state.boundaries.emotionalDepth,
+            topics_avoid: state.boundaries.avoidTopics,
+            safe_topics: state.boundaries.safeTopics,
+          },
+        },
+      });
+
+      setCompanionId(companion.id);
+      setGenerationStarted(true);
+
+      streamAnchorImages(
+        {
+          companionId: companion.id,
+          appearance: {
+            ethnicity: state.visualStyle.appearance.ethnicity,
+            bodyType: state.visualStyle.appearance.bodyType,
+            hairColor: state.visualStyle.appearance.hairColor,
+            breastSize: state.visualStyle.appearance.breastSize,
+          },
+          style: state.visualStyle.avatarStyle,
+          personality: {
+            warmth: state.personality.warmth,
+            playfulness: state.personality.playfulness,
+            directness: state.personality.directness,
+            curiosity: state.personality.curiosity,
+            empathy: state.personality.empathy,
+            assertiveness: state.personality.assertiveness,
+          },
+        },
+        {
+          onProgress: (data) => console.log('Anchor progress:', data),
+          onAnchor: (anchor) => console.log('Anchor received:', anchor),
+          onComplete: (result) => console.log('Anchor generation complete:', result),
+          onError: (error) => console.error('Anchor generation error:', error),
+        }
+      );
+
+      generateBackstory(companion.id, {
+        archetype: state.archetype?.id || 'companion',
+        secondaryArchetype: state.secondaryArchetype?.id,
+        archetypeDescription: state.archetype?.description,
+        personality: state.personality,
+        tenets: state.tenets.map((t) => ({
+          category: t.category,
+          priority: t.priority,
+          rule: t.rule,
+          isNegation: t.isNegation,
+        })),
+        userBackstoryHint: state.identity.backstory || undefined,
+      }).then((result) => {
+        console.log('Backstory generated:', result);
+      }).catch((error) => {
+        console.error('Backstory generation failed:', error);
+      });
+
+      nextStep();
+    } catch (error) {
+      console.error('Failed to create companion:', error);
+      toast({
+        title: 'Error',
+        description: 'Failed to create companion. Please try again.',
+        variant: 'destructive',
+      });
+      setIsCreating(false);
+    }
+  }, [state, coreTenets, setVoice, setCompanionId, setGenerationStarted, nextStep, toast]);
 
   const togglePlay = useCallback(async (id: string) => {
     // If already playing this voice, stop it
@@ -112,18 +422,29 @@ export function Step7Voice() {
       </div>
 
       <div className="grid grid-cols-1 gap-4">
-        {voices.map((v) => (
+        {voices.map((v) => {
+          const isHighlighted = highlightedVoice === v.id;
+          const isSelected = voice?.id === v.id;
+          return (
           <motion.div
             key={v.id}
-            whileHover={{ x: 5 }}
+            whileHover={isSurprising ? {} : { x: 5 }}
             transition={{ type: "spring", stiffness: 300, damping: 20 }}
+            animate={isHighlighted ? {
+              scale: [1, 1.02, 1.01],
+              transition: { duration: 0.1 }
+            } : {}}
           >
             <Card
               className={cn(
                 'flex items-center p-5 transition-all border-white/10 cursor-pointer overflow-hidden relative group',
-                voice?.id === v.id ? 'bg-white/[0.08] border-vibes-cyan/50 ring-1 ring-vibes-cyan/30 backdrop-blur-xl' : 'bg-white/[0.01] hover:bg-white/[0.03] backdrop-blur-md'
+                isHighlighted
+                  ? 'bg-vibes-cyan/20 border-vibes-cyan ring-2 ring-vibes-cyan shadow-[0_0_30px_rgba(6,182,212,0.4)] backdrop-blur-xl'
+                  : isSelected
+                  ? 'bg-white/[0.08] border-vibes-cyan/50 ring-1 ring-vibes-cyan/30 backdrop-blur-xl'
+                  : 'bg-white/[0.01] hover:bg-white/[0.03] backdrop-blur-md'
               )}
-              onClick={() => setVoice(v)}
+              onClick={() => !isSurprising && setVoice(v)}
             >
               <div className="flex-1 z-10">
                 <div className="flex items-center gap-5">
@@ -132,7 +453,7 @@ export function Step7Voice() {
                     variant="ghost"
                     disabled={loadingId === v.id}
                     className={cn(
-                      "rounded-full h-14 w-14 transition-all duration-300",
+                      "rounded-full h-14 w-14 aspect-square flex-shrink-0 transition-all duration-300",
                       playingId === v.id ? "bg-vibes-cyan text-black" : "bg-white/5 group-hover:bg-white/10 text-vibes-cyan"
                     )}
                     onClick={(e) => {
@@ -187,18 +508,46 @@ export function Step7Voice() {
               </div>
             </Card>
           </motion.div>
-        ))}
+        );
+        })}
       </div>
 
-      <div className="flex justify-end pt-8">
+      <div className="flex justify-end gap-4 pt-8">
         <Button
           size="lg"
-          disabled={!voice}
-          onClick={nextStep}
-          className="group h-14 px-12 rounded-full bg-gradient-to-r from-vibes-cyan to-vibes-electric hover:shadow-[0_0_30px_rgba(6,182,212,0.3)] transition-all font-bold text-lg"
+          disabled={isSurprising || isCreating}
+          onClick={handleSurpriseMe}
+          className="group h-16 px-10 rounded-full bg-white/[0.05] border border-white/20 hover:border-vibes-cyan/50 hover:bg-vibes-cyan/10 hover:shadow-[0_0_25px_rgba(6,182,212,0.2)] transition-all font-bold text-lg relative overflow-hidden"
         >
-          Review & Ignite
-          <ArrowRight className="ml-2 h-5 w-5 group-hover:translate-x-2 transition-transform duration-300" />
+          {isSurprising && (
+            <motion.div
+              className="absolute inset-0 bg-gradient-to-r from-transparent via-white/20 to-transparent"
+              initial={{ x: '-100%' }}
+              animate={{ x: '100%' }}
+              transition={{ repeat: Infinity, duration: 0.8, ease: 'linear' }}
+            />
+          )}
+          <Shuffle className={cn("mr-2 h-5 w-5", isSurprising && "animate-spin")} />
+          {isSurprising ? 'Choosing...' : 'Surprise Me'}
+        </Button>
+        <Button
+          size="lg"
+          disabled={!voice || isCreating || isSurprising}
+          onClick={handleProceed}
+          className="group h-16 px-14 rounded-full bg-gradient-to-r from-vibes-cyan to-vibes-electric hover:shadow-[0_0_30px_rgba(6,182,212,0.3)] transition-all font-bold text-xl"
+        >
+          {isCreating ? (
+            <>
+              <Loader2 className="mr-3 h-6 w-6 animate-spin" />
+              Creating...
+            </>
+          ) : (
+            <>
+              <Sparkles className="mr-3 h-6 w-6" />
+              Review & Ignite
+              <ArrowRight className="ml-3 h-6 w-6 group-hover:translate-x-2 transition-transform duration-300" />
+            </>
+          )}
         </Button>
       </div>
     </div>

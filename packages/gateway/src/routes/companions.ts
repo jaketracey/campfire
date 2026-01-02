@@ -258,27 +258,38 @@ async function getLatestSessionsForCompanions(
 }
 
 /**
+ * Latest image data for a companion
+ */
+interface LatestImageData {
+  s3_url: string;
+  renditions: Record<string, unknown> | null;
+}
+
+/**
  * Get latest image for each companion from conversations
  */
 async function getLatestImagesForCompanions(
   userId: string,
   companionIds: string[]
-): Promise<Map<string, string>> {
+): Promise<Map<string, LatestImageData>> {
   if (companionIds.length === 0) return new Map();
 
   const results = await db.sql`
     SELECT DISTINCT ON (companion_id)
-      companion_id, s3_url
+      companion_id, s3_url, renditions
     FROM companion_images
     WHERE user_id = ${userId}
       AND companion_id = ANY(${companionIds})
     ORDER BY companion_id, created_at DESC
   `;
 
-  const imageMap = new Map<string, string>();
+  const imageMap = new Map<string, LatestImageData>();
   for (const row of results) {
     if (row.companion_id) {
-      imageMap.set(row.companion_id, row.s3_url);
+      imageMap.set(row.companion_id, {
+        s3_url: row.s3_url,
+        renditions: row.renditions as Record<string, unknown> | null,
+      });
     }
   }
   return imageMap;
@@ -382,14 +393,15 @@ export async function companionsRoutes(app: FastifyInstance): Promise<void> {
     // Map companions with session, image, and avatar data
     const companions = result.data.map((companion) => {
       const latestSession = sessionMap.get(companion.id);
-      const latestImageUrl = imageMap.get(companion.id);
+      const latestImageData = imageMap.get(companion.id);
       const avatarUrl = avatarMap.get(companion.id);
 
       return {
         ...mapCompanionResponse(companion, avatarUrl),
         latestSessionId: latestSession?.id || null,
         latestSessionUpdatedAt: latestSession?.updatedAt || null,
-        latestConversationImageUrl: latestImageUrl || null,
+        latestConversationImageUrl: latestImageData?.s3_url || null,
+        latestConversationImageRenditions: latestImageData?.renditions || null,
       };
     });
 

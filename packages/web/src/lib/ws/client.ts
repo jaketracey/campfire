@@ -3,7 +3,40 @@
  * Real-time communication with the gateway.
  */
 
-const WS_BASE_URL = process.env.NEXT_PUBLIC_WS_URL || 'ws://localhost:3002/ws';
+// Dynamically determine WebSocket URL based on environment
+// - Explicit NEXT_PUBLIC_WS_URL takes priority
+// - NEXT_PUBLIC_GATEWAY_URL is converted to WebSocket URL
+// - Localhost: connect directly to gateway on port 3002
+// - External (ngrok/prod): use same host with /ws path (proxied)
+function getWebSocketUrl(): string {
+  // Explicit WebSocket URL takes priority
+  if (process.env.NEXT_PUBLIC_WS_URL) {
+    return process.env.NEXT_PUBLIC_WS_URL;
+  }
+
+  // If gateway URL is set, derive WebSocket URL from it
+  if (process.env.NEXT_PUBLIC_GATEWAY_URL) {
+    const gatewayUrl = process.env.NEXT_PUBLIC_GATEWAY_URL;
+    // Convert http(s):// to ws(s)://
+    return gatewayUrl.replace(/^http/, 'ws') + '/ws';
+  }
+
+  if (typeof window === 'undefined') {
+    return 'ws://localhost:3002/ws';
+  }
+
+  const { protocol, hostname } = window.location;
+
+  // If accessing via localhost, connect to gateway directly
+  if (hostname === 'localhost' || hostname === '127.0.0.1') {
+    return 'ws://localhost:3002/ws';
+  }
+
+  // External access (ngrok, production): use same host with /ws path
+  // This requires a proxy (nginx) to route /ws to the gateway
+  const wsProtocol = protocol === 'https:' ? 'wss:' : 'ws:';
+  return `${wsProtocol}//${window.location.host}/ws`;
+}
 
 export type WSMessageType =
   | 'ping'
@@ -167,11 +200,22 @@ export class CampfireWebSocket {
    * Connect to the WebSocket server
    */
   connect(): void {
+    // Already connected - nothing to do
     if (this.ws?.readyState === WebSocket.OPEN) {
+      console.log('[WS] Already connected, skipping connect()');
       return;
     }
 
-    this.ws = new WebSocket(WS_BASE_URL);
+    // Already connecting - wait for it to complete instead of creating a new socket
+    // This prevents the iOS "WebSocket is closed before connection established" error
+    if (this.ws?.readyState === WebSocket.CONNECTING) {
+      console.log('[WS] Already connecting, waiting for existing connection');
+      return;
+    }
+
+    const wsUrl = getWebSocketUrl();
+    console.log('[WS] Creating new WebSocket connection to', wsUrl);
+    this.ws = new WebSocket(wsUrl);
 
     this.ws.onopen = () => {
       this._isConnected = true;
@@ -222,8 +266,20 @@ export class CampfireWebSocket {
     }
 
     if (this.ws) {
-      this.ws.close(1000, 'Client disconnect');
-      this.ws = null;
+      // Only close if the socket is OPEN, not if it's still CONNECTING
+      // Closing a CONNECTING socket causes "WebSocket is closed before the connection is established" error on iOS
+      // Since this is a singleton, we let CONNECTING sockets finish - the next connect() will reuse them
+      if (this.ws.readyState === WebSocket.OPEN) {
+        this.ws.close(1000, 'Client disconnect');
+        this.ws = null;
+      } else if (this.ws.readyState === WebSocket.CONNECTING) {
+        console.log('[WS] Socket still connecting, skipping disconnect to avoid iOS error');
+        // Don't null out ws - let it finish connecting for potential reuse
+        // The next connect() call will find it OPEN or will create a new one if it failed
+      } else {
+        // CLOSING or CLOSED - safe to null out
+        this.ws = null;
+      }
     }
 
     this._isConnected = false;
@@ -241,7 +297,7 @@ export class CampfireWebSocket {
    */
   send<T>(type: WSMessageType, payload: T): void {
     if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
-      console.error('[WS] Cannot send - not connected');
+      console.error('[WS] Cannot send - not connected, readyState:', this.ws?.readyState);
       return;
     }
 
@@ -252,7 +308,12 @@ export class CampfireWebSocket {
       payload,
     };
 
-    this.ws.send(JSON.stringify(message));
+    try {
+      this.ws.send(JSON.stringify(message));
+      console.log('[WS] Message sent:', type);
+    } catch (error) {
+      console.error('[WS] Send failed:', type, error);
+    }
   }
 
   /**
@@ -303,15 +364,23 @@ export class CampfireWebSocket {
    * If WebSocket is not ready, queues the message and sends when connection is restored.
    */
   sendMessageWithRetry(content: string): void {
+    const readyState = this.ws?.readyState;
+    const readyStateNames = ['CONNECTING', 'OPEN', 'CLOSING', 'CLOSED'];
+    console.log('[WS] sendMessageWithRetry called, readyState:', readyState, `(${readyStateNames[readyState ?? 3]})`);
+
     if (this.ws?.readyState === WebSocket.OPEN) {
+      console.log('[WS] Socket OPEN, sending message immediately');
       this.sendMessage(content);
     } else {
       // Queue message for retry - iOS Chrome can have transient disconnection during keyboard dismiss
-      console.log('[WS] Connection not ready, queuing message for retry');
+      console.log('[WS] Connection not ready, queuing message for retry. pendingMessages:', this.pendingMessages.length + 1);
       this.pendingMessages.push({ content });
       // Trigger reconnection if not already connecting
       if (!this.ws || this.ws.readyState === WebSocket.CLOSED) {
+        console.log('[WS] Socket CLOSED or null, triggering connect()');
         this.connect();
+      } else {
+        console.log('[WS] Socket exists but not OPEN/CLOSED (likely CONNECTING), waiting...');
       }
     }
   }
@@ -320,11 +389,14 @@ export class CampfireWebSocket {
    * Flush any pending messages (called after session is started)
    */
   flushPendingMessages(): void {
+    console.log('[WS] flushPendingMessages called, pending:', this.pendingMessages.length, 'readyState:', this.ws?.readyState);
     while (this.pendingMessages.length > 0) {
       const msg = this.pendingMessages.shift();
       if (msg && this.ws?.readyState === WebSocket.OPEN) {
         console.log('[WS] Sending queued message');
         this.sendMessage(msg.content);
+      } else {
+        console.warn('[WS] Cannot flush message - socket not open, readyState:', this.ws?.readyState);
       }
     }
   }

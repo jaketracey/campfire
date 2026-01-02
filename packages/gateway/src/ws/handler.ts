@@ -14,6 +14,7 @@ import {
   getEventsService,
   getVoiceService,
   getTenetsService,
+  getLLMUsageService,
   type EventContext,
 } from '../services/index.js';
 import { getKnowledgeGraphRepository, getSessionsRepository } from '../repositories/index.js';
@@ -945,15 +946,28 @@ async function handleUserMessage(
       return;
     }
 
+    // Buffer for accumulating partial SSE lines across chunks
+    // (iOS/mobile networks often fragment TCP packets, causing lines to be split)
+    let lineBuffer = '';
+
     try {
       while (true) {
         const { done, value } = await reader.read();
         if (done) break;
 
         const chunk = decoder.decode(value, { stream: true });
+        lineBuffer += chunk;
 
         // Parse SSE format: "data: {content}\n\n"
-        const lines = chunk.split('\n');
+        // Split on newlines but keep the last potentially incomplete line in buffer
+        const lines = lineBuffer.split('\n');
+        lineBuffer = lines.pop() || ''; // Keep last (potentially incomplete) line
+
+        logger.trace(
+          { sessionId, chunkLen: chunk.length, lineCount: lines.length, bufferLen: lineBuffer.length },
+          'SSE chunk received'
+        );
+
         for (const line of lines) {
           if (line.startsWith('data: ')) {
             const data = line.slice(6).trim();
@@ -1142,6 +1156,18 @@ async function handleUserMessage(
           }
         }
       }
+
+      // Process any remaining content in the buffer after stream ends
+      if (lineBuffer.trim() && lineBuffer.startsWith('data: ')) {
+        const data = lineBuffer.slice(6).trim();
+        if (data && data !== '[DONE]' && !data.startsWith('[')) {
+          fullContent += data;
+          send(client, {
+            type: 'agent_message_chunk',
+            payload: { content: data },
+          });
+        }
+      }
     } finally {
       reader.releaseLock();
     }
@@ -1166,6 +1192,33 @@ async function handleUserMessage(
         costUsd: estimatedCostUsd,
       }
     );
+
+    // 10b. Record LLM usage for cost tracking (uses estimates for now)
+    // Skip recording for anonymous users to avoid foreign key issues
+    if (!client.isAnonymous && userId !== ANONYMOUS_USER_ID) {
+      try {
+        const llmUsageService = getLLMUsageService();
+        await llmUsageService.recordUsage({
+          user_id: userId,
+          session_id: sessionId,
+          companion_id: companionId,
+          turn_id: turn.id,
+          provider: 'anthropic', // TODO: Get actual provider from orchestrator
+          model: 'claude-3-5-sonnet-20241022', // TODO: Get actual model from orchestrator
+          input_tokens: estimatedInputTokens,
+          output_tokens: estimatedOutputTokens,
+          cost_usd: estimatedCostUsd,
+          latency_ms: latencyMs,
+          request_type: 'chat',
+          stream_mode: true,
+          request_started_at: new Date(startTime),
+          request_completed_at: new Date(),
+        });
+      } catch (err) {
+        // Don't fail the request if usage recording fails
+        logger.warn({ err, sessionId, turnId: turn.id }, 'Failed to record LLM usage');
+      }
+    }
 
     // 10a. Trigger summary generation every 10 turns for context retention
     if (completedTurn.turn_number % 10 === 0) {
