@@ -270,12 +270,44 @@ export async function getCompanionBackstory(
 }
 
 /**
- * Generated random identity for companion creation
+ * Generated personality traits for companion creation
+ */
+export interface GeneratedPersonality {
+  warmth: number;
+  energy: number;
+  playfulness: number;
+  formality: number;
+  assertiveness: number;
+  curiosity: number;
+  empathy: number;
+  spontaneity: number;
+  optimism: number;
+  directness: number;
+}
+
+/**
+ * Generated appearance for companion creation
+ */
+export interface GeneratedAppearance {
+  ethnicity: 'east-asian' | 'south-asian' | 'black' | 'caucasian' | 'latina' | 'middle-eastern' | 'mixed';
+  bodyType: 'slim' | 'athletic' | 'curvy' | 'plus-size';
+  hairColor: 'black' | 'brown' | 'blonde' | 'red' | 'fantasy';
+  breastSize: number;
+}
+
+/**
+ * Generated random identity for companion creation (full companion)
  */
 export interface GeneratedIdentity {
   name: string;
   pronouns: string;
   backstory: string;
+  archetype: string;
+  secondaryArchetype: string | null;
+  personality: GeneratedPersonality;
+  appearance: GeneratedAppearance;
+  visualStyle: 'realistic' | 'anime' | 'stylized' | 'abstract' | 'minimal';
+  voiceGender: 'feminine' | 'masculine' | 'neutral';
   latencyMs: number;
 }
 
@@ -287,6 +319,28 @@ export async function generateRandomIdentity(): Promise<GeneratedIdentity> {
     name: string;
     pronouns: string;
     backstory: string;
+    archetype: string;
+    secondary_archetype: string | null;
+    personality: {
+      warmth: number;
+      energy: number;
+      playfulness: number;
+      formality: number;
+      assertiveness: number;
+      curiosity: number;
+      empathy: number;
+      spontaneity: number;
+      optimism: number;
+      directness: number;
+    };
+    appearance: {
+      ethnicity: string;
+      body_type: string;
+      hair_color: string;
+      breast_size: number;
+    };
+    visual_style: string;
+    voice_gender: string;
     latency_ms: number;
   }>('/companions/generate-identity', {});
 
@@ -294,6 +348,17 @@ export async function generateRandomIdentity(): Promise<GeneratedIdentity> {
     name: response.name,
     pronouns: response.pronouns,
     backstory: response.backstory,
+    archetype: response.archetype,
+    secondaryArchetype: response.secondary_archetype,
+    personality: response.personality,
+    appearance: {
+      ethnicity: response.appearance.ethnicity as GeneratedAppearance['ethnicity'],
+      bodyType: response.appearance.body_type as GeneratedAppearance['bodyType'],
+      hairColor: response.appearance.hair_color as GeneratedAppearance['hairColor'],
+      breastSize: response.appearance.breast_size,
+    },
+    visualStyle: response.visual_style as GeneratedIdentity['visualStyle'],
+    voiceGender: response.voice_gender as GeneratedIdentity['voiceGender'],
     latencyMs: response.latency_ms,
   };
 }

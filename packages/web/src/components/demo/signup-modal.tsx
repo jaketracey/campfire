@@ -10,7 +10,8 @@
 import { useState, useEffect, useRef } from 'react';
 import { motion } from 'framer-motion';
 import gsap from 'gsap';
-import { Flame, Eye, EyeOff, Loader2, Check, X } from 'lucide-react';
+import { Eye, EyeOff, Loader2, Check, X } from 'lucide-react';
+import { AnimatedFlame } from '@/components/ui/animated-flame';
 import * as DialogPrimitive from '@radix-ui/react-dialog';
 import {
   Dialog,
@@ -464,16 +465,8 @@ export function SignupModal({
                     animate={{ scale: 1, rotate: 0 }}
                     transition={{ type: 'spring', duration: 0.8, bounce: 0.5, delay: 0.1 }}
                   >
-                    <Flame className="h-10 w-10 text-campfire-500" />
+                    <AnimatedFlame size="lg" />
                   </motion.div>
-                  <motion.span
-                    initial={{ opacity: 0, x: -10 }}
-                    animate={{ opacity: 1, x: 0 }}
-                    transition={{ duration: 0.4, delay: 0.3 }}
-                    className="text-3xl font-bold"
-                  >
-                    Campfire
-                  </motion.span>
                 </motion.div>
                 <DialogTitle className="text-2xl font-bold">
                   {mode === 'signup' ? content.title : 'Welcome Back'}

@@ -619,9 +619,9 @@ export class CampfireWebSocket {
   /**
    * Subscribe to errors
    */
-  onError(handler: (message: string) => void): () => void {
-    return this.on<{ message: string }>('error', (msg) => {
-      handler(msg.payload.message);
+  onError(handler: (message: string, code?: string) => void): () => void {
+    return this.on<{ message: string; code?: string }>('error', (msg) => {
+      handler(msg.payload.message, msg.payload.code);
     });
   }
 

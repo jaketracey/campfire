@@ -48,7 +48,7 @@ COPY --from=deps /app/packages/gateway/node_modules ./packages/gateway/node_modu
 # Copy source code
 COPY packages/shared ./packages/shared
 COPY packages/gateway ./packages/gateway
-COPY tsconfig.json ./
+COPY tsconfig.json tsconfig.base.json ./
 
 # Build shared package first, then gateway
 RUN pnpm --filter shared build && \
@@ -68,15 +68,19 @@ RUN apk add --no-cache wget && rm -rf /var/cache/apk/*
 
 WORKDIR /app
 
-# Copy only production dependencies and built files
-COPY --from=builder /app/packages/gateway/dist ./dist
-COPY --from=builder /app/packages/gateway/package.json ./
-COPY --from=builder /app/packages/shared/dist ./node_modules/@campfire/shared/dist
-COPY --from=builder /app/packages/shared/package.json ./node_modules/@campfire/shared/
+# Copy package.json and remove @campfire/shared dep (we'll add it manually)
+COPY --from=builder /app/packages/gateway/package.json ./package.json.tmp
+RUN sed '/"@campfire\/shared":/d' package.json.tmp > package.json && rm package.json.tmp
 
 # Install production dependencies only
-RUN corepack enable && corepack prepare pnpm@latest --activate && \
-    pnpm install --prod --frozen-lockfile
+RUN npm install --omit=dev --ignore-scripts
+
+# Copy built application
+COPY --from=builder /app/packages/gateway/dist ./dist
+
+# Copy shared package build into node_modules
+COPY --from=builder /app/packages/shared/dist ./node_modules/@campfire/shared/dist
+COPY --from=builder /app/packages/shared/package.json ./node_modules/@campfire/shared/
 
 # Set ownership
 RUN chown -R campfire:nodejs /app
@@ -111,7 +115,7 @@ COPY --from=deps /app/packages/gateway/node_modules ./packages/gateway/node_modu
 # Copy source code
 COPY packages/shared ./packages/shared
 COPY packages/gateway ./packages/gateway
-COPY tsconfig.json ./
+COPY tsconfig.json tsconfig.base.json ./
 
 WORKDIR /app/packages/gateway
 

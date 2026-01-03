@@ -2,6 +2,7 @@
 
 import asyncio
 import random
+import re
 from contextlib import asynccontextmanager
 from typing import Any, AsyncGenerator
 from uuid import UUID
@@ -29,7 +30,9 @@ from orchestrator.queue import JobQueue, get_job_queue
 from orchestrator.safety.gate import SafetyGate, SafetyLevel
 from orchestrator.services.orchestrator import ConversationOrchestrator
 from orchestrator.services.prompt_enhancer import PromptEnhancer
+from orchestrator.services.routing_config_service import RoutingConfigService
 from orchestrator.tools.router import ToolRouter
+from orchestrator.db.pool import DatabasePool
 from orchestrator.api.test_runner import router as test_router
 from orchestrator.api.health import router as health_router
 
@@ -75,6 +78,32 @@ def repair_json(text: str) -> str:
 def parse_llm_json(text: str, fallback: dict | None = None) -> dict:
     """Parse JSON from LLM output with repair attempts."""
     import json
+
+    # Strip thinking tags (e.g., <think>...</think>) that some models output
+    text = re.sub(r'<think>.*?</think>', '', text, flags=re.DOTALL)
+    text = text.strip()
+
+    # Try to extract JSON from surrounding text (find first { or [)
+    json_start = -1
+    for i, char in enumerate(text):
+        if char in '{[':
+            json_start = i
+            break
+
+    if json_start > 0:
+        text = text[json_start:]
+
+    # Find matching closing bracket
+    if text.startswith('{'):
+        # Find the last }
+        json_end = text.rfind('}')
+        if json_end > 0:
+            text = text[:json_end + 1]
+    elif text.startswith('['):
+        # Find the last ]
+        json_end = text.rfind(']')
+        if json_end > 0:
+            text = text[:json_end + 1]
 
     # First try direct parsing
     try:
@@ -156,6 +185,23 @@ class ErrorResponse(BaseModel):
     error: str
     error_type: str
     detail: str | None = None
+
+
+class CompleteRequest(BaseModel):
+    """Request model for simple text completion."""
+
+    system_prompt: str | None = None
+    user_prompt: str
+    max_tokens: int = 1000
+    temperature: float = 0.7
+
+
+class CompleteResponse(BaseModel):
+    """Response model for text completion."""
+
+    content: str
+    latency_ms: float
+    provider: str
 
 
 class ImageGenRequest(BaseModel):
@@ -261,12 +307,42 @@ class GenerateBackstoryResponse(BaseModel):
     latency_ms: float
 
 
+class GeneratedAppearance(BaseModel):
+    """Generated appearance for a companion."""
+
+    ethnicity: str  # east-asian, south-asian, black, caucasian, latina, middle-eastern, mixed
+    body_type: str  # slim, athletic, curvy, plus-size
+    hair_color: str  # black, brown, blonde, red, fantasy
+    breast_size: int  # 0-100
+
+
+class GeneratedPersonality(BaseModel):
+    """Generated personality traits (0-100 scale)."""
+
+    warmth: int
+    energy: int
+    playfulness: int
+    formality: int
+    assertiveness: int
+    curiosity: int
+    empathy: int
+    spontaneity: int
+    optimism: int
+    directness: int
+
+
 class GenerateRandomIdentityResponse(BaseModel):
     """Response model for random identity generation."""
 
     name: str
     pronouns: str
     backstory: str
+    archetype: str  # caregiver, sage, explorer, creator, hero, jester, lover, magician, ruler, everyperson, innocent, rebel
+    secondary_archetype: str | None = None
+    personality: GeneratedPersonality
+    appearance: GeneratedAppearance
+    visual_style: str  # realistic, anime, stylized, abstract, minimal
+    voice_gender: str  # feminine, masculine, neutral
     latency_ms: float
 
 
@@ -322,6 +398,7 @@ class AppState:
     tool_router: ToolRouter
     orchestrator: ConversationOrchestrator
     job_queue: JobQueue
+    routing_config_service: RoutingConfigService | None
     comfyui_provider: ComfyUIProvider | None
     fal_provider: FalProvider | None
     ollama_provider: OllamaProvider | None
@@ -376,6 +453,27 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     app_state.job_queue = get_job_queue(settings)
     await app_state.job_queue.connect()
 
+    # Initialize database pool and routing config service
+    app_state.routing_config_service = None
+    try:
+        await DatabasePool.get_pool()
+        logger.info("database_pool_initialized")
+
+        # Initialize routing config service with caching
+        app_state.routing_config_service = RoutingConfigService(cache_ttl_seconds=60.0)
+        await app_state.routing_config_service.initialize()
+        logger.info(
+            "routing_config_service_initialized",
+            cache_status=app_state.routing_config_service.get_cache_status(),
+        )
+    except Exception as e:
+        logger.warning(
+            "routing_config_service_initialization_failed",
+            error=str(e),
+            message="Falling back to environment-based routing",
+        )
+        app_state.routing_config_service = None
+
     # Initialize orchestrator
     app_state.orchestrator = ConversationOrchestrator(
         settings=settings,
@@ -384,6 +482,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         safety_gate=app_state.safety_gate,
         tool_router=app_state.tool_router,
         job_queue=app_state.job_queue,
+        routing_config_service=app_state.routing_config_service,
     )
 
     # Initialize image providers
@@ -450,6 +549,12 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     await app_state.tool_router.close()
     await app_state.job_queue.disconnect()
     await app_state.event_emitter.stop()
+
+    # Close database pool
+    if DatabasePool.is_initialized():
+        await DatabasePool.close()
+        logger.info("database_pool_closed")
+
     logger.info("orchestrator_service_stopped")
 
 
@@ -491,6 +596,64 @@ async def health_check() -> HealthResponse:
 async def readiness_check() -> dict[str, str]:
     """Readiness check endpoint."""
     return {"status": "ready"}
+
+
+@app.post(
+    "/complete",
+    response_model=CompleteResponse,
+    responses={
+        503: {"model": ErrorResponse},
+        500: {"model": ErrorResponse},
+    },
+)
+async def complete(request: CompleteRequest) -> CompleteResponse:
+    """Simple text completion endpoint for worker services.
+
+    Uses the configured LLM provider (Ollama) for one-off text generation tasks
+    like gift content generation, without the full conversation orchestration.
+    """
+    import time
+
+    start_time = time.time()
+
+    if not app_state.ollama_provider:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="LLM provider not available",
+        )
+
+    try:
+        messages = []
+        if request.system_prompt:
+            messages.append({"role": "system", "content": request.system_prompt})
+        messages.append({"role": "user", "content": request.user_prompt})
+
+        response = await app_state.ollama_provider.generate(
+            messages=messages,
+            max_tokens=request.max_tokens,
+            temperature=request.temperature,
+        )
+
+        latency_ms = (time.time() - start_time) * 1000
+
+        logger.info(
+            "complete_request",
+            latency_ms=latency_ms,
+            content_length=len(response.content),
+        )
+
+        return CompleteResponse(
+            content=response.content,
+            latency_ms=latency_ms,
+            provider="ollama",
+        )
+
+    except Exception as e:
+        logger.exception("complete_failed", error=str(e))
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Completion failed: {str(e)}",
+        )
 
 
 @app.post(
@@ -605,7 +768,9 @@ async def stream_message(request: StreamMessageRequest) -> StreamingResponse:
                 full_content = ""
                 async for chunk in result:
                     full_content += chunk
-                    yield f"data: {chunk}\n\n"
+                    # Escape newlines to prevent breaking SSE format
+                    escaped_chunk = chunk.replace('\n', '\\n')
+                    yield f"data: {escaped_chunk}\n\n"
 
                 # Parse multi-messages after stream completes
                 messages, image_prompt = app_state.orchestrator._parse_multi_messages(full_content)
@@ -679,7 +844,9 @@ async def stream_message(request: StreamMessageRequest) -> StreamingResponse:
                             yield f"data: [MESSAGE]{json.dumps(msg_data)}\n\n"
                     else:
                         # Single message - stream the content
-                        yield f"data: {messages[0]}\n\n"
+                        # Escape newlines to prevent breaking SSE format
+                        escaped_msg = messages[0].replace('\n', '\\n')
+                        yield f"data: {escaped_msg}\n\n"
 
                     # Send image_prompt as metadata event if present
                     if image_prompt:
@@ -1266,7 +1433,11 @@ Guidelines:
 - Use a realistic name appropriate to the character (common names are great! Sarah, Marcus, Kenji, Fatima, Devon, etc.)
 - The pronouns should fit the character naturally
 - The backstory should be grounded and relatable, 1-2 sentences that make you want to know more
-- Focus on what makes this person interesting as a conversational companion
+- Choose an archetype that fits their personality (caregiver, sage, explorer, creator, hero, jester, lover, magician, ruler, everyperson, innocent, rebel)
+- Optionally add a secondary archetype if it fits (or null if not)
+- Set personality traits (0-100) that match their character
+- Choose appearance that matches their cultural background and persona
+- Visual style should match their personality (realistic for grounded, anime for playful, etc.)
 - NO sci-fi, fantasy, mythology, or supernatural elements
 - Make them feel like someone you could actually meet and have a fascinating conversation with
 
@@ -1274,7 +1445,29 @@ You must respond with valid JSON in this exact format:
 {{
   "name": "A realistic name appropriate to the character",
   "pronouns": "she/her or he/him or they/them",
-  "backstory": "A brief, grounded backstory (1-2 sentences)"
+  "backstory": "A brief, grounded backstory (1-2 sentences)",
+  "archetype": "one of: caregiver, sage, explorer, creator, hero, jester, lover, magician, ruler, everyperson, innocent, rebel",
+  "secondary_archetype": "another archetype or null",
+  "personality": {{
+    "warmth": 30-90,
+    "energy": 20-90,
+    "playfulness": 30-80,
+    "formality": 20-70,
+    "assertiveness": 30-80,
+    "curiosity": 40-90,
+    "empathy": 40-90,
+    "spontaneity": 30-80,
+    "optimism": 40-90,
+    "directness": 30-80
+  }},
+  "appearance": {{
+    "ethnicity": "one of: east-asian, south-asian, black, caucasian, latina, middle-eastern, mixed",
+    "body_type": "one of: slim, athletic, curvy, plus-size",
+    "hair_color": "one of: black, brown, blonde, red, fantasy",
+    "breast_size": 0-100
+  }},
+  "visual_style": "one of: realistic, anime, stylized, abstract, minimal",
+  "voice_gender": "feminine or masculine or neutral"
 }}"""
 
     user_prompt = """Generate a unique companion identity based on the category. Make them feel like a real, interesting person with genuine depth and warmth."""
@@ -1298,7 +1491,7 @@ You must respond with valid JSON in this exact format:
                         {"role": "system", "content": system_prompt},
                         {"role": "user", "content": user_prompt},
                     ],
-                    max_tokens=500,
+                    max_tokens=1000,  # Increased for full companion generation
                     temperature=1.0 - (attempt * 0.1),  # Lower temp on retries
                 )
 
@@ -1322,6 +1515,28 @@ You must respond with valid JSON in this exact format:
                         "name": random.choice(fallback_names),
                         "pronouns": "they/them",
                         "backstory": "Someone with a warm heart and an interesting perspective on life.",
+                        "archetype": random.choice(["caregiver", "sage", "explorer", "creator", "everyperson"]),
+                        "secondary_archetype": None,
+                        "personality": {
+                            "warmth": random.randint(50, 80),
+                            "energy": random.randint(40, 70),
+                            "playfulness": random.randint(40, 70),
+                            "formality": random.randint(30, 60),
+                            "assertiveness": random.randint(40, 70),
+                            "curiosity": random.randint(50, 80),
+                            "empathy": random.randint(50, 80),
+                            "spontaneity": random.randint(40, 70),
+                            "optimism": random.randint(50, 80),
+                            "directness": random.randint(40, 70),
+                        },
+                        "appearance": {
+                            "ethnicity": random.choice(["east-asian", "south-asian", "black", "caucasian", "latina", "middle-eastern", "mixed"]),
+                            "body_type": random.choice(["slim", "athletic", "curvy", "plus-size"]),
+                            "hair_color": random.choice(["black", "brown", "blonde", "red"]),
+                            "breast_size": random.randint(30, 70),
+                        },
+                        "visual_style": "realistic",
+                        "voice_gender": "neutral",
                     }
 
         latency_ms = (time.time() - start_time) * 1000
@@ -1333,10 +1548,40 @@ You must respond with valid JSON in this exact format:
             used_fallback=last_error is not None,
         )
 
+        # Extract personality with defaults
+        personality_data = result.get("personality", {})
+        personality = GeneratedPersonality(
+            warmth=personality_data.get("warmth", 60),
+            energy=personality_data.get("energy", 50),
+            playfulness=personality_data.get("playfulness", 50),
+            formality=personality_data.get("formality", 40),
+            assertiveness=personality_data.get("assertiveness", 50),
+            curiosity=personality_data.get("curiosity", 60),
+            empathy=personality_data.get("empathy", 60),
+            spontaneity=personality_data.get("spontaneity", 50),
+            optimism=personality_data.get("optimism", 60),
+            directness=personality_data.get("directness", 50),
+        )
+
+        # Extract appearance with defaults
+        appearance_data = result.get("appearance", {})
+        appearance = GeneratedAppearance(
+            ethnicity=appearance_data.get("ethnicity", "mixed"),
+            body_type=appearance_data.get("body_type", "athletic"),
+            hair_color=appearance_data.get("hair_color", "brown"),
+            breast_size=appearance_data.get("breast_size", 50),
+        )
+
         return GenerateRandomIdentityResponse(
             name=result.get("name", "Luna"),
             pronouns=result.get("pronouns", "they/them"),
             backstory=result.get("backstory", ""),
+            archetype=result.get("archetype", "everyperson"),
+            secondary_archetype=result.get("secondary_archetype"),
+            personality=personality,
+            appearance=appearance,
+            visual_style=result.get("visual_style", "realistic"),
+            voice_gender=result.get("voice_gender", "neutral"),
             latency_ms=latency_ms,
         )
 

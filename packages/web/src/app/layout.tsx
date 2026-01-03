@@ -2,6 +2,7 @@ import type { Metadata } from 'next';
 import { Inter, Outfit, DM_Sans } from 'next/font/google';
 import { Suspense } from 'react';
 import { ClientProviders } from '@/components/providers/client-providers';
+import { PageErrorBoundary } from '@/components/error-boundary';
 import './globals.css';
 
 const inter = Inter({
@@ -53,9 +54,11 @@ export default function RootLayout({
   return (
     <html lang="en" suppressHydrationWarning>
       <body className={`${inter.variable} ${outfit.variable} ${dmSans.variable} font-sans antialiased uppercase-none`}>
-        <Suspense fallback={<GlobalFallback />}>
-          <ClientProviders>{children}</ClientProviders>
-        </Suspense>
+        <PageErrorBoundary>
+          <Suspense fallback={<GlobalFallback />}>
+            <ClientProviders>{children}</ClientProviders>
+          </Suspense>
+        </PageErrorBoundary>
       </body>
     </html>
   );

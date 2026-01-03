@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { X, RefreshCw, Gift, History, Sparkles, Loader2 } from 'lucide-react';
+import { X, RefreshCw, Gift, History, Sparkles, Loader2, Grid } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { ScrollArea } from '@/components/ui/scroll-area';
@@ -9,14 +9,20 @@ import { TokenBalanceDisplay } from './token-balance-display';
 import { GiftCard } from './gift-card';
 import { GiftSendConfirmation } from './gift-send-confirmation';
 import { GiftAnimation, type GiftAnimationType } from './gift-animation';
+import { GiftTemplateGrid } from './gift-template-grid';
+import { GiftCategoryFilter } from './gift-category-filter';
+import { GiftSortDropdown } from './gift-sort-dropdown';
 import { useGiftsStore } from '@/stores/gifts-store';
+import { useAuthStore } from '@/stores/auth-store';
 import {
   generateGift,
   getGift,
   giveGift,
   getGiftHistory,
+  sendGiftFromTemplate,
   type Gift as GiftType,
   type GiftHistoryItem,
+  type GiftTemplate,
 } from '@/lib/api/gifts';
 import { getTokenBalance } from '@/lib/api/tokens';
 
@@ -35,7 +41,7 @@ export function GiftsPanel({
   onClose,
   onGiftSent,
 }: GiftsPanelProps) {
-  const [activeTab, setActiveTab] = useState('send');
+  const [activeTab, setActiveTab] = useState('browse');
   const [giftHistory, setGiftHistory] = useState<GiftHistoryItem[]>([]);
   const [loadingHistory, setLoadingHistory] = useState(false);
   const [showConfirmation, setShowConfirmation] = useState(false);
@@ -57,21 +63,31 @@ export function GiftsPanel({
     setIsSendingGift,
     setError,
     clearGifts,
+    // Template state
+    selectedTemplate,
+    templateCategory,
+    templateSort,
+    selectTemplate,
+    setTemplateCategory,
+    setTemplateSort,
+    clearTemplates,
   } = useGiftsStore();
 
-  // Fetch token balance on mount
+  const isAuthInitialized = useAuthStore((state) => state.isInitialized);
+
+  // Fetch token balance on mount (only after auth is initialized)
   useEffect(() => {
-    if (isOpen) {
+    if (isOpen && isAuthInitialized) {
       fetchTokenBalance();
     }
-  }, [isOpen]);
+  }, [isOpen, isAuthInitialized]);
 
-  // Fetch history when history tab is active
+  // Fetch history when history tab is active (only after auth is initialized)
   useEffect(() => {
-    if (isOpen && activeTab === 'history') {
+    if (isOpen && activeTab === 'history' && isAuthInitialized) {
       fetchGiftHistory();
     }
-  }, [isOpen, activeTab, companionId]);
+  }, [isOpen, activeTab, companionId, isAuthInitialized]);
 
   // Clean up on close
   useEffect(() => {
@@ -82,10 +98,11 @@ export function GiftsPanel({
         pollTimeoutRef.current = null;
       }
       selectGift(null);
+      selectTemplate(null);
       setError(null);
       setIsLoadingGifts(false);
     }
-  }, [isOpen, selectGift, setError, setIsLoadingGifts]);
+  }, [isOpen, selectGift, selectTemplate, setError, setIsLoadingGifts]);
 
   const fetchTokenBalance = useCallback(async () => {
     try {
@@ -241,7 +258,57 @@ export function GiftsPanel({
     }
   }, [selectedGift, setIsSendingGift, setError, setTokenBalance, selectGift, onGiftSent]);
 
+  // Handler for selecting a template
+  const handleSelectTemplate = useCallback((template: GiftTemplate) => {
+    selectTemplate(template);
+  }, [selectTemplate]);
+
+  // Handler for sending from a template
+  const handleSendFromTemplate = useCallback(async () => {
+    if (!selectedTemplate) return;
+
+    setIsSendingGift(true);
+    setError(null);
+
+    try {
+      const result = await sendGiftFromTemplate(selectedTemplate.id, companionId);
+      setTokenBalance(result.newBalance);
+
+      // Trigger animation
+      const animations: GiftAnimationType[] = ['hearts', 'sparkles', 'confetti', 'glow'];
+      setAnimationType(animations[Math.floor(Math.random() * animations.length)]);
+      setIsAnimating(true);
+
+      // Notify parent
+      if (onGiftSent) {
+        onGiftSent({
+          id: result.gift.id,
+          name: result.gift.name,
+          description: selectedTemplate.description ?? '',
+          imageUrl: selectedTemplate.imageUrl,
+          tokenCost: selectedTemplate.tokenCost,
+          emotionalMeaning: selectedTemplate.emotionalMeaning ?? '',
+          status: result.gift.status,
+          givenAt: result.gift.givenAt,
+          createdAt: '',
+        });
+      }
+
+      // Clear selection after animation
+      setTimeout(() => {
+        selectTemplate(null);
+        setIsAnimating(false);
+        setAnimationType(null);
+      }, 2500);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to send gift');
+    } finally {
+      setIsSendingGift(false);
+    }
+  }, [selectedTemplate, companionId, setIsSendingGift, setError, setTokenBalance, selectTemplate, onGiftSent]);
+
   const canAffordGift = selectedGift ? tokenBalance >= selectedGift.tokenCost : false;
+  const canAffordTemplate = selectedTemplate ? tokenBalance >= selectedTemplate.tokenCost : false;
 
   // Validate companionId is a valid UUID
   const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -295,10 +362,14 @@ export function GiftsPanel({
 
       {/* Content */}
       <Tabs value={activeTab} onValueChange={setActiveTab} className="p-3">
-        <TabsList className="grid w-full grid-cols-2 h-9">
-          <TabsTrigger value="send" className="text-xs gap-1">
+        <TabsList className="grid w-full grid-cols-3 h-9">
+          <TabsTrigger value="browse" className="text-xs gap-1">
+            <Grid className="h-3 w-3" />
+            Browse
+          </TabsTrigger>
+          <TabsTrigger value="custom" className="text-xs gap-1">
             <Sparkles className="h-3 w-3" />
-            Send Gift
+            Custom
           </TabsTrigger>
           <TabsTrigger value="history" className="text-xs gap-1">
             <History className="h-3 w-3" />
@@ -306,8 +377,65 @@ export function GiftsPanel({
           </TabsTrigger>
         </TabsList>
 
-        {/* Send Gift Tab */}
-        <TabsContent value="send">
+        {/* Browse Templates Tab */}
+        <TabsContent value="browse">
+          <div className="space-y-3">
+            {/* Filters */}
+            <div className="flex items-center justify-between gap-2">
+              <GiftCategoryFilter
+                selected={templateCategory}
+                onChange={setTemplateCategory}
+              />
+            </div>
+            <div className="flex justify-end">
+              <GiftSortDropdown value={templateSort} onChange={setTemplateSort} />
+            </div>
+
+            {/* Error message */}
+            {error && (
+              <div className="p-3 text-sm text-red-500 bg-red-50 dark:bg-red-900/20 rounded">
+                {error}
+              </div>
+            )}
+
+            <ScrollArea className="h-[280px]">
+              <GiftTemplateGrid
+                onSelect={handleSelectTemplate}
+                selectedId={selectedTemplate?.id}
+              />
+            </ScrollArea>
+
+            {/* Selected template action */}
+            {selectedTemplate && (
+              <div className="pt-2 border-t space-y-2">
+                <div className="flex items-center justify-between text-sm">
+                  <span className="font-medium truncate">{selectedTemplate.name}</span>
+                  <span className="text-muted-foreground">{selectedTemplate.tokenCost} tokens</span>
+                </div>
+                {!canAffordTemplate && (
+                  <div className="text-xs text-amber-600 dark:text-amber-400">
+                    You need {selectedTemplate.tokenCost - tokenBalance} more tokens
+                  </div>
+                )}
+                <Button
+                  className="w-full gap-2"
+                  onClick={handleSendFromTemplate}
+                  disabled={!canAffordTemplate || isSendingGift}
+                >
+                  {isSendingGift ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <Gift className="h-4 w-4" />
+                  )}
+                  Send Gift
+                </Button>
+              </div>
+            )}
+          </div>
+        </TabsContent>
+
+        {/* Custom Gift Tab */}
+        <TabsContent value="custom">
           <ScrollArea className="h-[350px]">
             <div className="space-y-4 pr-2">
               {/* Error message */}
@@ -321,18 +449,17 @@ export function GiftsPanel({
               {!selectedGift && !isLoadingGifts && (
                 <div className="flex flex-col items-center justify-center py-8 text-center">
                   <div className="w-16 h-16 rounded-full bg-campfire-100 dark:bg-campfire-900/30 flex items-center justify-center mb-4">
-                    <Gift className="h-8 w-8 text-campfire-500" />
+                    <Sparkles className="h-8 w-8 text-campfire-500" />
                   </div>
                   <h3 className="font-semibold text-foreground mb-2">
-                    Create a Special Gift
+                    Create a Unique Gift
                   </h3>
                   <p className="text-sm text-muted-foreground mb-4 max-w-[280px]">
-                    Generate a unique gift for your companion. Each gift has a
-                    special emotional meaning.
+                    Generate a one-of-a-kind gift tailored to your companion.
                   </p>
                   <Button onClick={handleGenerateGift} className="gap-2">
                     <Sparkles className="h-4 w-4" />
-                    Generate Gift
+                    Generate Custom Gift
                   </Button>
                 </div>
               )}
@@ -342,10 +469,10 @@ export function GiftsPanel({
                 <div className="flex flex-col items-center justify-center py-8 text-center">
                   <Loader2 className="h-8 w-8 animate-spin text-campfire-500 mb-4" />
                   <p className="text-sm font-medium text-foreground mb-1">
-                    Gift is being generated
+                    Creating your gift
                   </p>
                   <p className="text-xs text-muted-foreground">
-                    Creating something special just for your companion...
+                    Generating something special just for your companion...
                   </p>
                 </div>
               )}

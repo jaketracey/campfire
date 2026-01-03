@@ -9,6 +9,7 @@ import { getDemoCompanion, createDemoSession, type DemoCompanion } from '@/lib/a
 import { getDeviceFingerprint } from '@/lib/fingerprint';
 import { useAuth } from '@/hooks/use-auth';
 import { useToast } from '@/hooks/use-toast';
+import { ApiError } from '@/lib/api/client';
 
 export default function DemoChatPage() {
   const router = useRouter();
@@ -58,7 +59,11 @@ export default function DemoChatPage() {
         setIsLoading(false);
       } catch (err) {
         console.error('[DemoChat] Init error:', err);
-        setError('Failed to start demo. Please try again.');
+        if (err instanceof ApiError) {
+          setError(err.message);
+        } else {
+          setError('Failed to start chat. Please try again.');
+        }
         setIsLoading(false);
       }
     }

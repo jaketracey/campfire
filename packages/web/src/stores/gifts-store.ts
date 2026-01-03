@@ -1,5 +1,7 @@
 import { create } from 'zustand';
-import type { Gift } from '@/lib/api/gifts';
+import type { Gift, GiftTemplate, GiftTemplateCategory } from '@/lib/api/gifts';
+
+export type TemplateSortBy = 'popular' | 'trending' | 'recent';
 
 export interface GiftsState {
   // State
@@ -9,6 +11,15 @@ export interface GiftsState {
   isLoadingGifts: boolean;
   isSendingGift: boolean;
   error: string | null;
+
+  // Template state
+  templates: GiftTemplate[];
+  selectedTemplate: GiftTemplate | null;
+  isLoadingTemplates: boolean;
+  templateCategory: GiftTemplateCategory | null;
+  templateSort: TemplateSortBy;
+  templatesHasMore: boolean;
+  templatesTotal: number;
 
   // Actions
   setTokenBalance: (balance: number) => void;
@@ -20,6 +31,15 @@ export interface GiftsState {
   setIsSendingGift: (sending: boolean) => void;
   setError: (error: string | null) => void;
   clearGifts: () => void;
+
+  // Template actions
+  setTemplates: (templates: GiftTemplate[], hasMore: boolean, total: number) => void;
+  appendTemplates: (templates: GiftTemplate[], hasMore: boolean, total: number) => void;
+  selectTemplate: (template: GiftTemplate | null) => void;
+  setIsLoadingTemplates: (loading: boolean) => void;
+  setTemplateCategory: (category: GiftTemplateCategory | null) => void;
+  setTemplateSort: (sort: TemplateSortBy) => void;
+  clearTemplates: () => void;
 }
 
 export const useGiftsStore = create<GiftsState>()((set) => ({
@@ -30,6 +50,15 @@ export const useGiftsStore = create<GiftsState>()((set) => ({
   isLoadingGifts: false,
   isSendingGift: false,
   error: null,
+
+  // Template initial state
+  templates: [],
+  selectedTemplate: null,
+  isLoadingTemplates: false,
+  templateCategory: null,
+  templateSort: 'popular',
+  templatesHasMore: false,
+  templatesTotal: 0,
 
   // Actions
   setTokenBalance: (balance) => {
@@ -79,6 +108,46 @@ export const useGiftsStore = create<GiftsState>()((set) => ({
       availableGifts: [],
       selectedGift: null,
       error: null,
+    });
+  },
+
+  // Template actions
+  setTemplates: (templates, hasMore, total) => {
+    set({ templates, templatesHasMore: hasMore, templatesTotal: total });
+  },
+
+  appendTemplates: (templates, hasMore, total) => {
+    set((state) => ({
+      templates: [...state.templates, ...templates],
+      templatesHasMore: hasMore,
+      templatesTotal: total,
+    }));
+  },
+
+  selectTemplate: (template) => {
+    set({ selectedTemplate: template });
+  },
+
+  setIsLoadingTemplates: (loading) => {
+    set({ isLoadingTemplates: loading });
+  },
+
+  setTemplateCategory: (category) => {
+    set({ templateCategory: category, templates: [], selectedTemplate: null });
+  },
+
+  setTemplateSort: (sort) => {
+    set({ templateSort: sort, templates: [], selectedTemplate: null });
+  },
+
+  clearTemplates: () => {
+    set({
+      templates: [],
+      selectedTemplate: null,
+      templateCategory: null,
+      templateSort: 'popular',
+      templatesHasMore: false,
+      templatesTotal: 0,
     });
   },
 }));

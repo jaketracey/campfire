@@ -4,7 +4,7 @@ import { useState, useCallback } from 'react';
 import { useOnboardingStore } from '@/stores/onboarding-store';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardTitle } from '@/components/ui/card';
-import { ArrowRight, Sparkles, Shuffle } from 'lucide-react';
+import { ArrowRight, Sparkles, Wand2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { motion, AnimatePresence } from 'framer-motion';
 
@@ -155,9 +155,9 @@ export function Step4Archetype() {
 
   return (
     <div className="space-y-8">
-      <div className="text-center space-y-3">
+      <div className="text-left md:text-center space-y-3">
         <h2 className="text-4xl font-bold font-display tracking-tight text-white">
-          Choose Your Archetype
+          Choose your archetype
         </h2>
         <p className="text-gray-400 max-w-md mx-auto">
           Select a primary personality archetype for your companion, and optionally a secondary one
@@ -171,18 +171,22 @@ export function Step4Archetype() {
           size="lg"
           disabled={isSurprising}
           onClick={handleSurpriseMe}
-          className="group h-20 px-16 rounded-full bg-white/[0.03] border-2 border-dashed border-white/20 hover:border-vibes-cyan/50 hover:bg-vibes-cyan/10 hover:shadow-[0_0_40px_rgba(6,182,212,0.2)] transition-all font-bold text-xl relative overflow-hidden"
+          className="group w-full md:w-auto h-16 px-12 rounded-2xl bg-gradient-to-r from-vibes-hot via-vibes-neon to-vibes-cyan text-white shadow-[0_0_30px_rgba(168,85,247,0.3)] hover:shadow-[0_0_50px_rgba(168,85,247,0.5)] transition-all font-bold text-lg relative overflow-hidden"
         >
-          {isSurprising && (
-            <motion.div
-              className="absolute inset-0 bg-gradient-to-r from-transparent via-white/20 to-transparent"
-              initial={{ x: '-100%' }}
-              animate={{ x: '100%' }}
-              transition={{ repeat: Infinity, duration: 0.8, ease: 'linear' }}
-            />
-          )}
-          <Shuffle className={cn("mr-3 h-7 w-7", isSurprising && "animate-spin")} />
-          {isSurprising ? 'Choosing...' : 'Surprise Me'}
+          <motion.div
+            className="absolute inset-0 bg-gradient-to-r from-transparent via-white/20 to-transparent"
+            initial={{ x: '-100%' }}
+            animate={isSurprising ? { x: '100%' } : { x: '-100%' }}
+            transition={isSurprising ? { repeat: Infinity, duration: 1, ease: 'linear' } : {}}
+          />
+          <span className="relative flex items-center">
+            {isSurprising ? (
+              <Sparkles className="mr-2 h-6 w-6 animate-spin" />
+            ) : (
+              <Wand2 className="mr-2 h-6 w-6 group-hover:rotate-12 transition-transform" />
+            )}
+            {isSurprising ? 'Choosing...' : 'Surprise Me'}
+          </span>
         </Button>
       </div>
 

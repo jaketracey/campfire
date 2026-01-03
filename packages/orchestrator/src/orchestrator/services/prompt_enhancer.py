@@ -7,6 +7,7 @@ Uses local Ollama with abliterated models for uncensored prompt enhancement.
 
 from __future__ import annotations
 
+import re
 import time
 
 import httpx
@@ -105,6 +106,25 @@ Enhanced prompt:"""
 
             # Extract the response content
             enhanced = result.get("message", {}).get("content", "").strip()
+
+            # Strip thinking/reasoning tags from models that output chain-of-thought
+            # (e.g., Qwen, DeepSeek with reasoning enabled)
+            # Common patterns: <think>, <thinking>, <reasoning>, <thought>
+            thinking_patterns = [
+                r'<think>.*?</think>',
+                r'<thinking>.*?</thinking>',
+                r'<reasoning>.*?</reasoning>',
+                r'<thought>.*?</thought>',
+            ]
+            for pattern in thinking_patterns:
+                enhanced = re.sub(pattern, '', enhanced, flags=re.DOTALL).strip()
+
+            # Handle unclosed thinking tags - strip from tag to end
+            unclosed_tags = ['<think>', '<thinking>', '<reasoning>', '<thought>']
+            for tag in unclosed_tags:
+                if tag in enhanced:
+                    # Remove everything from the unclosed tag onwards
+                    enhanced = enhanced[:enhanced.index(tag)].strip()
 
             # Clean up common issues - remove quotes, explanatory text
             if enhanced.startswith('"') and enhanced.endswith('"'):

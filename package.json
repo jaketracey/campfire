@@ -19,7 +19,14 @@
     "db:seed": "pnpm --filter gateway db:seed",
     "docker:build": "docker-compose -f infra/docker/docker-compose.yml build",
     "docker:up": "docker-compose -f infra/docker/docker-compose.yml up -d",
-    "docker:down": "docker-compose -f infra/docker/docker-compose.yml down"
+    "docker:down": "docker-compose -f infra/docker/docker-compose.yml down",
+    "mobile": "pnpm --filter @campfire/mobile start",
+    "mobile:ios": "pnpm --filter @campfire/mobile ios",
+    "mobile:android": "pnpm --filter @campfire/mobile android",
+    "mobile:build:dev": "pnpm --filter @campfire/mobile build:dev",
+    "mobile:build:preview": "pnpm --filter @campfire/mobile build:preview",
+    "mobile:build:ios": "pnpm --filter @campfire/mobile build:ios",
+    "mobile:build:android": "pnpm --filter @campfire/mobile build:android"
   },
   "devDependencies": {
     "turbo": "^2.3.0",

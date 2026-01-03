@@ -140,7 +140,7 @@ export class AnalyticsRepository {
 
     const result = await db`
       SELECT * FROM analytics_daily_aggregates
-      WHERE date >= CURRENT_DATE - ${days}
+      WHERE date >= CURRENT_DATE - INTERVAL '1 day' * ${days}
       ORDER BY date DESC
     `;
 
@@ -188,7 +188,7 @@ export class AnalyticsRepository {
         COUNT(*)::integer as total_sessions,
         COUNT(DISTINCT user_id) as unique_users
       FROM sessions
-      WHERE started_at >= CURRENT_DATE - ${days}
+      WHERE started_at >= CURRENT_TIMESTAMP - INTERVAL '1 day' * ${days}
     `;
 
     const row = result[0];
@@ -298,7 +298,7 @@ export class AnalyticsRepository {
         AVG(s.total_duration_ms)::integer as avg_duration
       FROM companions c
       JOIN sessions s ON s.companion_id = c.id
-      WHERE s.started_at >= CURRENT_DATE - ${days}
+      WHERE s.started_at >= CURRENT_TIMESTAMP - INTERVAL '1 day' * ${days}
       GROUP BY c.id, c.name
       ORDER BY session_count DESC
       LIMIT ${limit}
@@ -331,7 +331,7 @@ export class AnalyticsRepository {
       WITH user_sessions AS (
         SELECT user_id, COUNT(*) as session_count
         FROM sessions
-        WHERE started_at >= CURRENT_DATE - ${days}
+        WHERE started_at >= CURRENT_TIMESTAMP - INTERVAL '1 day' * ${days}
         GROUP BY user_id
       ),
       bucketed AS (
@@ -388,7 +388,7 @@ export class AnalyticsRepository {
 
     const result = await db`
       SELECT * FROM revenue_daily_aggregates
-      WHERE date >= CURRENT_DATE - ${days}
+      WHERE date >= CURRENT_DATE - INTERVAL '1 day' * ${days}
       ORDER BY date DESC
     `;
 
@@ -479,7 +479,7 @@ export class AnalyticsRepository {
         COUNT(*) FILTER (WHERE transaction_type = 'purchase') as purchase_count,
         COALESCE(SUM((metadata->>'price_cents')::integer) FILTER (WHERE transaction_type = 'purchase'), 0) as revenue
       FROM token_transactions
-      WHERE created_at >= CURRENT_DATE - ${days}
+      WHERE created_at >= CURRENT_TIMESTAMP - INTERVAL '1 day' * ${days}
     `;
 
     const row = result[0];
@@ -516,9 +516,7 @@ export class AnalyticsRepository {
       SELECT
         COUNT(*) as total_users,
         COUNT(*) FILTER (WHERE login_count >= 1) as logged_in,
-        (SELECT COUNT(DISTINCT user_id) FROM sessions) as has_session,
-        (SELECT COUNT(DISTINCT user_id) FROM sessions
-         GROUP BY user_id HAVING COUNT(*) >= 3) as activated_count
+        (SELECT COUNT(DISTINCT user_id) FROM sessions) as has_session
       FROM users
       WHERE status = 'active'
         AND id != '00000000-0000-0000-0000-000000000000'

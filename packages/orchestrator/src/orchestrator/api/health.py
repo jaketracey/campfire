@@ -165,6 +165,57 @@ async def get_provider_health() -> ProvidersHealthResponse:
     )
 
 
+@router.get("/health/routing")
+async def get_routing_health() -> dict[str, Any]:
+    """Get routing configuration status.
+
+    Returns information about database-driven routing configuration
+    including cache status, loaded models, and configured use cases.
+    """
+    # Import here to avoid circular imports
+    from orchestrator.db.pool import DatabasePool
+    from orchestrator.routing.model_registry import MODEL_REGISTRY
+
+    settings = get_settings()
+
+    response: dict[str, Any] = {
+        "content_routing_enabled": settings.content_routing_enabled,
+        "database_connected": DatabasePool.is_initialized(),
+        "models_in_registry": len(MODEL_REGISTRY),
+        "timestamp": time.time(),
+    }
+
+    # Try to get routing config service status
+    # Note: We access this via a module-level import to avoid circular deps
+    try:
+        # Import app_state from main
+        from orchestrator.main import app_state
+
+        if app_state.routing_config_service is not None:
+            cache_status = app_state.routing_config_service.get_cache_status()
+            response["routing_config_service"] = {
+                "initialized": cache_status.get("initialized", False),
+                "cache_loaded": cache_status.get("cache_loaded", False),
+                "cache_age_seconds": cache_status.get("cache_age_seconds"),
+                "cache_expired": cache_status.get("cache_expired"),
+                "models_from_db": cache_status.get("models_count", 0),
+                "use_cases_configured": cache_status.get("use_cases", []),
+                "providers_enabled": cache_status.get("providers_enabled", {}),
+            }
+            response["status"] = "healthy"
+        else:
+            response["routing_config_service"] = None
+            response["status"] = "fallback"
+            response["message"] = "Using environment-based routing (DB not available)"
+    except Exception as e:
+        logger.warning("failed_to_get_routing_status", error=str(e))
+        response["routing_config_service"] = None
+        response["status"] = "unknown"
+        response["error"] = str(e)
+
+    return response
+
+
 @router.get("/health/detailed")
 async def get_detailed_health() -> dict[str, Any]:
     """Get detailed health information including system metrics."""
@@ -173,6 +224,9 @@ async def get_detailed_health() -> dict[str, Any]:
 
     # Get provider health
     providers_response = await get_provider_health()
+
+    # Get routing health
+    routing_response = await get_routing_health()
 
     # Count healthy/configured providers
     configured_count = sum(
@@ -197,6 +251,7 @@ async def get_detailed_health() -> dict[str, Any]:
                 for name, status in providers_response.providers.items()
             },
         },
+        "routing": routing_response,
         "system": {
             "python_version": platform.python_version(),
             "platform": platform.system(),

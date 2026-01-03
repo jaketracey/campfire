@@ -9,8 +9,9 @@
 
 import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Flame, ShieldCheck, AlertTriangle, Calendar } from 'lucide-react';
+import { ShieldCheck, AlertTriangle, Calendar } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { AnimatedFlame } from '@/components/ui/animated-flame';
 import { Checkbox } from '@/components/ui/checkbox';
 import { cn } from '@/lib/utils';
 
@@ -175,9 +176,8 @@ export function AgeVerificationModal({ open, onVerified, onDecline }: AgeVerific
                     </div>
                   </motion.div>
 
-                  <div className="flex items-center gap-2 mb-2">
-                    <Flame className="w-6 h-6 text-campfire-500" />
-                    <span className="text-xl font-bold">Campfire</span>
+                  <div className="mb-2">
+                    <AnimatedFlame size="sm" />
                   </div>
 
                   <h1 className="text-2xl font-bold text-center mb-2">

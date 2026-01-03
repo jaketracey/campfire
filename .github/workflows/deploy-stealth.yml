@@ -1,0 +1,158 @@
+# =============================================================================
+# GitHub Actions: Deploy to Stealth (Single EC2 Instance)
+# =============================================================================
+# Triggers on push to main branch or manual dispatch
+# Builds Docker images locally on EC2 and restarts services
+# =============================================================================
+
+name: Deploy to Stealth
+
+on:
+  push:
+    branches:
+      - main
+    paths-ignore:
+      - '**.md'
+      - 'docs/**'
+      - '.vscode/**'
+  workflow_dispatch:
+    inputs:
+      force_rebuild:
+        description: 'Force rebuild all containers (no cache)'
+        required: false
+        default: 'false'
+        type: boolean
+
+env:
+  DEPLOY_HOST: ${{ secrets.STEALTH_HOST }}
+  DEPLOY_USER: ec2-user
+  APP_DIR: /opt/campfire
+  COMPOSE_FILE: infra/docker/docker-compose.stealth.yml
+
+jobs:
+  deploy:
+    name: Deploy to Stealth
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup SSH key
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.STEALTH_SSH_KEY }}" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          ssh-keyscan -H ${{ secrets.STEALTH_HOST }} >> ~/.ssh/known_hosts 2>/dev/null || true
+
+      - name: Test SSH connection
+        run: |
+          ssh -i ~/.ssh/deploy_key -o ConnectTimeout=10 -o StrictHostKeyChecking=accept-new \
+            ${{ env.DEPLOY_USER }}@${{ env.DEPLOY_HOST }} \
+            "echo 'SSH connection successful'"
+
+      - name: Deploy to server
+        run: |
+          ssh -i ~/.ssh/deploy_key ${{ env.DEPLOY_USER }}@${{ env.DEPLOY_HOST }} << 'ENDSSH'
+          set -e
+          cd ${{ env.APP_DIR }}
+
+          echo "=== Pulling latest code ==="
+          git fetch origin main
+          git reset --hard origin/main
+
+          echo "=== Checking SSH tunnel ==="
+          if curl -s --max-time 5 http://localhost:11434/api/version > /dev/null 2>&1; then
+            echo "Ollama tunnel is active"
+          else
+            echo "WARNING: Ollama tunnel may be down"
+            sudo systemctl restart ollama-tunnel.service || true
+            sleep 5
+          fi
+
+          echo "=== Loading environment ==="
+          set -a
+          source .env.stealth
+          set +a
+
+          echo "=== Building containers ==="
+          BUILD_FLAGS=""
+          if [ "${{ inputs.force_rebuild }}" = "true" ]; then
+            BUILD_FLAGS="--no-cache"
+          fi
+          docker compose -f ${{ env.COMPOSE_FILE }} build $BUILD_FLAGS
+
+          echo "=== Stopping old containers ==="
+          docker compose -f ${{ env.COMPOSE_FILE }} down --remove-orphans || true
+
+          echo "=== Starting new containers ==="
+          docker compose -f ${{ env.COMPOSE_FILE }} up -d
+
+          echo "=== Waiting for services ==="
+          sleep 10
+
+          echo "=== Running migrations ==="
+          docker compose -f ${{ env.COMPOSE_FILE }} exec -T gateway npm run db:migrate || echo "Migrations may have already run"
+
+          echo "=== Cleaning up old images ==="
+          docker image prune -f
+
+          echo "=== Deployment complete ==="
+          docker compose -f ${{ env.COMPOSE_FILE }} ps
+          ENDSSH
+
+      - name: Health check
+        run: |
+          echo "Waiting for services to stabilize..."
+          sleep 15
+
+          echo "Checking Gateway health..."
+          ssh -i ~/.ssh/deploy_key ${{ env.DEPLOY_USER }}@${{ env.DEPLOY_HOST }} \
+            "curl -sf http://localhost:4000/health" || echo "Gateway health check failed"
+
+          echo "Checking Web app health..."
+          ssh -i ~/.ssh/deploy_key ${{ env.DEPLOY_USER }}@${{ env.DEPLOY_HOST }} \
+            "curl -sf http://localhost:3000/api/health" || echo "Web health check failed"
+
+          echo "Checking external access..."
+          curl -sf "https://${{ secrets.STEALTH_DOMAIN }}/api/health" || echo "External health check failed (DNS may not be configured yet)"
+
+      - name: Notify on failure
+        if: failure()
+        run: |
+          echo "Deployment failed! Check the logs above for details."
+          # Add notification (Slack, Discord, email) here if desired
+
+  # Optional: Rollback job
+  rollback:
+    name: Rollback Deployment
+    runs-on: ubuntu-latest
+    if: ${{ failure() && github.event_name == 'push' }}
+    needs: deploy
+
+    steps:
+      - name: Setup SSH
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.STEALTH_SSH_KEY }}" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+
+      - name: Rollback
+        run: |
+          echo "Attempting rollback..."
+          ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=accept-new \
+            ${{ env.DEPLOY_USER }}@${{ secrets.STEALTH_HOST }} << 'ENDSSH'
+          cd ${{ env.APP_DIR }}
+
+          echo "=== Rolling back to previous commit ==="
+          git reset --hard HEAD~1
+
+          echo "=== Restarting containers ==="
+          set -a
+          source .env.stealth
+          set +a
+          docker compose -f ${{ env.COMPOSE_FILE }} up -d --build
+
+          echo "=== Rollback complete ==="
+          ENDSSH

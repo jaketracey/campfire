@@ -2,6 +2,7 @@
 
 import { useState, useRef, useCallback, useEffect } from 'react';
 import type { CampfireWebSocket } from '@/lib/ws';
+import { isNativeApp, getNativeBridge, onNativeRecordingComplete } from '@/lib/native-bridge';
 
 interface UseVoiceRecordingOptions {
   sampleRate?: number;
@@ -36,6 +37,7 @@ export function useVoiceRecording(
   const workletNodeRef = useRef<AudioWorkletNode | null>(null);
   const audioBufferRef = useRef<Float32Array[]>([]);
   const chunkIntervalRef = useRef<number | null>(null);
+  const isNativeRecordingRef = useRef(false);
 
   /**
    * Convert Float32Array audio samples to 16-bit PCM base64
@@ -125,6 +127,26 @@ export function useVoiceRecording(
     if (isRecording) return;
     setError(null);
 
+    // Use native recording when running in mobile app
+    if (isNativeApp()) {
+      const bridge = getNativeBridge();
+      if (bridge) {
+        try {
+          await bridge.startRecording();
+          isNativeRecordingRef.current = true;
+          setIsRecording(true);
+          setIsPermissionGranted(true);
+          wsRef.current?.startVoice();
+          return;
+        } catch (err) {
+          const message = err instanceof Error ? err.message : 'Failed to start native recording';
+          setError(message);
+          console.error('[VoiceRecording] Native recording error:', err);
+          return;
+        }
+      }
+    }
+
     try {
       // Get microphone stream
       const stream = await navigator.mediaDevices.getUserMedia({
@@ -194,8 +216,28 @@ export function useVoiceRecording(
   /**
    * Stop recording audio
    */
-  const stopRecording = useCallback(() => {
+  const stopRecording = useCallback(async () => {
     if (!isRecording) return;
+
+    // Handle native recording stop
+    if (isNativeRecordingRef.current) {
+      const bridge = getNativeBridge();
+      if (bridge) {
+        try {
+          const result = await bridge.stopRecording();
+          if (result.audioData) {
+            // Send the recorded audio as a single chunk
+            wsRef.current?.sendVoiceChunk(result.audioData);
+          }
+        } catch (err) {
+          console.error('[VoiceRecording] Native stop error:', err);
+        }
+      }
+      isNativeRecordingRef.current = false;
+      wsRef.current?.endVoice();
+      setIsRecording(false);
+      return;
+    }
 
     // Stop chunk interval
     if (chunkIntervalRef.current) {

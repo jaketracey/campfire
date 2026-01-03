@@ -30,6 +30,20 @@
     },
     "typecheck": {
       "dependsOn": ["^build"]
+    },
+    "start": {
+      "cache": false,
+      "persistent": true
+    },
+    "ios": {
+      "cache": false,
+      "persistent": true,
+      "dependsOn": ["@campfire/shared#build"]
+    },
+    "android": {
+      "cache": false,
+      "persistent": true,
+      "dependsOn": ["@campfire/shared#build"]
     }
   }
 }

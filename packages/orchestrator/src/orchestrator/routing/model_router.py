@@ -1,10 +1,13 @@
 """Dynamic model router for intelligent request routing.
 
 Routes requests to appropriate models based on content intent,
-companion safety settings, and provider availability.
+companion safety settings, and provider availability. Supports
+database-driven routing configuration with use-case-based model selection.
 """
 
 from dataclasses import dataclass
+from typing import TYPE_CHECKING, Optional
+from uuid import UUID
 
 import structlog
 
@@ -16,6 +19,9 @@ from orchestrator.routing.model_registry import (
     ModelSpec,
     ModelTier,
 )
+
+if TYPE_CHECKING:
+    from orchestrator.services.routing_config_service import RoutingConfigService
 
 logger = structlog.get_logger()
 
@@ -59,13 +65,18 @@ class RoutingDecision:
 
 
 class ModelRouter:
-    """Routes requests to appropriate models based on content and settings."""
+    """Routes requests to appropriate models based on content and settings.
+
+    Supports both intent-based routing (analyzing user message content) and
+    use-case-based routing (using database-configured rules).
+    """
 
     def __init__(
         self,
         intent_detector: IntentDetector,
         prefer_local: bool = True,
         prefer_fast: bool = False,
+        routing_config_service: Optional["RoutingConfigService"] = None,
     ):
         """Initialize the model router.
 
@@ -73,16 +84,19 @@ class ModelRouter:
             intent_detector: Intent detector instance for content analysis.
             prefer_local: Whether to prefer local models when suitable.
             prefer_fast: Whether to prefer faster models over quality.
+            routing_config_service: Optional service for database-driven routing.
         """
         self._intent_detector = intent_detector
         self._prefer_local = prefer_local
         self._prefer_fast = prefer_fast
+        self._routing_config_service = routing_config_service
 
         logger.info(
             "model_router_initialized",
             prefer_local=prefer_local,
             prefer_fast=prefer_fast,
             available_models=len(MODEL_REGISTRY),
+            db_routing_enabled=routing_config_service is not None,
         )
 
     async def route(
@@ -200,6 +214,97 @@ class ModelRouter:
             fallback_used=fallback_used,
             content_blocked=False,
         )
+
+    async def route_by_use_case(
+        self,
+        use_case: str,
+        companion_id: Optional[UUID] = None,
+        require_abliterated: bool = False,
+        require_sfw: bool = False,
+    ) -> ModelSpec | None:
+        """Route by use case using database configuration.
+
+        Uses the routing_config_service to get database-configured routing
+        rules for the specified use case. Falls back to None if no service
+        is configured or no suitable model is found.
+
+        Args:
+            use_case: The use case type (e.g., 'chat_simple', 'chat_complex').
+            companion_id: Optional companion ID for per-companion overrides.
+            require_abliterated: If True, only return abliterated models.
+            require_sfw: If True, only return SFW-capable models.
+
+        Returns:
+            ModelSpec for the best matching model, or None if not found.
+        """
+        if self._routing_config_service is None:
+            logger.debug(
+                "route_by_use_case_skipped",
+                reason="no_routing_config_service",
+                use_case=use_case,
+            )
+            return None
+
+        try:
+            entries = await self._routing_config_service.get_routing_for_use_case(
+                use_case, companion_id
+            )
+
+            for entry in entries:
+                model = MODEL_REGISTRY.get(entry.model_id)
+                if model is None:
+                    logger.debug(
+                        "model_not_in_registry",
+                        model_id=entry.model_id,
+                        use_case=use_case,
+                    )
+                    continue
+
+                # Check provider availability
+                provider_health = PROVIDER_HEALTH.get(model.provider)
+                if provider_health is None or not provider_health.is_available:
+                    logger.debug(
+                        "provider_unavailable",
+                        provider=model.provider,
+                        model_id=model.model_id,
+                    )
+                    continue
+
+                # Check abliterated requirement
+                if require_abliterated and not model.is_abliterated:
+                    continue
+
+                # Check SFW requirement (skip models that are NSFW-only)
+                if require_sfw and model.is_abliterated:
+                    continue
+
+                logger.info(
+                    "model_selected_by_use_case",
+                    model_id=model.model_id,
+                    provider=model.provider,
+                    use_case=use_case,
+                    tier=entry.tier,
+                    weight=entry.weight,
+                    companion_id=str(companion_id) if companion_id else None,
+                )
+                return model
+
+            logger.debug(
+                "no_suitable_model_for_use_case",
+                use_case=use_case,
+                entries_checked=len(entries),
+                require_abliterated=require_abliterated,
+                require_sfw=require_sfw,
+            )
+            return None
+
+        except Exception as e:
+            logger.error(
+                "route_by_use_case_failed",
+                use_case=use_case,
+                error=str(e),
+            )
+            return None
 
     def _capability_level(self, capability: ContentCapability) -> int:
         """Get numeric level for capability comparison.

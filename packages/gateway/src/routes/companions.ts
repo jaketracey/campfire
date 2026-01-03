@@ -972,6 +972,28 @@ export async function companionsRoutes(app: FastifyInstance): Promise<void> {
         name: string;
         pronouns: string;
         backstory: string;
+        archetype: string;
+        secondary_archetype: string | null;
+        personality: {
+          warmth: number;
+          energy: number;
+          playfulness: number;
+          formality: number;
+          assertiveness: number;
+          curiosity: number;
+          empathy: number;
+          spontaneity: number;
+          optimism: number;
+          directness: number;
+        };
+        appearance: {
+          ethnicity: string;
+          body_type: string;
+          hair_color: string;
+          breast_size: number;
+        };
+        visual_style: string;
+        voice_gender: string;
         latency_ms: number;
       };
 

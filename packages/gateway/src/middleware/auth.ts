@@ -5,19 +5,18 @@
 
 import type { FastifyRequest, FastifyReply } from 'fastify';
 import * as jose from 'jose';
+import { timingSafeEqual } from 'crypto';
 import { logger } from '../observability/logger.js';
 
 // JWT configuration
 const NODE_ENV = process.env['NODE_ENV'] ?? 'development';
 
-// SECURITY: JWT_SECRET is required in production - no defaults allowed
+// SECURITY: JWT_SECRET is required in ALL environments - no defaults allowed
 const jwtSecretValue = process.env['JWT_SECRET'];
-if (!jwtSecretValue && NODE_ENV === 'production') {
-  throw new Error('FATAL: JWT_SECRET environment variable is required in production');
+if (!jwtSecretValue) {
+  throw new Error('FATAL: JWT_SECRET environment variable is required. Set it in your .env file.');
 }
-const JWT_SECRET = new TextEncoder().encode(
-  jwtSecretValue ?? 'dev-only-secret-not-for-production'
-);
+const JWT_SECRET = new TextEncoder().encode(jwtSecretValue);
 const JWT_ISSUER = process.env['JWT_ISSUER'] ?? 'campfire';
 const JWT_AUDIENCE = process.env['JWT_AUDIENCE'] ?? 'campfire-api';
 const JWT_EXPIRY = process.env['JWT_EXPIRY'] ?? '24h';
@@ -219,12 +218,13 @@ export async function verifyRefreshToken(token: string): Promise<string | null> 
 }
 
 // Internal service authentication
-// SECURITY: INTERNAL_SERVICE_KEY is required in production - no defaults allowed
+// SECURITY: INTERNAL_SERVICE_KEY is required in ALL environments - no defaults allowed
 const internalServiceKeyValue = process.env['INTERNAL_SERVICE_KEY'];
-if (!internalServiceKeyValue && NODE_ENV === 'production') {
-  throw new Error('FATAL: INTERNAL_SERVICE_KEY environment variable is required in production');
+if (!internalServiceKeyValue) {
+  throw new Error('FATAL: INTERNAL_SERVICE_KEY environment variable is required. Set it in your .env file.');
 }
-const INTERNAL_SERVICE_KEY = internalServiceKeyValue ?? 'dev-only-internal-key';
+const INTERNAL_SERVICE_KEY = internalServiceKeyValue;
+const INTERNAL_SERVICE_KEY_BUFFER = Buffer.from(INTERNAL_SERVICE_KEY);
 
 /**
  * Internal service middleware - for service-to-service calls (orchestrator -> gateway)
@@ -243,7 +243,12 @@ export async function requireInternalService(
     });
   }
 
-  if (serviceKey !== INTERNAL_SERVICE_KEY) {
+  // Use timing-safe comparison to prevent timing attacks
+  const serviceKeyBuffer = Buffer.from(serviceKey);
+  const isValidLength = serviceKeyBuffer.length === INTERNAL_SERVICE_KEY_BUFFER.length;
+  const isValidKey = isValidLength && timingSafeEqual(serviceKeyBuffer, INTERNAL_SERVICE_KEY_BUFFER);
+
+  if (!isValidKey) {
     logger.warn({ ip: request.ip }, 'Invalid internal service key attempt');
     return reply.status(401).send({
       error: 'Unauthorized',

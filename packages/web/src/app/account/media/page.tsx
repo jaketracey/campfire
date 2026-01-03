@@ -4,7 +4,6 @@ import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { motion } from 'framer-motion';
 import {
-  Flame,
   ArrowLeft,
   Image as ImageIcon,
   Video,
@@ -15,6 +14,7 @@ import {
   RefreshCw,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { AnimatedFlame } from '@/components/ui/animated-flame';
 import { Card, CardContent } from '@/components/ui/card';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useRequireAuth } from '@/hooks/use-auth';
@@ -93,9 +93,8 @@ export default function MediaGalleryPage() {
       {/* Header */}
       <header className="border-b border-white/5 px-6 py-4 bg-black/20 backdrop-blur-lg sticky top-0 z-10">
         <div className="max-w-6xl mx-auto flex items-center gap-4">
-          <Link href="/dashboard" className="flex items-center gap-2 group">
-            <Flame className="h-7 w-7 text-orange-500 group-hover:scale-110 transition-transform" />
-            <span className="text-xl font-bold text-white">Campfire</span>
+          <Link href="/dashboard" className="hover:opacity-80 transition-opacity">
+            <AnimatedFlame size="sm" />
           </Link>
           <div className="flex-1" />
           <Link href="/account">

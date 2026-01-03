@@ -1,6 +1,6 @@
-import { Flame } from 'lucide-react';
 import Link from 'next/link';
 import { CompanionBackground } from '@/components/onboarding/companion-background';
+import { AnimatedFlame } from '@/components/ui/animated-flame';
 
 export default function AuthLayout({
   children,
@@ -14,9 +14,8 @@ export default function AuthLayout({
 
       {/* Header */}
       <header className="relative z-10 flex items-center justify-between p-6">
-        <Link href="/" className="flex items-center gap-2">
-          <Flame className="h-8 w-8 text-campfire-500" />
-          <span className="text-xl font-bold text-white">Campfire</span>
+        <Link href="/" className="hover:opacity-80 transition-opacity">
+          <AnimatedFlame size="md" />
         </Link>
       </header>
 

@@ -5,7 +5,7 @@ import { motion } from 'framer-motion';
 import { useOnboardingStore, type VoiceOption } from '@/stores/onboarding-store';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
-import { Play, Pause, ArrowRight, Loader2, Sparkles, Shuffle } from 'lucide-react';
+import { Play, Pause, ArrowRight, Loader2, Sparkles, Wand2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { createCompanion, streamAnchorImages, generateBackstory } from '@/lib/api';
 import { useToast } from '@/hooks/use-toast';
@@ -446,8 +446,8 @@ export function Step7Voice() {
 
   return (
     <div className="space-y-8">
-      <div className="text-center space-y-3">
-        <h2 className="text-4xl font-bold font-display tracking-tight text-white">Choose a Voice</h2>
+      <div className="text-left md:text-center space-y-3">
+        <h2 className="text-4xl font-bold font-display tracking-tight text-white">Choose a voice</h2>
         <p className="text-gray-400 max-w-md mx-auto">Select the voice that best fits your companion&apos;s essence.</p>
       </div>
 
@@ -542,24 +542,7 @@ export function Step7Voice() {
         })}
       </div>
 
-      <div className="flex justify-end gap-4 pt-8">
-        <Button
-          size="lg"
-          disabled={isSurprising || isCreating}
-          onClick={handleSurpriseMe}
-          className="group h-16 px-10 rounded-full bg-white/[0.05] border border-white/20 hover:border-vibes-cyan/50 hover:bg-vibes-cyan/10 hover:shadow-[0_0_25px_rgba(6,182,212,0.2)] transition-all font-bold text-lg relative overflow-hidden"
-        >
-          {isSurprising && (
-            <motion.div
-              className="absolute inset-0 bg-gradient-to-r from-transparent via-white/20 to-transparent"
-              initial={{ x: '-100%' }}
-              animate={{ x: '100%' }}
-              transition={{ repeat: Infinity, duration: 0.8, ease: 'linear' }}
-            />
-          )}
-          <Shuffle className={cn("mr-2 h-5 w-5", isSurprising && "animate-spin")} />
-          {isSurprising ? 'Choosing...' : 'Surprise Me'}
-        </Button>
+      <div className="flex justify-end pt-8">
         <Button
           size="lg"
           disabled={!voice || isCreating || isSurprising}

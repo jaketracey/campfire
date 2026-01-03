@@ -27,10 +27,12 @@ async function bootstrap() {
 
   const logger = pino({
     level: process.env.LOG_LEVEL || 'info',
-    transport: {
-      target: 'pino-pretty',
-      options: { colorize: true },
-    },
+    ...(process.env.NODE_ENV !== 'production' && {
+      transport: {
+        target: 'pino-pretty',
+        options: { colorize: true },
+      },
+    }),
   });
 
   const redisUrl = process.env.REDIS_URL || 'redis://localhost:6379';
@@ -50,11 +52,17 @@ async function bootstrap() {
   });
 
   // Embedding projection worker - generates and stores vector embeddings
-  const embeddingWorker = new EmbeddingProjectionWorker({
-    connection,
-    db,
-    logger: logger.child({ worker: 'embedding' }),
-  });
+  // Skip if no OpenAI API key (for stealth/self-hosted deployments)
+  let embeddingWorker: InstanceType<typeof EmbeddingProjectionWorker> | null = null;
+  if (process.env.OPENAI_API_KEY) {
+    embeddingWorker = new EmbeddingProjectionWorker({
+      connection,
+      db,
+      logger: logger.child({ worker: 'embedding' }),
+    });
+  } else {
+    logger.warn('OPENAI_API_KEY not set, skipping embedding worker');
+  }
 
   // Knowledge graph projection worker - maintains KG edges
   const kgWorker = new KnowledgeGraphProjectionWorker({
@@ -120,7 +128,7 @@ async function bootstrap() {
   // Start all workers
   await Promise.all([
     vaultWorker.start(),
-    embeddingWorker.start(),
+    embeddingWorker?.start(),
     kgWorker.start(),
     summaryWorker.start(),
     personalityProfileWorker.start(),
@@ -128,7 +136,7 @@ async function bootstrap() {
     imageRenditionWorker.start(),
     videoGenerationWorker.start(),
     giftGenerationWorker.start(),
-  ]);
+  ].filter(Boolean));
 
   logger.info('All projection workers started successfully');
 
@@ -137,7 +145,7 @@ async function bootstrap() {
     logger.info('Shutting down workers...');
     await Promise.all([
       vaultWorker.stop(),
-      embeddingWorker.stop(),
+      embeddingWorker?.stop(),
       kgWorker.stop(),
       summaryWorker.stop(),
       personalityProfileWorker.stop(),
@@ -145,7 +153,7 @@ async function bootstrap() {
       imageRenditionWorker.stop(),
       videoGenerationWorker.stop(),
       giftGenerationWorker.stop(),
-    ]);
+    ].filter(Boolean));
     await connection.quit();
     process.exit(0);
   };

@@ -3,9 +3,8 @@
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { motion } from 'framer-motion';
+import { motion, AnimatePresence } from 'framer-motion';
 import {
-  Flame,
   User,
   Coins,
   ArrowLeft,
@@ -32,14 +31,26 @@ import { Label } from '@/components/ui/label';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { useRequireAuth, useAuth } from '@/hooks/use-auth';
 import { useAuthStore } from '@/stores/auth-store';
+import { AnimatedFlame } from '@/components/ui/animated-flame';
 import { getTokenBalance, type TokenBalance } from '@/lib/api/tokens';
 import { updateProfile } from '@/lib/api/users';
+
+type TabId = 'profile' | 'privacy' | 'safety' | 'tokens' | 'subscription';
+
+const tabs: { id: TabId; label: string; icon: React.ElementType }[] = [
+  { id: 'profile', label: 'Profile', icon: User },
+  { id: 'privacy', label: 'Privacy & Memory', icon: ShieldCheck },
+  { id: 'safety', label: 'Content & Safety', icon: Shield },
+  { id: 'tokens', label: 'Tokens', icon: Coins },
+  { id: 'subscription', label: 'Subscription', icon: Crown },
+];
 
 export default function AccountPage() {
   const router = useRouter();
   const { isAuthenticated, isLoading: authLoading } = useRequireAuth('/login');
   const { user, logout } = useAuth();
 
+  const [activeTab, setActiveTab] = useState<TabId>('profile');
   const [tokenBalance, setTokenBalance] = useState<TokenBalance | null>(null);
   const [loadingTokens, setLoadingTokens] = useState(true);
 
@@ -184,14 +195,316 @@ export default function AccountPage() {
     }
   };
 
+  // Tab content components
+  const renderProfileTab = () => (
+    <div className="space-y-4">
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-3 sm:gap-4">
+        {/* Display Name */}
+        <div className="p-3 sm:p-4 rounded-xl bg-white/[0.02] border border-white/5">
+          <div className="flex items-center justify-between mb-2">
+            <div className="flex items-center gap-2 sm:gap-3">
+              <User className="h-3.5 w-3.5 sm:h-4 sm:w-4 text-gray-500" />
+              <span className="text-xs sm:text-sm text-gray-500">Display Name</span>
+            </div>
+            {!isEditingName && (
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-7 w-7 p-0 text-gray-500 hover:text-white"
+                onClick={handleStartEditing}
+              >
+                <Pencil className="h-3.5 w-3.5" />
+              </Button>
+            )}
+          </div>
+          {isEditingName ? (
+            <div className="flex items-center gap-2">
+              <Input
+                value={editedName}
+                onChange={(e) => setEditedName(e.target.value)}
+                className="h-8 sm:h-9 text-sm sm:text-base bg-white/5 border-white/10"
+                placeholder="Enter display name"
+                autoFocus
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') handleSaveProfile();
+                  if (e.key === 'Escape') handleCancelEditing();
+                }}
+              />
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-8 w-8 p-0 text-green-500 hover:text-green-400 hover:bg-green-500/10"
+                onClick={handleSaveProfile}
+                disabled={isSaving}
+              >
+                {isSaving ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <Check className="h-4 w-4" />
+                )}
+              </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-8 w-8 p-0 text-gray-500 hover:text-white"
+                onClick={handleCancelEditing}
+                disabled={isSaving}
+              >
+                <X className="h-4 w-4" />
+              </Button>
+            </div>
+          ) : (
+            <p className="text-base sm:text-lg font-medium text-white">
+              {user?.displayName || user?.email?.split('@')[0] || 'Anonymous'}
+            </p>
+          )}
+        </div>
+
+        {/* Email */}
+        <div className="p-3 sm:p-4 rounded-xl bg-white/[0.02] border border-white/5">
+          <div className="flex items-center gap-2 sm:gap-3 mb-2">
+            <Mail className="h-3.5 w-3.5 sm:h-4 sm:w-4 text-gray-500" />
+            <span className="text-xs sm:text-sm text-gray-500">Email</span>
+          </div>
+          <p className="text-base sm:text-lg font-medium text-white truncate">{user?.email || 'Not set'}</p>
+        </div>
+
+        {/* Member Since */}
+        <div className="p-3 sm:p-4 rounded-xl bg-white/[0.02] border border-white/5">
+          <div className="flex items-center gap-2 sm:gap-3 mb-2">
+            <Calendar className="h-3.5 w-3.5 sm:h-4 sm:w-4 text-gray-500" />
+            <span className="text-xs sm:text-sm text-gray-500">Member Since</span>
+          </div>
+          <p className="text-base sm:text-lg font-medium text-white">{memberSince}</p>
+        </div>
+
+        {/* Account Status */}
+        <div className="p-3 sm:p-4 rounded-xl bg-white/[0.02] border border-white/5">
+          <div className="flex items-center gap-2 sm:gap-3 mb-2">
+            <Shield className="h-3.5 w-3.5 sm:h-4 sm:w-4 text-gray-500" />
+            <span className="text-xs sm:text-sm text-gray-500">Account Status</span>
+          </div>
+          <div className="flex items-center gap-2">
+            <span className="h-2 w-2 rounded-full bg-green-500" />
+            <p className="text-base sm:text-lg font-medium text-white">Active</p>
+            {user?.role === 'admin' && (
+              <span className="ml-2 px-2 py-0.5 text-xs font-medium bg-campfire-500/20 text-campfire-400 rounded-full">
+                Admin
+              </span>
+            )}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+
+  const renderPrivacyTab = () => (
+    <div className="space-y-4 sm:space-y-6">
+      {/* Long-term Memory */}
+      <div className="flex items-center justify-between gap-4 p-3 sm:p-4 rounded-xl bg-white/[0.02] border border-white/5">
+        <div className="flex-1 space-y-1">
+          <div className="flex items-center gap-2">
+            <Brain className="h-4 w-4 text-green-500" />
+            <Label className="text-sm sm:text-base font-medium text-white">Long-term Memory</Label>
+          </div>
+          <p className="text-xs sm:text-sm text-gray-500 leading-relaxed">
+            Allow companions to remember the heart of your conversations and build a shared history.
+          </p>
+        </div>
+        <Switch
+          checked={consentToMemory}
+          onCheckedChange={(checked) => handlePrivacyChange('consentToMemory', checked)}
+          disabled={isSavingPrivacy}
+          className="data-[state=checked]:bg-green-500"
+        />
+      </div>
+
+      {/* Active Evolution */}
+      <div className="flex items-center justify-between gap-4 p-3 sm:p-4 rounded-xl bg-white/[0.02] border border-white/5">
+        <div className="flex-1 space-y-1">
+          <div className="flex items-center gap-2">
+            <Sparkles className="h-4 w-4 text-cyan-500" />
+            <Label className="text-sm sm:text-base font-medium text-white">Active Evolution</Label>
+          </div>
+          <p className="text-xs sm:text-sm text-gray-500 leading-relaxed">
+            Let companions evolve their personality and perspective based on your unique interactions.
+          </p>
+        </div>
+        <Switch
+          checked={consentToLearning}
+          onCheckedChange={(checked) => handlePrivacyChange('consentToLearning', checked)}
+          disabled={isSavingPrivacy}
+          className="data-[state=checked]:bg-cyan-500"
+        />
+      </div>
+    </div>
+  );
+
+  const renderSafetyTab = () => (
+    <div className="space-y-4">
+      <p className="text-xs sm:text-sm text-gray-400">
+        Your safety preference works with each companion&apos;s content rating.
+        The more restrictive setting always applies.
+      </p>
+      <RadioGroup
+        value={safetyLevel}
+        onValueChange={handleSafetyChange}
+        disabled={isSavingSafety}
+        className="space-y-3"
+      >
+        {/* Strict (G) */}
+        <div className="flex items-start gap-3 p-3 rounded-xl bg-white/[0.02] border border-white/5 hover:bg-white/[0.04] transition-colors">
+          <RadioGroupItem value="strict" id="safety-strict" className="mt-1" />
+          <Label htmlFor="safety-strict" className="flex-1 cursor-pointer">
+            <div className="flex items-center gap-2">
+              <span className="text-sm font-medium text-white">Strict</span>
+              <span className="px-1.5 py-0.5 text-xs bg-green-500/20 text-green-400 rounded">G</span>
+            </div>
+            <p className="text-xs text-gray-500 mt-1">Clean, family-friendly content only. No mature themes.</p>
+          </Label>
+        </div>
+
+        {/* Standard (PG) */}
+        <div className="flex items-start gap-3 p-3 rounded-xl bg-white/[0.02] border border-white/5 hover:bg-white/[0.04] transition-colors">
+          <RadioGroupItem value="standard" id="safety-standard" className="mt-1" />
+          <Label htmlFor="safety-standard" className="flex-1 cursor-pointer">
+            <div className="flex items-center gap-2">
+              <span className="text-sm font-medium text-white">Standard</span>
+              <span className="px-1.5 py-0.5 text-xs bg-blue-500/20 text-blue-400 rounded">PG</span>
+              <span className="px-1.5 py-0.5 text-xs bg-gray-500/20 text-gray-400 rounded">Default</span>
+            </div>
+            <p className="text-xs text-gray-500 mt-1">Mild themes allowed. Suitable for general audiences.</p>
+          </Label>
+        </div>
+
+        {/* Mature (PG-13) */}
+        <div className="flex items-start gap-3 p-3 rounded-xl bg-white/[0.02] border border-white/5 hover:bg-white/[0.04] transition-colors">
+          <RadioGroupItem value="permissive" id="safety-permissive" className="mt-1" />
+          <Label htmlFor="safety-permissive" className="flex-1 cursor-pointer">
+            <div className="flex items-center gap-2">
+              <span className="text-sm font-medium text-white">Mature</span>
+              <span className="px-1.5 py-0.5 text-xs bg-amber-500/20 text-amber-400 rounded">PG-13</span>
+            </div>
+            <p className="text-xs text-gray-500 mt-1">Teen-appropriate content. Some suggestive themes allowed.</p>
+          </Label>
+        </div>
+
+        {/* Adult (R) */}
+        <div className="flex items-start gap-3 p-3 rounded-xl bg-white/[0.02] border border-white/5 hover:bg-white/[0.04] transition-colors">
+          <RadioGroupItem value="adult" id="safety-adult" className="mt-1" />
+          <Label htmlFor="safety-adult" className="flex-1 cursor-pointer">
+            <div className="flex items-center gap-2">
+              <span className="text-sm font-medium text-white">Adult</span>
+              <span className="px-1.5 py-0.5 text-xs bg-red-500/20 text-red-400 rounded">R</span>
+            </div>
+            <p className="text-xs text-gray-500 mt-1">Unrestricted adult content. No filtering applied.</p>
+          </Label>
+        </div>
+      </RadioGroup>
+      {isSavingSafety && (
+        <div className="flex items-center gap-2 text-xs text-gray-500">
+          <Loader2 className="h-3 w-3 animate-spin" />
+          Saving...
+        </div>
+      )}
+    </div>
+  );
+
+  const renderTokensTab = () => (
+    <div className="space-y-4">
+      <div className="flex justify-end">
+        <Link href="/account/tokens">
+          <Button className="gap-2 bg-amber-600 hover:bg-amber-500 text-white text-sm">
+            <Sparkles className="h-4 w-4" />
+            Buy Tokens
+          </Button>
+        </Link>
+      </div>
+      {loadingTokens ? (
+        <div className="flex items-center justify-center py-6 sm:py-8">
+          <Loader2 className="h-5 w-5 sm:h-6 sm:w-6 animate-spin text-gray-500" />
+        </div>
+      ) : (
+        <div className="p-4 sm:p-6 rounded-2xl bg-gradient-to-br from-amber-500/10 via-orange-500/5 to-transparent border border-amber-500/20">
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+            <div className="flex items-center gap-3 sm:gap-4">
+              <Coins className="h-8 w-8 sm:h-10 sm:w-10 text-amber-500" />
+              <div>
+                <p className="text-xs sm:text-sm text-amber-400/80 font-medium">Current Balance</p>
+                <p className="text-2xl sm:text-4xl font-bold text-white">
+                  {tokenBalance?.balance?.toLocaleString() ?? 0}
+                  <span className="text-sm sm:text-lg text-gray-400 ml-1 sm:ml-2">tokens</span>
+                </p>
+              </div>
+            </div>
+            {tokenBalance && (
+              <div className="text-left sm:text-right text-xs sm:text-sm text-gray-500 space-y-0.5 sm:space-y-1">
+                <p>Lifetime purchased: {tokenBalance.lifetimePurchased?.toLocaleString() ?? 0}</p>
+                <p>Bonus earned: {tokenBalance.lifetimeBonus?.toLocaleString() ?? 0}</p>
+                <p>Total spent: {tokenBalance.lifetimeSpent?.toLocaleString() ?? 0}</p>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+
+  const renderSubscriptionTab = () => (
+    <div className="space-y-3 sm:space-y-4">
+      {/* Current Plan */}
+      <div className="p-4 sm:p-6 rounded-2xl bg-gradient-to-br from-purple-500/10 via-violet-500/5 to-transparent border border-purple-500/20">
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 sm:gap-4">
+          <div>
+            <p className="text-xs sm:text-sm text-purple-400/80 font-medium mb-1">Current Plan</p>
+            <p className="text-xl sm:text-2xl font-bold text-white">Free Tier</p>
+            <p className="text-xs sm:text-sm text-gray-500 mt-1">Basic access to companion features</p>
+          </div>
+          <Button
+            variant="outline"
+            className="gap-2 border-purple-500/30 text-purple-400 hover:bg-purple-500/10 hover:text-purple-300 text-sm w-full sm:w-auto"
+            disabled
+          >
+            <Crown className="h-4 w-4" />
+            Upgrade
+            <span className="text-xs text-gray-500">(Coming Soon)</span>
+          </Button>
+        </div>
+      </div>
+
+      {/* Plan Features */}
+      <div className="grid grid-cols-3 gap-2 sm:gap-4">
+        <div className="p-3 sm:p-4 rounded-xl bg-white/[0.02] border border-white/5 text-center">
+          <p className="text-lg sm:text-2xl font-bold text-white">3</p>
+          <p className="text-xs sm:text-sm text-gray-500">Companions</p>
+        </div>
+        <div className="p-3 sm:p-4 rounded-xl bg-white/[0.02] border border-white/5 text-center">
+          <p className="text-lg sm:text-2xl font-bold text-white">Unlimited</p>
+          <p className="text-xs sm:text-sm text-gray-500">Conversations</p>
+        </div>
+        <div className="p-3 sm:p-4 rounded-xl bg-white/[0.02] border border-white/5 text-center">
+          <p className="text-lg sm:text-2xl font-bold text-white">Basic</p>
+          <p className="text-xs sm:text-sm text-gray-500">Voice Options</p>
+        </div>
+      </div>
+    </div>
+  );
+
+  const tabContent: Record<TabId, () => React.ReactNode> = {
+    profile: renderProfileTab,
+    privacy: renderPrivacyTab,
+    safety: renderSafetyTab,
+    tokens: renderTokensTab,
+    subscription: renderSubscriptionTab,
+  };
+
   return (
     <div className="min-h-screen bg-background">
       {/* Header */}
       <header className="border-b border-white/5 px-4 sm:px-6 py-3 sm:py-4 bg-black/20 backdrop-blur-lg">
-        <div className="max-w-4xl mx-auto flex items-center gap-3 sm:gap-4">
-          <Link href="/dashboard" className="flex items-center gap-2 group">
-            <Flame className="h-6 w-6 sm:h-7 sm:w-7 text-campfire-500 group-hover:scale-110 transition-transform" />
-            <span className="text-lg sm:text-xl font-bold text-white">Campfire</span>
+        <div className="max-w-6xl mx-auto flex items-center gap-3 sm:gap-4">
+          <Link href="/dashboard" className="hover:opacity-80 transition-opacity">
+            <AnimatedFlame size="sm" />
           </Link>
           <div className="flex-1" />
           <Link href="/dashboard">
@@ -205,7 +518,7 @@ export default function AccountPage() {
       </header>
 
       {/* Content */}
-      <main className="max-w-4xl mx-auto px-4 sm:px-6 py-6 sm:py-8">
+      <main className="max-w-6xl mx-auto px-4 sm:px-6 py-6 sm:py-8">
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
@@ -219,430 +532,142 @@ export default function AccountPage() {
             </p>
           </div>
 
-          {/* Profile Section */}
-          <Card className="bg-white/[0.02] border-white/10 backdrop-blur-xl overflow-hidden">
-            <CardHeader className="pb-3 sm:pb-4">
-              <div className="flex items-center gap-2 sm:gap-3">
-                <div className="h-8 w-8 sm:h-10 sm:w-10 rounded-xl bg-campfire-500/20 flex items-center justify-center">
-                  <User className="h-4 w-4 sm:h-5 sm:w-5 text-campfire-500" />
-                </div>
-                <div>
-                  <CardTitle className="text-lg sm:text-xl text-white">Profile</CardTitle>
-                  <CardDescription className="text-xs sm:text-sm text-gray-500">Your account information</CardDescription>
-                </div>
-              </div>
-            </CardHeader>
-            <CardContent className="space-y-3 sm:space-y-4">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-3 sm:gap-4">
-                {/* Display Name */}
-                <div className="p-3 sm:p-4 rounded-xl bg-white/[0.02] border border-white/5">
-                  <div className="flex items-center justify-between mb-2">
-                    <div className="flex items-center gap-2 sm:gap-3">
-                      <User className="h-3.5 w-3.5 sm:h-4 sm:w-4 text-gray-500" />
-                      <span className="text-xs sm:text-sm text-gray-500">Display Name</span>
-                    </div>
-                    {!isEditingName && (
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        className="h-7 w-7 p-0 text-gray-500 hover:text-white"
-                        onClick={handleStartEditing}
-                      >
-                        <Pencil className="h-3.5 w-3.5" />
-                      </Button>
-                    )}
-                  </div>
-                  {isEditingName ? (
-                    <div className="flex items-center gap-2">
-                      <Input
-                        value={editedName}
-                        onChange={(e) => setEditedName(e.target.value)}
-                        className="h-8 sm:h-9 text-sm sm:text-base bg-white/5 border-white/10"
-                        placeholder="Enter display name"
-                        autoFocus
-                        onKeyDown={(e) => {
-                          if (e.key === 'Enter') handleSaveProfile();
-                          if (e.key === 'Escape') handleCancelEditing();
-                        }}
+          {/* Quick Links - At the top */}
+          <div className="flex flex-wrap gap-2 sm:gap-3">
+            <Link
+              href="/account/tokens"
+              className="flex items-center gap-2 px-4 py-2 rounded-lg bg-white/[0.02] border border-white/5 hover:bg-white/[0.05] hover:border-white/10 transition-all group"
+            >
+              <Coins className="h-4 w-4 text-amber-500" />
+              <span className="text-sm text-white font-medium">Purchase Tokens</span>
+              <ChevronRight className="h-4 w-4 text-gray-500 group-hover:text-white transition-colors" />
+            </Link>
+
+            <Link
+              href="/account/media"
+              className="flex items-center gap-2 px-4 py-2 rounded-lg bg-white/[0.02] border border-white/5 hover:bg-white/[0.05] hover:border-white/10 transition-all group"
+            >
+              <ImageIcon className="h-4 w-4 text-blue-500" />
+              <span className="text-sm text-white font-medium">Media Gallery</span>
+              <ChevronRight className="h-4 w-4 text-gray-500 group-hover:text-white transition-colors" />
+            </Link>
+
+            <button
+              onClick={logout}
+              className="flex items-center gap-2 px-4 py-2 rounded-lg bg-white/[0.02] border border-white/5 hover:bg-red-500/10 hover:border-red-500/20 transition-all group"
+            >
+              <LogOut className="h-4 w-4 text-red-500" />
+              <span className="text-sm text-gray-400 group-hover:text-red-400 font-medium transition-colors">
+                Sign Out
+              </span>
+            </button>
+          </div>
+
+          {/* Main Content with Tabs */}
+          <div className="flex flex-col lg:flex-row gap-6 lg:gap-8">
+            {/* Left Sidebar - Tabs */}
+            <div className="lg:w-56 flex-shrink-0">
+              <nav className="flex lg:flex-col gap-1 overflow-x-auto lg:overflow-x-visible pb-2 lg:pb-0">
+                {tabs.map((tab) => {
+                  const isActive = activeTab === tab.id;
+                  const Icon = tab.icon;
+                  return (
+                    <button
+                      key={tab.id}
+                      onClick={() => setActiveTab(tab.id)}
+                      className="relative flex items-center gap-3 px-4 py-3 rounded-lg text-left whitespace-nowrap transition-colors"
+                    >
+                      {isActive && (
+                        <motion.div
+                          layoutId="activeTab"
+                          className="absolute inset-0 bg-white/[0.05] rounded-lg"
+                          initial={false}
+                          transition={{
+                            type: 'spring',
+                            stiffness: 500,
+                            damping: 35,
+                          }}
+                        />
+                      )}
+                      <Icon
+                        className={`relative h-4 w-4 transition-colors ${
+                          isActive ? 'text-white' : 'text-gray-500'
+                        }`}
                       />
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        className="h-8 w-8 p-0 text-green-500 hover:text-green-400 hover:bg-green-500/10"
-                        onClick={handleSaveProfile}
-                        disabled={isSaving}
+                      <span
+                        className={`relative text-sm font-medium transition-colors ${
+                          isActive ? 'text-white' : 'text-gray-400 hover:text-gray-300'
+                        }`}
                       >
-                        {isSaving ? (
-                          <Loader2 className="h-4 w-4 animate-spin" />
-                        ) : (
-                          <Check className="h-4 w-4" />
-                        )}
-                      </Button>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        className="h-8 w-8 p-0 text-gray-500 hover:text-white"
-                        onClick={handleCancelEditing}
-                        disabled={isSaving}
-                      >
-                        <X className="h-4 w-4" />
-                      </Button>
-                    </div>
-                  ) : (
-                    <p className="text-base sm:text-lg font-medium text-white">
-                      {user?.displayName || user?.email?.split('@')[0] || 'Anonymous'}
-                    </p>
-                  )}
-                </div>
-
-                {/* Email */}
-                <div className="p-3 sm:p-4 rounded-xl bg-white/[0.02] border border-white/5">
-                  <div className="flex items-center gap-2 sm:gap-3 mb-2">
-                    <Mail className="h-3.5 w-3.5 sm:h-4 sm:w-4 text-gray-500" />
-                    <span className="text-xs sm:text-sm text-gray-500">Email</span>
-                  </div>
-                  <p className="text-base sm:text-lg font-medium text-white truncate">{user?.email || 'Not set'}</p>
-                </div>
-
-                {/* Member Since */}
-                <div className="p-3 sm:p-4 rounded-xl bg-white/[0.02] border border-white/5">
-                  <div className="flex items-center gap-2 sm:gap-3 mb-2">
-                    <Calendar className="h-3.5 w-3.5 sm:h-4 sm:w-4 text-gray-500" />
-                    <span className="text-xs sm:text-sm text-gray-500">Member Since</span>
-                  </div>
-                  <p className="text-base sm:text-lg font-medium text-white">{memberSince}</p>
-                </div>
-
-                {/* Account Status */}
-                <div className="p-3 sm:p-4 rounded-xl bg-white/[0.02] border border-white/5">
-                  <div className="flex items-center gap-2 sm:gap-3 mb-2">
-                    <Shield className="h-3.5 w-3.5 sm:h-4 sm:w-4 text-gray-500" />
-                    <span className="text-xs sm:text-sm text-gray-500">Account Status</span>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <span className="h-2 w-2 rounded-full bg-green-500" />
-                    <p className="text-base sm:text-lg font-medium text-white">Active</p>
-                    {user?.role === 'admin' && (
-                      <span className="ml-2 px-2 py-0.5 text-xs font-medium bg-campfire-500/20 text-campfire-400 rounded-full">
-                        Admin
+                        {tab.label}
                       </span>
-                    )}
-                  </div>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
+                    </button>
+                  );
+                })}
+              </nav>
+            </div>
 
-          {/* Privacy & Memory Section */}
-          <Card className="bg-white/[0.02] border-white/10 backdrop-blur-xl overflow-hidden">
-            <CardHeader className="pb-3 sm:pb-4">
-              <div className="flex items-center gap-2 sm:gap-3">
-                <div className="h-8 w-8 sm:h-10 sm:w-10 rounded-xl bg-green-500/20 flex items-center justify-center">
-                  <ShieldCheck className="h-4 w-4 sm:h-5 sm:w-5 text-green-500" />
-                </div>
-                <div>
-                  <CardTitle className="text-lg sm:text-xl text-white">Privacy & Memory</CardTitle>
-                  <CardDescription className="text-xs sm:text-sm text-gray-500">
-                    Control how companions remember and learn
-                  </CardDescription>
-                </div>
-              </div>
-            </CardHeader>
-            <CardContent className="space-y-4 sm:space-y-6">
-              {/* Long-term Memory */}
-              <div className="flex items-center justify-between gap-4 p-3 sm:p-4 rounded-xl bg-white/[0.02] border border-white/5">
-                <div className="flex-1 space-y-1">
-                  <div className="flex items-center gap-2">
-                    <Brain className="h-4 w-4 text-green-500" />
-                    <Label className="text-sm sm:text-base font-medium text-white">Long-term Memory</Label>
-                  </div>
-                  <p className="text-xs sm:text-sm text-gray-500 leading-relaxed">
-                    Allow companions to remember the heart of your conversations and build a shared history.
-                  </p>
-                </div>
-                <Switch
-                  checked={consentToMemory}
-                  onCheckedChange={(checked) => handlePrivacyChange('consentToMemory', checked)}
-                  disabled={isSavingPrivacy}
-                  className="data-[state=checked]:bg-green-500"
-                />
-              </div>
-
-              {/* Active Evolution */}
-              <div className="flex items-center justify-between gap-4 p-3 sm:p-4 rounded-xl bg-white/[0.02] border border-white/5">
-                <div className="flex-1 space-y-1">
-                  <div className="flex items-center gap-2">
-                    <Sparkles className="h-4 w-4 text-cyan-500" />
-                    <Label className="text-sm sm:text-base font-medium text-white">Active Evolution</Label>
-                  </div>
-                  <p className="text-xs sm:text-sm text-gray-500 leading-relaxed">
-                    Let companions evolve their personality and perspective based on your unique interactions.
-                  </p>
-                </div>
-                <Switch
-                  checked={consentToLearning}
-                  onCheckedChange={(checked) => handlePrivacyChange('consentToLearning', checked)}
-                  disabled={isSavingPrivacy}
-                  className="data-[state=checked]:bg-cyan-500"
-                />
-              </div>
-            </CardContent>
-          </Card>
-
-          {/* Content & Safety Section */}
-          <Card className="bg-white/[0.02] border-white/10 backdrop-blur-xl overflow-hidden">
-            <CardHeader className="pb-3 sm:pb-4">
-              <div className="flex items-center gap-2 sm:gap-3">
-                <div className="h-8 w-8 sm:h-10 sm:w-10 rounded-xl bg-rose-500/20 flex items-center justify-center">
-                  <Shield className="h-4 w-4 sm:h-5 sm:w-5 text-rose-500" />
-                </div>
-                <div>
-                  <CardTitle className="text-lg sm:text-xl text-white">Content & Safety</CardTitle>
-                  <CardDescription className="text-xs sm:text-sm text-gray-500">
-                    Set your content preferences for conversations
-                  </CardDescription>
-                </div>
-              </div>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <p className="text-xs sm:text-sm text-gray-400">
-                Your safety preference works with each companion&apos;s content rating.
-                The more restrictive setting always applies.
-              </p>
-              <RadioGroup
-                value={safetyLevel}
-                onValueChange={handleSafetyChange}
-                disabled={isSavingSafety}
-                className="space-y-3"
-              >
-                {/* Strict (G) */}
-                <div className="flex items-start gap-3 p-3 rounded-xl bg-white/[0.02] border border-white/5 hover:bg-white/[0.04] transition-colors">
-                  <RadioGroupItem value="strict" id="safety-strict" className="mt-1" />
-                  <Label htmlFor="safety-strict" className="flex-1 cursor-pointer">
-                    <div className="flex items-center gap-2">
-                      <span className="text-sm font-medium text-white">Strict</span>
-                      <span className="px-1.5 py-0.5 text-xs bg-green-500/20 text-green-400 rounded">
-                        G
-                      </span>
+            {/* Right Content Area */}
+            <div className="flex-1 min-w-0">
+              <Card className="bg-white/[0.02] border-white/10 backdrop-blur-xl overflow-hidden">
+                <CardHeader className="pb-3 sm:pb-4">
+                  <div className="flex items-center gap-2 sm:gap-3">
+                    {tabs.map((tab) => {
+                      if (tab.id !== activeTab) return null;
+                      const Icon = tab.icon;
+                      const iconColors: Record<TabId, string> = {
+                        profile: 'bg-campfire-500/20 text-campfire-500',
+                        privacy: 'bg-green-500/20 text-green-500',
+                        safety: 'bg-rose-500/20 text-rose-500',
+                        tokens: 'bg-amber-500/20 text-amber-500',
+                        subscription: 'bg-purple-500/20 text-purple-500',
+                      };
+                      const [bgClass, textClass] = iconColors[tab.id].split(' ');
+                      return (
+                        <motion.div
+                          key={tab.id}
+                          initial={{ opacity: 0, scale: 0.9 }}
+                          animate={{ opacity: 1, scale: 1 }}
+                          className={`h-8 w-8 sm:h-10 sm:w-10 rounded-xl ${bgClass} flex items-center justify-center`}
+                        >
+                          <Icon className={`h-4 w-4 sm:h-5 sm:w-5 ${textClass}`} />
+                        </motion.div>
+                      );
+                    })}
+                    <div>
+                      <CardTitle className="text-lg sm:text-xl text-white">
+                        {tabs.find((t) => t.id === activeTab)?.label}
+                      </CardTitle>
+                      <CardDescription className="text-xs sm:text-sm text-gray-500">
+                        {activeTab === 'profile' && 'Your account information'}
+                        {activeTab === 'privacy' && 'Control how companions remember and learn'}
+                        {activeTab === 'safety' && 'Set your content preferences for conversations'}
+                        {activeTab === 'tokens' && 'Use tokens to send gifts to companions'}
+                        {activeTab === 'subscription' && 'Manage your plan and billing'}
+                      </CardDescription>
                     </div>
-                    <p className="text-xs text-gray-500 mt-1">
-                      Clean, family-friendly content only. No mature themes.
-                    </p>
-                  </Label>
-                </div>
-
-                {/* Standard (PG) */}
-                <div className="flex items-start gap-3 p-3 rounded-xl bg-white/[0.02] border border-white/5 hover:bg-white/[0.04] transition-colors">
-                  <RadioGroupItem value="standard" id="safety-standard" className="mt-1" />
-                  <Label htmlFor="safety-standard" className="flex-1 cursor-pointer">
-                    <div className="flex items-center gap-2">
-                      <span className="text-sm font-medium text-white">Standard</span>
-                      <span className="px-1.5 py-0.5 text-xs bg-blue-500/20 text-blue-400 rounded">
-                        PG
-                      </span>
-                      <span className="px-1.5 py-0.5 text-xs bg-gray-500/20 text-gray-400 rounded">
-                        Default
-                      </span>
-                    </div>
-                    <p className="text-xs text-gray-500 mt-1">
-                      Mild themes allowed. Suitable for general audiences.
-                    </p>
-                  </Label>
-                </div>
-
-                {/* Mature (PG-13) */}
-                <div className="flex items-start gap-3 p-3 rounded-xl bg-white/[0.02] border border-white/5 hover:bg-white/[0.04] transition-colors">
-                  <RadioGroupItem value="permissive" id="safety-permissive" className="mt-1" />
-                  <Label htmlFor="safety-permissive" className="flex-1 cursor-pointer">
-                    <div className="flex items-center gap-2">
-                      <span className="text-sm font-medium text-white">Mature</span>
-                      <span className="px-1.5 py-0.5 text-xs bg-amber-500/20 text-amber-400 rounded">
-                        PG-13
-                      </span>
-                    </div>
-                    <p className="text-xs text-gray-500 mt-1">
-                      Teen-appropriate content. Some suggestive themes allowed.
-                    </p>
-                  </Label>
-                </div>
-
-                {/* Adult (R) */}
-                <div className="flex items-start gap-3 p-3 rounded-xl bg-white/[0.02] border border-white/5 hover:bg-white/[0.04] transition-colors">
-                  <RadioGroupItem value="adult" id="safety-adult" className="mt-1" />
-                  <Label htmlFor="safety-adult" className="flex-1 cursor-pointer">
-                    <div className="flex items-center gap-2">
-                      <span className="text-sm font-medium text-white">Adult</span>
-                      <span className="px-1.5 py-0.5 text-xs bg-red-500/20 text-red-400 rounded">
-                        R
-                      </span>
-                    </div>
-                    <p className="text-xs text-gray-500 mt-1">
-                      Unrestricted adult content. No filtering applied.
-                    </p>
-                  </Label>
-                </div>
-              </RadioGroup>
-              {isSavingSafety && (
-                <div className="flex items-center gap-2 text-xs text-gray-500">
-                  <Loader2 className="h-3 w-3 animate-spin" />
-                  Saving...
-                </div>
-              )}
-            </CardContent>
-          </Card>
-
-          {/* Tokens Section */}
-          <Card className="bg-white/[0.02] border-white/10 backdrop-blur-xl overflow-hidden">
-            <CardHeader className="pb-3 sm:pb-4">
-              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-                <div className="flex items-center gap-2 sm:gap-3">
-                  <div className="h-8 w-8 sm:h-10 sm:w-10 rounded-xl bg-amber-500/20 flex items-center justify-center">
-                    <Coins className="h-4 w-4 sm:h-5 sm:w-5 text-amber-500" />
                   </div>
-                  <div>
-                    <CardTitle className="text-lg sm:text-xl text-white">Token Balance</CardTitle>
-                    <CardDescription className="text-xs sm:text-sm text-gray-500">
-                      Use tokens to send gifts to companions
-                    </CardDescription>
-                  </div>
-                </div>
-                <Link href="/account/tokens">
-                  <Button className="gap-2 bg-amber-600 hover:bg-amber-500 text-white text-sm w-full sm:w-auto">
-                    <Sparkles className="h-4 w-4" />
-                    Buy Tokens
-                  </Button>
-                </Link>
-              </div>
-            </CardHeader>
-            <CardContent>
-              {loadingTokens ? (
-                <div className="flex items-center justify-center py-6 sm:py-8">
-                  <Loader2 className="h-5 w-5 sm:h-6 sm:w-6 animate-spin text-gray-500" />
-                </div>
-              ) : (
-                <div className="p-4 sm:p-6 rounded-2xl bg-gradient-to-br from-amber-500/10 via-orange-500/5 to-transparent border border-amber-500/20">
-                  <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-                    <div className="flex items-center gap-3 sm:gap-4">
-                      <Coins className="h-8 w-8 sm:h-10 sm:w-10 text-amber-500" />
-                      <div>
-                        <p className="text-xs sm:text-sm text-amber-400/80 font-medium">Current Balance</p>
-                        <p className="text-2xl sm:text-4xl font-bold text-white">
-                          {tokenBalance?.balance?.toLocaleString() ?? 0}
-                          <span className="text-sm sm:text-lg text-gray-400 ml-1 sm:ml-2">tokens</span>
-                        </p>
-                      </div>
-                    </div>
-                    {tokenBalance && (
-                      <div className="text-left sm:text-right text-xs sm:text-sm text-gray-500 space-y-0.5 sm:space-y-1">
-                        <p>Lifetime purchased: {tokenBalance.lifetimePurchased?.toLocaleString() ?? 0}</p>
-                        <p>Bonus earned: {tokenBalance.lifetimeBonus?.toLocaleString() ?? 0}</p>
-                        <p>Total spent: {tokenBalance.lifetimeSpent?.toLocaleString() ?? 0}</p>
-                      </div>
-                    )}
-                  </div>
-                </div>
-              )}
-            </CardContent>
-          </Card>
-
-          {/* Subscription Section */}
-          <Card className="bg-white/[0.02] border-white/10 backdrop-blur-xl overflow-hidden">
-            <CardHeader className="pb-3 sm:pb-4">
-              <div className="flex items-center gap-2 sm:gap-3">
-                <div className="h-8 w-8 sm:h-10 sm:w-10 rounded-xl bg-purple-500/20 flex items-center justify-center">
-                  <Crown className="h-4 w-4 sm:h-5 sm:w-5 text-purple-500" />
-                </div>
-                <div>
-                  <CardTitle className="text-lg sm:text-xl text-white">Subscription</CardTitle>
-                  <CardDescription className="text-xs sm:text-sm text-gray-500">
-                    Manage your plan and billing
-                  </CardDescription>
-                </div>
-              </div>
-            </CardHeader>
-            <CardContent className="space-y-3 sm:space-y-4">
-              {/* Current Plan */}
-              <div className="p-4 sm:p-6 rounded-2xl bg-gradient-to-br from-purple-500/10 via-violet-500/5 to-transparent border border-purple-500/20">
-                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 sm:gap-4">
-                  <div>
-                    <p className="text-xs sm:text-sm text-purple-400/80 font-medium mb-1">Current Plan</p>
-                    <p className="text-xl sm:text-2xl font-bold text-white">Free Tier</p>
-                    <p className="text-xs sm:text-sm text-gray-500 mt-1">
-                      Basic access to companion features
-                    </p>
-                  </div>
-                  <Button
-                    variant="outline"
-                    className="gap-2 border-purple-500/30 text-purple-400 hover:bg-purple-500/10 hover:text-purple-300 text-sm w-full sm:w-auto"
-                    disabled
-                  >
-                    <Crown className="h-4 w-4" />
-                    Upgrade
-                    <span className="text-xs text-gray-500">(Coming Soon)</span>
-                  </Button>
-                </div>
-              </div>
-
-              {/* Plan Features */}
-              <div className="grid grid-cols-3 gap-2 sm:gap-4">
-                <div className="p-3 sm:p-4 rounded-xl bg-white/[0.02] border border-white/5 text-center">
-                  <p className="text-lg sm:text-2xl font-bold text-white">3</p>
-                  <p className="text-xs sm:text-sm text-gray-500">Companions</p>
-                </div>
-                <div className="p-3 sm:p-4 rounded-xl bg-white/[0.02] border border-white/5 text-center">
-                  <p className="text-lg sm:text-2xl font-bold text-white">Unlimited</p>
-                  <p className="text-xs sm:text-sm text-gray-500">Conversations</p>
-                </div>
-                <div className="p-3 sm:p-4 rounded-xl bg-white/[0.02] border border-white/5 text-center">
-                  <p className="text-lg sm:text-2xl font-bold text-white">Basic</p>
-                  <p className="text-xs sm:text-sm text-gray-500">Voice Options</p>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-
-          {/* Quick Links */}
-          <Card className="bg-white/[0.02] border-white/10 backdrop-blur-xl overflow-hidden">
-            <CardHeader className="pb-3 sm:pb-4">
-              <CardTitle className="text-lg sm:text-xl text-white">Quick Links</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-2">
-              <Link
-                href="/account/tokens"
-                className="flex items-center justify-between p-3 sm:p-4 rounded-xl bg-white/[0.02] border border-white/5 hover:bg-white/[0.05] hover:border-white/10 transition-all group"
-              >
-                <div className="flex items-center gap-2 sm:gap-3">
-                  <Coins className="h-4 w-4 sm:h-5 sm:w-5 text-amber-500" />
-                  <span className="text-sm sm:text-base text-white font-medium">Purchase Tokens</span>
-                </div>
-                <ChevronRight className="h-4 w-4 sm:h-5 sm:w-5 text-gray-500 group-hover:text-white transition-colors" />
-              </Link>
-
-              <Link
-                href="/account/media"
-                className="flex items-center justify-between p-3 sm:p-4 rounded-xl bg-white/[0.02] border border-white/5 hover:bg-white/[0.05] hover:border-white/10 transition-all group"
-              >
-                <div className="flex items-center gap-2 sm:gap-3">
-                  <ImageIcon className="h-4 w-4 sm:h-5 sm:w-5 text-blue-500" />
-                  <span className="text-sm sm:text-base text-white font-medium">Media Gallery</span>
-                </div>
-                <ChevronRight className="h-4 w-4 sm:h-5 sm:w-5 text-gray-500 group-hover:text-white transition-colors" />
-              </Link>
-
-              <button
-                onClick={logout}
-                className="w-full flex items-center justify-between p-3 sm:p-4 rounded-xl bg-white/[0.02] border border-white/5 hover:bg-red-500/10 hover:border-red-500/20 transition-all group"
-              >
-                <div className="flex items-center gap-2 sm:gap-3">
-                  <LogOut className="h-4 w-4 sm:h-5 sm:w-5 text-red-500" />
-                  <span className="text-sm sm:text-base text-gray-400 group-hover:text-red-400 font-medium transition-colors">
-                    Sign Out
-                  </span>
-                </div>
-                <ChevronRight className="h-4 w-4 sm:h-5 sm:w-5 text-gray-500 group-hover:text-red-400 transition-colors" />
-              </button>
-            </CardContent>
-          </Card>
+                </CardHeader>
+                <CardContent>
+                  <AnimatePresence mode="wait">
+                    <motion.div
+                      key={activeTab}
+                      initial={{ opacity: 0, x: 20 }}
+                      animate={{ opacity: 1, x: 0 }}
+                      exit={{ opacity: 0, x: -20 }}
+                      transition={{
+                        type: 'spring',
+                        stiffness: 300,
+                        damping: 30,
+                      }}
+                    >
+                      {tabContent[activeTab]()}
+                    </motion.div>
+                  </AnimatePresence>
+                </CardContent>
+              </Card>
+            </div>
+          </div>
         </motion.div>
       </main>
     </div>

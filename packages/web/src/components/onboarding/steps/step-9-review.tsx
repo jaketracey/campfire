@@ -185,7 +185,7 @@ export function Step9Review() {
   }, [localSessionId, state, router]);
 
   return (
-    <div className="min-h-[70vh] flex flex-col items-center justify-center">
+    <div className="min-h-[70vh] flex flex-col items-center pt-16 md:pt-24">
       <AnimatePresence mode="wait">
         {/* Phase 1: Loading - Pulsing name */}
         {revealPhase === 'loading' && (
@@ -195,7 +195,7 @@ export function Step9Review() {
             animate={{ opacity: 1 }}
             exit={{ opacity: 0, scale: 0.9 }}
             transition={{ duration: 0.5 }}
-            className="text-center"
+            className="text-center pt-8 md:pt-12"
           >
             <motion.h1
               className="text-5xl md:text-7xl font-bold font-display text-white"
@@ -232,14 +232,14 @@ export function Step9Review() {
             animate={{ opacity: 1 }}
             exit={{ opacity: 0, y: -30 }}
             transition={{ duration: 0.6 }}
-            className="text-center max-w-2xl mx-auto px-4"
+            className="text-center max-w-2xl md:max-w-4xl mx-auto px-4 pt-8 md:pt-12"
           >
             {/* Name - larger */}
             <motion.h1
               initial={{ y: 30, opacity: 0, scale: 0.9 }}
               animate={{ y: 0, opacity: 1, scale: 1 }}
               transition={{ type: 'spring', stiffness: 100, damping: 15 }}
-              className="text-6xl md:text-8xl font-bold font-display text-white mb-2"
+              className="text-5xl md:text-8xl font-bold font-display text-white mb-2"
               style={{
                 textShadow: '0 0 40px rgba(168, 85, 247, 0.5)',
               }}
@@ -252,7 +252,7 @@ export function Step9Review() {
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               transition={{ delay: 0.3, duration: 0.5 }}
-              className="text-gray-400 text-lg mb-8"
+              className="text-gray-400 text-base md:text-lg mb-6 md:mb-8"
             >
               {state.identity.pronouns} •{' '}
               <span className="text-vibes-neon">{state.archetype?.name}</span>
@@ -270,7 +270,7 @@ export function Step9Review() {
               animate={{ opacity: 1, filter: 'blur(0px)' }}
               transition={{ delay: 0.5, duration: 1.2 }}
             >
-              <p className="text-xl md:text-2xl text-gray-300 leading-relaxed font-light">
+              <p className="text-base md:text-xl text-gray-300 leading-relaxed font-light">
                 {backstoryResult.backstory || `A ${state.archetype?.description?.toLowerCase() || 'unique'} companion waiting to connect.`}
               </p>
             </motion.div>

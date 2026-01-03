@@ -6,6 +6,7 @@
 import type { FastifyInstance } from 'fastify';
 import type { WebSocket } from 'ws';
 import { nanoid } from 'nanoid';
+import { z } from 'zod';
 import { logger } from '../observability/logger.js';
 import { verifyToken, type AuthenticatedUser } from '../middleware/auth.js';
 import {
@@ -29,11 +30,104 @@ import { enqueueSummaryJob } from '../utils/queue.js';
 
 import { uploadWebcamFrame } from '../utils/webcam-storage.js';
 
-// System anonymous user ID
+// Anonymous user ID prefix - actual ID is generated per-session for tracking
+const ANONYMOUS_USER_ID_PREFIX = 'anon-';
+
+// System anonymous user ID - must match the ID used in demo routes
 const ANONYMOUS_USER_ID = '00000000-0000-0000-0000-000000000000';
 
 // Orchestrator base URL
 const ORCHESTRATOR_URL = process.env['ORCHESTRATOR_URL'] || 'http://localhost:8000';
+
+// ============================================================================
+// WebSocket Payload Validation Schemas
+// ============================================================================
+
+const AuthPayloadSchema = z.object({
+  token: z.string().min(1).max(4096),
+});
+
+const AuthAnonymousPayloadSchema = z.object({
+  fingerprint: z.string().min(1).max(64),
+});
+
+const SessionStartPayloadSchema = z.object({
+  companionId: z.string().uuid().optional(),
+  sessionId: z.string().uuid().optional(),
+}).refine(data => data.companionId || data.sessionId, {
+  message: 'Either companionId or sessionId is required',
+});
+
+const UserMessagePayloadSchema = z.object({
+  content: z.string().min(1).max(32000), // Max 32KB message
+});
+
+const AudioChunkPayloadSchema = z.object({
+  data: z.string().min(1).max(1048576), // Max 1MB base64 chunk
+  sequence: z.number().int().min(0),
+});
+
+const VoiceEnabledPayloadSchema = z.object({
+  enabled: z.boolean(),
+});
+
+const VoiceAudioChunkPayloadSchema = z.object({
+  data: z.string().min(1).max(1048576), // Max 1MB base64 chunk
+});
+
+const WebcamEnabledPayloadSchema = z.object({
+  enabled: z.boolean(),
+});
+
+const WebcamFramePayloadSchema = z.object({
+  data: z.string().min(1).max(5242880), // Max 5MB base64 frame
+  width: z.number().int().min(1).max(4096),
+  height: z.number().int().min(1).max(4096),
+  timestamp: z.number().int().min(0),
+});
+
+const StartGamePayloadSchema = z.object({
+  gameType: z.string().min(1).max(50),
+});
+
+const UserGameMovePayloadSchema = z.object({
+  move: z.string().min(1).max(100),
+});
+
+const LikeMessagePayloadSchema = z.object({
+  turnId: z.string().uuid(),
+});
+
+const InviteCompanionPayloadSchema = z.object({
+  friendCompanionId: z.string().uuid(),
+  reason: z.string().max(500).optional(),
+});
+
+const DismissCompanionPayloadSchema = z.object({
+  companionId: z.string().uuid(),
+});
+
+/**
+ * Validate a WebSocket message payload against its schema
+ * Returns the validated data or null if invalid
+ */
+function validatePayload<T>(
+  schema: z.ZodSchema<T>,
+  payload: unknown,
+  messageType: string,
+  client: ConnectedClient
+): T | null {
+  const result = schema.safeParse(payload);
+  if (!result.success) {
+    logger.warn(
+      { clientId: client.id, messageType, errors: result.error.flatten() },
+      'Invalid WebSocket payload'
+    );
+    sendError(client, `Invalid payload for ${messageType}: ${result.error.issues[0]?.message || 'validation failed'}`);
+    return null;
+  }
+  return result.data;
+}
 
 /**
  * Sleep utility for typing delays between messages
@@ -161,6 +255,9 @@ interface ConnectedClient {
   // Engagement tracking state (for anonymous users)
   lastMessageTimestamp?: Date;
   previousMessages: string[];
+  // Rate limiting state
+  rateLimitMessages: number;
+  rateLimitWindowStart: number;
 }
 
 // Active connections
@@ -169,6 +266,11 @@ const clients = new Map<string, ConnectedClient>();
 // Heartbeat interval (30 seconds)
 const HEARTBEAT_INTERVAL = 30000;
 const CLIENT_TIMEOUT = 60000;
+
+// Rate limiting configuration
+const RATE_LIMIT_WINDOW_MS = 1000; // 1 second window
+const RATE_LIMIT_MAX_MESSAGES = 20; // max 20 messages per second
+const RATE_LIMIT_MAX_BURST = 50; // allow burst up to 50 messages
 
 /**
  * Register WebSocket handler
@@ -205,6 +307,8 @@ export async function registerWebSocketHandler(app: FastifyInstance): Promise<vo
       voiceCallActive: false,
       voiceCallTokensDeducted: 0,
       previousMessages: [],
+      rateLimitMessages: 0,
+      rateLimitWindowStart: Date.now(),
     };
 
     clients.set(clientId, client);
@@ -248,10 +352,50 @@ export async function registerWebSocketHandler(app: FastifyInstance): Promise<vo
 }
 
 /**
+ * Check rate limit for a client
+ * Returns true if request is allowed, false if rate limited
+ */
+function checkRateLimit(client: ConnectedClient): boolean {
+  const now = Date.now();
+
+  // Reset window if expired
+  if (now - client.rateLimitWindowStart >= RATE_LIMIT_WINDOW_MS) {
+    client.rateLimitWindowStart = now;
+    client.rateLimitMessages = 0;
+  }
+
+  client.rateLimitMessages++;
+
+  // Allow burst but enforce hard limit
+  if (client.rateLimitMessages > RATE_LIMIT_MAX_BURST) {
+    return false;
+  }
+
+  // Soft limit: warn but allow
+  if (client.rateLimitMessages > RATE_LIMIT_MAX_MESSAGES) {
+    logger.warn(
+      { clientId: client.id, messages: client.rateLimitMessages },
+      'Client exceeding rate limit'
+    );
+  }
+
+  return true;
+}
+
+/**
  * Handle incoming WebSocket message
  */
 async function handleMessage(client: ConnectedClient, message: WSMessage): Promise<void> {
   client.lastPing = new Date();
+
+  // Rate limit check (except for ping/pong which are lightweight)
+  if (message.type !== 'ping' && message.type !== 'pong') {
+    if (!checkRateLimit(client)) {
+      sendError(client, 'Rate limit exceeded. Please slow down.');
+      logger.warn({ clientId: client.id, messageType: message.type }, 'Rate limit exceeded');
+      return;
+    }
+  }
 
   switch (message.type) {
     case 'ping':
@@ -262,81 +406,109 @@ async function handleMessage(client: ConnectedClient, message: WSMessage): Promi
       // Just update lastPing (already done above)
       break;
 
-    case 'auth':
-      await handleAuth(client, message.payload as { token: string });
+    case 'auth': {
+      const payload = validatePayload(AuthPayloadSchema, message.payload, 'auth', client);
+      if (payload) await handleAuth(client, payload);
       break;
+    }
 
-    case 'auth_anonymous':
-      await handleAuthAnonymous(client, message.payload as { fingerprint: string });
+    case 'auth_anonymous': {
+      const payload = validatePayload(AuthAnonymousPayloadSchema, message.payload, 'auth_anonymous', client);
+      if (payload) await handleAuthAnonymous(client, payload);
       break;
+    }
 
-    case 'session_start':
-      await handleSessionStart(client, message.payload as { companionId: string });
+    case 'session_start': {
+      const payload = validatePayload(SessionStartPayloadSchema, message.payload, 'session_start', client);
+      if (payload) await handleSessionStart(client, payload);
       break;
+    }
 
     case 'session_end':
       await handleSessionEnd(client);
       break;
 
-    case 'user_message':
-      await handleUserMessage(client, message.payload as { content: string });
+    case 'user_message': {
+      const payload = validatePayload(UserMessagePayloadSchema, message.payload, 'user_message', client);
+      if (payload) await handleUserMessage(client, payload);
       break;
+    }
 
-    case 'audio_chunk':
-      await handleAudioChunk(client, message.payload as { data: string; sequence: number });
+    case 'audio_chunk': {
+      const payload = validatePayload(AudioChunkPayloadSchema, message.payload, 'audio_chunk', client);
+      if (payload) await handleAudioChunk(client, payload);
       break;
+    }
 
     case 'audio_end':
       await handleAudioEnd(client);
       break;
 
-    case 'voice_enabled':
-      await handleVoiceEnabled(client, message.payload as { enabled: boolean });
+    case 'voice_enabled': {
+      const payload = validatePayload(VoiceEnabledPayloadSchema, message.payload, 'voice_enabled', client);
+      if (payload) await handleVoiceEnabled(client, payload);
       break;
+    }
 
     case 'voice_start':
       await handleVoiceStart(client);
       break;
 
-    case 'voice_audio_chunk':
-      await handleVoiceAudioChunk(client, message.payload as { data: string });
+    case 'voice_audio_chunk': {
+      const payload = validatePayload(VoiceAudioChunkPayloadSchema, message.payload, 'voice_audio_chunk', client);
+      if (payload) await handleVoiceAudioChunk(client, payload);
       break;
+    }
 
     case 'voice_end':
       await handleVoiceEnd(client);
       break;
 
-    case 'webcam_enabled':
-      await handleWebcamEnabled(client, message.payload as { enabled: boolean });
+    case 'webcam_enabled': {
+      const payload = validatePayload(WebcamEnabledPayloadSchema, message.payload, 'webcam_enabled', client);
+      if (payload) await handleWebcamEnabled(client, payload);
       break;
+    }
 
-    case 'webcam_frame':
-      await handleWebcamFrame(client, message.payload as { data: string; width: number; height: number; timestamp: number });
+    case 'webcam_frame': {
+      const payload = validatePayload(WebcamFramePayloadSchema, message.payload, 'webcam_frame', client);
+      if (payload) await handleWebcamFrame(client, payload);
       break;
+    }
 
-    case 'start_game':
-      await handleStartGame(client, message.payload as { gameType: string });
+    case 'start_game': {
+      const payload = validatePayload(StartGamePayloadSchema, message.payload, 'start_game', client);
+      if (payload) await handleStartGame(client, payload);
       break;
+    }
 
-    case 'user_game_move':
-      await handleUserGameMove(client, message.payload as { move: string });
+    case 'user_game_move': {
+      const payload = validatePayload(UserGameMovePayloadSchema, message.payload, 'user_game_move', client);
+      if (payload) await handleUserGameMove(client, payload);
       break;
+    }
 
     case 'resign_game':
       await handleResignGame(client);
       break;
 
-    case 'like_message':
-      await handleLikeMessage(client, message.payload as { turnId: string });
+    case 'like_message': {
+      const payload = validatePayload(LikeMessagePayloadSchema, message.payload, 'like_message', client);
+      if (payload) await handleLikeMessage(client, payload);
       break;
+    }
 
-    case 'invite_companion':
-      await handleInviteCompanion(client, message.payload as { friendCompanionId: string; reason?: string });
+    case 'invite_companion': {
+      const payload = validatePayload(InviteCompanionPayloadSchema, message.payload, 'invite_companion', client);
+      if (payload) await handleInviteCompanion(client, payload);
       break;
+    }
 
-    case 'dismiss_companion':
-      await handleDismissCompanion(client, message.payload as { companionId: string });
+    case 'dismiss_companion': {
+      const payload = validatePayload(DismissCompanionPayloadSchema, message.payload, 'dismiss_companion', client);
+      if (payload) await handleDismissCompanion(client, payload);
       break;
+    }
 
     case 'voice_call_start':
       await handleVoiceCallStart(client);
@@ -406,10 +578,11 @@ async function handleAuthAnonymous(client: ConnectedClient, payload: { fingerpri
   const limitSetting = await adminSettingsRepo.getValue<{ value: number }>('free_trial_message_limit');
   const limit = limitSetting?.value ?? 10;
 
-  // Set up client as anonymous user
+  // Use the system anonymous user ID to match sessions created via demo routes
+  // The fingerprint stored on the client is used for tracking/analytics
   client.user = {
     userId: ANONYMOUS_USER_ID,
-    email: 'anonymous@demo.campfire.local',
+    email: 'anonymous@campfire.local',
     role: 'user',
   };
   client.authenticated = true;
@@ -600,13 +773,24 @@ async function handleSessionStart(
 
     if (payload.sessionId) {
       // Resume existing session (admins can access any session)
+      // First check if session exists at all
+      const sessionsRepo = getSessionsRepository();
+      const sessionExists = await sessionsRepo.findById(payload.sessionId);
+
+      if (!sessionExists) {
+        sendError(client, 'Session not found', 'SESSION_NOT_FOUND');
+        return;
+      }
+
+      // Then check if user has access
       const session = await sessionsService.getById(
         client.user.userId,
         payload.sessionId,
         { isAdmin: client.user.role === 'admin' }
       );
       if (!session) {
-        sendError(client, 'Session not found');
+        // Session exists but user doesn't have access
+        sendError(client, 'You do not have access to this conversation', 'SESSION_ACCESS_DENIED');
         return;
       }
 
@@ -1252,22 +1436,24 @@ async function handleUserMessage(
             }
 
             // Send chunk to client
+            // Unescape newlines that were escaped for SSE transport
+            const unescapedData = data.replace(/\\n/g, '\n');
             if (isGroupChatResponse && currentSpeakerId) {
               // Group chat: send chunk with companion attribution
-              currentSpeakerContent += data;
+              currentSpeakerContent += unescapedData;
               send(client, {
                 type: 'companion_message_chunk',
                 payload: {
                   companionId: currentSpeakerId,
-                  content: data,
+                  content: unescapedData,
                 },
               });
             } else {
               // Regular streaming
-              fullContent += data;
+              fullContent += unescapedData;
               send(client, {
                 type: 'agent_message_chunk',
-                payload: { content: data },
+                payload: { content: unescapedData },
               });
             }
           }
@@ -1278,10 +1464,12 @@ async function handleUserMessage(
       if (lineBuffer.trim() && lineBuffer.startsWith('data: ')) {
         const data = lineBuffer.slice(6).trim();
         if (data && data !== '[DONE]' && !data.startsWith('[')) {
-          fullContent += data;
+          // Unescape newlines that were escaped for SSE transport
+          const unescapedData = data.replace(/\\n/g, '\n');
+          fullContent += unescapedData;
           send(client, {
             type: 'agent_message_chunk',
-            payload: { content: data },
+            payload: { content: unescapedData },
           });
         }
       }
@@ -1312,7 +1500,7 @@ async function handleUserMessage(
 
     // 10b. Record LLM usage for cost tracking (uses estimates for now)
     // Skip recording for anonymous users to avoid foreign key issues
-    if (!client.isAnonymous && userId !== ANONYMOUS_USER_ID) {
+    if (!client.isAnonymous && !userId.startsWith(ANONYMOUS_USER_ID_PREFIX)) {
       try {
         const llmUsageService = getLLMUsageService();
         await llmUsageService.recordUsage({
@@ -2422,10 +2610,10 @@ function send(client: ConnectedClient, message: Omit<WSMessage, 'id' | 'timestam
 /**
  * Send an error message to a client
  */
-function sendError(client: ConnectedClient, message: string): void {
+function sendError(client: ConnectedClient, message: string, code?: string): void {
   send(client, {
     type: 'error',
-    payload: { message },
+    payload: { message, code },
   });
 }
 

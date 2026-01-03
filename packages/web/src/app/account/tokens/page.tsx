@@ -4,8 +4,9 @@ import { useState, useEffect } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import type { Route } from 'next';
-import { Flame, Coins, ArrowLeft, Sparkles, Check, Loader2 } from 'lucide-react';
+import { Coins, ArrowLeft, Sparkles, Check, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { AnimatedFlame } from '@/components/ui/animated-flame';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { useToast } from '@/hooks/use-toast';
 import { useRequireAuth } from '@/hooks/use-auth';
@@ -110,9 +111,8 @@ export default function TokensPage() {
       {/* Header */}
       <header className="border-b px-6 py-4">
         <div className="max-w-4xl mx-auto flex items-center gap-4">
-          <Link href="/dashboard" className="flex items-center gap-2 group">
-            <Flame className="h-7 w-7 text-campfire-500 group-hover:scale-110 transition-transform" />
-            <span className="text-xl font-bold">Campfire</span>
+          <Link href="/dashboard" className="hover:opacity-80 transition-opacity">
+            <AnimatedFlame size="sm" />
           </Link>
           <div className="flex-1" />
           <Link href="/dashboard">

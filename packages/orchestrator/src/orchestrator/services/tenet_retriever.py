@@ -59,7 +59,7 @@ class TenetRetriever:
         """
         try:
             client = await self._get_client()
-            url = f"{self.gateway_url}/internal/companions/{companion_id}/tenets/core"
+            url = f"{self.gateway_url}/api/v1/internal/companions/{companion_id}/tenets/core"
             response = await client.get(url)
             response.raise_for_status()
 
@@ -117,7 +117,7 @@ class TenetRetriever:
 
         try:
             client = await self._get_client()
-            url = f"{self.gateway_url}/internal/companions/{companion_id}/tenets/search"
+            url = f"{self.gateway_url}/api/v1/internal/companions/{companion_id}/tenets/search"
 
             payload: dict[str, Any] = {
                 "contexts": contexts,

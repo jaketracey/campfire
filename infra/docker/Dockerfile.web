@@ -42,7 +42,7 @@ COPY --from=deps /app/packages/web/node_modules ./packages/web/node_modules
 
 COPY packages/shared ./packages/shared
 COPY packages/web ./packages/web
-COPY tsconfig.json ./
+COPY tsconfig.json tsconfig.base.json ./
 
 # Build-time environment variables for Next.js
 # These are baked into the client bundle at build time

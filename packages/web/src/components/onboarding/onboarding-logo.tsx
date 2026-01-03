@@ -7,6 +7,7 @@ import { useState, useEffect, useRef } from 'react';
 
 export function OnboardingLogo() {
     const [isHidden, setIsHidden] = useState(false);
+    const [flameAnimation, setFlameAnimation] = useState({});
     const logoRef = useRef<HTMLAnchorElement>(null);
 
     // Buffer space in pixels for intersection detection
@@ -63,6 +64,31 @@ export function OnboardingLogo() {
         };
     }, []);
 
+    // Random flame animations - rare and delightful
+    useEffect(() => {
+        const animations = [
+            { scale: [1, 1.15, 1], transition: { duration: 0.4 } },
+            { rotate: [0, -8, 8, -4, 0], transition: { duration: 0.5 } },
+            { y: [0, -3, 0], transition: { duration: 0.3 } },
+            { filter: ['brightness(1)', 'brightness(1.4)', 'brightness(1)'], transition: { duration: 0.6 } },
+        ];
+
+        let timeoutId: NodeJS.Timeout;
+
+        const scheduleNext = () => {
+            const delay = 30000 + Math.random() * 60000;
+            timeoutId = setTimeout(() => {
+                const animation = animations[Math.floor(Math.random() * animations.length)];
+                setFlameAnimation(animation);
+                setTimeout(() => setFlameAnimation({}), 700);
+                scheduleNext();
+            }, delay);
+        };
+
+        scheduleNext();
+        return () => clearTimeout(timeoutId);
+    }, []);
+
     return (
         <motion.div
             animate={{ opacity: isHidden ? 0 : 1 }}
@@ -71,10 +97,11 @@ export function OnboardingLogo() {
         <Link
             ref={logoRef}
             href="/"
-            className="flex items-center gap-2 relative z-50 text-white"
+            className="relative z-50"
         >
-            <Flame className="h-8 w-8 text-campfire-500" />
-            <span className="text-xl font-bold">Campfire</span>
+            <motion.div animate={flameAnimation}>
+                <Flame className="h-8 w-8 text-campfire-500" />
+            </motion.div>
         </Link>
         </motion.div>
     );

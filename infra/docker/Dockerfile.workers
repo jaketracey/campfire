@@ -45,7 +45,7 @@ COPY --from=deps /app/packages/workers/node_modules ./packages/workers/node_modu
 
 COPY packages/shared ./packages/shared
 COPY packages/workers ./packages/workers
-COPY tsconfig.json ./
+COPY tsconfig.json tsconfig.base.json ./
 
 RUN pnpm --filter shared build && \
     pnpm --filter workers build
@@ -58,17 +58,24 @@ FROM node:22-alpine AS production
 RUN addgroup --system --gid 1001 nodejs && \
     adduser --system --uid 1001 campfire
 
+# Install wget for health checks
 RUN apk add --no-cache wget && rm -rf /var/cache/apk/*
 
 WORKDIR /app
 
+# Copy package.json and remove @campfire/shared dep (we'll add it manually)
+COPY --from=builder /app/packages/workers/package.json ./package.json.tmp
+RUN sed '/"@campfire\/shared":/d' package.json.tmp > package.json && rm package.json.tmp
+
+# Install production dependencies only
+RUN npm install --omit=dev --ignore-scripts
+
+# Copy built application
 COPY --from=builder /app/packages/workers/dist ./dist
-COPY --from=builder /app/packages/workers/package.json ./
+
+# Copy shared package build into node_modules
 COPY --from=builder /app/packages/shared/dist ./node_modules/@campfire/shared/dist
 COPY --from=builder /app/packages/shared/package.json ./node_modules/@campfire/shared/
-
-RUN corepack enable && corepack prepare pnpm@latest --activate && \
-    pnpm install --prod --frozen-lockfile
 
 RUN chown -R campfire:nodejs /app
 
@@ -96,7 +103,7 @@ COPY --from=deps /app/packages/workers/node_modules ./packages/workers/node_modu
 
 COPY packages/shared ./packages/shared
 COPY packages/workers ./packages/workers
-COPY tsconfig.json ./
+COPY tsconfig.json tsconfig.base.json ./
 
 WORKDIR /app/packages/workers
 

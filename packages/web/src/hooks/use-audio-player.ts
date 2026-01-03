@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useRef, useCallback, useEffect } from 'react';
+import { isNativeApp, playNativeAudio, stopNativeAudio } from '@/lib/native-bridge';
 
 interface UseAudioPlayerOptions {
   onPlaybackStart?: () => void;
@@ -34,8 +35,10 @@ export function useAudioPlayer(options: UseAudioPlayerOptions = {}): UseAudioPla
   const audioContextRef = useRef<AudioContext | null>(null);
   const analyserRef = useRef<AnalyserNode | null>(null);
   const audioQueueRef = useRef<ArrayBuffer[]>([]);
+  const nativeQueueRef = useRef<string[]>([]);
   const isPlayingRef = useRef(false);
   const isFinishedRef = useRef(false);
+  const isNativePlaybackRef = useRef(false);
   const currentSourceRef = useRef<AudioBufferSourceNode | null>(null);
   const startTimeRef = useRef(0);
   const playedDurationRef = useRef(0);
@@ -132,10 +135,59 @@ export function useAudioPlayer(options: UseAudioPlayerOptions = {}): UseAudioPla
   }, [initAudioContext, onPlaybackStart, onPlaybackEnd, onError]);
 
   /**
+   * Play native audio queue
+   */
+  const playNativeQueue = useCallback(async () => {
+    if (nativeQueueRef.current.length === 0) {
+      if (isFinishedRef.current) {
+        isPlayingRef.current = false;
+        isNativePlaybackRef.current = false;
+        setIsPlaying(false);
+        setIsPending(false);
+        onPlaybackEnd?.();
+      } else {
+        setIsPending(true);
+      }
+      return;
+    }
+
+    const base64Data = nativeQueueRef.current.shift()!;
+
+    try {
+      if (!isPlayingRef.current) {
+        isPlayingRef.current = true;
+        setIsPlaying(true);
+        setIsPending(false);
+        onPlaybackStart?.();
+      }
+
+      await playNativeAudio(base64Data);
+      playNativeQueue();
+    } catch (err) {
+      console.error('[AudioPlayer] Native playback error:', err);
+      onError?.(err instanceof Error ? err.message : 'Failed to play audio');
+      playNativeQueue();
+    }
+  }, [onPlaybackStart, onPlaybackEnd, onError]);
+
+  /**
    * Queue audio chunk for playback
    */
   const queueAudio = useCallback(
     (base64Data: string, format = 'mp3') => {
+      // Use native playback when running in mobile app
+      if (isNativeApp()) {
+        nativeQueueRef.current.push(base64Data);
+        isNativePlaybackRef.current = true;
+
+        // Start playback if not already playing
+        if (!isPlayingRef.current && !isPending) {
+          isFinishedRef.current = false;
+          playNativeQueue();
+        }
+        return;
+      }
+
       const arrayBuffer = base64ToArrayBuffer(base64Data);
       audioQueueRef.current.push(arrayBuffer);
 
@@ -145,7 +197,7 @@ export function useAudioPlayer(options: UseAudioPlayerOptions = {}): UseAudioPla
         playNextChunk();
       }
     },
-    [base64ToArrayBuffer, isPending, playNextChunk]
+    [base64ToArrayBuffer, isPending, playNextChunk, playNativeQueue]
   );
 
   /**
@@ -165,6 +217,13 @@ export function useAudioPlayer(options: UseAudioPlayerOptions = {}): UseAudioPla
    * Stop playback immediately
    */
   const stop = useCallback(() => {
+    // Stop native playback if active
+    if (isNativePlaybackRef.current) {
+      stopNativeAudio();
+      nativeQueueRef.current = [];
+      isNativePlaybackRef.current = false;
+    }
+
     if (currentSourceRef.current) {
       try {
         currentSourceRef.current.stop();

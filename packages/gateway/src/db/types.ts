@@ -834,6 +834,63 @@ export interface GiftMemoryInsert {
 }
 
 // ============================================================================
+// Gift Template Types (Global Gift Library)
+// ============================================================================
+
+export type GiftTemplateStatus = 'active' | 'hidden' | 'archived';
+
+export type GiftTemplateCategory =
+  | 'romantic'
+  | 'friendship'
+  | 'celebration'
+  | 'comfort'
+  | 'gratitude'
+  | 'playful'
+  | 'thoughtful'
+  | 'mystical'
+  | 'nature'
+  | 'artistic'
+  | 'other';
+
+export interface GiftTemplate {
+  id: UUID;
+  name: string;
+  description: string | null;
+  visual_prompt: string | null;
+  emotional_meaning: string | null;
+  image_url: string;
+  s3_bucket: string | null;
+  s3_key: string | null;
+  category: GiftTemplateCategory;
+  token_cost: number;
+  tier: string;
+  status: GiftTemplateStatus;
+  total_sends: number;
+  sends_last_7_days: number;
+  sends_last_30_days: number;
+  last_sent_at: Timestamp | null;
+  source_gift_id: UUID | null;
+  content_hash: string;
+  created_at: Timestamp;
+  updated_at: Timestamp;
+}
+
+export interface GiftTemplateInsert {
+  name: string;
+  description?: string | null;
+  visual_prompt?: string | null;
+  emotional_meaning?: string | null;
+  image_url: string;
+  s3_bucket?: string | null;
+  s3_key?: string | null;
+  category?: GiftTemplateCategory;
+  token_cost: number;
+  tier?: string;
+  source_gift_id?: UUID | null;
+  content_hash: string;
+}
+
+// ============================================================================
 // Support Ticket Types
 // ============================================================================
 

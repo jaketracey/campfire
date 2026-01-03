@@ -1,6 +1,7 @@
 import type { NextConfig } from 'next';
 
 const nextConfig: NextConfig = {
+  output: 'standalone',
   reactStrictMode: true,
   reactCompiler: true,
   devIndicators: false,
@@ -50,10 +51,17 @@ const nextConfig: NextConfig = {
         protocol: 'https',
         hostname: 'campfire-prod-media.s3.us-east-1.amazonaws.com',
       },
+      {
+        protocol: 'https',
+        hostname: 'campfire-stealth-media.s3.us-east-1.amazonaws.com',
+      },
     ],
   },
   experimental: {
     turbopackFileSystemCacheForDev: true,
+  },
+  turbopack: {
+    root: '../..',  // Point to monorepo root (/app in Docker)
   },
 };
 

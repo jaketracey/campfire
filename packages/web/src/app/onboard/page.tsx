@@ -1,7 +1,6 @@
 'use client';
 
 import { useEffect } from 'react';
-import { useRouter } from 'next/navigation';
 import { AnimatePresence, motion } from 'framer-motion';
 import { useOnboardingStore } from '@/stores/onboarding-store';
 import { Step1Welcome } from '@/components/onboarding/steps/step-1-welcome';
@@ -10,41 +9,18 @@ import { Step3Visuals } from '@/components/onboarding/steps/step-3-visuals';
 import { Step4Archetype } from '@/components/onboarding/steps/step-4-archetype';
 import { Step7Voice as Step5Voice } from '@/components/onboarding/steps/step-7-voice';
 import { Step9Review as Step6Review } from '@/components/onboarding/steps/step-9-review';
-import { Button } from '@/components/ui/button';
-import { ChevronLeft } from 'lucide-react';
-import { useAuth } from '@/hooks/use-auth';
 import { WelcomeTransition } from '@/components/auth/welcome-transition';
 
+// Step labels for the progress indicator
+const STEP_LABELS = ['Identity', 'Visuals', 'Archetype', 'Voice', 'Review'];
+
 export default function OnboardingPage() {
-  const router = useRouter();
-  const { isAuthenticated, isInitialized, isLoading: authLoading } = useAuth();
-  const { currentStep, prevStep, reset } = useOnboardingStore();
+  const { currentStep, setStep, reset } = useOnboardingStore();
 
   // Reset onboarding state when page mounts fresh
   useEffect(() => {
     reset();
   }, [reset]);
-
-  // Redirect to login if not authenticated
-  useEffect(() => {
-    if (isInitialized && !authLoading && !isAuthenticated) {
-      router.push('/login');
-    }
-  }, [isInitialized, authLoading, isAuthenticated, router]);
-
-  // Show loading while checking auth
-  if (!isInitialized || authLoading) {
-    return (
-      <div className="flex items-center justify-center min-h-screen bg-[#0a0a0a]">
-        <div className="animate-pulse text-gray-400">Loading...</div>
-      </div>
-    );
-  }
-
-  // Don't render if not authenticated (will redirect)
-  if (!isAuthenticated) {
-    return null;
-  }
 
   const renderStep = () => {
     switch (currentStep) {
@@ -70,60 +46,51 @@ export default function OnboardingPage() {
   return (
     <WelcomeTransition>
     <div className="relative min-h-screen w-full overflow-hidden text-white flex flex-col font-sans">
-      {/* Step indicator - fixed next to logo on desktop, top-right on mobile */}
-      {currentStep > 1 && (
-        <>
-          {/* Mobile: top-right */}
-          <div className="fixed top-0 right-0 z-50 flex items-center p-6 md:hidden">
-            <div className="flex flex-col gap-1.5 w-28">
-              <span className="text-[10px] font-bold tracking-widest text-muted-foreground uppercase font-display text-right">
-                Step {currentStep} <span className="text-vibes-cyan">/ 6</span>
-              </span>
-              <div className="h-1 w-full bg-white/5 rounded-full overflow-hidden border border-white/5">
-                <motion.div
-                  initial={{ width: 0 }}
-                  animate={{ width: `${progress}%` }}
-                  className="h-full bg-gradient-to-r from-vibes-electric to-vibes-cyan shadow-[0_0_10px_rgba(6,182,212,0.5)]"
-                />
-              </div>
+      {/* Step indicator - hide on review step */}
+      {currentStep > 1 && currentStep < 6 && (
+        <div className="flex justify-center px-4 pt-20 md:pt-6 pb-8 md:pb-6">
+          <div className="w-full max-w-md">
+            {/* Step labels */}
+            <div className="flex justify-between mb-2">
+              {STEP_LABELS.map((label, index) => {
+                const stepNumber = index + 2; // Steps 2-6 (step 1 is welcome)
+                const isCompleted = index < currentStep - 1;
+                const isCurrent = stepNumber === currentStep;
+                const canNavigate = isCompleted;
+
+                return (
+                  <button
+                    key={label}
+                    onClick={() => canNavigate && setStep(stepNumber)}
+                    disabled={!canNavigate}
+                    className={`text-[10px] font-bold tracking-widest uppercase transition-all ${
+                      isCompleted
+                        ? 'text-white/60 hover:text-white/80 cursor-pointer'
+                        : isCurrent
+                          ? 'text-campfire-500 cursor-default'
+                          : 'text-gray-600 cursor-default'
+                    }`}
+                  >
+                    {label}
+                  </button>
+                );
+              })}
+            </div>
+            {/* Progress bar */}
+            <div className="h-1 w-full bg-white/10 rounded-full overflow-hidden border border-white/5">
+              <motion.div
+                className="h-full bg-white shadow-[0_0_10px_rgba(255,255,255,0.3)]"
+                initial={{ width: 0 }}
+                animate={{ width: `${progress}%` }}
+                transition={{ duration: 0.4, ease: 'easeOut' }}
+              />
             </div>
           </div>
-          {/* Desktop: next to logo (left side) */}
-          <div className="hidden md:flex fixed top-0 left-0 z-50 items-center pt-[1.625rem] pb-8 pl-48">
-            <div className="flex flex-col gap-2.5 w-32">
-              <span className="text-[10px] font-bold tracking-widest text-muted-foreground uppercase font-display">
-                Step {currentStep} <span className="text-vibes-cyan">/ 6</span>
-              </span>
-              <div className="h-1 w-full bg-white/5 rounded-full overflow-hidden border border-white/5">
-                <motion.div
-                  initial={{ width: 0 }}
-                  animate={{ width: `${progress}%` }}
-                  className="h-full bg-gradient-to-r from-vibes-electric to-vibes-cyan shadow-[0_0_10px_rgba(6,182,212,0.5)]"
-                />
-              </div>
-            </div>
-          </div>
-        </>
+        </div>
       )}
 
-      {/* Header / Nav - back button */}
-      <header className="relative z-10 flex items-center justify-between p-6 pt-20">
-        <div className="flex items-center gap-4 min-h-10" data-hides-logo>
-          {currentStep > 1 && (
-            <Button
-              variant="ghost"
-              size="icon"
-              onClick={prevStep}
-              className="rounded-full hover:bg-primary/10"
-            >
-              <ChevronLeft className="h-6 w-6" />
-            </Button>
-          )}
-        </div>
-      </header>
-
       {/* Main Content Area */}
-      <main className="relative z-10 flex-1 flex flex-col items-center justify-center p-4 md:p-8">
+      <main className={`relative z-10 flex-1 flex flex-col items-center p-4 md:p-8 ${currentStep === 1 ? 'pt-20' : ''}`}>
         <AnimatePresence mode="wait">
           <motion.div
             key={currentStep}

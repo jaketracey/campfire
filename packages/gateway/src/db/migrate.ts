@@ -67,7 +67,10 @@ async function getMigrationFiles(): Promise<MigrationFile[]> {
   const migrations: MigrationFile[] = [];
 
   for (const filename of files) {
-    // Match pattern: 001_create_events_table.ts
+    // Skip TypeScript declaration files
+    if (filename.endsWith('.d.ts')) continue;
+
+    // Match pattern: 001_create_events_table.ts or .js
     const match = filename.match(/^(\d+)_(.+)\.(ts|js)$/);
     if (match) {
       const [, idStr, name] = match;

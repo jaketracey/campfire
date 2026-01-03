@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState, useRef } from 'react';
 import { Button } from '@/components/ui/button';
 import { Loader2 } from 'lucide-react';
+import { isNativeApp, requestNativeGoogleAuth } from '@/lib/native-bridge';
 
 declare global {
   interface Window {
@@ -59,8 +60,32 @@ export function GoogleSignInButton({
   const [isLoading, setIsLoading] = useState(false);
   const [isScriptLoaded, setIsScriptLoaded] = useState(false);
   const googleButtonRef = useRef<HTMLDivElement>(null);
+  const [isNative, setIsNative] = useState(false);
 
   const clientId = process.env.NEXT_PUBLIC_GOOGLE_OAUTH_CLIENT_ID;
+
+  // Check if running in native app
+  useEffect(() => {
+    setIsNative(isNativeApp());
+  }, []);
+
+  // Handle native Google auth
+  const handleNativeGoogleAuth = useCallback(async () => {
+    setIsLoading(true);
+    try {
+      const idToken = await requestNativeGoogleAuth(text === 'signup' ? 'signup' : 'signin');
+      if (idToken) {
+        await onSuccess(idToken);
+      } else {
+        // User cancelled
+        console.log('[GoogleSignIn] Native auth cancelled');
+      }
+    } catch (error) {
+      onError(error instanceof Error ? error : new Error('Native Google sign-in failed'));
+    } finally {
+      setIsLoading(false);
+    }
+  }, [onSuccess, onError, text]);
 
   const handleCredentialResponse = useCallback(
     async (response: GoogleCredentialResponse) => {
@@ -154,6 +179,28 @@ export function GoogleSignInButton({
         <GoogleIcon className="mr-2 h-5 w-5" />
         Google sign-in not configured
       </Button>
+    );
+  }
+
+  // Native app: show a custom button that triggers native Google auth
+  if (isNative) {
+    return (
+      <div className={className || 'w-full'} data-google-signin>
+        <Button
+          type="button"
+          variant="outline"
+          className="w-full h-11 bg-white hover:bg-gray-50 text-gray-700 border-gray-300"
+          onClick={handleNativeGoogleAuth}
+          disabled={isLoading}
+        >
+          {isLoading ? (
+            <Loader2 className="mr-2 h-5 w-5 animate-spin" />
+          ) : (
+            <GoogleIcon className="mr-2 h-5 w-5" />
+          )}
+          {isLoading ? 'Signing in...' : text === 'signup' ? 'Sign up with Google' : 'Sign in with Google'}
+        </Button>
+      </div>
     );
   }
 

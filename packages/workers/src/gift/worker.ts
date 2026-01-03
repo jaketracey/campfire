@@ -2,12 +2,12 @@
  * Gift Generation Worker
  *
  * BullMQ worker that processes gift generation jobs.
- * Uses Anthropic to generate gift content and orchestrator for image generation.
+ * Uses the orchestrator service for both LLM content and image generation.
  */
 
 import { Worker, Job } from 'bullmq';
 import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3';
-import Anthropic from '@anthropic-ai/sdk';
+import crypto from 'crypto';
 import type { Redis } from 'ioredis';
 import type { Logger } from 'pino';
 import type { DbClient } from '../db/client.js';
@@ -52,7 +52,6 @@ export class GiftGenerationWorker {
   private worker: Worker<GiftGenerationJobData, GiftGenerationResult> | null = null;
   private config: GiftGenerationWorkerConfig;
   private s3Client: S3Client;
-  private anthropic: Anthropic;
   private region: string;
   private bucket: string;
   private orchestratorUrl: string;
@@ -63,7 +62,6 @@ export class GiftGenerationWorker {
     this.bucket = process.env.S3_BUCKET_MEDIA || 'campfire-media';
     this.orchestratorUrl = config.orchestratorUrl || process.env.ORCHESTRATOR_URL || 'http://localhost:8000';
     this.s3Client = new S3Client({ region: this.region });
-    this.anthropic = new Anthropic();
   }
 
   async start(): Promise<void> {
@@ -159,6 +157,9 @@ export class GiftGenerationWorker {
       // Step 3: Update gift in database with content and image
       await this.updateGiftComplete(giftId, giftContent, imageResult);
 
+      // Step 4: Save to template library for reuse
+      await this.saveToTemplateLibrary(giftId, giftContent, imageResult, data.tokenCost, data.tier);
+
       this.config.logger.info(
         {
           giftId,
@@ -231,26 +232,33 @@ Personality traits: ${personalityDescription}
 
 Generate a unique and creative gift idea.`;
 
-    const response = await this.anthropic.messages.create({
-      model: 'claude-sonnet-4-20250514',
-      max_tokens: 500,
-      messages: [
-        {
-          role: 'user',
-          content: userPrompt,
-        },
-      ],
-      system: systemPrompt,
+    // Call orchestrator's /complete endpoint
+    const response = await fetch(`${this.orchestratorUrl}/complete`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        system_prompt: systemPrompt,
+        user_prompt: userPrompt,
+        max_tokens: 500,
+        temperature: 0.9,
+      }),
     });
 
-    const textContent = response.content.find((block): block is Anthropic.TextBlock => block.type === 'text');
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`Orchestrator /complete error: ${response.status} - ${errorText}`);
+    }
+
+    const result = await response.json() as { content: string; latency_ms: number; provider: string };
+    const textContent = result.content;
+
     if (!textContent) {
       throw new Error('No text response from LLM');
     }
 
     try {
       // Extract JSON from the response (handle potential markdown code blocks)
-      let jsonText = textContent.text.trim();
+      let jsonText = textContent.trim();
       if (jsonText.startsWith('```json')) {
         jsonText = jsonText.slice(7);
       }
@@ -271,7 +279,7 @@ Generate a unique and creative gift idea.`;
       };
     } catch (parseError) {
       this.config.logger.warn(
-        { error: parseError, text: textContent.text },
+        { error: parseError, text: textContent },
         'Failed to parse LLM response, using defaults'
       );
 
@@ -374,5 +382,97 @@ Generate a unique and creative gift idea.`;
         generation_error = ${error}
       WHERE id = ${giftId}
     `;
+  }
+
+  /**
+   * Save generated gift to the template library for reuse.
+   * Uses content hash for deduplication - duplicate gifts are silently skipped.
+   */
+  private async saveToTemplateLibrary(
+    giftId: string,
+    content: GiftContent,
+    image: { imageUrl: string; s3Bucket: string; s3Key: string },
+    tokenCost: number,
+    tier: string
+  ): Promise<void> {
+    try {
+      // Generate content hash for deduplication
+      const contentHash = this.generateContentHash(content);
+
+      // Classify the gift category based on content
+      const category = this.classifyGiftCategory(content);
+
+      // Insert into gift_templates (ON CONFLICT DO NOTHING for deduplication)
+      const result = await this.config.db.sql`
+        INSERT INTO gift_templates (
+          name, description, visual_prompt, emotional_meaning,
+          image_url, s3_bucket, s3_key,
+          category, token_cost, tier,
+          source_gift_id, content_hash
+        ) VALUES (
+          ${content.name},
+          ${content.description},
+          ${content.visualPrompt},
+          ${content.emotionalMeaning},
+          ${image.imageUrl},
+          ${image.s3Bucket},
+          ${image.s3Key},
+          ${category},
+          ${tokenCost},
+          ${tier},
+          ${giftId},
+          ${contentHash}
+        )
+        ON CONFLICT (content_hash) DO NOTHING
+        RETURNING id
+      `;
+
+      if (result.length > 0) {
+        this.config.logger.info(
+          { giftId, templateId: result[0].id, category },
+          'Gift saved to template library'
+        );
+      } else {
+        this.config.logger.debug(
+          { giftId, contentHash },
+          'Gift template already exists, skipped'
+        );
+      }
+    } catch (error) {
+      // Log but don't fail - template creation is non-critical
+      this.config.logger.warn(
+        { giftId, error: error instanceof Error ? error.message : 'Unknown error' },
+        'Failed to save gift to template library'
+      );
+    }
+  }
+
+  /**
+   * Generate a content hash for deduplication.
+   * Uses normalized name + description to identify similar gifts.
+   */
+  private generateContentHash(content: GiftContent): string {
+    const normalized = `${content.name.toLowerCase().trim()}|${content.description.toLowerCase().trim()}`;
+    return crypto.createHash('sha256').update(normalized).digest('hex').substring(0, 64);
+  }
+
+  /**
+   * Classify gift category based on content keywords.
+   */
+  private classifyGiftCategory(content: GiftContent): string {
+    const text = `${content.name} ${content.description} ${content.emotionalMeaning}`.toLowerCase();
+
+    if (text.match(/love|heart|romantic|passion|kiss|embrace/)) return 'romantic';
+    if (text.match(/friend|companion|together|bond|connection/)) return 'friendship';
+    if (text.match(/celebrate|birthday|congrat|party|festive|joy/)) return 'celebration';
+    if (text.match(/comfort|peace|calm|sooth|relax|serene|tranquil/)) return 'comfort';
+    if (text.match(/thank|gratitude|appreciate|grateful/)) return 'gratitude';
+    if (text.match(/fun|play|laugh|joke|whimsy|silly/)) return 'playful';
+    if (text.match(/magic|mystic|star|moon|dream|cosmic|ethereal/)) return 'mystical';
+    if (text.match(/flower|tree|garden|nature|forest|leaf|bloom/)) return 'nature';
+    if (text.match(/art|music|paint|create|craft|melody|song/)) return 'artistic';
+    if (text.match(/think|consider|reflect|meaning|wisdom|deep/)) return 'thoughtful';
+
+    return 'other';
   }
 }

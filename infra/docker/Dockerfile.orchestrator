@@ -1,81 +1,66 @@
 # =============================================================================
-# Campfire Orchestrator Service - Multi-stage Dockerfile
+# Campfire Orchestrator Service - Multi-stage Dockerfile (Python)
 # =============================================================================
 # Build: docker build -f infra/docker/Dockerfile.orchestrator -t campfire-orchestrator .
 # Run:   docker run -p 5000:5000 campfire-orchestrator
 # =============================================================================
 
 # -----------------------------------------------------------------------------
-# Stage 1: Base - Common dependencies and setup
+# Stage 1: Builder - Install dependencies and build
 # -----------------------------------------------------------------------------
-FROM node:22-alpine AS base
-
-# Install security updates and required packages
-RUN apk update && apk upgrade && \
-    apk add --no-cache \
-    libc6-compat \
-    wget \
-    python3 \
-    make \
-    g++ \
-    && rm -rf /var/cache/apk/*
+FROM python:3.11-slim AS builder
 
 WORKDIR /app
 
-# Enable corepack for pnpm
-RUN corepack enable && corepack prepare pnpm@latest --activate
+# Install build dependencies
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install uv for fast package management
+RUN pip install --no-cache-dir uv
+
+# Copy dependency files
+COPY packages/orchestrator/pyproject.toml ./
+COPY packages/orchestrator/README.md ./
+
+# Create source directory structure for editable install
+COPY packages/orchestrator/src ./src
+
+# Install dependencies using uv
+RUN uv pip install --system --no-cache -e ".[dev]"
 
 # -----------------------------------------------------------------------------
-# Stage 2: Dependencies - Install all dependencies
+# Stage 2: Production - Minimal production image
 # -----------------------------------------------------------------------------
-FROM base AS deps
-
-COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
-COPY packages/shared/package.json ./packages/shared/
-COPY packages/orchestrator/package.json ./packages/orchestrator/
-
-RUN pnpm install --frozen-lockfile
-
-# -----------------------------------------------------------------------------
-# Stage 3: Builder - Build the application
-# -----------------------------------------------------------------------------
-FROM base AS builder
-
-COPY --from=deps /app/node_modules ./node_modules
-COPY --from=deps /app/packages/shared/node_modules ./packages/shared/node_modules
-COPY --from=deps /app/packages/orchestrator/node_modules ./packages/orchestrator/node_modules
-
-COPY packages/shared ./packages/shared
-COPY packages/orchestrator ./packages/orchestrator
-COPY tsconfig.json ./
-
-RUN pnpm --filter shared build && \
-    pnpm --filter orchestrator build
-
-# -----------------------------------------------------------------------------
-# Stage 4: Production - Minimal production image
-# -----------------------------------------------------------------------------
-FROM node:22-alpine AS production
+FROM python:3.11-slim AS production
 
 # Security: Run as non-root user
-RUN addgroup --system --gid 1001 nodejs && \
-    adduser --system --uid 1001 campfire
+RUN groupadd --system --gid 1001 python && \
+    useradd --system --uid 1001 --gid python campfire
 
-# Install wget for health checks
-RUN apk add --no-cache wget && rm -rf /var/cache/apk/*
+# Install runtime dependencies
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    wget \
+    && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 
-COPY --from=builder /app/packages/orchestrator/dist ./dist
-COPY --from=builder /app/packages/orchestrator/package.json ./
-COPY --from=builder /app/packages/shared/dist ./node_modules/@campfire/shared/dist
-COPY --from=builder /app/packages/shared/package.json ./node_modules/@campfire/shared/
+# Install uv and copy dependencies from builder
+RUN pip install --no-cache-dir uv
 
-RUN corepack enable && corepack prepare pnpm@latest --activate && \
-    pnpm install --prod --frozen-lockfile
+# Copy pyproject and source
+COPY packages/orchestrator/pyproject.toml ./
+COPY packages/orchestrator/README.md ./
+COPY packages/orchestrator/src ./src
 
-RUN chown -R campfire:nodejs /app
+# Install production dependencies only
+RUN uv pip install --system --no-cache -e .
 
+# Set ownership
+RUN chown -R campfire:python /app
+
+# Switch to non-root user
 USER campfire
 
 EXPOSE 5000
@@ -83,29 +68,40 @@ EXPOSE 5000
 HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
     CMD wget --no-verbose --tries=1 --spider http://localhost:5000/health || exit 1
 
-ENV NODE_ENV=production \
+ENV PYTHONPATH=/app/src \
+    PYTHONUNBUFFERED=1 \
     PORT=5000
 
-CMD ["node", "dist/index.js"]
+CMD ["python", "-m", "uvicorn", "orchestrator.main:app", "--host", "0.0.0.0", "--port", "5000"]
 
 # -----------------------------------------------------------------------------
-# Stage 5: Development - Full development environment
+# Stage 3: Development - Full development environment
 # -----------------------------------------------------------------------------
-FROM base AS development
+FROM python:3.11-slim AS development
 
-COPY --from=deps /app/node_modules ./node_modules
-COPY --from=deps /app/packages/shared/node_modules ./packages/shared/node_modules
-COPY --from=deps /app/packages/orchestrator/node_modules ./packages/orchestrator/node_modules
+# Install dev dependencies
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential \
+    wget \
+    && rm -rf /var/lib/apt/lists/*
 
-COPY packages/shared ./packages/shared
-COPY packages/orchestrator ./packages/orchestrator
-COPY tsconfig.json ./
+WORKDIR /app
 
-WORKDIR /app/packages/orchestrator
+# Install uv
+RUN pip install --no-cache-dir uv
+
+# Copy pyproject and source
+COPY packages/orchestrator/pyproject.toml ./
+COPY packages/orchestrator/README.md ./
+COPY packages/orchestrator/src ./src
+
+# Install all dependencies including dev
+RUN uv pip install --system --no-cache -e ".[dev]"
 
 EXPOSE 5000
 
-ENV NODE_ENV=development \
+ENV PYTHONPATH=/app/src \
+    PYTHONUNBUFFERED=1 \
     PORT=5000
 
-CMD ["pnpm", "dev"]
+CMD ["python", "-m", "uvicorn", "orchestrator.main:app", "--host", "0.0.0.0", "--port", "5000", "--reload"]

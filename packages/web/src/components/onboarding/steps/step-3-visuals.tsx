@@ -4,7 +4,7 @@ import { useState, useMemo, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useOnboardingStore, AppearanceEthnicity, AppearanceBodyType, AppearanceHairColor } from '@/stores/onboarding-store';
 import { Button } from '@/components/ui/button';
-import { ArrowRight, Check, Sparkles, Shuffle } from 'lucide-react';
+import { ArrowRight, Check, Sparkles, Wand2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import Image from 'next/image';
 import { Slider } from '@/components/ui/slider';
@@ -137,10 +137,9 @@ export function Step3Visuals() {
     });
     setVisualStyle({ avatarStyle: targetArtStyle as any });
 
-    // Wait a moment then proceed
+    // Wait a moment then show result
     await new Promise((r) => setTimeout(r, 500));
     setIsSurprising(false);
-    nextStep();
   };
 
   // Handle migration from old store format without appearance
@@ -206,27 +205,31 @@ export function Step3Visuals() {
     <div className="space-y-8">
       {/* Header row: Title left, Surprise Me right */}
       <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-6">
-        <div className="text-center lg:text-left space-y-2">
+        <div className="text-left space-y-2">
           <h2 className="text-4xl font-bold font-display tracking-tight text-white">Visual Identity</h2>
-          <p className="text-gray-400 max-w-md mx-auto lg:mx-0">Design your companion&apos;s physical appearance and art style.</p>
+          <p className="text-gray-400 max-w-md">Design your companion&apos;s physical appearance and art style.</p>
         </div>
 
         <Button
           size="lg"
           disabled={isSurprising}
           onClick={handleSurpriseMe}
-          className="group h-14 lg:h-16 px-8 lg:px-12 rounded-full bg-white/[0.03] border-2 border-dashed border-white/20 hover:border-vibes-cyan/50 hover:bg-vibes-cyan/10 hover:shadow-[0_0_40px_rgba(6,182,212,0.2)] transition-all font-bold text-lg relative overflow-hidden shrink-0"
+          className="hidden lg:flex group h-16 px-12 rounded-2xl bg-gradient-to-r from-vibes-hot via-vibes-neon to-vibes-cyan text-white shadow-[0_0_30px_rgba(168,85,247,0.3)] hover:shadow-[0_0_50px_rgba(168,85,247,0.5)] transition-all font-bold text-lg relative overflow-hidden shrink-0"
         >
-          {isSurprising && (
-            <motion.div
-              className="absolute inset-0 bg-gradient-to-r from-transparent via-white/20 to-transparent"
-              initial={{ x: '-100%' }}
-              animate={{ x: '100%' }}
-              transition={{ repeat: Infinity, duration: 0.8, ease: 'linear' }}
-            />
-          )}
-          <Shuffle className={cn("mr-2 h-5 w-5", isSurprising && "animate-spin")} />
-          {isSurprising ? 'Choosing...' : 'Surprise Me'}
+          <motion.div
+            className="absolute inset-0 bg-gradient-to-r from-transparent via-white/20 to-transparent"
+            initial={{ x: '-100%' }}
+            animate={isSurprising ? { x: '100%' } : { x: '-100%' }}
+            transition={isSurprising ? { repeat: Infinity, duration: 1, ease: 'linear' } : {}}
+          />
+          <span className="relative flex items-center">
+            {isSurprising ? (
+              <Sparkles className="mr-2 h-5 w-5 animate-spin" />
+            ) : (
+              <Wand2 className="mr-2 h-5 w-5 group-hover:rotate-12 transition-transform" />
+            )}
+            {isSurprising ? 'Choosing...' : 'Surprise Me'}
+          </span>
         </Button>
       </div>
 
@@ -364,7 +367,7 @@ export function Step3Visuals() {
 
         {/* Right: Preview */}
         <div className="flex flex-col items-center gap-4 order-1 lg:order-2">
-          <div className="relative w-full aspect-[3/4] max-w-[280px] rounded-2xl overflow-hidden border border-white/10 bg-white/[0.02]">
+          <div className="relative w-full aspect-[3/4] sm:max-w-[320px] lg:max-w-[280px] rounded-2xl overflow-hidden border border-white/10 bg-white/[0.02]">
             {/* Gradient overlay */}
             <div className="absolute inset-0 bg-gradient-to-br from-vibes-cyan/5 via-transparent to-vibes-neon/5 z-10 pointer-events-none" />
 
@@ -393,24 +396,30 @@ export function Step3Visuals() {
             </div>
 
 
-            {/* Caption */}
-            <div className="absolute bottom-0 inset-x-0 p-3 bg-gradient-to-t from-black/80 to-transparent z-10">
-              <div className="text-center">
-                <span className="text-xs text-white/60 capitalize">
-                  {appearance.hairColor === 'fantasy' ? '✨ ' : ''}{appearance.hairColor} hair
-                </span>
-              </div>
-            </div>
           </div>
 
-          <div className="text-center space-y-1">
-            <div className="text-xs text-gray-500 capitalize">
-              {appearance.ethnicity.replace('-', ' ')} · {appearance.bodyType} · {appearance.hairColor} hair
-            </div>
-            <div className="text-xs text-gray-600">
-              Art style: {visualStyle.avatarStyle}
-            </div>
-          </div>
+          {/* Mobile Surprise Me button */}
+          <Button
+            size="lg"
+            disabled={isSurprising}
+            onClick={handleSurpriseMe}
+            className="lg:hidden group w-full h-14 rounded-2xl bg-gradient-to-r from-vibes-hot via-vibes-neon to-vibes-cyan text-white shadow-[0_0_30px_rgba(168,85,247,0.3)] hover:shadow-[0_0_50px_rgba(168,85,247,0.5)] transition-all font-bold text-lg relative overflow-hidden"
+          >
+            <motion.div
+              className="absolute inset-0 bg-gradient-to-r from-transparent via-white/20 to-transparent"
+              initial={{ x: '-100%' }}
+              animate={isSurprising ? { x: '100%' } : { x: '-100%' }}
+              transition={isSurprising ? { repeat: Infinity, duration: 1, ease: 'linear' } : {}}
+            />
+            <span className="relative flex items-center">
+              {isSurprising ? (
+                <Sparkles className="mr-2 h-5 w-5 animate-spin" />
+              ) : (
+                <Wand2 className="mr-2 h-5 w-5 group-hover:rotate-12 transition-transform" />
+              )}
+              {isSurprising ? 'Choosing...' : 'Surprise Me'}
+            </span>
+          </Button>
         </div>
       </div>
 

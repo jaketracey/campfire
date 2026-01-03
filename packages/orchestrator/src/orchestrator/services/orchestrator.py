@@ -48,6 +48,7 @@ from orchestrator.queue import JobQueue
 from orchestrator.safety.gate import SafetyGate
 from orchestrator.services.context_builder import ContextBuilder
 from orchestrator.services.gift_recall import GiftRecallService
+from orchestrator.services.routing_config_service import RoutingConfigService
 from orchestrator.services.tenet_retriever import TenetRetriever
 from orchestrator.services.turn_manager import TurnManager
 from orchestrator.tools.router import ToolRouter
@@ -72,6 +73,7 @@ class ConversationOrchestrator:
         gift_recall_service: GiftRecallService | None = None,
         intent_detector: IntentDetector | None = None,
         model_router: ModelRouter | None = None,
+        routing_config_service: RoutingConfigService | None = None,
     ):
         self.settings = settings
         self.event_emitter = event_emitter
@@ -111,6 +113,9 @@ class ConversationOrchestrator:
         self.tenet_retriever = tenet_retriever or TenetRetriever(settings)
         self.gift_recall_service = gift_recall_service or GiftRecallService(settings)
 
+        # Store routing config service for database-driven routing
+        self.routing_config_service = routing_config_service
+
         # Initialize content routing (if enabled)
         self._content_routing_enabled = settings.content_routing_enabled
         if self._content_routing_enabled:
@@ -121,12 +126,14 @@ class ConversationOrchestrator:
             self.model_router = model_router or ModelRouter(
                 intent_detector=self.intent_detector,
                 prefer_local=settings.prefer_local_models,
+                routing_config_service=routing_config_service,
             )
             logger.info(
                 "content_routing_enabled",
                 semantic_threshold=settings.semantic_routing_threshold,
                 classifier_threshold=settings.classifier_routing_threshold,
                 prefer_local=settings.prefer_local_models,
+                db_routing_enabled=routing_config_service is not None,
             )
         else:
             self.intent_detector = None

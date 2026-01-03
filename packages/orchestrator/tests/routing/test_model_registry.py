@@ -411,7 +411,7 @@ class TestDefaultModelsLoaded:
 
     def test_all_models_have_valid_provider(self):
         """Verify all models have a valid provider type."""
-        valid_providers = {"anthropic", "openai", "ollama", "together", "groq"}
+        valid_providers = {"anthropic", "openai", "ollama", "together", "groq", "bedrock", "sagemaker"}
         for model in MODEL_REGISTRY.values():
             assert model.provider in valid_providers, f"Invalid provider: {model.provider}"
 
@@ -792,7 +792,7 @@ class TestProviderHealthTracking:
 
     def test_global_provider_health_initialized(self):
         """Verify PROVIDER_HEALTH global dict is initialized with all providers."""
-        expected_providers = {"anthropic", "openai", "ollama", "together", "groq"}
+        expected_providers = {"anthropic", "openai", "ollama", "together", "groq", "bedrock", "sagemaker"}
         assert set(PROVIDER_HEALTH.keys()) == expected_providers
 
     def test_global_provider_health_default_available(self):

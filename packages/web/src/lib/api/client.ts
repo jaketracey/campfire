@@ -32,6 +32,28 @@ export class ApiError extends Error {
   }
 
   /**
+   * Check if this is a rate limit error
+   */
+  isRateLimited(): boolean {
+    return this.status === 429;
+  }
+
+  /**
+   * Get retry after seconds from rate limit response
+   */
+  getRetryAfterSeconds(): number | null {
+    if (!this.isRateLimited() || !this.body || typeof this.body !== 'object') {
+      return null;
+    }
+    const b = this.body as Record<string, unknown>;
+    // @fastify/rate-limit returns { retryAfter: seconds }
+    if (typeof b.retryAfter === 'number') {
+      return b.retryAfter;
+    }
+    return null;
+  }
+
+  /**
    * Extract a human-readable message from the API response
    */
   private static extractMessage(status: number, body: unknown): string {
@@ -48,6 +70,10 @@ export class ApiError extends Error {
       // Check for direct message
       if (typeof b.message === 'string') {
         return b.message;
+      }
+      // Handle rate limit with retry time
+      if (status === 429 && typeof b.retryAfter === 'number') {
+        return `Rate limit exceeded. Please try again in ${b.retryAfter} seconds.`;
       }
     }
 

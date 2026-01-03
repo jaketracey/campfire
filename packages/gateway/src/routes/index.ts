@@ -65,6 +65,9 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
       // Companion friends routes (nested under /companions)
       await api.register(companionFriendsRoutes, { prefix: '/companions' });
 
+      // Companion tenets routes (paths include /companions/:id/tenets/*)
+      await api.register(tenetsRoutes);
+
       // Session routes
       await api.register(sessionsRoutes, { prefix: '/sessions' });
 
@@ -144,10 +147,6 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
 
   // Webhook routes (at root level for external services)
   await app.register(emailWebhookRoutes, { prefix: '/webhooks/email' });
-
-  // Internal routes (for service-to-service communication)
-  // Tenets routes include both /internal/companions/:id/tenets/* and /companions/:id/tenets/*
-  await app.register(tenetsRoutes);
 
   logger.info('All API routes registered');
 }
