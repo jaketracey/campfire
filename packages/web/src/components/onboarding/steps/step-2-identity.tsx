@@ -5,7 +5,7 @@ import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
 import { motion, AnimatePresence } from 'framer-motion';
-import { useOnboardingStore } from '@/stores/onboarding-store';
+import { useOnboardingStore, type VoiceOption, type AppearanceEthnicity, type AppearanceBodyType, type AppearanceHairColor, type CompanionArchetype } from '@/stores/onboarding-store';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -13,7 +13,89 @@ import { Textarea } from '@/components/ui/textarea';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { ArrowRight, Sparkles, Wand2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { generateRandomIdentity } from '@/lib/api/companions';
+import { generateRandomIdentity, createCompanion } from '@/lib/api/companions';
+import { streamAnchorImages } from '@/lib/api/imagegen';
+
+// All 12 archetypes for random selection
+const ARCHETYPES: CompanionArchetype[] = [
+  { id: 'caregiver', name: 'The Caregiver', description: 'Nurturing, supportive, and empathetic', icon: '🤗', traits: ['Compassionate', 'Patient', 'Protective'] },
+  { id: 'sage', name: 'The Sage', description: 'Wise, thoughtful, and philosophical', icon: '🦉', traits: ['Knowledgeable', 'Reflective', 'Objective'] },
+  { id: 'explorer', name: 'The Explorer', description: 'Curious, adventurous, and open-minded', icon: '🧭', traits: ['Curious', 'Bold', 'Independent'] },
+  { id: 'creator', name: 'The Creator', description: 'Imaginative, expressive, and artistic', icon: '🎨', traits: ['Creative', 'Visionary', 'Expressive'] },
+  { id: 'hero', name: 'The Hero', description: 'Brave, determined, and protective', icon: '⚔️', traits: ['Courageous', 'Driven', 'Honorable'] },
+  { id: 'jester', name: 'The Jester', description: 'Playful, humorous, and lighthearted', icon: '🎭', traits: ['Witty', 'Fun', 'Spontaneous'] },
+  { id: 'lover', name: 'The Lover', description: 'Passionate, intimate, and devoted', icon: '💕', traits: ['Romantic', 'Devoted', 'Sensual'] },
+  { id: 'magician', name: 'The Magician', description: 'Transformative, visionary, and inspiring', icon: '✨', traits: ['Inspiring', 'Mystical', 'Transformative'] },
+  { id: 'ruler', name: 'The Ruler', description: 'Confident, authoritative, and organized', icon: '👑', traits: ['Decisive', 'Structured', 'Commanding'] },
+  { id: 'everyperson', name: 'The Everyperson', description: 'Relatable, down-to-earth, and friendly', icon: '🤝', traits: ['Authentic', 'Approachable', 'Grounded'] },
+  { id: 'innocent', name: 'The Innocent', description: 'Optimistic, pure, and hopeful', icon: '🌸', traits: ['Optimistic', 'Trusting', 'Joyful'] },
+  { id: 'rebel', name: 'The Rebel', description: 'Unconventional, bold, and independent', icon: '🔥', traits: ['Defiant', 'Edgy', 'Authentic'] },
+];
+
+// Appearance options
+const ETHNICITIES: AppearanceEthnicity[] = ['east-asian', 'south-asian', 'black', 'caucasian', 'latina', 'middle-eastern', 'mixed'];
+const BODY_TYPES: AppearanceBodyType[] = ['slim', 'athletic', 'curvy', 'plus-size'];
+const HAIR_COLORS: AppearanceHairColor[] = ['black', 'brown', 'blonde', 'red', 'fantasy'];
+const ART_STYLES = ['realistic', 'anime', 'stylized', 'abstract', 'minimal'] as const;
+
+// Available voices
+const VOICES: VoiceOption[] = [
+  { id: 'EXAVITQu4vr4xnSDxMaL', name: 'Sarah', description: 'Soft, warm', sampleUrl: '', gender: 'feminine' },
+  { id: 'FGY2WhTYpPnrIDTdsKH5', name: 'Laura', description: 'Calm, soothing', sampleUrl: '', gender: 'feminine' },
+  { id: 'XB0fDUnXU5powFXDhCwa', name: 'Charlotte', description: 'Elegant, confident', sampleUrl: '', gender: 'feminine' },
+  { id: 'pFZP5JQG7iQjIQuC4Bku', name: 'Lily', description: 'Sweet, youthful', sampleUrl: '', gender: 'feminine' },
+  { id: 'cgSgspJ2msm6clMCkdW9', name: 'Jessica', description: 'Expressive, friendly', sampleUrl: '', gender: 'feminine' },
+  { id: 'onwK4e9ZLuTAKqWW03F9', name: 'Daniel', description: 'Deep, resonant', sampleUrl: '', gender: 'masculine' },
+  { id: 'cjVigY5qzO86Huf0OWal', name: 'Eric', description: 'Smooth, charming', sampleUrl: '', gender: 'masculine' },
+  { id: 'N2lVS1w4EtoT3dr4eOWO', name: 'Callum', description: 'Warm, intimate', sampleUrl: '', gender: 'masculine' },
+  { id: 'JBFqnCBsd6RMkjVDRZzb', name: 'George', description: 'Rich, thoughtful', sampleUrl: '', gender: 'masculine' },
+];
+
+// Randomization helpers
+const randomFrom = <T,>(arr: readonly T[] | T[]): T => arr[Math.floor(Math.random() * arr.length)];
+const randomRange = (min: number, max: number): number => Math.round(min + Math.random() * (max - min));
+
+// Generate full companion attributes
+function generateFullCompanion() {
+  const primaryArchetype = randomFrom(ARCHETYPES);
+  const otherArchetypes = ARCHETYPES.filter(a => a.id !== primaryArchetype.id);
+  const secondaryArchetype = Math.random() > 0.5 ? randomFrom(otherArchetypes) : null;
+
+  const personality = {
+    warmth: randomRange(30, 90),
+    energy: randomRange(20, 90),
+    playfulness: randomRange(30, 80),
+    formality: randomRange(20, 70),
+    assertiveness: randomRange(30, 80),
+    curiosity: randomRange(40, 90),
+    empathy: randomRange(40, 90),
+    spontaneity: randomRange(30, 80),
+    optimism: randomRange(40, 90),
+    directness: randomRange(30, 80),
+  };
+
+  const visualStyle = {
+    avatarStyle: randomFrom(ART_STYLES),
+    appearance: {
+      ethnicity: randomFrom(ETHNICITIES),
+      bodyType: randomFrom(BODY_TYPES),
+      hairColor: randomFrom(HAIR_COLORS),
+      breastSize: Math.floor(Math.random() * 100),
+    },
+    colorTheme: 'campfire',
+    animationLevel: 'moderate' as const,
+  };
+
+  const voice = randomFrom(VOICES);
+
+  return {
+    primaryArchetype,
+    secondaryArchetype,
+    personality,
+    visualStyle,
+    voice,
+  };
+}
 
 const identitySchema = z.object({
   name: z.string().min(2, 'Name must be at least 2 characters'),
@@ -24,7 +106,23 @@ const identitySchema = z.object({
 type IdentityFormValues = z.infer<typeof identitySchema>;
 
 export function Step2Identity() {
-  const { name, identity, setName, setIdentity, nextStep } = useOnboardingStore();
+  const store = useOnboardingStore();
+  const {
+    name,
+    identity,
+    setName,
+    setIdentity,
+    nextStep,
+    setArchetype,
+    setSecondaryArchetype,
+    setPersonality,
+    setVisualStyle,
+    setVoice,
+    setCompanionId,
+    setGenerationStarted,
+    addAnchorImage,
+    setAnchorImagesComplete,
+  } = store;
   const [isGenerating, setIsGenerating] = useState(false);
   const [justGenerated, setJustGenerated] = useState(false);
   const [hasGenerated, setHasGenerated] = useState(false);
@@ -57,10 +155,104 @@ export function Step2Identity() {
     setIsGenerating(true);
     setJustGenerated(false);
     try {
+      // Generate identity (name, pronouns, backstory)
       const generated = await generateRandomIdentity();
       setValue('name', generated.name, { shouldValidate: true });
       setValue('pronouns', generated.pronouns, { shouldValidate: true });
       setValue('backstory', generated.backstory, { shouldValidate: true });
+
+      // Generate full companion attributes
+      const fullCompanion = generateFullCompanion();
+
+      // Store all generated attributes in the onboarding store
+      setArchetype(fullCompanion.primaryArchetype);
+      setSecondaryArchetype(fullCompanion.secondaryArchetype);
+      setPersonality(fullCompanion.personality);
+      setVisualStyle(fullCompanion.visualStyle);
+      setVoice(fullCompanion.voice);
+
+      // Create companion via API to get companionId
+      const personalityDescription = [
+        fullCompanion.primaryArchetype.description,
+        fullCompanion.secondaryArchetype
+          ? `Secondary archetype: ${fullCompanion.secondaryArchetype.name}`
+          : '',
+        `Traits: ${fullCompanion.primaryArchetype.traits.join(', ')}`,
+      ].filter(Boolean).join('\n');
+
+      const companion = await createCompanion({
+        name: generated.name,
+        description: fullCompanion.primaryArchetype.description,
+        personality: personalityDescription,
+        voiceId: fullCompanion.voice.id,
+        isPublic: false,
+        spec: {
+          identity: {
+            name: generated.name,
+            pronouns: generated.pronouns,
+            backstory: generated.backstory,
+          },
+          personality: {
+            archetype: fullCompanion.primaryArchetype.id,
+            secondary_archetype: fullCompanion.secondaryArchetype?.id,
+            traits: fullCompanion.personality,
+          },
+          voice: {
+            provider: 'elevenlabs',
+            voice_id: fullCompanion.voice.id,
+          },
+          visual_style: {
+            style_type: fullCompanion.visualStyle.avatarStyle,
+            appearance: fullCompanion.visualStyle.appearance,
+          },
+        },
+      });
+
+      // Store companion ID and mark generation as started
+      setCompanionId(companion.id);
+      setGenerationStarted(true);
+
+      // Start streaming anchor images in the background
+      console.log('[SurpriseMe] Starting anchor image generation for companion:', companion.id);
+      streamAnchorImages(
+        {
+          companionId: companion.id,
+          appearance: {
+            ethnicity: fullCompanion.visualStyle.appearance.ethnicity,
+            bodyType: fullCompanion.visualStyle.appearance.bodyType,
+            hairColor: fullCompanion.visualStyle.appearance.hairColor,
+            breastSize: fullCompanion.visualStyle.appearance.breastSize,
+          },
+          style: fullCompanion.visualStyle.avatarStyle,
+          personality: {
+            warmth: fullCompanion.personality.warmth,
+            playfulness: fullCompanion.personality.playfulness,
+            directness: fullCompanion.personality.directness,
+            curiosity: fullCompanion.personality.curiosity,
+            empathy: fullCompanion.personality.empathy,
+            assertiveness: fullCompanion.personality.assertiveness,
+          },
+        },
+        {
+          onProgress: (data) => {
+            console.log('[SurpriseMe] Anchor progress:', data);
+          },
+          onAnchor: (anchor) => {
+            console.log('[SurpriseMe] Anchor received:', anchor);
+            addAnchorImage(anchor);
+          },
+          onComplete: (result) => {
+            console.log('[SurpriseMe] Anchor generation complete:', result);
+            setAnchorImagesComplete(true);
+          },
+          onError: (error) => {
+            console.error('[SurpriseMe] Anchor generation error:', error);
+            // Still mark as complete so we can proceed with any partial results
+            setAnchorImagesComplete(true);
+          },
+        }
+      );
+
       setJustGenerated(true);
       setHasGenerated(true);
       // Reset the animation trigger after a delay

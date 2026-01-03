@@ -41,7 +41,7 @@ function getVoiceSampleUrl(voiceId: string): string {
 
 export function Step7Voice() {
   const state = useOnboardingStore();
-  const { voice, setVoice, nextStep, setCompanionId, setGenerationStarted } = state;
+  const { voice, setVoice, nextStep, setCompanionId, setGenerationStarted, addAnchorImage, setAnchorImagesComplete } = state;
   const { toast } = useToast();
   const [playingId, setPlayingId] = useState<string | null>(null);
   const [loadingId, setLoadingId] = useState<string | null>(null);
@@ -69,6 +69,12 @@ export function Step7Voice() {
     setIsCreating(true);
 
     try {
+      // If companion already exists (from Surprise Me in earlier step), skip creation
+      if (state.companionId) {
+        nextStep();
+        return;
+      }
+
       // Build personality description from archetype and sliders
       const personalityDescription = [
         state.archetype?.description || '',
@@ -163,9 +169,18 @@ export function Step7Voice() {
         },
         {
           onProgress: (data) => console.log('Anchor progress:', data),
-          onAnchor: (anchor) => console.log('Anchor received:', anchor),
-          onComplete: (result) => console.log('Anchor generation complete:', result),
-          onError: (error) => console.error('Anchor generation error:', error),
+          onAnchor: (anchor) => {
+            console.log('Anchor received:', anchor);
+            addAnchorImage(anchor);
+          },
+          onComplete: (result) => {
+            console.log('Anchor generation complete:', result);
+            setAnchorImagesComplete(true);
+          },
+          onError: (error) => {
+            console.error('Anchor generation error:', error);
+            setAnchorImagesComplete(true);
+          },
         }
       );
 
@@ -237,6 +252,12 @@ export function Step7Voice() {
     setIsCreating(true);
 
     try {
+      // If companion already exists (from Surprise Me in earlier step), skip creation
+      if (state.companionId) {
+        nextStep();
+        return;
+      }
+
       const personalityDescription = [
         state.archetype?.description || '',
         state.secondaryArchetype
@@ -327,9 +348,18 @@ export function Step7Voice() {
         },
         {
           onProgress: (data) => console.log('Anchor progress:', data),
-          onAnchor: (anchor) => console.log('Anchor received:', anchor),
-          onComplete: (result) => console.log('Anchor generation complete:', result),
-          onError: (error) => console.error('Anchor generation error:', error),
+          onAnchor: (anchor) => {
+            console.log('Anchor received:', anchor);
+            addAnchorImage(anchor);
+          },
+          onComplete: (result) => {
+            console.log('Anchor generation complete:', result);
+            setAnchorImagesComplete(true);
+          },
+          onError: (error) => {
+            console.error('Anchor generation error:', error);
+            setAnchorImagesComplete(true);
+          },
         }
       );
 

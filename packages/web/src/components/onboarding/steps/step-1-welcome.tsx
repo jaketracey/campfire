@@ -202,7 +202,7 @@ export function Step1Welcome() {
 
         <p
           ref={subtitleRef}
-          className="text-xl md:text-2xl text-gray-400 max-w-lg mx-auto leading-relaxed"
+          className="text-xl md:text-2xl text-gray-400 max-w-lg mx-auto leading-relaxed text-center flex flex-wrap justify-center gap-x-[0.3em]"
         >
           Create a unique AI personality that listens, remembers, and grows with you.{' '}
           <span className="font-semibold text-transparent bg-clip-text bg-gradient-to-r from-vibes-neon to-vibes-cyan">

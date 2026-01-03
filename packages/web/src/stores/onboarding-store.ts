@@ -86,6 +86,13 @@ export interface Boundaries {
   consentToLearning: boolean;
 }
 
+export interface AnchorImage {
+  id: string;
+  url: string;
+  emotionalState: string;
+  isIdentityAnchor: boolean;
+}
+
 export interface OnboardingState {
   currentStep: number;
   archetype: CompanionArchetype | null;
@@ -106,6 +113,10 @@ export interface OnboardingState {
   sessionId: string | null;
   generationStarted: boolean;
 
+  // Anchor image state (for early generation during Surprise Me)
+  anchorImages: AnchorImage[];
+  anchorImagesComplete: boolean;
+
   // Actions
   setStep: (step: number) => void;
   nextStep: () => void;
@@ -125,6 +136,8 @@ export interface OnboardingState {
   setCompanionId: (id: string | null) => void;
   setSessionId: (id: string | null) => void;
   setGenerationStarted: (started: boolean) => void;
+  addAnchorImage: (anchor: AnchorImage) => void;
+  setAnchorImagesComplete: (complete: boolean) => void;
   reset: () => void;
 }
 
@@ -183,6 +196,8 @@ export const useOnboardingStore = create<OnboardingState>()(
       companionId: null,
       sessionId: null,
       generationStarted: false,
+      anchorImages: [],
+      anchorImagesComplete: false,
 
       setStep: (step) => set({ currentStep: step }),
       nextStep: () => {
@@ -241,6 +256,11 @@ export const useOnboardingStore = create<OnboardingState>()(
       setCompanionId: (id) => set({ companionId: id }),
       setSessionId: (id) => set({ sessionId: id }),
       setGenerationStarted: (started) => set({ generationStarted: started }),
+      addAnchorImage: (anchor) =>
+        set((state) => ({
+          anchorImages: [...state.anchorImages, anchor],
+        })),
+      setAnchorImagesComplete: (complete) => set({ anchorImagesComplete: complete }),
       reset: () =>
         set({
           currentStep: 1,
@@ -259,6 +279,8 @@ export const useOnboardingStore = create<OnboardingState>()(
           companionId: null,
           sessionId: null,
           generationStarted: false,
+          anchorImages: [],
+          anchorImagesComplete: false,
         }),
     }),
     {
