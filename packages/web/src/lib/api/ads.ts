@@ -170,5 +170,5 @@ export async function getUtmStats(
 export async function getSpendTrend(
   days = 30
 ): Promise<{ success: boolean; data: { trend: SpendTrendPoint[] } }> {
-  return get(`/admin/ads/trend?days=${days}`);
+  return get(`/admin/ads/spend-trend?days=${days}`);
 }
