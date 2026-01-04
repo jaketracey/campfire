@@ -73,6 +73,7 @@ export function Step2Identity() {
     setCompanionId,
     setGenerationStarted,
     addAnchorImage,
+    clearAnchorImages,
     setAnchorImagesComplete,
   } = store;
   const [isGenerating, setIsGenerating] = useState(false);
@@ -149,6 +150,12 @@ export function Step2Identity() {
       };
 
       // Store all LLM-generated attributes in the onboarding store
+      // IMPORTANT: Store name and identity so review step can access them
+      setName(generated.name);
+      setIdentity({
+        pronouns: generated.pronouns,
+        backstory: generated.backstory || '',
+      });
       setArchetype(primaryArchetype);
       setSecondaryArchetype(secondaryArchetype);
       setPersonality({
@@ -217,6 +224,9 @@ export function Step2Identity() {
         // Store companion ID and mark generation as started
         setCompanionId(companion.id);
         setGenerationStarted(true);
+
+        // Clear any previous anchor images before starting new generation
+        clearAnchorImages();
 
         // Start streaming anchor images in the background with LLM-generated appearance
         console.log('[SurpriseMe] Starting anchor image generation for companion:', companion.id);

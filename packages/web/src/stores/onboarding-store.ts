@@ -187,6 +187,7 @@ export interface OnboardingState {
   setSessionId: (id: string | null) => void;
   setGenerationStarted: (started: boolean) => void;
   addAnchorImage: (anchor: AnchorImage) => void;
+  clearAnchorImages: () => void;
   setAnchorImagesComplete: (complete: boolean) => void;
   setQuickStartActive: (active: boolean) => void;
   setQuickStartStep: (step: number) => void;
@@ -314,6 +315,7 @@ export const useOnboardingStore = create<OnboardingState>()(
         set((state) => ({
           anchorImages: [...state.anchorImages, anchor],
         })),
+      clearAnchorImages: () => set({ anchorImages: [], anchorImagesComplete: false }),
       setAnchorImagesComplete: (complete) => set({ anchorImagesComplete: complete }),
       setQuickStartActive: (active) => set({ quickStartActive: active }),
       setQuickStartStep: (step) => set({ quickStartStep: step }),
