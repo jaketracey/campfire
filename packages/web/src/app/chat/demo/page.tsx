@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
-import { Flame } from 'lucide-react';
+import { AnimatedFlame } from '@/components/ui/animated-flame';
 import { ChatSessionContent } from '../[sessionId]/chat-session-content';
 import { SignupModal, type SignupTrigger } from '@/components/demo/signup-modal';
 import { getDemoCompanion, createDemoSession, type DemoCompanion } from '@/lib/api/demo';
@@ -170,7 +170,7 @@ export default function DemoChatPage() {
   if (isLoading || !isInitialized) {
     return (
       <div className="flex h-screen items-center justify-center bg-background">
-        <Flame className="h-24 w-24 text-primary animate-pulse" />
+        <AnimatedFlame size="lg" />
       </div>
     );
   }
@@ -179,8 +179,9 @@ export default function DemoChatPage() {
   if (error) {
     return (
       <div className="flex h-screen items-center justify-center bg-background">
-        <div className="flex flex-col items-center gap-4 text-center">
-          <p className="text-destructive">{error}</p>
+        <div className="flex flex-col items-center gap-6 text-center">
+          <AnimatedFlame size="lg" />
+          <p className="text-xl text-white">{error}</p>
           <button
             onClick={() => window.location.reload()}
             className="text-sm text-primary hover:underline"
