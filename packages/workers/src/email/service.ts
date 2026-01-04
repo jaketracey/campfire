@@ -273,7 +273,7 @@ export class EmailService {
     };
 
     // Compile template
-    const { html, text, errors } = compileTemplate(
+    const { html, text, errors } = await compileTemplate(
       templateName as TemplateType,
       fullContext as any
     );

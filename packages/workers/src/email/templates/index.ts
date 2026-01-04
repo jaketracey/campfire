@@ -397,17 +397,26 @@ type TemplateContextMap = {
 };
 
 /** Compile MJML to HTML */
-export function compileTemplate<T extends TemplateType>(
+export async function compileTemplate<T extends TemplateType>(
   templateName: T,
   context: TemplateContextMap[T]
-): { html: string; text: string; errors: string[] } {
+): Promise<{ html: string; text: string; errors: string[] }> {
   const templateFn = templates[templateName] as (ctx: TemplateContextMap[T]) => string;
   const mjml = templateFn(context);
 
-  const result = mjml2html(mjml, {
+  if (!mjml) {
+    throw new Error(`Template "${templateName}" returned empty MJML`);
+  }
+
+  const result = await mjml2html(mjml, {
     validationLevel: 'soft',
     minify: true,
   });
+
+  if (!result.html) {
+    const errorMessages = result.errors?.map((e) => e.formattedMessage).join(', ') || 'Unknown error';
+    throw new Error(`MJML compilation failed for "${templateName}": ${errorMessages}`);
+  }
 
   // Generate plain text version
   const text = generatePlainText(result.html);
