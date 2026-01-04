@@ -24,8 +24,8 @@ interface ChatInputProps {
   isTTSPlaying: boolean;
 
   // Refs
-  inputRef: React.RefObject<HTMLInputElement>;
-  inputContainerRef: React.RefObject<HTMLDivElement>;
+  inputRef: React.RefObject<HTMLInputElement | null>;
+  inputContainerRef: React.RefObject<HTMLDivElement | null>;
 }
 
 export function ChatInput({
