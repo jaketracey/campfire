@@ -108,6 +108,11 @@ services:
       # Google OAuth
       GOOGLE_OAUTH_CLIENT_ID: ${GOOGLE_OAUTH_CLIENT_ID:-}
       GOOGLE_OAUTH_CLIENT_SECRET: ${GOOGLE_OAUTH_CLIENT_SECRET:-}
+      # AWS S3 for image uploads
+      S3_MEDIA_BUCKET: ${S3_MEDIA_BUCKET}
+      AWS_REGION: ${AWS_REGION:-us-east-1}
+      AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID}
+      AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY}
     extra_hosts:
       - "host.docker.internal:host-gateway"
     depends_on:
