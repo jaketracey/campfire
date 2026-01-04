@@ -923,7 +923,7 @@ export class ProviderSettingsService {
 
       // Try to call orchestrator to test the image provider
       const startTime = Date.now();
-      const response = await fetch(`${ORCHESTRATOR_URL}/imagegen/providers/${provider.provider}/test`, {
+      const response = await fetch(`${ORCHESTRATOR_URL}/providers/${provider.provider}/test`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ api_key: apiKey || null }),
