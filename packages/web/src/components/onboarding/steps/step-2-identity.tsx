@@ -15,6 +15,7 @@ import { ArrowRight, Sparkles, Wand2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { generateRandomIdentity, createCompanion } from '@/lib/api/companions';
 import { streamAnchorImages } from '@/lib/api/imagegen';
+import { useAuth } from '@/hooks/use-auth';
 
 // All 12 archetypes for random selection
 const ARCHETYPES: CompanionArchetype[] = [
@@ -56,6 +57,7 @@ const identitySchema = z.object({
 type IdentityFormValues = z.infer<typeof identitySchema>;
 
 export function Step2Identity() {
+  const { isAuthenticated } = useAuth();
   const store = useOnboardingStore();
   const {
     name,
@@ -164,89 +166,93 @@ export function Step2Identity() {
       setVisualStyle(visualStyle);
       setVoice(selectedVoice);
 
-      // Create companion via API to get companionId
-      const personalityDescription = [
-        primaryArchetype.description,
-        secondaryArchetype ? `Secondary archetype: ${secondaryArchetype.name}` : '',
-        `Traits: ${primaryArchetype.traits.join(', ')}`,
-      ].filter(Boolean).join('\n');
+      // Only create companion and generate images if authenticated
+      // For unauthenticated users, we just store the data locally
+      if (isAuthenticated) {
+        // Create companion via API to get companionId
+        const personalityDescription = [
+          primaryArchetype.description,
+          secondaryArchetype ? `Secondary archetype: ${secondaryArchetype.name}` : '',
+          `Traits: ${primaryArchetype.traits.join(', ')}`,
+        ].filter(Boolean).join('\n');
 
-      const companion = await createCompanion({
-        name: generated.name,
-        description: primaryArchetype.description,
-        personality: personalityDescription,
-        voiceId: selectedVoice.id,
-        isPublic: false,
-        spec: {
-          identity: {
-            name: generated.name,
-            pronouns: generated.pronouns,
-            backstory: generated.backstory,
-          },
-          personality: {
-            archetype: primaryArchetype.id,
-            secondary_archetype: secondaryArchetype?.id,
-            traits: {
-              warmth: generated.personality.warmth,
-              energy: generated.personality.energy,
-              playfulness: generated.personality.playfulness,
-              formality: generated.personality.formality,
-              assertiveness: generated.personality.assertiveness,
-              curiosity: generated.personality.curiosity,
-              empathy: generated.personality.empathy,
-              spontaneity: generated.personality.spontaneity,
-              optimism: generated.personality.optimism,
-              directness: generated.personality.directness,
+        const companion = await createCompanion({
+          name: generated.name,
+          description: primaryArchetype.description,
+          personality: personalityDescription,
+          voiceId: selectedVoice.id,
+          isPublic: false,
+          spec: {
+            identity: {
+              name: generated.name,
+              pronouns: generated.pronouns,
+              backstory: generated.backstory,
+            },
+            personality: {
+              archetype: primaryArchetype.id,
+              secondary_archetype: secondaryArchetype?.id,
+              traits: {
+                warmth: generated.personality.warmth,
+                energy: generated.personality.energy,
+                playfulness: generated.personality.playfulness,
+                formality: generated.personality.formality,
+                assertiveness: generated.personality.assertiveness,
+                curiosity: generated.personality.curiosity,
+                empathy: generated.personality.empathy,
+                spontaneity: generated.personality.spontaneity,
+                optimism: generated.personality.optimism,
+                directness: generated.personality.directness,
+              },
+            },
+            voice: {
+              provider: 'elevenlabs',
+              voice_id: selectedVoice.id,
+            },
+            visual_style: {
+              appearance: visualStyle.appearance,
             },
           },
-          voice: {
-            provider: 'elevenlabs',
-            voice_id: selectedVoice.id,
-          },
-          visual_style: {
+        });
+
+        // Store companion ID and mark generation as started
+        setCompanionId(companion.id);
+        setGenerationStarted(true);
+
+        // Start streaming anchor images in the background with LLM-generated appearance
+        console.log('[SurpriseMe] Starting anchor image generation for companion:', companion.id);
+        streamAnchorImages(
+          {
+            companionId: companion.id,
             appearance: visualStyle.appearance,
+            personality: {
+              warmth: generated.personality.warmth,
+              playfulness: generated.personality.playfulness,
+              directness: generated.personality.directness,
+              curiosity: generated.personality.curiosity,
+              empathy: generated.personality.empathy,
+              assertiveness: generated.personality.assertiveness,
+            },
           },
-        },
-      });
-
-      // Store companion ID and mark generation as started
-      setCompanionId(companion.id);
-      setGenerationStarted(true);
-
-      // Start streaming anchor images in the background with LLM-generated appearance
-      console.log('[SurpriseMe] Starting anchor image generation for companion:', companion.id);
-      streamAnchorImages(
-        {
-          companionId: companion.id,
-          appearance: visualStyle.appearance,
-          personality: {
-            warmth: generated.personality.warmth,
-            playfulness: generated.personality.playfulness,
-            directness: generated.personality.directness,
-            curiosity: generated.personality.curiosity,
-            empathy: generated.personality.empathy,
-            assertiveness: generated.personality.assertiveness,
-          },
-        },
-        {
-          onProgress: (data) => {
-            console.log('[SurpriseMe] Anchor progress:', data);
-          },
-          onAnchor: (anchor) => {
-            console.log('[SurpriseMe] Anchor received:', anchor);
-            addAnchorImage(anchor);
-          },
-          onComplete: (result) => {
-            console.log('[SurpriseMe] Anchor generation complete:', result);
-            setAnchorImagesComplete(true);
-          },
-          onError: (error) => {
-            console.error('[SurpriseMe] Anchor generation error:', error);
-            // Still mark as complete so we can proceed with any partial results
-            setAnchorImagesComplete(true);
-          },
-        }
-      );
+          {
+            onProgress: (data) => {
+              console.log('[SurpriseMe] Anchor progress:', data);
+            },
+            onAnchor: (anchor) => {
+              console.log('[SurpriseMe] Anchor received:', anchor);
+              addAnchorImage(anchor);
+            },
+            onComplete: (result) => {
+              console.log('[SurpriseMe] Anchor generation complete:', result);
+              setAnchorImagesComplete(true);
+            },
+            onError: (error) => {
+              console.error('[SurpriseMe] Anchor generation error:', error);
+              // Still mark as complete so we can proceed with any partial results
+              setAnchorImagesComplete(true);
+            },
+          }
+        );
+      }
 
       setJustGenerated(true);
       setHasGenerated(true);

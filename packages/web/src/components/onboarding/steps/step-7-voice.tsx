@@ -5,10 +5,11 @@ import { motion } from 'framer-motion';
 import { useOnboardingStore, type VoiceOption } from '@/stores/onboarding-store';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
-import { Play, Pause, ArrowRight, Loader2, Sparkles, Wand2 } from 'lucide-react';
+import { Play, Pause, ArrowRight, Loader2, Wand2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { createCompanion, streamAnchorImages, generateBackstory } from '@/lib/api';
 import { useToast } from '@/hooks/use-toast';
+import { useAuth } from '@/hooks/use-auth';
 
 // ElevenLabs voices for companion creation
 const voices: VoiceOption[] = [
@@ -40,6 +41,7 @@ function getVoiceSampleUrl(voiceId: string): string {
 }
 
 export function Step7Voice() {
+  const { isAuthenticated } = useAuth();
   const state = useOnboardingStore();
   const { voice, setVoice, nextStep, setCompanionId, setGenerationStarted, addAnchorImage, setAnchorImagesComplete } = state;
   const { toast } = useToast();
@@ -71,6 +73,12 @@ export function Step7Voice() {
     try {
       // If companion already exists (from Surprise Me in earlier step), skip creation
       if (state.companionId) {
+        nextStep();
+        return;
+      }
+
+      // For unauthenticated users, just proceed - companion will be created after signup
+      if (!isAuthenticated) {
         nextStep();
         return;
       }
@@ -203,7 +211,7 @@ export function Step7Voice() {
       });
       setIsCreating(false);
     }
-  }, [voice, state, coreTenets, setCompanionId, setGenerationStarted, nextStep, toast]);
+  }, [voice, state, coreTenets, setCompanionId, setGenerationStarted, nextStep, toast, isAuthenticated, addAnchorImage, setAnchorImagesComplete]);
 
   // Surprise Me - randomly select a voice with animation, then proceed
   const handleSurpriseMe = useCallback(async () => {
@@ -243,6 +251,12 @@ export function Step7Voice() {
     try {
       // If companion already exists (from Surprise Me in earlier step), skip creation
       if (state.companionId) {
+        nextStep();
+        return;
+      }
+
+      // For unauthenticated users, just proceed - companion will be created after signup
+      if (!isAuthenticated) {
         nextStep();
         return;
       }
@@ -369,7 +383,7 @@ export function Step7Voice() {
       });
       setIsCreating(false);
     }
-  }, [state, coreTenets, setVoice, setCompanionId, setGenerationStarted, nextStep, toast]);
+  }, [state, coreTenets, setVoice, setCompanionId, setGenerationStarted, nextStep, toast, isAuthenticated, addAnchorImage, setAnchorImagesComplete]);
 
   const togglePlay = useCallback(async (id: string) => {
     // If already playing this voice, stop it
@@ -534,7 +548,6 @@ export function Step7Voice() {
             </>
           ) : (
             <>
-              <Sparkles className="mr-3 h-6 w-6" />
               Review & Ignite
               <ArrowRight className="ml-3 h-6 w-6 group-hover:translate-x-2 transition-transform duration-300" />
             </>
