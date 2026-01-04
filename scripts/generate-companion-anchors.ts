@@ -60,6 +60,7 @@ type FemaleBodyType = 'slim' | 'athletic' | 'curvy' | 'plus-size';
 type MaleBodyType = 'slim' | 'athletic' | 'muscular' | 'dad-bod';
 type HairColor = 'black' | 'brown' | 'blonde' | 'red' | 'fantasy';
 type SizeCategory = 'S' | 'M' | 'L';
+type SceneType = 'resort' | 'dinner-party' | 'urban' | 'cozy';
 
 interface ImageSpec {
   gender: Gender;
@@ -67,6 +68,7 @@ interface ImageSpec {
   bodyType: FemaleBodyType | MaleBodyType;
   hairColor: HairColor;
   size: SizeCategory;
+  scene: SceneType;
   filename: string;
   prompt: string;
 }
@@ -98,6 +100,79 @@ const OUTFIT_COLORS = [
   'champagne', 'wine red', 'midnight blue', 'charcoal', 'dusty rose',
   'slate gray', 'forest green', 'deep plum', 'bronze', 'ivory',
 ];
+
+// Scene types for variety
+const SCENE_TYPES: SceneType[] = ['resort', 'dinner-party', 'urban', 'cozy'];
+
+// Scene-specific settings
+interface SceneConfig {
+  setting: string;
+  femaleOutfits: Record<FemaleBodyType, string>;
+  maleOutfits: Record<MaleBodyType, string>;
+}
+
+const SCENE_CONFIGS: Record<SceneType, SceneConfig> = {
+  'resort': {
+    setting: 'Beautiful beach or poolside resort setting, golden hour sunlight. Lifestyle photo like a premium dating app profile.',
+    femaleOutfits: {
+      'slim': 'stylish bikini top',
+      'athletic': 'sporty bikini that shows off her toned body',
+      'curvy': 'flattering bikini that accentuates her curves',
+      'plus-size': 'confident swimsuit with a plunging neckline',
+    },
+    maleOutfits: {
+      'slim': 'open linen shirt showing his chest',
+      'athletic': 'fitted tank top showing his toned arms',
+      'muscular': 'unbuttoned shirt revealing his muscular chest',
+      'dad-bod': 'casual open shirt with relaxed confidence',
+    },
+  },
+  'dinner-party': {
+    setting: 'Elegant dinner party at upscale restaurant, warm candlelit ambiance, sophisticated atmosphere with soft bokeh lights.',
+    femaleOutfits: {
+      'slim': 'elegant cocktail dress with tasteful neckline',
+      'athletic': 'fitted designer dress that shows off her toned figure',
+      'curvy': 'flattering evening gown that accentuates her curves',
+      'plus-size': 'glamorous dress with confident plunging neckline',
+    },
+    maleOutfits: {
+      'slim': 'tailored suit jacket with open collar shirt',
+      'athletic': 'fitted designer blazer showing his athletic build',
+      'muscular': 'sharp suit that emphasizes his muscular frame',
+      'dad-bod': 'relaxed blazer over casual shirt with confident style',
+    },
+  },
+  'urban': {
+    setting: 'Trendy rooftop bar with city skyline at dusk, modern atmosphere, neon accents and urban vibe.',
+    femaleOutfits: {
+      'slim': 'chic crop top and high-waisted pants',
+      'athletic': 'stylish bodysuit showing her toned physique',
+      'curvy': 'trendy off-shoulder top highlighting her curves',
+      'plus-size': 'confident fashionable outfit with plunging neckline',
+    },
+    maleOutfits: {
+      'slim': 'fitted henley with rolled sleeves',
+      'athletic': 'tight v-neck showing his defined arms',
+      'muscular': 'fitted shirt that hugs his muscular frame',
+      'dad-bod': 'casual button-down with sleeves rolled up',
+    },
+  },
+  'cozy': {
+    setting: 'Warm intimate living room setting, soft lamplight, comfortable and inviting atmosphere with plush furnishings.',
+    femaleOutfits: {
+      'slim': 'cozy oversized sweater slipping off shoulder',
+      'athletic': 'fitted lounge wear showing her toned body',
+      'curvy': 'soft wrap top accentuating her curves',
+      'plus-size': 'comfortable but flattering loungewear',
+    },
+    maleOutfits: {
+      'slim': 'soft henley with relaxed fit',
+      'athletic': 'fitted t-shirt showing his physique',
+      'muscular': 'snug sweater highlighting his build',
+      'dad-bod': 'cozy flannel shirt with relaxed confidence',
+    },
+  },
+};
 
 // ============================================================================
 // Natural Language Prompt Mappings
@@ -148,20 +223,6 @@ const MALE_BODY_DESCRIPTIONS: Record<MaleBodyType, string> = {
   'dad-bod': 'relaxed dad-bod with a bit of softness around the middle',
 };
 
-// Flirty outfit descriptions - varied styles
-const FEMALE_OUTFITS: Record<FemaleBodyType, string> = {
-  'slim': 'stylish bikini top',
-  'athletic': 'sporty bikini that shows off her toned body',
-  'curvy': 'flattering bikini that accentuates her curves',
-  'plus-size': 'confident swimsuit with a plunging neckline',
-};
-
-const MALE_OUTFITS: Record<MaleBodyType, string> = {
-  'slim': 'open linen shirt showing his chest',
-  'athletic': 'fitted tank top showing his toned arms',
-  'muscular': 'unbuttoned shirt revealing his muscular chest',
-  'dad-bod': 'casual open shirt with relaxed confidence',
-};
 
 const HAIR_DESCRIPTIONS: Record<HairColor, string> = {
   'black': 'dark black hair',
@@ -197,26 +258,42 @@ const NEGATIVE_PROMPT = [
 // ============================================================================
 
 /**
- * Deterministically select an outfit color based on spec attributes.
- * This ensures the same spec always gets the same color.
+ * Create a simple hash from a string.
  */
-function selectOutfitColor(spec: ImageSpec): string {
-  // Create a simple hash from the spec attributes
-  const str = `${spec.ethnicity}-${spec.bodyType}-${spec.hairColor}-${spec.size}`;
+function hashString(str: string): number {
   let hash = 0;
   for (let i = 0; i < str.length; i++) {
     hash = ((hash << 5) - hash) + str.charCodeAt(i);
     hash = hash & hash; // Convert to 32-bit integer
   }
-  return OUTFIT_COLORS[Math.abs(hash) % OUTFIT_COLORS.length];
+  return Math.abs(hash);
+}
+
+/**
+ * Deterministically select an outfit color based on spec attributes.
+ * This ensures the same spec always gets the same color.
+ */
+function selectOutfitColor(spec: ImageSpec): string {
+  const str = `${spec.ethnicity}-${spec.bodyType}-${spec.hairColor}-${spec.size}`;
+  return OUTFIT_COLORS[hashString(str) % OUTFIT_COLORS.length];
+}
+
+/**
+ * Deterministically select a scene based on spec attributes.
+ * Existing images are skipped (use resume mode), new ones get varied scenes.
+ */
+function selectScene(spec: Omit<ImageSpec, 'scene' | 'filename' | 'prompt'>): SceneType {
+  const str = `scene-${spec.gender}-${spec.ethnicity}-${spec.bodyType}-${spec.hairColor}-${spec.size}`;
+  return SCENE_TYPES[hashString(str) % SCENE_TYPES.length];
 }
 
 function buildPrompt(spec: ImageSpec): string {
-  const { gender, ethnicity, bodyType, hairColor, size } = spec;
+  const { gender, ethnicity, bodyType, hairColor, size, scene } = spec;
 
   const ethnicityDesc = ETHNICITY_DESCRIPTIONS[ethnicity][gender];
   const hairDesc = HAIR_DESCRIPTIONS[hairColor];
   const outfitColor = selectOutfitColor(spec);
+  const sceneConfig = SCENE_CONFIGS[scene];
 
   let bodyDesc: string;
   let sizeDesc: string;
@@ -225,11 +302,11 @@ function buildPrompt(spec: ImageSpec): string {
   if (gender === 'female') {
     bodyDesc = FEMALE_BODY_DESCRIPTIONS[bodyType as FemaleBodyType];
     sizeDesc = FEMALE_SIZE_DESCRIPTIONS[size];
-    outfit = FEMALE_OUTFITS[bodyType as FemaleBodyType];
+    outfit = sceneConfig.femaleOutfits[bodyType as FemaleBodyType];
   } else {
     bodyDesc = MALE_BODY_DESCRIPTIONS[bodyType as MaleBodyType];
     sizeDesc = MALE_SIZE_DESCRIPTIONS[size];
-    outfit = MALE_OUTFITS[bodyType as MaleBodyType];
+    outfit = sceneConfig.maleOutfits[bodyType as MaleBodyType];
   }
 
   // Age range for the portrait
@@ -249,9 +326,8 @@ function buildPrompt(spec: ImageSpec): string {
       ? `She has a ${sizeDesc}.`
       : `He has a ${sizeDesc}.`,
 
-    // Setting - vacation/lifestyle vibe like premium dating profile
-    `Beautiful beach or poolside resort setting, golden hour sunlight.`,
-    `Lifestyle photo like a premium dating app profile.`,
+    // Scene-specific setting
+    sceneConfig.setting,
 
     // Expression - attractive and approachable
     `Naturally attractive, warm genuine smile.`,
@@ -292,12 +368,13 @@ function generateAllSpecs(genderFilter?: Gender): ImageSpec[] {
       for (const bodyType of bodyTypes) {
         for (const hairColor of HAIR_COLORS) {
           for (const size of SIZE_CATEGORIES) {
+            // Determine scene for this spec
+            const baseSpec = { gender, ethnicity, bodyType, hairColor, size };
+            const scene = selectScene(baseSpec);
+
             const spec: ImageSpec = {
-              gender,
-              ethnicity,
-              bodyType,
-              hairColor,
-              size,
+              ...baseSpec,
+              scene,
               filename: '',
               prompt: '',
             };
@@ -462,13 +539,13 @@ async function generateSpec(
   }
 
   if (dryRun) {
-    console.log(`[DRY RUN] Would generate: ${spec.filename}`);
-    console.log(`  Prompt: ${spec.prompt.substring(0, 100)}...`);
+    console.log(`[DRY RUN] Would generate: ${spec.filename} (${spec.scene})`);
+    console.log(`  Prompt: ${spec.prompt.substring(0, 120)}...`);
     return true;
   }
 
   try {
-    console.log(`Generating: ${spec.filename}`);
+    console.log(`Generating: ${spec.filename} (${spec.scene})`);
     const imageUrl = await generateImage(spec);
 
     // Ensure directory exists
@@ -706,7 +783,14 @@ async function main(): Promise<void> {
 
   // Filter out already completed
   const pending = specs.filter((s) => !progress.completed.includes(s.filename));
-  console.log(`Pending: ${pending.length} images\n`);
+  console.log(`Pending: ${pending.length} images`);
+
+  // Show scene distribution for pending images
+  const sceneDistribution = pending.reduce((acc, s) => {
+    acc[s.scene] = (acc[s.scene] || 0) + 1;
+    return acc;
+  }, {} as Record<SceneType, number>);
+  console.log(`Scene distribution: ${JSON.stringify(sceneDistribution)}\n`);
 
   if (pending.length === 0) {
     console.log('All images already generated!');

@@ -303,22 +303,23 @@ export default function DashboardPage() {
           <div className="flex flex-col lg:flex-row gap-3 md:pt-6">
             <motion.button
               onClick={() => router.push('/onboard')}
-              className="relative h-14 md:h-11 px-8 md:px-6 rounded-full bg-gradient-to-r from-vibes-hot via-vibes-neon to-vibes-cyan text-white font-bold text-lg md:text-base shadow-[0_0_20px_rgba(168,85,247,0.3)] transition-all overflow-hidden"
+              className="relative h-14 md:h-11 px-8 md:px-6 rounded-full bg-gradient-to-b from-white via-gray-100 to-gray-300 text-gray-900 font-bold text-lg md:text-base shadow-[0_4px_20px_rgba(255,255,255,0.2),inset_0_1px_0_rgba(255,255,255,0.8),inset_0_-2px_4px_rgba(0,0,0,0.1)] border border-white/50 transition-all overflow-hidden"
               whileHover={{
                 scale: 1.05,
-                boxShadow: '0 0 30px rgba(168,85,247,0.5)'
+                boxShadow: '0 6px 30px rgba(255,255,255,0.3),inset 0 1px 0 rgba(255,255,255,0.9),inset 0 -2px 4px rgba(0,0,0,0.1)'
               }}
               whileTap={{ scale: 0.95 }}
             >
+              {/* Shiny silver shimmer effect */}
               <motion.div
-                className="absolute inset-0 bg-gradient-to-r from-transparent via-white/20 to-transparent -skew-x-12"
+                className="absolute inset-0 bg-gradient-to-r from-transparent via-white/60 to-transparent -skew-x-12"
                 animate={{
                   x: ['-100%', '200%'],
                 }}
                 transition={{
-                  duration: 2.5,
+                  duration: 2,
                   repeat: Infinity,
-                  repeatDelay: 3,
+                  repeatDelay: 4,
                   ease: 'easeInOut',
                 }}
               />
