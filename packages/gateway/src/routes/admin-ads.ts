@@ -109,8 +109,6 @@ interface SpendTrendDay {
  * Register admin ads routes
  */
 export async function adminAdsRoutes(app: FastifyInstance): Promise<void> {
-  const db = sql();
-
   // All routes require admin role
   app.addHook('preHandler', requireAdmin);
 
@@ -261,6 +259,7 @@ export async function adminAdsRoutes(app: FastifyInstance): Promise<void> {
    */
   app.get('/accounts', async (_request: FastifyRequest, reply: FastifyReply) => {
     try {
+      const db = sql();
       const result = await db`
         SELECT
           id,
@@ -322,6 +321,7 @@ export async function adminAdsRoutes(app: FastifyInstance): Promise<void> {
     const adminUserId = request.user?.userId;
 
     try {
+      const db = sql();
       const result = await db`
         UPDATE ad_accounts
         SET status = 'disconnected'
@@ -371,6 +371,7 @@ export async function adminAdsRoutes(app: FastifyInstance): Promise<void> {
     const adminUserId = request.user?.userId;
 
     try {
+      const db = sql();
       // Check account exists and is active
       const account = await db`
         SELECT id, platform, status
@@ -438,6 +439,7 @@ export async function adminAdsRoutes(app: FastifyInstance): Promise<void> {
     const { days } = queryResult.data;
 
     try {
+      const db = sql();
       const endDate = new Date();
       const startDate = new Date();
       startDate.setDate(startDate.getDate() - days);
@@ -509,6 +511,7 @@ export async function adminAdsRoutes(app: FastifyInstance): Promise<void> {
     const { days, platform, sortBy, sortOrder } = queryResult.data;
 
     try {
+      const db = sql();
       const endDate = new Date();
       const startDate = new Date();
       startDate.setDate(startDate.getDate() - days);
@@ -602,6 +605,7 @@ export async function adminAdsRoutes(app: FastifyInstance): Promise<void> {
     const { days } = queryResult.data;
 
     try {
+      const db = sql();
       const endDate = new Date();
       const startDate = new Date();
       startDate.setDate(startDate.getDate() - days);
@@ -666,6 +670,7 @@ export async function adminAdsRoutes(app: FastifyInstance): Promise<void> {
     const { days } = queryResult.data;
 
     try {
+      const db = sql();
       const endDate = new Date();
       const startDate = new Date();
       startDate.setDate(startDate.getDate() - days);
