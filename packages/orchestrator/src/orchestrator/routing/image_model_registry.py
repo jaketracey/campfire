@@ -488,6 +488,26 @@ IMAGE_MODEL_REGISTRY: dict[str, ImageModelSpec] = {
         is_local=False,
         tags=["customizable", "lora", "editing", "cloud"],
     ),
+    # Flux PuLID (Identity-Preserving, 88-93% Face Similarity)
+    "fal/flux-pulid": ImageModelSpec(
+        model_id="fal/flux-pulid",
+        provider="fal",
+        display_name="Flux PuLID (88-93% Face Similarity)",
+        tier=ImageModelTier.QUALITY,
+        max_resolution=(1024, 1536),
+        supports_ip_adapter=True,  # Uses reference_image_url for identity
+        supports_inpainting=False,
+        supports_controlnet=False,
+        supports_img2img=True,
+        nsfw_capable=False,
+        avg_generation_time=8.0,
+        cost_per_image=0.033,
+        default_steps=20,
+        default_cfg_scale=4.0,
+        fal_endpoint="fal-ai/flux-pulid",
+        is_local=False,
+        tags=["identity-aware", "face-consistency", "photorealistic", "cloud", "anchor"],
+    ),
 }
 
 

@@ -1,5 +1,10 @@
 """Service layer for the orchestrator."""
 
+from orchestrator.services.anchor_generation import (
+    AnchorGenerationResult,
+    AnchorGenerationService,
+    AnchorResult,
+)
 from orchestrator.services.context_builder import ContextBuilder
 from orchestrator.services.gift_recall import GiftRecallService
 from orchestrator.services.group_context_builder import GroupContextBuilder
@@ -10,6 +15,9 @@ from orchestrator.services.response_selector import ResponseSelector
 from orchestrator.services.turn_manager import TurnManager
 
 __all__ = [
+    "AnchorGenerationResult",
+    "AnchorGenerationService",
+    "AnchorResult",
     "ContextBuilder",
     "ConversationOrchestrator",
     "GiftRecallService",

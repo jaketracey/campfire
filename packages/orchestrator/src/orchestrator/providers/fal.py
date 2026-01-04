@@ -30,6 +30,8 @@ MODEL_TO_FAL_ENDPOINT: dict[str, str] = {
     "fal/flux-kontext-max": "fal-ai/flux-pro/kontext/max",
     "fal/flux-kontext-lora": "fal-ai/flux-kontext-lora",
     "fal/flux-lora": "fal-ai/flux-lora",
+    # Identity-Preserving (PuLID)
+    "fal/flux-pulid": "fal-ai/flux-pulid",
     # Other providers
     "fal/recraft-v3": "fal-ai/recraft/v3/text-to-image",
     "fal/seedream-4.5": "fal-ai/bytedance/seedream/v4.5/text-to-image",
@@ -274,3 +276,162 @@ class FalProvider(ImageProvider):
             return True
         except Exception:
             return False
+
+    # =========================================================================
+    # Anchor Generation Methods (Dreamina + PuLID)
+    # =========================================================================
+
+    @retry(
+        stop=stop_after_attempt(3),
+        wait=wait_exponential(multiplier=1, min=1, max=10),
+    )
+    async def generate_dreamina_seed(
+        self,
+        prompt: str,
+        width: int = 768,
+        height: int = 1024,
+        seed: int | None = None,
+    ) -> dict[str, Any]:
+        """Generate a seed image using Dreamina v3.1 for anchor generation.
+
+        Dreamina v3.1 produces high-quality photorealistic portraits with
+        superior aesthetics, ideal for establishing character identity.
+
+        Args:
+            prompt: The character description prompt
+            width: Image width (default 768)
+            height: Image height (default 1024)
+            seed: Optional seed for reproducibility
+
+        Returns:
+            Dict with image_url, seed, latency_ms, width, height
+        """
+        start_time = time.time()
+        client = await self._get_client()
+
+        endpoint = MODEL_TO_FAL_ENDPOINT["fal/dreamina-v3.1"]
+
+        input_params: dict[str, Any] = {
+            "prompt": prompt,
+            "image_size": {"width": width, "height": height},
+            "num_images": 1,
+            "enable_safety_checker": False,
+        }
+
+        if seed is not None:
+            input_params["seed"] = seed
+
+        try:
+            response = await client.post(
+                f"{self.BASE_URL}/{endpoint}",
+                json=input_params,
+            )
+            response.raise_for_status()
+
+            result = response.json()
+            latency_ms = (time.time() - start_time) * 1000
+
+            images = result.get("images", [])
+            image_url = images[0].get("url") if images else None
+            result_seed = result.get("seed", seed)
+
+            logger.info(
+                "dreamina_seed_generation_success",
+                latency_ms=latency_ms,
+                seed=result_seed,
+                has_image=image_url is not None,
+            )
+
+            return {
+                "image_url": image_url,
+                "seed": result_seed,
+                "status": "succeeded",
+                "latency_ms": latency_ms,
+                "width": width,
+                "height": height,
+            }
+
+        except Exception as e:
+            logger.error("dreamina_seed_generation_error", error=str(e))
+            raise
+
+    @retry(
+        stop=stop_after_attempt(3),
+        wait=wait_exponential(multiplier=1, min=1, max=10),
+    )
+    async def generate_pulid_variation(
+        self,
+        prompt: str,
+        reference_image_url: str,
+        width: int = 768,
+        height: int = 1024,
+        id_weight: float = 1.0,
+        guidance_scale: float = 4.0,
+        num_inference_steps: int = 20,
+    ) -> dict[str, Any]:
+        """Generate a variation using PuLID Flux for 88-93% facial identity preservation.
+
+        PuLID Flux takes a reference image and generates variations that maintain
+        the same facial identity while allowing scene/outfit changes.
+
+        Args:
+            prompt: The scene/context description
+            reference_image_url: URL of the seed image (face reference)
+            width: Image width (default 768)
+            height: Image height (default 1024)
+            id_weight: Identity preservation weight 0.0-1.0 (default 1.0 for maximum)
+            guidance_scale: Prompt adherence 0-20 (default 4.0)
+            num_inference_steps: Generation steps 1-50 (default 20)
+
+        Returns:
+            Dict with image_url, latency_ms, width, height
+        """
+        start_time = time.time()
+        client = await self._get_client()
+
+        endpoint = MODEL_TO_FAL_ENDPOINT["fal/flux-pulid"]
+
+        input_params: dict[str, Any] = {
+            "prompt": prompt,
+            "reference_image_url": reference_image_url,
+            "id_weight": id_weight,
+            "image_size": {"width": width, "height": height},
+            "guidance_scale": guidance_scale,
+            "num_inference_steps": num_inference_steps,
+            "num_images": 1,
+            "enable_safety_checker": False,
+            "negative_prompt": self.DEFAULT_NEGATIVE_PROMPT,
+        }
+
+        try:
+            response = await client.post(
+                f"{self.BASE_URL}/{endpoint}",
+                json=input_params,
+            )
+            response.raise_for_status()
+
+            result = response.json()
+            latency_ms = (time.time() - start_time) * 1000
+
+            images = result.get("images", [])
+            image_url = images[0].get("url") if images else None
+
+            logger.info(
+                "pulid_variation_generation_success",
+                latency_ms=latency_ms,
+                id_weight=id_weight,
+                has_image=image_url is not None,
+            )
+
+            return {
+                "image_url": image_url,
+                "status": "succeeded",
+                "latency_ms": latency_ms,
+                "width": width,
+                "height": height,
+                "id_weight": id_weight,
+            }
+
+        except Exception as e:
+            logger.error("pulid_variation_generation_error", error=str(e))
+            raise

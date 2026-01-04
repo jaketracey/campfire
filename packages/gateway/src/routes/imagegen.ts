@@ -58,10 +58,12 @@ interface ImageGenRequest {
 interface GenerateAnchorsRequest {
   companionId: string;
   appearance: {
+    gender?: string;  // female, male
     ethnicity: string;
     bodyType: string;
     hairColor: string;
-    breastSize?: number;
+    breastSize?: string;  // S, M, L (female)
+    build?: string;  // S, M, L (male)
   };
   style: 'realistic' | 'stylized' | 'abstract' | 'minimal' | 'anime';
   personality?: {
@@ -293,6 +295,24 @@ interface OrchestratorImageGenResponse {
   prompt_used: string;
 }
 
+interface OrchestratorAnchorImageResult {
+  image_url: string;
+  emotional_state: string;
+  scene: string | null;
+  is_identity_seed: boolean;
+  seed: number | null;
+  width: number;
+  height: number;
+  latency_ms: number;
+}
+
+interface OrchestratorSeededAnchorResponse {
+  seed_anchor: OrchestratorAnchorImageResult;
+  variation_anchors: OrchestratorAnchorImageResult[];
+  random_seed: number;
+  total_latency_ms: number;
+}
+
 /**
  * Call orchestrator to generate an image (uses ComfyUI or FAL)
  */
@@ -358,6 +378,65 @@ async function downloadImage(url: string): Promise<Buffer> {
   }
   const arrayBuffer = await response.arrayBuffer();
   return Buffer.from(arrayBuffer);
+}
+
+/**
+ * Call orchestrator to generate seeded anchor images using Dreamina + PuLID
+ * Returns seed anchor + variation anchors with consistent identity
+ */
+async function generateSeededAnchorsWithOrchestrator(
+  companionId: string,
+  appearance: {
+    gender?: string;
+    ethnicity: string;
+    bodyType: string;
+    hairColor: string;
+    breastSize?: string;
+    build?: string;
+  },
+  personality?: Record<string, unknown>
+): Promise<OrchestratorSeededAnchorResponse> {
+  const url = `${ORCHESTRATOR_URL}/imagegen/generate-seeded-anchors`;
+
+  logger.info({ url, companionId, appearance }, 'Calling orchestrator for seeded anchor generation');
+
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      companion_id: companionId,
+      appearance: {
+        gender: appearance.gender || 'female',
+        ethnicity: appearance.ethnicity,
+        bodyType: appearance.bodyType,
+        hairColor: appearance.hairColor,
+        breastSize: appearance.breastSize,
+        build: appearance.build,
+      },
+      personality: personality || null,
+      variation_count: 3,
+      width: 768,
+      height: 1024,
+    }),
+  });
+
+  if (!response.ok) {
+    const error = await response.text();
+    logger.error({ status: response.status, error }, 'Orchestrator seeded anchor generation error');
+    throw new Error(`Orchestrator error: ${response.status} - ${error}`);
+  }
+
+  const result = await response.json() as OrchestratorSeededAnchorResponse;
+  logger.info({
+    companionId,
+    randomSeed: result.random_seed,
+    variationCount: result.variation_anchors.length,
+    totalLatencyMs: result.total_latency_ms,
+  }, 'Orchestrator seeded anchor generation response');
+
+  return result;
 }
 
 /**
@@ -788,8 +867,9 @@ export async function imagegenRoutes(app: FastifyInstance): Promise<void> {
     }
   );
 
-  // Generate anchor images for a new companion
-  // This creates a set of reference images that will be used for character consistency
+  // Generate anchor images for a new companion using Dreamina + PuLID
+  // Uses two-phase approach: Dreamina v3.1 for seed, PuLID Flux for variations
+  // This creates a set of reference images with 88-93% facial identity preservation
   app.post<{ Body: GenerateAnchorsRequest }>(
     '/generate-anchors',
     {
@@ -804,10 +884,12 @@ export async function imagegenRoutes(app: FastifyInstance): Promise<void> {
               type: 'object',
               required: ['ethnicity', 'bodyType', 'hairColor'],
               properties: {
+                gender: { type: 'string' },
                 ethnicity: { type: 'string' },
                 bodyType: { type: 'string' },
                 hairColor: { type: 'string' },
-                breastSize: { type: 'number' },
+                breastSize: { type: 'string' },
+                build: { type: 'string' },
               },
             },
             style: { type: 'string', enum: ['realistic', 'stylized', 'abstract', 'minimal', 'anime'] },
@@ -830,7 +912,7 @@ export async function imagegenRoutes(app: FastifyInstance): Promise<void> {
       const userId = request.user!.userId;
       const { companionId, appearance, style, personality } = request.body;
 
-      logger.info({ userId, companionId, appearance, style }, 'Starting anchor image generation');
+      logger.info({ userId, companionId, appearance, style }, 'Starting seeded anchor image generation');
 
       const companionRepo = getCompanionsRepository();
 
@@ -843,87 +925,40 @@ export async function imagegenRoutes(app: FastifyInstance): Promise<void> {
         return reply.status(403).send({ error: 'Not authorized to modify this companion' });
       }
 
-      // Build base prompt from appearance
-      const basePromptParts: string[] = ['Beautiful woman'];
-
-      // Ethnicity mapping
-      const ethnicityMap: Record<string, string> = {
-        'east-asian': 'East Asian features',
-        'south-asian': 'South Asian features',
-        'black': 'Black/African features',
-        'caucasian': 'Caucasian features',
-        'latina': 'Latina features',
-        'middle-eastern': 'Middle Eastern features',
-        'mixed': 'mixed ethnicity',
-      };
-      if (appearance.ethnicity && appearance.ethnicity in ethnicityMap) {
-        basePromptParts.push(ethnicityMap[appearance.ethnicity]!);
-      }
-
-      // Body type mapping
-      const bodyTypeMap: Record<string, string> = {
-        'slim': 'slim figure',
-        'athletic': 'athletic build',
-        'curvy': 'curvy figure',
-        'plus-size': 'plus-size figure',
-      };
-      if (appearance.bodyType && appearance.bodyType in bodyTypeMap) {
-        basePromptParts.push(bodyTypeMap[appearance.bodyType]!);
-      }
-
-      // Hair color mapping
-      const hairColorMap: Record<string, string> = {
-        'black': 'black hair',
-        'brown': 'brown hair',
-        'blonde': 'blonde hair',
-        'red': 'red hair',
-        'fantasy': 'vibrant fantasy-colored hair',
-      };
-      if (appearance.hairColor && appearance.hairColor in hairColorMap) {
-        basePromptParts.push(hairColorMap[appearance.hairColor]!);
-      }
-
-      const basePrompt = basePromptParts.join(', ');
-
-      // Emotional states for anchor images - neutral is primary
-      const anchorStates = ['neutral', 'happy', 'thoughtful'] as const;
       const generatedAnchors: AnchorImage[] = [];
       let primaryAnchorId: string | null = null;
-      let primaryAnchorUrl: string | null = null;
 
       try {
-        for (let i = 0; i < anchorStates.length; i++) {
-          const emotionalState = anchorStates[i]!;
-          const isPrimary = i === 0;
+        // Capture request start time for cost tracking
+        const anchorStartTime = new Date();
 
-          logger.info({ companionId, emotionalState, isPrimary, index: i }, 'Generating anchor image');
+        // Call orchestrator to generate seeded anchors (Dreamina + PuLID)
+        const orchestratorResult = await generateSeededAnchorsWithOrchestrator(
+          companionId,
+          appearance,
+          personality
+        );
 
-          // Build the full prompt with emotional state
-          const fullPrompt = buildPrompt({
-            prompt: basePrompt,
+        // Process all anchors (seed + variations)
+        const allAnchors = [orchestratorResult.seed_anchor, ...orchestratorResult.variation_anchors];
+
+        for (let i = 0; i < allAnchors.length; i++) {
+          const anchor = allAnchors[i]!;
+          const isPrimary = anchor.is_identity_seed;
+          const emotionalState = anchor.emotional_state;
+
+          logger.info({
+            companionId,
             emotionalState,
-            personality,
-            style,
-          });
+            scene: anchor.scene,
+            isPrimary,
+            index: i,
+          }, 'Processing generated anchor');
 
-          // Capture request start time for cost tracking
-          const anchorStartTime = new Date();
+          // Download image from FAL URL
+          const imageBuffer = await downloadImage(anchor.image_url);
 
-          // Generate with orchestrator
-          // For primary anchor (first image), no reference - let it establish the identity
-          // For subsequent images, use the primary anchor as reference for consistency
-          const { imageBuffer, latencyMs, provider, modelId, format } = await generateWithOrchestrator(
-            fullPrompt,
-            emotionalState,
-            style,
-            832,  // Higher resolution for anchors (optimal SDXL portrait)
-            1248,
-            isPrimary ? undefined : primaryAnchorUrl || undefined,
-            isPrimary ? undefined : 0.85,  // Strong reference for consistency
-            true  // isAnchor - use high quality anchor workflow
-          );
-
-          // Upload to S3 under anchors path with directory structure for renditions
+          // Upload to S3 under anchors path
           const cacheKey = `anchor-${emotionalState}-${Date.now()}`;
           const keyPrefix = `companions/${userId}/anchors/${companionId}/${cacheKey}`;
           const s3Key = `${keyPrefix}/original.png`;
@@ -950,29 +985,30 @@ export async function imagegenRoutes(app: FastifyInstance): Promise<void> {
             companion_id: companionId,
             asset_url: s3Url,
             asset_type: 'identity_anchor',
-            is_active: isPrimary,  // Primary anchor is also the active avatar
+            is_active: isPrimary,  // Seed (neutral) anchor is the active avatar
             is_identity_anchor: true,
             metadata: {
               emotionalState,
+              scene: anchor.scene,
               style,
               appearance,
               s3Key,
-              s3_key: s3Key, // Use consistent naming
+              s3_key: s3Key,
               s3Bucket: S3_MEDIA_BUCKET,
+              isIdentitySeed: isPrimary,
+              randomSeed: orchestratorResult.random_seed,
             },
             generation_params: {
-              prompt: fullPrompt,
-              width: 832,
-              height: 1248,
-              provider,
-              latencyMs,
-              referenceStrength: isPrimary ? null : 0.85,
+              width: anchor.width,
+              height: anchor.height,
+              provider: 'fal',
+              latencyMs: anchor.latency_ms,
+              seed: anchor.seed,
             },
           });
 
           if (isPrimary) {
             primaryAnchorId = avatar.id;
-            primaryAnchorUrl = s3Url;
             // Set as active avatar
             await companionRepo.setActiveAvatar(companionId, avatar.id);
           }
@@ -985,15 +1021,15 @@ export async function imagegenRoutes(app: FastifyInstance): Promise<void> {
             companionId,
             s3Key,
             s3Url,
-            832, // width
-            1248, // height
+            anchor.width,
+            anchor.height,
             imageBuffer.length,
             emotionalState,
             style,
-            fullPrompt,
+            `Seeded anchor: ${emotionalState}`, // Prompt is handled by orchestrator
             cacheKey,
-            latencyMs,
-            provider
+            anchor.latency_ms,
+            'fal'
           );
 
           // Record image usage for cost tracking
@@ -1001,11 +1037,11 @@ export async function imagegenRoutes(app: FastifyInstance): Promise<void> {
             const llmUsage = getLLMUsageService();
             await llmUsage.recordImageUsage({
               user_id: userId,
-              session_id: null, // anchorSessionId is not a valid UUID
+              session_id: null,
               companion_id: companionId,
-              provider,
-              model: modelId,
-              latency_ms: Math.round(latencyMs),
+              provider: 'fal',
+              model: isPrimary ? 'fal/dreamina-v3.1' : 'fal/flux-pulid',
+              latency_ms: Math.round(anchor.latency_ms),
               request_started_at: anchorStartTime,
               request_completed_at: new Date(),
             });
@@ -1040,9 +1076,9 @@ export async function imagegenRoutes(app: FastifyInstance): Promise<void> {
             companionId,
             avatarId: avatar.id,
             emotionalState,
-            latencyMs,
-            provider,
-          }, 'Anchor image generated and saved');
+            scene: anchor.scene,
+            latencyMs: anchor.latency_ms,
+          }, 'Anchor image saved');
         }
 
         const result: GenerateAnchorsResult = {
@@ -1051,15 +1087,20 @@ export async function imagegenRoutes(app: FastifyInstance): Promise<void> {
           primaryAnchorId: primaryAnchorId!,
         };
 
-        logger.info({ companionId, anchorCount: generatedAnchors.length, primaryAnchorId }, 'Anchor generation complete');
+        logger.info({
+          companionId,
+          anchorCount: generatedAnchors.length,
+          primaryAnchorId,
+          randomSeed: orchestratorResult.random_seed,
+          totalLatencyMs: orchestratorResult.total_latency_ms,
+        }, 'Seeded anchor generation complete');
 
         return reply.send(result);
       } catch (error) {
-        logger.error({ error, companionId }, 'Anchor image generation failed');
+        logger.error({ error, companionId }, 'Seeded anchor image generation failed');
         return reply.status(500).send({
           error: 'Anchor generation failed',
           message: error instanceof Error ? error.message : 'Unknown error',
-          // Return any anchors that were successfully generated
           partialAnchors: generatedAnchors,
         });
       }

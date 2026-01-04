@@ -33,6 +33,7 @@ from orchestrator.queue import JobQueue, get_job_queue
 from orchestrator.routing.image_model_router import ImageModelRouter, ImageUseCase
 from orchestrator.routing.image_model_registry import update_image_provider_health
 from orchestrator.safety.gate import SafetyGate, SafetyLevel
+from orchestrator.services.anchor_generation import AnchorGenerationService
 from orchestrator.services.image_routing_config_service import ImageRoutingConfigService
 from orchestrator.services.orchestrator import ConversationOrchestrator
 from orchestrator.services.prompt_enhancer import PromptEnhancer
@@ -398,6 +399,50 @@ class AnalyzeUserProfileResponse(BaseModel):
     greeting_style: str  # warm, playful, formal, friendly
     custom_insight: str
     latency_ms: float
+
+
+class CompanionAppearance(BaseModel):
+    """Companion appearance data from onboarding."""
+
+    gender: str = "female"  # female, male
+    ethnicity: str = "caucasian"  # east-asian, south-asian, black, caucasian, latina, middle-eastern, mixed
+    bodyType: str = "athletic"  # slim, athletic, curvy, plus-size (female) or slim, athletic, muscular, dad-bod (male)
+    hairColor: str = "brown"  # black, brown, blonde, red, fantasy
+    breastSize: str | None = None  # S, M, L (female only)
+    build: str | None = None  # S, M, L (male only)
+
+
+class SeededAnchorRequest(BaseModel):
+    """Request model for seeded anchor generation."""
+
+    companion_id: str
+    appearance: CompanionAppearance
+    personality: dict | None = None
+    variation_count: int = Field(default=3, ge=1, le=5)
+    width: int = Field(default=768, ge=512, le=1536)
+    height: int = Field(default=1024, ge=512, le=1536)
+
+
+class AnchorImageResult(BaseModel):
+    """A generated anchor image result."""
+
+    image_url: str
+    emotional_state: str
+    scene: str | None = None
+    is_identity_seed: bool = False
+    seed: int | None = None
+    width: int
+    height: int
+    latency_ms: float
+
+
+class SeededAnchorResponse(BaseModel):
+    """Response model for seeded anchor generation."""
+
+    seed_anchor: AnchorImageResult
+    variation_anchors: list[AnchorImageResult]
+    random_seed: int
+    total_latency_ms: float
 
 
 # Application state
@@ -1299,6 +1344,120 @@ async def get_image_providers_health() -> dict[str, Any]:
         health["routing"] = app_state.image_routing_config_service.get_cache_status()
 
     return health
+
+
+@app.post(
+    "/imagegen/generate-seeded-anchors",
+    response_model=SeededAnchorResponse,
+    responses={
+        400: {"model": ErrorResponse},
+        503: {"model": ErrorResponse},
+    },
+)
+async def generate_seeded_anchors(request: SeededAnchorRequest) -> SeededAnchorResponse:
+    """Generate a complete set of anchor images for a companion using Dreamina + PuLID.
+
+    Two-phase generation process:
+    1. SEED: Generate base identity image with Dreamina v3.1 using user's appearance selections
+       plus visual randomness (random seed, lighting, outfit color)
+    2. VARIATIONS: Generate scene variations with PuLID Flux for 88-93% facial identity preservation
+
+    The seed image becomes the "neutral" anchor AND serves as the identity reference for all
+    future image generation.
+
+    Returns 4 anchors total: 1 seed (neutral) + 3 scene variations with different emotions.
+    """
+    logger.info(
+        "seeded_anchor_request",
+        companion_id=request.companion_id,
+        gender=request.appearance.gender,
+        ethnicity=request.appearance.ethnicity,
+        body_type=request.appearance.bodyType,
+        variation_count=request.variation_count,
+    )
+
+    # Check if FAL provider is available
+    if not app_state.fal_provider:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="FAL provider not available. Ensure FAL_API_KEY is configured.",
+        )
+
+    try:
+        # Create the anchor generation service
+        service = AnchorGenerationService(app_state.fal_provider)
+
+        # Convert Pydantic model to dict for the service
+        appearance_dict = {
+            "gender": request.appearance.gender,
+            "ethnicity": request.appearance.ethnicity,
+            "bodyType": request.appearance.bodyType,
+            "hairColor": request.appearance.hairColor,
+        }
+
+        # Add gender-specific size field
+        if request.appearance.gender == "female" and request.appearance.breastSize:
+            appearance_dict["breastSize"] = request.appearance.breastSize
+        elif request.appearance.gender == "male" and request.appearance.build:
+            appearance_dict["build"] = request.appearance.build
+
+        # Generate anchors
+        result = await service.generate_companion_anchors(
+            companion_id=request.companion_id,
+            appearance=appearance_dict,
+            personality=request.personality,
+            variation_count=request.variation_count,
+            width=request.width,
+            height=request.height,
+        )
+
+        logger.info(
+            "seeded_anchor_success",
+            companion_id=request.companion_id,
+            random_seed=result.random_seed,
+            variation_count=len(result.variation_anchors),
+            total_latency_ms=result.total_latency_ms,
+        )
+
+        # Convert to response model
+        seed_anchor = AnchorImageResult(
+            image_url=result.seed_anchor.image_url,
+            emotional_state=result.seed_anchor.emotional_state,
+            scene=result.seed_anchor.scene,
+            is_identity_seed=result.seed_anchor.is_identity_seed,
+            seed=result.seed_anchor.seed,
+            width=result.seed_anchor.width,
+            height=result.seed_anchor.height,
+            latency_ms=result.seed_anchor.latency_ms,
+        )
+
+        variation_anchors = [
+            AnchorImageResult(
+                image_url=v.image_url,
+                emotional_state=v.emotional_state,
+                scene=v.scene,
+                is_identity_seed=v.is_identity_seed,
+                seed=v.seed,
+                width=v.width,
+                height=v.height,
+                latency_ms=v.latency_ms,
+            )
+            for v in result.variation_anchors
+        ]
+
+        return SeededAnchorResponse(
+            seed_anchor=seed_anchor,
+            variation_anchors=variation_anchors,
+            random_seed=result.random_seed,
+            total_latency_ms=result.total_latency_ms,
+        )
+
+    except Exception as e:
+        logger.exception("seeded_anchor_failed", error=str(e))
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Anchor generation failed: {str(e)}",
+        )
 
 
 @app.post(
