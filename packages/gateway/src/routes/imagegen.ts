@@ -664,7 +664,7 @@ export async function imagegenRoutes(app: FastifyInstance): Promise<void> {
                 companion_id: params.companionId ?? null,
                 provider,
                 model: modelId,
-                latency_ms: latencyMs,
+                latency_ms: Math.round(latencyMs),
                 request_started_at: requestStartTime,
                 request_completed_at: new Date(),
               });
@@ -1001,11 +1001,11 @@ export async function imagegenRoutes(app: FastifyInstance): Promise<void> {
             const llmUsage = getLLMUsageService();
             await llmUsage.recordImageUsage({
               user_id: userId,
-              session_id: anchorSessionId,
+              session_id: null, // anchorSessionId is not a valid UUID
               companion_id: companionId,
               provider,
               model: modelId,
-              latency_ms: latencyMs,
+              latency_ms: Math.round(latencyMs),
               request_started_at: anchorStartTime,
               request_completed_at: new Date(),
             });
@@ -1304,11 +1304,11 @@ export async function imagegenRoutes(app: FastifyInstance): Promise<void> {
               const llmUsage = getLLMUsageService();
               await llmUsage.recordImageUsage({
                 user_id: userId,
-                session_id: anchorSessionId,
+                session_id: null, // anchorSessionId is not a valid UUID
                 companion_id: companionId,
                 provider,
                 model: modelId,
-                latency_ms: latencyMs,
+                latency_ms: Math.round(latencyMs),
                 request_started_at: anchorStartTime,
                 request_completed_at: new Date(),
               });
