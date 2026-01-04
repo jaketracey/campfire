@@ -31,6 +31,7 @@ from orchestrator.providers.openai import OpenAIProvider
 from orchestrator.routing.model_registry import MODEL_REGISTRY, PROVIDER_HEALTH
 from orchestrator.queue import JobQueue, get_job_queue
 from orchestrator.routing.image_model_router import ImageModelRouter, ImageUseCase
+from orchestrator.routing.image_model_registry import update_image_provider_health
 from orchestrator.safety.gate import SafetyGate, SafetyLevel
 from orchestrator.services.image_routing_config_service import ImageRoutingConfigService
 from orchestrator.services.orchestrator import ConversationOrchestrator
@@ -530,18 +531,41 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         # Check if ComfyUI is available
         if await app_state.comfyui_provider.health_check():
             logger.info("comfyui_available", url=settings.comfyui_base_url)
+            update_image_provider_health("comfyui", is_available=True)
         else:
             logger.warning("comfyui_not_available", url=settings.comfyui_base_url)
             app_state.comfyui_provider = None
+            update_image_provider_health("comfyui", is_available=False)
+    else:
+        # ComfyUI is disabled - mark as unavailable in registry
+        update_image_provider_health("comfyui", is_available=False)
+        logger.info("comfyui_disabled")
 
-    if settings.fal_api_key:
+    # Try to get FAL API key from environment first, then database
+    fal_api_key = settings.fal_api_key
+    if not fal_api_key and app_state.routing_config_service:
+        try:
+            fal_api_key = await app_state.routing_config_service.get_provider_api_key(
+                "fal", settings.provider_key_encryption_secret
+            )
+            if fal_api_key:
+                logger.info("fal_api_key_loaded_from_database")
+        except Exception as e:
+            logger.warning("failed_to_get_fal_api_key_from_database", error=str(e))
+
+    if fal_api_key:
+        # Create a modified settings object with the API key
+        settings.fal_api_key = fal_api_key
         app_state.fal_provider = FalProvider(settings)
+        update_image_provider_health("fal", is_available=True)
         logger.info("fal_provider_initialized")
 
         # Initialize FAL video provider (uses same API key)
         app_state.fal_video_provider = FalVideoProvider(settings)
         logger.info("fal_video_provider_initialized")
     else:
+        update_image_provider_health("fal", is_available=False)
+        logger.info("fal_provider_disabled", reason="no_api_key")
         app_state.fal_video_provider = None
 
     # Initialize Ollama provider for LLM tasks (backstory generation, etc.)
@@ -1596,12 +1620,13 @@ Generate a rich, intimate backstory that explains how {request.companion_name} b
         llm_provider = None
 
         # Try to get provider from routing config
+        encryption_key = app_state.settings.provider_key_encryption_secret
         if app_state.routing_config_service:
             try:
-                models = await app_state.routing_config_service.get_models_for_use_case("chat_simple")
-                for model in models:
+                model = await app_state.routing_config_service.get_model_for_use_case("chat_simple")
+                if model:
                     if model.provider == "openai":
-                        openai_api_key = await app_state.routing_config_service.get_provider_api_key("openai")
+                        openai_api_key = await app_state.routing_config_service.get_provider_api_key("openai", encryption_key)
                         if openai_api_key:
                             llm_provider = OpenAIProvider(
                                 app_state.settings,
@@ -1609,11 +1634,9 @@ Generate a rich, intimate backstory that explains how {request.companion_name} b
                                 api_key_override=openai_api_key,
                             )
                             logger.info("backstory_generation_using_openai", model=model.model_id)
-                            break
                     elif model.provider == "ollama" and app_state.ollama_provider:
                         llm_provider = app_state.ollama_provider.with_model(model.model_id)
                         logger.info("backstory_generation_using_ollama", model=model.model_id)
-                        break
             except Exception as routing_error:
                 logger.warning("backstory_routing_failed", error=str(routing_error))
 
@@ -1625,7 +1648,7 @@ Generate a rich, intimate backstory that explains how {request.companion_name} b
         # Fall back to OpenAI if Ollama not available
         if llm_provider is None and app_state.routing_config_service:
             try:
-                openai_api_key = await app_state.routing_config_service.get_provider_api_key("openai")
+                openai_api_key = await app_state.routing_config_service.get_provider_api_key("openai", encryption_key)
                 if openai_api_key:
                     llm_provider = OpenAIProvider(
                         app_state.settings,
