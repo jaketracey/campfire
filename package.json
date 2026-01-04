@@ -6,6 +6,7 @@
     "packages/*"
   ],
   "scripts": {
+    "prepare": "husky",
     "dev": "turbo run dev --ui tui",
     "dev:stream": "turbo run dev",
     "build": "turbo run build",
@@ -29,6 +30,8 @@
     "mobile:build:android": "pnpm --filter @campfire/mobile build:android"
   },
   "devDependencies": {
+    "husky": "^9.1.7",
+    "tsx": "^4.19.2",
     "turbo": "^2.3.0",
     "typescript": "^5.7.2"
   },
