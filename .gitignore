@@ -21,8 +21,8 @@ pip-log.txt
 pip-delete-this-directory.txt
 .Python
 develop-eggs/
-lib/
-lib64/
+# lib/ and lib64/ are already covered by .venv/ and venv/ above
+# Don't use bare lib/ as it ignores packages/*/src/lib/
 parts/
 sdist/
 var/

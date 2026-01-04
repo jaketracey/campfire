@@ -1,11 +1,20 @@
 /**
- * Generate Companion Anchor Images for Onboarding
+ * Generate Companion Body-Shot Images for Onboarding
  *
- * Generates high-quality photorealistic anchor images for all companion
- * appearance combinations using FAL's Juggernaut XL model.
+ * Generates high-quality photorealistic THREE-QUARTER BODY SHOTS for all companion
+ * appearance combinations using FAL's Dreamina v3.1 model.
+ *
+ * Features:
+ * - Body shots in gym/fitness setting (not just facial close-ups)
+ * - Varied gym gear colors for visual diversity
+ * - Professional fitness photography style
  *
  * Total images: 840 (420 female + 420 male)
  * Per gender: 7 ethnicities × 4 body types × 5 hair colors × 3 sizes = 420
+ *
+ * Output files use -body suffix to preserve existing portrait images:
+ *   female/{ethnicity}-{bodyType}-{hairColor}-b{S|M|L}-body.png
+ *   male/{ethnicity}-{bodyType}-{hairColor}-build{S|M|L}-body.png
  *
  * Usage:
  *   npx tsx scripts/generate-companion-anchors.ts              # Generate all
@@ -83,6 +92,13 @@ const MALE_BODY_TYPES: MaleBodyType[] = ['slim', 'athletic', 'muscular', 'dad-bo
 const HAIR_COLORS: HairColor[] = ['black', 'brown', 'blonde', 'red', 'fantasy'];
 const SIZE_CATEGORIES: SizeCategory[] = ['S', 'M', 'L'];
 
+// Gym gear colors for variation (will be deterministically selected based on attributes)
+const GYM_COLORS = [
+  'black', 'navy blue', 'charcoal gray', 'deep purple', 'forest green',
+  'burgundy', 'teal', 'coral', 'dusty rose', 'olive green',
+  'slate blue', 'terracotta', 'sage green', 'wine red', 'steel gray',
+];
+
 // ============================================================================
 // Natural Language Prompt Mappings
 // ============================================================================
@@ -119,17 +135,32 @@ const ETHNICITY_DESCRIPTIONS: Record<Ethnicity, { female: string; male: string }
 };
 
 const FEMALE_BODY_DESCRIPTIONS: Record<FemaleBodyType, string> = {
-  'slim': 'slim and petite figure',
-  'athletic': 'athletic and toned physique',
-  'curvy': 'curvy and voluptuous figure',
-  'plus-size': 'plus-size full-figured body',
+  'slim': 'slim and toned figure',
+  'athletic': 'athletic and fit physique with visible muscle definition',
+  'curvy': 'curvy and voluptuous figure with feminine curves',
+  'plus-size': 'plus-size full-figured body with confident presence',
 };
 
 const MALE_BODY_DESCRIPTIONS: Record<MaleBodyType, string> = {
-  'slim': 'slim and lean build',
-  'athletic': 'athletic and fit physique',
-  'muscular': 'muscular and well-built frame',
-  'dad-bod': 'average dad-bod build',
+  'slim': 'slim and lean build with toned muscles',
+  'athletic': 'athletic and fit physique with visible muscle definition',
+  'muscular': 'muscular and well-built frame with developed muscles',
+  'dad-bod': 'average dad-bod build with relaxed physique',
+};
+
+// Gym outfit descriptions
+const FEMALE_GYM_OUTFITS: Record<FemaleBodyType, string> = {
+  'slim': 'fitted sports bra and high-waisted leggings',
+  'athletic': 'racerback tank top and compression leggings',
+  'curvy': 'supportive sports bra and form-fitting yoga pants',
+  'plus-size': 'comfortable athletic tank and stretchy leggings',
+};
+
+const MALE_GYM_OUTFITS: Record<MaleBodyType, string> = {
+  'slim': 'fitted performance t-shirt and athletic shorts',
+  'athletic': 'sleeveless workout tank and training shorts',
+  'muscular': 'fitted compression tank and gym shorts',
+  'dad-bod': 'comfortable cotton t-shirt and athletic shorts',
 };
 
 const HAIR_DESCRIPTIONS: Record<HairColor, string> = {
@@ -165,46 +196,72 @@ const NEGATIVE_PROMPT = [
 // Prompt Generation
 // ============================================================================
 
+/**
+ * Deterministically select a gym color based on spec attributes.
+ * This ensures the same spec always gets the same color.
+ */
+function selectGymColor(spec: ImageSpec): string {
+  // Create a simple hash from the spec attributes
+  const str = `${spec.ethnicity}-${spec.bodyType}-${spec.hairColor}-${spec.size}`;
+  let hash = 0;
+  for (let i = 0; i < str.length; i++) {
+    hash = ((hash << 5) - hash) + str.charCodeAt(i);
+    hash = hash & hash; // Convert to 32-bit integer
+  }
+  return GYM_COLORS[Math.abs(hash) % GYM_COLORS.length];
+}
+
 function buildPrompt(spec: ImageSpec): string {
   const { gender, ethnicity, bodyType, hairColor, size } = spec;
 
   const ethnicityDesc = ETHNICITY_DESCRIPTIONS[ethnicity][gender];
   const hairDesc = HAIR_DESCRIPTIONS[hairColor];
+  const gymColor = selectGymColor(spec);
 
   let bodyDesc: string;
   let sizeDesc: string;
+  let gymOutfit: string;
 
   if (gender === 'female') {
     bodyDesc = FEMALE_BODY_DESCRIPTIONS[bodyType as FemaleBodyType];
     sizeDesc = FEMALE_SIZE_DESCRIPTIONS[size];
+    gymOutfit = FEMALE_GYM_OUTFITS[bodyType as FemaleBodyType];
   } else {
     bodyDesc = MALE_BODY_DESCRIPTIONS[bodyType as MaleBodyType];
     sizeDesc = MALE_SIZE_DESCRIPTIONS[size];
+    gymOutfit = MALE_GYM_OUTFITS[bodyType as MaleBodyType];
   }
 
-  // Natural language prompt structure (subject-first, as recommended for FLUX-based models)
+  // Age range for the portrait
   const ageRange = gender === 'female' ? '25-35' : '28-40';
 
+  // Body-shot prompt with gym setting
   const prompt = [
-    // Subject description (most important, comes first)
-    `A close-up portrait photograph of a ${ageRange} year old ${ethnicityDesc}`,
-    `with ${hairDesc}`,
-    `and a ${bodyDesc}.`,
+    // Subject description - three-quarter body shot
+    `Three-quarter body portrait of a ${ageRange} year old ${ethnicityDesc}`,
+    `with ${hairDesc} and a ${bodyDesc}.`,
+
+    // Gym outfit with color variation
+    `Wearing ${gymColor} ${gymOutfit}.`,
 
     // Gender-specific size detail
     gender === 'female'
-      ? `She has a ${sizeDesc}`
+      ? `She has a ${sizeDesc}.`
       : `He has a ${sizeDesc}.`,
 
-    // Expression and pose
-    `Looking directly at the camera with a warm, confident, inviting expression.`,
-    `Natural relaxed pose, genuine smile.`,
+    // Setting and pose
+    `Standing confidently in a modern gym or fitness studio.`,
+    `Natural lighting through large windows, clean minimalist background.`,
+
+    // Expression
+    `Warm, approachable expression with a genuine smile.`,
+    `Looking at the camera with confidence.`,
 
     // Technical photography details
-    `Professional studio portrait photography.`,
-    `Soft diffused lighting, shallow depth of field.`,
-    `Shot on Canon EOS R5, 85mm f/1.4 lens.`,
-    `8K resolution, highly detailed skin texture, photorealistic.`,
+    `Professional fitness photography.`,
+    `Full body visible from mid-thigh up.`,
+    `Shot on Sony A7R IV, 50mm f/1.8 lens.`,
+    `8K resolution, photorealistic, natural skin texture.`,
   ].join(' ');
 
   return prompt;
@@ -213,10 +270,11 @@ function buildPrompt(spec: ImageSpec): string {
 function getFilename(spec: ImageSpec): string {
   const { gender, ethnicity, bodyType, hairColor, size } = spec;
 
+  // Add -body suffix to distinguish from portrait close-ups
   if (gender === 'female') {
-    return `female/${ethnicity}-${bodyType}-${hairColor}-b${size}.png`;
+    return `female/${ethnicity}-${bodyType}-${hairColor}-b${size}-body.png`;
   } else {
-    return `male/${ethnicity}-${bodyType}-${hairColor}-build${size}.png`;
+    return `male/${ethnicity}-${bodyType}-${hairColor}-build${size}-body.png`;
   }
 }
 
@@ -549,10 +607,11 @@ function parseArgs(): {
 
 function printUsage(): void {
   console.log(`
-Companion Anchor Image Generator
-=================================
+Companion Body-Shot Image Generator
+====================================
 
-Generates photorealistic anchor images for all companion appearance combinations.
+Generates photorealistic THREE-QUARTER BODY SHOTS for all companion appearance
+combinations. Images feature gym/fitness attire with varied colors.
 
 Usage:
   npx tsx scripts/generate-companion-anchors.ts [options]
@@ -577,10 +636,10 @@ Examples:
 Environment:
   FAL_API_KEY       Required. Your FAL.ai API key.
 
-Output:
+Output (uses -body suffix to preserve existing portraits):
   packages/web/public/images/companions/
-    female/{ethnicity}-{bodyType}-{hairColor}-b{S|M|L}.png
-    male/{ethnicity}-{bodyType}-{hairColor}-build{S|M|L}.png
+    female/{ethnicity}-{bodyType}-{hairColor}-b{S|M|L}-body.png
+    male/{ethnicity}-{bodyType}-{hairColor}-build{S|M|L}-body.png
 `);
 }
 
@@ -614,9 +673,9 @@ async function main(): Promise<void> {
   if (args.test || process.argv.some(a => a.startsWith('--test'))) {
     const testCount = args.testCount || 6;
     specs = selectTestSubset(specs, testCount);
-    console.log(`\n=== TEST MODE: Generating ${specs.length} images ===`);
+    console.log(`\n=== TEST MODE: Generating ${specs.length} body-shot images ===`);
   } else {
-    console.log(`\n=== Companion Anchor Image Generator ===`);
+    console.log(`\n=== Companion Body-Shot Image Generator ===`);
   }
 
   console.log(`Model: ${FAL_MODEL}`);
