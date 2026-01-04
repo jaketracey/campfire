@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useCallback, useRef, useEffect } from 'react';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
@@ -192,10 +192,59 @@ function generateLocalRandomCompanion(): GeneratedCompanionData {
 
 export function QuickStart({ onBack }: QuickStartProps) {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const { toast } = useToast();
   const { isAuthenticated } = useAuth();
   const { reset: resetOnboarding, setQuickStartActive } = useOnboardingStore();
   const [step, setStep] = useState<'name' | 'transition' | 'carousel' | 'creating'>('name');
+  const isNavigatingRef = useRef(false);
+
+  // Map step to URL param value
+  const stepToParam = (s: typeof step): string | null => {
+    switch (s) {
+      case 'name': return null; // No param for initial step
+      case 'carousel': return 'carousel';
+      case 'creating': return 'creating';
+      default: return null;
+    }
+  };
+
+  // Sync URL to step state on popstate (browser back/forward)
+  useEffect(() => {
+    const qsPhase = searchParams.get('phase');
+    if (!isNavigatingRef.current) {
+      if (qsPhase === 'carousel' && step !== 'carousel' && step !== 'transition') {
+        setStep('carousel');
+      } else if (qsPhase === 'creating' && step !== 'creating') {
+        setStep('creating');
+      } else if (!qsPhase && step !== 'name' && step !== 'transition') {
+        // Going back to name step
+        setStep('name');
+      }
+    }
+    isNavigatingRef.current = false;
+  }, [searchParams, step]);
+
+  // Update URL when step changes
+  useEffect(() => {
+    const currentPhase = searchParams.get('phase');
+    const targetPhase = stepToParam(step);
+
+    if (step === 'transition') return; // Don't update URL during transition
+
+    if (currentPhase !== targetPhase) {
+      isNavigatingRef.current = true;
+      const newParams = new URLSearchParams(searchParams.toString());
+      if (targetPhase) {
+        newParams.set('phase', targetPhase);
+      } else {
+        newParams.delete('phase');
+        newParams.delete('qs'); // Also clean up carousel step param
+      }
+      const queryString = newParams.toString();
+      router.push(queryString ? `/onboard?${queryString}` : '/onboard', { scroll: false });
+    }
+  }, [step, searchParams, router]);
 
   const [isCreating, setIsCreating] = useState(false);
   const [generatedCompanion, setGeneratedCompanion] = useState<GeneratedCompanionData | null>(null);

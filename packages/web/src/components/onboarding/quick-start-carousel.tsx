@@ -1,6 +1,7 @@
 'use client';
 
-import { useState, useCallback, useEffect } from 'react';
+import { useState, useCallback, useEffect, useRef } from 'react';
+import { useSearchParams, useRouter } from 'next/navigation';
 import { motion, AnimatePresence } from 'framer-motion';
 import { IdentityDisplay } from './quick-start/identity-display';
 import { VisualsDisplay } from './quick-start/visuals-display';
@@ -127,9 +128,12 @@ export function QuickStartCarousel({
   generatedData,
   onComplete,
 }: QuickStartCarouselProps) {
+  const searchParams = useSearchParams();
+  const router = useRouter();
   const [currentSection, setCurrentSection] = useState<CarouselSection>('identity');
   const currentIndex = SECTIONS.indexOf(currentSection);
   const { setQuickStartStep } = useOnboardingStore();
+  const isNavigatingRef = useRef(false);
 
   const backstory = generateBackstorySnippet(generatedData.primaryArchetype.id);
 
@@ -138,14 +142,44 @@ export function QuickStartCarousel({
     setQuickStartStep(currentIndex);
   }, [currentIndex, setQuickStartStep]);
 
+  // Sync URL to section state on mount and popstate (browser back/forward)
+  useEffect(() => {
+    const qsParam = searchParams.get('qs');
+    if (qsParam && !isNavigatingRef.current) {
+      const qsIndex = parseInt(qsParam, 10);
+      if (!isNaN(qsIndex) && qsIndex >= 0 && qsIndex < SECTIONS.length && qsIndex !== currentIndex) {
+        setCurrentSection(SECTIONS[qsIndex]);
+      }
+    }
+    isNavigatingRef.current = false;
+  }, [searchParams, currentIndex]);
+
+  // Update URL when section changes (push to history for back/forward support)
+  useEffect(() => {
+    const qsParam = searchParams.get('qs');
+    const currentIndexStr = currentIndex.toString();
+
+    if (qsParam !== currentIndexStr) {
+      isNavigatingRef.current = true;
+      const newParams = new URLSearchParams(searchParams.toString());
+      newParams.set('qs', currentIndexStr);
+      router.push(`/onboard?${newParams.toString()}`, { scroll: false });
+    }
+  }, [currentIndex, searchParams, router]);
+
   const handleSectionComplete = useCallback(() => {
     const nextIndex = currentIndex + 1;
     if (nextIndex < SECTIONS.length) {
       setCurrentSection(SECTIONS[nextIndex]);
     } else {
+      // Clean up qs param when completing carousel
+      const newParams = new URLSearchParams(searchParams.toString());
+      newParams.delete('qs');
+      const queryString = newParams.toString();
+      router.replace(queryString ? `/onboard?${queryString}` : '/onboard', { scroll: false });
       onComplete();
     }
-  }, [currentIndex, onComplete]);
+  }, [currentIndex, onComplete, searchParams, router]);
 
   const renderSection = () => {
     switch (currentSection) {

@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect } from 'react';
+import { useSearchParams, useRouter } from 'next/navigation';
 import { AnimatePresence, motion } from 'framer-motion';
 import { useOnboardingStore } from '@/stores/onboarding-store';
 import { Step1Welcome } from '@/components/onboarding/steps/step-1-welcome';
@@ -16,12 +17,47 @@ const STEP_LABELS = ['Identity', 'Visuals', 'Archetype', 'Voice', 'Review'];
 const QUICK_START_LABELS = ['Identity', 'Visuals', 'Archetype', 'Voice'];
 
 export default function OnboardingPage() {
+  const searchParams = useSearchParams();
+  const router = useRouter();
   const { currentStep, setStep, reset, quickStartActive, quickStartStep } = useOnboardingStore();
 
-  // Reset onboarding state when page mounts fresh
+  // Reset onboarding state when page mounts fresh (only if no step param)
   useEffect(() => {
-    reset();
-  }, [reset]);
+    const stepParam = searchParams.get('step');
+    if (!stepParam) {
+      reset();
+    }
+  }, [reset, searchParams]);
+
+  // Sync URL to step state on mount and popstate (browser back/forward)
+  useEffect(() => {
+    const stepParam = searchParams.get('step');
+    if (stepParam) {
+      const stepNum = parseInt(stepParam, 10);
+      if (!isNaN(stepNum) && stepNum >= 1 && stepNum <= 6 && stepNum !== currentStep) {
+        setStep(stepNum);
+      }
+    }
+  }, [searchParams, currentStep, setStep]);
+
+  // Update URL when step changes (push to history for back/forward support)
+  useEffect(() => {
+    const stepParam = searchParams.get('step');
+    const currentStepStr = currentStep.toString();
+
+    // Only update URL if step changed and we're past the welcome step
+    if (currentStep > 1 && stepParam !== currentStepStr) {
+      const newParams = new URLSearchParams(searchParams.toString());
+      newParams.set('step', currentStepStr);
+      router.push(`/onboard?${newParams.toString()}`, { scroll: false });
+    } else if (currentStep === 1 && stepParam) {
+      // Remove step param when going back to welcome
+      const newParams = new URLSearchParams(searchParams.toString());
+      newParams.delete('step');
+      const queryString = newParams.toString();
+      router.push(queryString ? `/onboard?${queryString}` : '/onboard', { scroll: false });
+    }
+  }, [currentStep, searchParams, router]);
 
   const renderStep = () => {
     switch (currentStep) {
