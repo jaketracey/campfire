@@ -282,7 +282,7 @@ export async function emailWebhookRoutes(app: FastifyInstance): Promise<void> {
       }
 
       // Redirect to unsubscribe confirmation page
-      const webUrl = process.env.WEB_URL || 'https://campfire.app';
+      const webUrl = process.env.WEB_URL || 'https://ignite.cam';
       return reply.redirect(`${webUrl}/email/unsubscribed?token=${encodeURIComponent(token)}`);
     });
   });

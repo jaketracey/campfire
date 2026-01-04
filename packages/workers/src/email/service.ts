@@ -86,7 +86,7 @@ export class EmailService {
     this.ses = createSESClient();
     this.db = config.db;
     this.logger = config.logger;
-    this.baseUrl = config.baseUrl || process.env.WEB_URL || 'https://campfire.app';
+    this.baseUrl = config.baseUrl || process.env.WEB_URL || 'https://ignite.cam';
 
     this.queue = new Queue<EmailJobData>('email', {
       connection: config.connection,

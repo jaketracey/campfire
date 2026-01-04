@@ -17,8 +17,8 @@ source "${SCRIPT_DIR}/00-config.sh"
 # -----------------------------------------------------------------------------
 # SES Configuration
 # -----------------------------------------------------------------------------
-export SES_SENDER_EMAIL="${SES_SENDER_EMAIL:-noreply@campfire.app}"
-export SES_SENDER_DOMAIN="${SES_SENDER_DOMAIN:-campfire.app}"
+export SES_SENDER_EMAIL="${SES_SENDER_EMAIL:-noreply@ignite.cam}"
+export SES_SENDER_DOMAIN="${SES_SENDER_DOMAIN:-ignite.cam}"
 export SES_CONFIGURATION_SET="${RESOURCE_PREFIX}-email-tracking"
 export SNS_BOUNCE_TOPIC="${RESOURCE_PREFIX}-email-bounces"
 export SNS_COMPLAINT_TOPIC="${RESOURCE_PREFIX}-email-complaints"
@@ -216,7 +216,7 @@ aws sesv2 create-configuration-set-event-destination \
 log "Step 6: Setting up webhook subscriptions..."
 
 # Get the gateway URL for webhooks
-WEBHOOK_URL="${API_DOMAIN_NAME:-https://api.campfire.app}/webhooks/email/sns"
+WEBHOOK_URL="${API_DOMAIN_NAME:-https://api.ignite.cam}/webhooks/email/sns"
 
 log "Webhook URL: ${WEBHOOK_URL}"
 log ""
@@ -258,8 +258,8 @@ echo "Add these to your .env file:"
 echo ""
 echo "  # Amazon SES Email Configuration"
 echo "  SES_SENDER_EMAIL=${SES_SENDER_EMAIL}"
-echo "  SES_SENDER_NAME=Campfire"
-echo "  SES_REPLY_TO_EMAIL=support@campfire.app"
+echo "  SES_SENDER_NAME=Ignite"
+echo "  SES_REPLY_TO_EMAIL=support@ignite.cam"
 echo "  SES_REGION=${AWS_REGION}"
 echo "  SES_SANDBOX_MODE=false"
 echo "  SES_MAX_SEND_RATE=14"

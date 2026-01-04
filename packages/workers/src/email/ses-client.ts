@@ -52,8 +52,8 @@ export function createSESClient() {
     region: process.env.SES_REGION || process.env.AWS_REGION || 'us-east-1',
   });
 
-  const senderEmail = process.env.SES_SENDER_EMAIL || 'noreply@campfire.app';
-  const senderName = process.env.SES_SENDER_NAME || 'Campfire';
+  const senderEmail = process.env.SES_SENDER_EMAIL || 'noreply@ignite.cam';
+  const senderName = process.env.SES_SENDER_NAME || 'Ignite';
   const replyToEmail = process.env.SES_REPLY_TO_EMAIL || senderEmail;
   const configurationSet = process.env.SES_CONFIGURATION_SET;
   const sandboxMode = process.env.SES_SANDBOX_MODE === 'true';

@@ -111,7 +111,7 @@ export function verifyUnsubscribeToken(token: string): {
 const baseTemplate = (content: string, context: BaseTemplateContext) => `
 <mjml>
   <mj-head>
-    <mj-title>Campfire</mj-title>
+    <mj-title>Ignite</mj-title>
     <mj-attributes>
       <mj-all font-family="'Helvetica Neue', Helvetica, Arial, sans-serif" />
       <mj-text font-size="16px" line-height="1.6" color="#333333" />
@@ -126,10 +126,10 @@ const baseTemplate = (content: string, context: BaseTemplateContext) => `
     <mj-section background-color="#1a1a2e" padding="20px 0">
       <mj-column>
         <mj-image
-          src="https://campfire.app/logo-white.png"
-          alt="Campfire"
+          src="https://ignite.cam/logo-white.png"
+          alt="Ignite"
           width="150px"
-          href="https://campfire.app"
+          href="https://ignite.cam"
         />
       </mj-column>
     </mj-section>
@@ -145,14 +145,14 @@ const baseTemplate = (content: string, context: BaseTemplateContext) => `
     <mj-section background-color="#f4f4f4" padding="20px 30px">
       <mj-column>
         <mj-text font-size="12px" color="#666666" align="center">
-          Campfire - Your AI companion
+          Ignite - Your AI companion
         </mj-text>
         <mj-text font-size="12px" color="#666666" align="center">
           <a href="${context.preferencesUrl}" class="footer-link">Email preferences</a> |
           <a href="${context.unsubscribeUrl}" class="footer-link">Unsubscribe</a>
         </mj-text>
         <mj-text font-size="11px" color="#999999" align="center">
-          &copy; ${context.year} Campfire. All rights reserved.
+          &copy; ${context.year} Ignite. All rights reserved.
         </mj-text>
       </mj-column>
     </mj-section>
@@ -198,13 +198,13 @@ export const templates = {
       Hi${ctx.recipientName ? ` ${ctx.recipientName}` : ''},
     </mj-text>
     <mj-text>
-      Thank you for signing up for Campfire! Please verify your email address by clicking the button below.
+      Thank you for signing up for Ignite! Please verify your email address by clicking the button below.
     </mj-text>
     <mj-button href="${ctx.verifyUrl}" padding="30px 0">
       Verify Email
     </mj-button>
     <mj-text font-size="14px" color="#666666">
-      If you didn't create a Campfire account, you can safely ignore this email.
+      If you didn't create an Ignite account, you can safely ignore this email.
     </mj-text>
   `,
       ctx
@@ -214,13 +214,13 @@ export const templates = {
     baseTemplate(
       `
     <mj-text font-size="24px" font-weight="bold" padding-bottom="20px">
-      Welcome to Campfire!
+      Welcome to Ignite!
     </mj-text>
     <mj-text>
       Hi${ctx.recipientName ? ` ${ctx.recipientName}` : ''},
     </mj-text>
     <mj-text>
-      We're thrilled to have you join the Campfire community. Your AI companion${ctx.companionName ? `, ${ctx.companionName},` : ''} is ready and waiting to chat with you.
+      We're thrilled to have you join the Ignite community. Your AI companion${ctx.companionName ? `, ${ctx.companionName},` : ''} is ready and waiting to chat with you.
     </mj-text>
     <mj-text font-weight="bold" padding-top="20px">
       Here's what you can do:
@@ -231,7 +231,7 @@ export const templates = {
       &#x2022; Explore your personal knowledge graph<br/>
       &#x2022; Sync everything to your personal vault
     </mj-text>
-    <mj-button href="https://campfire.app/chat" padding="30px 0">
+    <mj-button href="https://ignite.cam/chat" padding="30px 0">
       Start Chatting
     </mj-button>
   `,
@@ -303,13 +303,13 @@ export const templates = {
     baseTemplate(
       `
     <mj-text font-size="24px" font-weight="bold" padding-bottom="20px">
-      Welcome to the Campfire Affiliate Program!
+      Welcome to the Ignite Affiliate Program!
     </mj-text>
     <mj-text>
       Hi ${ctx.affiliateName},
     </mj-text>
     <mj-text>
-      You've been added as an affiliate partner for Campfire. We're excited to have you on board!
+      You've been added as an affiliate partner for Ignite. We're excited to have you on board!
     </mj-text>
     <mj-text font-weight="bold" padding-top="20px">
       Your Account Details:
@@ -334,7 +334,7 @@ export const templates = {
     </mj-text>
     <mj-text padding-top="20px">
       Your affiliate link:<br/>
-      <a href="https://campfire.app/ref/${ctx.affiliateCode}" style="color: #FF6B35; word-break: break-all;">https://campfire.app/ref/${ctx.affiliateCode}</a>
+      <a href="https://ignite.cam/ref/${ctx.affiliateCode}" style="color: #FF6B35; word-break: break-all;">https://ignite.cam/ref/${ctx.affiliateCode}</a>
     </mj-text>
   `,
       ctx
@@ -401,12 +401,12 @@ function generatePlainText(html: string): string {
 /** Get default subject for template */
 export function getDefaultSubject(templateName: string): string {
   const subjects: Record<string, string> = {
-    passwordReset: 'Reset your Campfire password',
-    emailVerification: 'Verify your Campfire email',
-    welcome: 'Welcome to Campfire!',
-    notification: 'Notification from Campfire',
-    newsletter: 'Campfire Newsletter',
-    affiliateWelcome: 'Welcome to the Campfire Affiliate Program',
+    passwordReset: 'Reset your Ignite password',
+    emailVerification: 'Verify your Ignite email',
+    welcome: 'Welcome to Ignite!',
+    notification: 'Notification from Ignite',
+    newsletter: 'Ignite Newsletter',
+    affiliateWelcome: 'Welcome to the Ignite Affiliate Program',
   };
-  return subjects[templateName] || 'Message from Campfire';
+  return subjects[templateName] || 'Message from Ignite';
 }

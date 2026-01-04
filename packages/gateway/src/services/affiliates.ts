@@ -350,7 +350,7 @@ export class AffiliatesService {
     affiliateId: string,
     clickId: string | null,
     planTier: PlanTier,
-    stripeInvoiceId?: string,
+    flowguardTransactionId?: string,
     tx?: TransactionContext
   ): Promise<AffiliateConversion> {
     const affiliate = await this.affiliates.findById(affiliateId, tx);
@@ -370,7 +370,7 @@ export class AffiliatesService {
       plan_tier: planTier,
       commission_amount: commissionAmount,
       status: 'pending',
-      stripe_invoice_id: stripeInvoiceId,
+      flowguard_transaction_id: flowguardTransactionId,
     }, tx);
 
     logger.info(
@@ -432,7 +432,7 @@ export class AffiliatesService {
    */
   private async sendWelcomeEmail(affiliate: Affiliate, temporaryPassword: string): Promise<void> {
     const { nanoid } = await import('nanoid');
-    const baseUrl = process.env.WEB_URL || 'https://campfire.app';
+    const baseUrl = process.env.WEB_URL || 'https://ignite.cam';
     const loginUrl = `${baseUrl}/affiliate/login`;
 
     // Format commission amounts as currency
