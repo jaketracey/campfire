@@ -78,7 +78,7 @@ jobs:
           GOOGLE_OAUTH_CLIENT_ID: ${{ secrets.GOOGLE_OAUTH_CLIENT_ID }}
           GOOGLE_OAUTH_CLIENT_SECRET: ${{ secrets.GOOGLE_OAUTH_CLIENT_SECRET }}
           FLOWGUARD_SHOP_ID: ${{ secrets.FLOWGUARD_SHOP_ID }}
-          FLOWGUARD_API_KEY: ${{ secrets.FLOWGUARD_API_KEY }}
+          FLOWGUARD_SIGNATURE_KEY: ${{ secrets.FLOWGUARD_SIGNATURE_KEY }}
         run: |
           ssh -i ~/.ssh/deploy_key ${{ env.DEPLOY_USER }}@${{ env.DEPLOY_HOST }} "
           set -e
@@ -109,7 +109,7 @@ jobs:
           update_env 'GOOGLE_OAUTH_CLIENT_ID' '${GOOGLE_OAUTH_CLIENT_ID}'
           update_env 'GOOGLE_OAUTH_CLIENT_SECRET' '${GOOGLE_OAUTH_CLIENT_SECRET}'
           update_env 'FLOWGUARD_SHOP_ID' '${FLOWGUARD_SHOP_ID}'
-          update_env 'FLOWGUARD_API_KEY' '${FLOWGUARD_API_KEY}'
+          update_env 'FLOWGUARD_SIGNATURE_KEY' '${FLOWGUARD_SIGNATURE_KEY}'
 
           echo 'Environment secrets updated'
           "
@@ -119,6 +119,9 @@ jobs:
           ssh -i ~/.ssh/deploy_key ${{ env.DEPLOY_USER }}@${{ env.DEPLOY_HOST }} << 'ENDSSH'
           set -e
           cd /opt/campfire/infra/docker
+
+          echo "=== Clearing Docker builder cache ==="
+          docker builder prune -af || true
 
           echo "=== Building containers ==="
           BUILD_FLAGS=""
