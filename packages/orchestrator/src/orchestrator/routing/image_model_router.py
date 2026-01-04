@@ -495,6 +495,7 @@ class ImageModelRouter:
                 continue
 
             # Check capability requirements
+            # Note: IP-Adapter check removed - FAL handles reference images via its own API
             if requires_ip_adapter and not model.supports_ip_adapter:
                 continue
 
@@ -502,9 +503,7 @@ class ImageModelRouter:
                 continue
 
             # Use case specific requirements
-            if use_case == ImageUseCase.IMAGE_VARIATION and not model.supports_ip_adapter:
-                continue
-
+            # Note: IMAGE_VARIATION no longer requires IP-Adapter - FAL handles this natively
             if use_case == ImageUseCase.IMAGE_EDITING and not model.supports_inpainting:
                 continue
 
