@@ -116,7 +116,7 @@ interface GeneratedCompanionData {
 }
 
 interface QuickStartProps {
-  onBack?: () => void;
+  onBack?: () => void; // Deprecated, kept for backwards compatibility
 }
 
 type RevealPhase = 'loading' | 'backstory' | 'images' | 'ready';
@@ -577,7 +577,7 @@ export function QuickStart({ onBack }: QuickStartProps) {
           <motion.div
             key="name-step"
             initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
+            animate={{ opacity: isCreating ? 0.3 : 1, y: 0, filter: isCreating ? 'blur(4px)' : 'blur(0px)' }}
             exit={{ opacity: 0, y: -20, scale: 0.95, filter: 'blur(10px)' }}
             transition={{ duration: 0.4, ease: [0.22, 1, 0.36, 1] }}
             className="space-y-8"
@@ -618,17 +618,6 @@ export function QuickStart({ onBack }: QuickStartProps) {
               </div>
 
               <div className="flex gap-3 pt-4">
-                {onBack && (
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="lg"
-                    onClick={onBack}
-                    className="h-14 px-6 rounded-xl border border-white/10 hover:bg-white/5"
-                  >
-                    Back
-                  </Button>
-                )}
                 <Button
                   type="submit"
                   size="lg"
