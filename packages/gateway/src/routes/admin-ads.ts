@@ -123,7 +123,7 @@ export async function adminAdsRoutes(app: FastifyInstance): Promise<void> {
     try {
       // TODO: Implement Google Ads OAuth flow
       // For now, return a placeholder URL
-      const clientId = process.env.GOOGLE_ADS_CLIENT_ID;
+      const clientId = process.env.GOOGLE_ADS_CLIENT_ID || process.env.GOOGLE_OAUTH_CLIENT_ID;
       if (!clientId) {
         return reply.status(503).send({
           error: 'Service Unavailable',
