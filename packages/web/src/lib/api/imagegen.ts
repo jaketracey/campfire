@@ -75,6 +75,7 @@ export interface GenerateAnchorsRequest {
   companionId: string;
   appearance: CompanionAppearance;
   personality?: PersonalitySliders;
+  style?: 'realistic' | 'stylized' | 'abstract' | 'minimal' | 'anime';
 }
 
 export interface AnchorImage {
@@ -399,6 +400,7 @@ export function streamAnchorImages(
   const params = new URLSearchParams({
     companionId: request.companionId,
     appearance: JSON.stringify(request.appearance),
+    style: request.style || 'realistic',
   });
 
   if (request.personality) {
