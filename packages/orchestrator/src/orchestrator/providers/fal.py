@@ -222,25 +222,23 @@ class FalProvider(ImageProvider):
 
         # Use provided endpoint or fall back to default model
         model_endpoint = endpoint or self.default_model
-        status_url = f"https://queue.fal.run/{model_endpoint}/requests/{request_id}/status"
+        # FAL queue API: status and result are both at the same URL (no /status suffix)
         result_url = f"https://queue.fal.run/{model_endpoint}/requests/{request_id}"
 
         elapsed = 0.0
         while elapsed < max_wait_seconds:
-            # Check status
-            response = await client.get(status_url)
+            # Check status (same URL returns status and result when complete)
+            response = await client.get(result_url)
             response.raise_for_status()
 
-            status_data = response.json()
-            status = status_data.get("status")
+            result_data = response.json()
+            status = result_data.get("status")
 
             if status == "COMPLETED":
-                # Fetch result
-                result_response = await client.get(result_url)
-                result_response.raise_for_status()
-                return result_response.json()
+                # Result is already in the response
+                return result_data
             elif status == "FAILED":
-                error = status_data.get("error", "Unknown error")
+                error = result_data.get("error", "Unknown error")
                 raise RuntimeError(f"Generation failed: {error}")
 
             await asyncio.sleep(poll_interval)
