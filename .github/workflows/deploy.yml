@@ -17,14 +17,6 @@
 name: Deploy to AWS ECS
 
 on:
-  push:
-    branches:
-      - main
-    paths-ignore:
-      - '**.md'
-      - 'docs/**'
-      - '.github/workflows/release.yml'
-
   workflow_dispatch:
     inputs:
       environment:
