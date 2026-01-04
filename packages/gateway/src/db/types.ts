@@ -1935,3 +1935,267 @@ export interface SeoPageUpdate {
   generation_error?: string | null;
   version?: number;
 }
+
+// ============================================================================
+// Ad Creative Types
+// ============================================================================
+
+/**
+ * Status of an ad creative
+ */
+export type AdCreativeStatus =
+  | 'draft'
+  | 'generating_video'
+  | 'generating_voiceover'
+  | 'ready'
+  | 'published'
+  | 'failed';
+
+/**
+ * Type of creative asset
+ */
+export type CreativeAssetType =
+  | 'source_image'
+  | 'video'
+  | 'voiceover'
+  | 'combined';
+
+/**
+ * Status of a creative asset
+ */
+export type CreativeAssetStatus =
+  | 'pending'
+  | 'generating'
+  | 'ready'
+  | 'failed';
+
+/**
+ * Voice settings for ElevenLabs TTS
+ */
+export interface VoiceSettings {
+  stability?: number;
+  similarity_boost?: number;
+  style?: number;
+  use_speaker_boost?: boolean;
+}
+
+/**
+ * Published platform info for creatives
+ */
+export interface PublishedPlatformInfo {
+  google?: {
+    asset_id?: string;
+    ad_id?: string;
+    campaign_id?: string;
+    published_at?: string;
+  };
+  facebook?: {
+    video_id?: string;
+    creative_id?: string;
+    ad_id?: string;
+    ad_set_id?: string;
+    published_at?: string;
+  };
+}
+
+/**
+ * Ad creative database record
+ */
+export interface AdCreative {
+  id: UUID;
+  user_id: UUID | null;
+  companion_id: UUID | null;
+  name: string;
+  description: string | null;
+  status: AdCreativeStatus;
+  // Video configuration
+  video_model_id: string | null;
+  source_image_url: string | null;
+  source_image_s3_key: string | null;
+  video_prompt: string | null;
+  video_duration_seconds: number;
+  width: number;
+  height: number;
+  // Audio configuration
+  script_text: string | null;
+  voice_id: string | null;
+  voice_settings: VoiceSettings | null;
+  // Output URLs
+  video_url: string | null;
+  video_s3_key: string | null;
+  voiceover_url: string | null;
+  voiceover_s3_key: string | null;
+  final_video_url: string | null;
+  final_video_s3_key: string | null;
+  thumbnail_url: string | null;
+  thumbnail_s3_key: string | null;
+  file_size_bytes: number | null;
+  // Publishing status
+  published_platforms: PublishedPlatformInfo | null;
+  // Billing
+  token_cost: number;
+  is_admin_created: boolean;
+  // Generation tracking
+  generation_started_at: Timestamp | null;
+  generation_completed_at: Timestamp | null;
+  generation_error: string | null;
+  // Timestamps
+  created_at: Timestamp;
+  updated_at: Timestamp;
+}
+
+/**
+ * Ad creative insert payload
+ */
+export interface AdCreativeInsert {
+  id?: UUID;
+  user_id?: UUID | null;
+  companion_id?: UUID | null;
+  name: string;
+  description?: string | null;
+  status?: AdCreativeStatus;
+  // Video configuration
+  video_model_id?: string | null;
+  source_image_url?: string | null;
+  source_image_s3_key?: string | null;
+  video_prompt?: string | null;
+  video_duration_seconds?: number;
+  width?: number;
+  height?: number;
+  // Audio configuration
+  script_text?: string | null;
+  voice_id?: string | null;
+  voice_settings?: VoiceSettings | null;
+  // Billing
+  token_cost?: number;
+  is_admin_created?: boolean;
+}
+
+/**
+ * Ad creative update payload
+ */
+export interface AdCreativeUpdate {
+  name?: string;
+  description?: string | null;
+  status?: AdCreativeStatus;
+  // Video configuration
+  video_model_id?: string | null;
+  source_image_url?: string | null;
+  source_image_s3_key?: string | null;
+  video_prompt?: string | null;
+  video_duration_seconds?: number;
+  width?: number;
+  height?: number;
+  // Audio configuration
+  script_text?: string | null;
+  voice_id?: string | null;
+  voice_settings?: VoiceSettings | null;
+  // Output URLs
+  video_url?: string | null;
+  video_s3_key?: string | null;
+  voiceover_url?: string | null;
+  voiceover_s3_key?: string | null;
+  final_video_url?: string | null;
+  final_video_s3_key?: string | null;
+  thumbnail_url?: string | null;
+  thumbnail_s3_key?: string | null;
+  file_size_bytes?: number | null;
+  // Publishing status
+  published_platforms?: PublishedPlatformInfo | null;
+  // Generation tracking
+  generation_started_at?: Timestamp | null;
+  generation_completed_at?: Timestamp | null;
+  generation_error?: string | null;
+}
+
+/**
+ * Creative asset generation params
+ */
+export interface CreativeAssetGenerationParams {
+  model_id?: string;
+  prompt?: string;
+  duration_seconds?: number;
+  voice_id?: string;
+  voice_settings?: VoiceSettings | null;
+  [key: string]: unknown;
+}
+
+/**
+ * Creative asset database record
+ */
+export interface CreativeAsset {
+  id: UUID;
+  creative_id: UUID;
+  asset_type: CreativeAssetType;
+  status: CreativeAssetStatus;
+  // File info
+  s3_key: string | null;
+  s3_bucket: string | null;
+  url: string | null;
+  duration_ms: number | null;
+  file_size_bytes: number | null;
+  format: string | null;
+  width: number | null;
+  height: number | null;
+  // Generation params and metadata
+  generation_params: CreativeAssetGenerationParams | null;
+  generation_error: string | null;
+  processing_time_ms: number | null;
+  metadata: JSONObject | null;
+  // Timestamps
+  created_at: Timestamp;
+  updated_at: Timestamp;
+}
+
+/**
+ * Creative asset insert payload
+ */
+export interface CreativeAssetInsert {
+  id?: UUID;
+  creative_id: UUID;
+  asset_type: CreativeAssetType;
+  status?: CreativeAssetStatus;
+  // File info
+  s3_key?: string | null;
+  s3_bucket?: string | null;
+  url?: string | null;
+  duration_ms?: number | null;
+  file_size_bytes?: number | null;
+  format?: string | null;
+  width?: number | null;
+  height?: number | null;
+  // Generation params and metadata
+  generation_params?: CreativeAssetGenerationParams | null;
+  metadata?: JSONObject | null;
+}
+
+/**
+ * Creative asset update payload
+ */
+export interface CreativeAssetUpdate {
+  status?: CreativeAssetStatus;
+  s3_key?: string | null;
+  s3_bucket?: string | null;
+  url?: string | null;
+  duration_ms?: number | null;
+  file_size_bytes?: number | null;
+  format?: string | null;
+  width?: number | null;
+  height?: number | null;
+  generation_error?: string | null;
+  processing_time_ms?: number | null;
+  metadata?: JSONObject | null;
+}
+
+/**
+ * Video model info for creative generation
+ */
+export interface VideoModelInfo {
+  id: string;
+  display_name: string;
+  provider: string;
+  max_duration_seconds: number;
+  supported_resolutions: Array<{ width: number; height: number }>;
+  cost_per_second_cents: number;
+  capabilities: string[];
+}
