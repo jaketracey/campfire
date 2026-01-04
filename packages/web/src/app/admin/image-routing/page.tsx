@@ -18,6 +18,7 @@ import type { Route } from 'next';
 import {
   listImageRoutingRules,
   listImageModels,
+  listImageProviders,
   createImageRoutingRule,
   updateImageRoutingRule,
   deleteImageRoutingRule,
@@ -29,11 +30,13 @@ import {
   type ImageUseCaseType,
   type ImageRoutingRule,
   type ImageModelWithProvider,
+  type ImageProvider,
   type CreateImageRoutingRuleInput,
   type UpdateImageRoutingRuleInput,
   type ImageSyncResult,
   type ImageModelCapability,
 } from '@/lib/api/image-providers';
+import { ImageModelSelector } from '@/components/admin/image-model-selector';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -74,6 +77,7 @@ export default function ImageRoutingPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [rules, setRules] = useState<ImageRoutingRule[]>([]);
   const [models, setModels] = useState<ImageModelWithProvider[]>([]);
+  const [providers, setProviders] = useState<ImageProvider[]>([]);
   const [activeTab, setActiveTab] = useState<ImageUseCaseType>('image_generation');
   const [isSyncing, setIsSyncing] = useState(false);
   const [syncResult, setSyncResult] = useState<ImageSyncResult | null>(null);
@@ -101,12 +105,14 @@ export default function ImageRoutingPage() {
 
   const fetchData = useCallback(async () => {
     try {
-      const [rulesRes, modelsRes] = await Promise.all([
+      const [rulesRes, modelsRes, providersRes] = await Promise.all([
         listImageRoutingRules(),
-        listImageModels({ isEnabled: true }),
+        listImageModels(),
+        listImageProviders({ isEnabled: true }),
       ]);
       setRules(rulesRes.rules);
       setModels(modelsRes.models);
+      setProviders(providersRes.providers);
     } catch (error) {
       console.error('Failed to fetch image routing data:', error);
     } finally {
@@ -270,7 +276,6 @@ export default function ImageRoutingPage() {
     );
   }
 
-  const enabledModels = models.filter((m) => m.isEnabled && m.providerIsEnabled);
   const useCasesWithRules = new Set(rules.map((r) => r.useCase));
   const unconfiguredUseCases = IMAGE_USE_CASE_TYPES.filter((uc) => !useCasesWithRules.has(uc));
 
@@ -497,37 +502,13 @@ export default function ImageRoutingPage() {
           </DialogHeader>
           <div className="space-y-4 py-4">
             {!editingRule && (
-              <div className="space-y-2">
-                <Label>Image Model</Label>
-                <Select
-                  value={ruleForm.modelConfigId}
-                  onValueChange={(v) => setRuleForm({ ...ruleForm, modelConfigId: v })}
-                >
-                  <SelectTrigger className="bg-white/5 border-white/10">
-                    <SelectValue placeholder="Select an image model" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {enabledModels.length === 0 ? (
-                      <div className="p-2 text-sm text-gray-500">No image models available. Configure models in Image Providers first.</div>
-                    ) : (
-                      enabledModels.map((model) => (
-                        <SelectItem key={model.id} value={model.id}>
-                          <div className="flex items-center gap-2">
-                            <span>{model.displayName}</span>
-                            <span className="text-xs text-gray-500">({model.provider})</span>
-                            {model.capabilities.includes('nsfw') && (
-                              <Badge className="text-xs bg-red-500/20 text-red-400">NSFW</Badge>
-                            )}
-                            {model.capabilities.includes('ip_adapter') && (
-                              <Badge className="text-xs bg-blue-500/20 text-blue-400">IP-Adapter</Badge>
-                            )}
-                          </div>
-                        </SelectItem>
-                      ))
-                    )}
-                  </SelectContent>
-                </Select>
-              </div>
+              <ImageModelSelector
+                providers={providers}
+                models={models}
+                value={ruleForm.modelConfigId}
+                onChange={(v) => setRuleForm({ ...ruleForm, modelConfigId: v })}
+                onModelAdded={fetchData}
+              />
             )}
 
             <div className="space-y-2">

@@ -14,7 +14,6 @@ import {
   CommandList,
   CommandSeparator,
 } from '@/components/ui/command';
-import { ScrollArea } from '@/components/ui/scroll-area';
 import {
   Popover,
   PopoverContent,
@@ -218,7 +217,7 @@ export function ModelSelector({
       {/* Model Selector with Search */}
       <div className="space-y-2">
         <Label className="text-sm text-gray-400">Model</Label>
-        <Popover open={open} onOpenChange={setOpen}>
+        <Popover open={open} onOpenChange={setOpen} modal={false}>
           <PopoverTrigger asChild>
             <Button
               variant="outline"
@@ -252,7 +251,14 @@ export function ModelSelector({
                 value={search}
                 onValueChange={setSearch}
               />
-              <ScrollArea className="h-[300px]">
+              <div
+                className="h-[300px] overflow-y-auto overflow-x-hidden overscroll-contain scrollbar-thin scrollbar-track-transparent scrollbar-thumb-white/20 hover:scrollbar-thumb-white/30"
+                style={{
+                  scrollbarWidth: 'thin',
+                  scrollbarColor: 'rgba(255,255,255,0.2) transparent',
+                }}
+                onWheel={(e) => e.stopPropagation()}
+              >
                 <CommandList className="max-h-none">
                 {isDiscovering && (
                   <div className="flex items-center justify-center gap-2 py-4 text-sm text-muted-foreground">
@@ -345,7 +351,7 @@ export function ModelSelector({
                   </>
                 )}
               </CommandList>
-              </ScrollArea>
+              </div>
             </Command>
           </PopoverContent>
         </Popover>

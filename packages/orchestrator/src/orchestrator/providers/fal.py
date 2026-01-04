@@ -15,9 +15,27 @@ logger = structlog.get_logger()
 
 # Model ID to FAL endpoint mapping
 MODEL_TO_FAL_ENDPOINT: dict[str, str] = {
+    # Original FLUX 1.x models
     "fal/dreamina-v3.1": "fal-ai/bytedance/dreamina/v3.1/text-to-image",
     "fal/flux-1.1-pro": "fal-ai/flux-pro/v1.1",
     "fal/flux-schnell": "fal-ai/flux/schnell",
+    "fal/flux-dev": "fal-ai/flux/dev",
+    # FLUX 2 Series
+    "fal/flux-2-max": "fal-ai/flux-2-max",
+    "fal/flux-2-turbo": "fal-ai/flux-2/turbo",
+    "fal/flux-2-flash": "fal-ai/flux-2/flash",
+    "fal/flux-2-flex": "fal-ai/flux-2-flex",
+    # FLUX Kontext (Editing)
+    "fal/flux-kontext-pro": "fal-ai/flux-pro/kontext",
+    "fal/flux-kontext-max": "fal-ai/flux-pro/kontext/max",
+    "fal/flux-kontext-lora": "fal-ai/flux-kontext-lora",
+    "fal/flux-lora": "fal-ai/flux-lora",
+    # Other providers
+    "fal/recraft-v3": "fal-ai/recraft/v3/text-to-image",
+    "fal/seedream-4.5": "fal-ai/bytedance/seedream/v4.5/text-to-image",
+    "fal/z-image-turbo": "fal-ai/z-image/turbo",
+    "fal/qwen-image-2512": "fal-ai/qwen-image-2512",
+    "fal/longcat-image": "fal-ai/longcat-image",
 }
 
 
