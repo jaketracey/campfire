@@ -81,8 +81,12 @@ jobs:
           echo "=== Restarting services ==="
           docker compose -f docker-compose.stealth.yml --env-file /opt/campfire/.env.stealth up -d
 
-          echo "=== Waiting for services ==="
+          echo "=== Waiting for services to start ==="
           sleep 10
+
+          echo "=== Restarting nginx to pick up new container IPs ==="
+          docker compose -f docker-compose.stealth.yml --env-file /opt/campfire/.env.stealth restart nginx
+          sleep 5
 
           echo "=== Cleaning up old images ==="
           docker image prune -f
