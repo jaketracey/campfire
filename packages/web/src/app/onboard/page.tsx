@@ -48,7 +48,7 @@ export default function OnboardingPage() {
     <div className="relative min-h-screen w-full overflow-hidden text-white flex flex-col font-sans">
       {/* Step indicator - hide on review step */}
       {currentStep > 1 && currentStep < 6 && (
-        <div className="flex justify-center px-4 pt-20 md:pt-6 pb-8 md:pb-6">
+        <div className="flex justify-center px-4 pt-20 lg:pt-6 pb-8 md:pb-6">
           <div className="w-full max-w-md">
             {/* Step labels */}
             <div className="flex justify-between mb-2">
@@ -90,7 +90,7 @@ export default function OnboardingPage() {
       )}
 
       {/* Main Content Area */}
-      <main className={`relative z-10 flex-1 flex flex-col items-center lg:justify-center p-4 md:p-8 ${currentStep === 1 ? 'pt-20' : ''}`}>
+      <main className={`relative z-10 flex-1 flex flex-col items-center md:justify-center p-4 md:p-8 md:pt-20 ${currentStep === 1 ? 'pt-20' : ''}`}>
         <AnimatePresence mode="wait">
           <motion.div
             key={currentStep}
