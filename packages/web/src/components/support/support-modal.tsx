@@ -38,9 +38,9 @@ interface SupportModalProps {
 }
 
 const CATEGORIES: { value: SupportCategory; label: string }[] = [
-  { value: 'bug_report', label: 'Bug Report' },
+  { value: 'bug', label: 'Bug Report' },
   { value: 'feature_request', label: 'Feature Request' },
-  { value: 'account_issue', label: 'Account Issue' },
+  { value: 'account', label: 'Account Issue' },
   { value: 'billing', label: 'Billing' },
   { value: 'other', label: 'Other' },
 ];

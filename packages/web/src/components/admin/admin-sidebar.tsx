@@ -1,9 +1,10 @@
 'use client';
 
+import { useState } from 'react';
 import Link from 'next/link';
 import type { Route } from 'next';
 import { usePathname } from 'next/navigation';
-import { Users, Mail, Settings, BarChart3, Flame, FlaskConical, DollarSign, LifeBuoy, Server, GitBranch, Handshake, Target, Search, Image, Palette } from 'lucide-react';
+import { Users, Mail, Settings, BarChart3, Flame, LayoutDashboard, DollarSign, LifeBuoy, Server, GitBranch, Handshake, Target, Search, Image, Palette, ChevronDown, Cpu } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 interface NavItem {
@@ -13,7 +14,18 @@ interface NavItem {
   disabled?: boolean;
 }
 
+interface NavGroup {
+  label: string;
+  icon: typeof Users;
+  items: NavItem[];
+}
+
 const navItems: NavItem[] = [
+  {
+    label: 'Dashboard',
+    href: '/admin' as Route,
+    icon: LayoutDashboard,
+  },
   {
     label: 'Users',
     href: '/admin/users' as Route,
@@ -23,36 +35,6 @@ const navItems: NavItem[] = [
     label: 'Invites',
     href: '/admin/invites' as Route,
     icon: Mail,
-  },
-  {
-    label: 'Orchestration',
-    href: '/admin/orchestration' as Route,
-    icon: FlaskConical,
-  },
-  {
-    label: 'Providers',
-    href: '/admin/providers' as Route,
-    icon: Server,
-  },
-  {
-    label: 'Routing',
-    href: '/admin/routing' as Route,
-    icon: GitBranch,
-  },
-  {
-    label: 'Image Providers',
-    href: '/admin/image-providers' as Route,
-    icon: Image,
-  },
-  {
-    label: 'Image Routing',
-    href: '/admin/image-routing' as Route,
-    icon: Palette,
-  },
-  {
-    label: 'Costs',
-    href: '/admin/costs' as Route,
-    icon: DollarSign,
   },
   {
     label: 'Support',
@@ -87,8 +69,76 @@ const navItems: NavItem[] = [
   },
 ];
 
+const inferenceGroup: NavGroup = {
+  label: 'Inference',
+  icon: Cpu,
+  items: [
+    {
+      label: 'Providers',
+      href: '/admin/providers' as Route,
+      icon: Server,
+    },
+    {
+      label: 'Routing',
+      href: '/admin/routing' as Route,
+      icon: GitBranch,
+    },
+    {
+      label: 'Image Providers',
+      href: '/admin/image-providers' as Route,
+      icon: Image,
+    },
+    {
+      label: 'Image Routing',
+      href: '/admin/image-routing' as Route,
+      icon: Palette,
+    },
+    {
+      label: 'Costs',
+      href: '/admin/costs' as Route,
+      icon: DollarSign,
+    },
+  ],
+};
+
 export function AdminSidebar() {
   const pathname = usePathname();
+
+  // Check if any inference sub-item is active to auto-expand
+  const isInferenceActive = inferenceGroup.items.some(item => pathname.startsWith(item.href));
+  const [inferenceOpen, setInferenceOpen] = useState(isInferenceActive);
+
+  // Find where to insert the Inference group (after Invites)
+  const topItems = navItems.slice(0, 4); // Dashboard, Users, Invites, Support
+  const bottomItems = navItems.slice(4); // Affiliates, Analytics, Ads, SEO, Settings
+
+  const renderNavItem = (item: NavItem) => {
+    const isActive = item.href === '/admin'
+      ? pathname === '/admin'
+      : pathname.startsWith(item.href);
+    const Icon = item.icon;
+
+    return (
+      <Link
+        key={item.href}
+        href={item.disabled ? '#' : item.href}
+        className={cn(
+          'flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium transition-all',
+          isActive
+            ? 'bg-campfire-500/10 text-campfire-500 border border-campfire-500/20'
+            : 'text-gray-400 hover:text-white hover:bg-white/5',
+          item.disabled && 'opacity-50 cursor-not-allowed hover:bg-transparent hover:text-gray-400'
+        )}
+        onClick={(e) => item.disabled && e.preventDefault()}
+      >
+        <Icon className="h-5 w-5" />
+        {item.label}
+        {item.disabled && (
+          <span className="ml-auto text-xs text-gray-600">Soon</span>
+        )}
+      </Link>
+    );
+  };
 
   return (
     <aside className="w-64 border-r border-white/5 bg-zinc-950/50 flex flex-col">
@@ -101,32 +151,61 @@ export function AdminSidebar() {
       </div>
 
       {/* Navigation */}
-      <nav className="flex-1 p-4 space-y-1">
-        {navItems.map((item) => {
-          const isActive = pathname.startsWith(item.href);
-          const Icon = item.icon;
+      <nav className="flex-1 p-4 space-y-1 overflow-y-auto">
+        {/* Top items */}
+        {topItems.map(renderNavItem)}
 
-          return (
-            <Link
-              key={item.href}
-              href={item.disabled ? '#' : item.href}
+        {/* Inference Group */}
+        <div className="pt-2">
+          <button
+            onClick={() => setInferenceOpen(!inferenceOpen)}
+            className={cn(
+              'flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium transition-all w-full',
+              isInferenceActive
+                ? 'bg-campfire-500/10 text-campfire-500 border border-campfire-500/20'
+                : 'text-gray-400 hover:text-white hover:bg-white/5'
+            )}
+          >
+            <Cpu className="h-5 w-5" />
+            {inferenceGroup.label}
+            <ChevronDown
               className={cn(
-                'flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium transition-all',
-                isActive
-                  ? 'bg-campfire-500/10 text-campfire-500 border border-campfire-500/20'
-                  : 'text-gray-400 hover:text-white hover:bg-white/5',
-                item.disabled && 'opacity-50 cursor-not-allowed hover:bg-transparent hover:text-gray-400'
+                'h-4 w-4 ml-auto transition-transform',
+                inferenceOpen && 'rotate-180'
               )}
-              onClick={(e) => item.disabled && e.preventDefault()}
-            >
-              <Icon className="h-5 w-5" />
-              {item.label}
-              {item.disabled && (
-                <span className="ml-auto text-xs text-gray-600">Soon</span>
-              )}
-            </Link>
-          );
-        })}
+            />
+          </button>
+
+          {inferenceOpen && (
+            <div className="ml-4 mt-1 space-y-1 border-l border-white/5 pl-2">
+              {inferenceGroup.items.map((item) => {
+                const isActive = pathname.startsWith(item.href);
+                const Icon = item.icon;
+
+                return (
+                  <Link
+                    key={item.href}
+                    href={item.href}
+                    className={cn(
+                      'flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all',
+                      isActive
+                        ? 'bg-campfire-500/10 text-campfire-500'
+                        : 'text-gray-400 hover:text-white hover:bg-white/5'
+                    )}
+                  >
+                    <Icon className="h-4 w-4" />
+                    {item.label}
+                  </Link>
+                );
+              })}
+            </div>
+          )}
+        </div>
+
+        {/* Bottom items */}
+        <div className="pt-2">
+          {bottomItems.map(renderNavItem)}
+        </div>
       </nav>
 
       {/* Footer */}
