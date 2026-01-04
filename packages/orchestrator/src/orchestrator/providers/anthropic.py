@@ -22,16 +22,19 @@ class AnthropicProvider(LLMProvider):
         self,
         settings: Settings,
         model_override: str | None = None,
+        api_key_override: str | None = None,
     ):
         """Initialize Anthropic provider.
 
         Args:
             settings: Application settings.
             model_override: Optional model ID to use instead of the default.
+            api_key_override: Optional API key to use instead of settings.
         """
         self.settings = settings
+        self._api_key = api_key_override or settings.anthropic_api_key
         self.client = anthropic.AsyncAnthropic(
-            api_key=settings.anthropic_api_key,
+            api_key=self._api_key,
             timeout=settings.anthropic_timeout,
         )
         self._default_model = settings.anthropic_model
@@ -60,6 +63,7 @@ class AnthropicProvider(LLMProvider):
         return AnthropicProvider(
             settings=self.settings,
             model_override=model_id,
+            api_key_override=self._api_key,
         )
 
     @property
@@ -79,7 +83,7 @@ class AnthropicProvider(LLMProvider):
         start_time = time.time()
 
         # Check if API key is configured
-        if not self.settings.anthropic_api_key:
+        if not self._api_key:
             raise ValueError("Anthropic API key not configured")
 
         # Extract system message

@@ -511,6 +511,48 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         # Initialize image router without database routing as fallback
         app_state.image_router = ImageModelRouter(prefer_local=True)
 
+    # Load LLM API keys from database (with env var fallback)
+    primary_provider = None
+    fallback_provider = None
+
+    if app_state.routing_config_service:
+        encryption_key = settings.provider_key_encryption_secret
+
+        # Load OpenAI API key from database
+        openai_api_key = settings.openai_api_key
+        if not openai_api_key:
+            try:
+                openai_api_key = await app_state.routing_config_service.get_provider_api_key(
+                    "openai", encryption_key
+                )
+                if openai_api_key:
+                    logger.info("openai_api_key_loaded_from_database")
+            except Exception as e:
+                logger.warning("failed_to_get_openai_api_key_from_database", error=str(e))
+
+        # Load Anthropic API key from database
+        anthropic_api_key = settings.anthropic_api_key
+        if not anthropic_api_key:
+            try:
+                anthropic_api_key = await app_state.routing_config_service.get_provider_api_key(
+                    "anthropic", encryption_key
+                )
+                if anthropic_api_key:
+                    logger.info("anthropic_api_key_loaded_from_database")
+            except Exception as e:
+                logger.warning("failed_to_get_anthropic_api_key_from_database", error=str(e))
+
+        # Create providers with database keys if available
+        if openai_api_key:
+            from orchestrator.providers.openai import OpenAIProvider
+            primary_provider = OpenAIProvider(settings, api_key_override=openai_api_key)
+            logger.info("openai_provider_initialized_with_db_key")
+
+        if anthropic_api_key:
+            from orchestrator.providers.anthropic import AnthropicProvider
+            fallback_provider = AnthropicProvider(settings, api_key_override=anthropic_api_key)
+            logger.info("anthropic_provider_initialized_with_db_key")
+
     # Initialize orchestrator
     app_state.orchestrator = ConversationOrchestrator(
         settings=settings,
@@ -520,6 +562,8 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         tool_router=app_state.tool_router,
         job_queue=app_state.job_queue,
         routing_config_service=app_state.routing_config_service,
+        primary_provider=primary_provider,
+        fallback_provider=fallback_provider,
     )
 
     # Initialize image providers
