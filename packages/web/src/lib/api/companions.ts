@@ -334,8 +334,9 @@ export interface GeneratedIdentity {
 
 /**
  * Generate a random companion identity using LLM
+ * @param name Optional name - if provided, gender/pronouns will be inferred from it
  */
-export async function generateRandomIdentity(): Promise<GeneratedIdentity> {
+export async function generateRandomIdentity(name?: string): Promise<GeneratedIdentity> {
   const response = await post<{
     name: string;
     pronouns: string;
@@ -365,7 +366,7 @@ export async function generateRandomIdentity(): Promise<GeneratedIdentity> {
     visual_style: string;
     voice_gender: string;
     latency_ms: number;
-  }>('/companions/generate-identity', {});
+  }>('/companions/generate-identity', { name: name || null });
 
   // Determine gender from response or infer from voice gender
   const gender = response.appearance.gender ??

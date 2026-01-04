@@ -362,6 +362,12 @@ class GenerateRandomIdentityResponse(BaseModel):
     latency_ms: float
 
 
+class GenerateRandomIdentityRequest(BaseModel):
+    """Request model for random identity generation with optional name hint."""
+
+    name: str | None = None  # If provided, infer gender from this name
+
+
 class ConversationTurnInput(BaseModel):
     """A conversation turn for personality analysis."""
 
@@ -1963,10 +1969,13 @@ Generate a rich, intimate backstory that explains how {request.companion_name} b
         500: {"model": ErrorResponse},
     },
 )
-async def generate_random_identity() -> GenerateRandomIdentityResponse:
+async def generate_random_identity(
+    request: GenerateRandomIdentityRequest | None = None,
+) -> GenerateRandomIdentityResponse:
     """Generate a random companion identity using LLM.
 
     Creates a unique name, pronouns, and brief backstory for a new companion.
+    If a name is provided in the request, the LLM will infer gender from it.
     """
     import json
     import time
@@ -2001,13 +2010,26 @@ async def generate_random_identity() -> GenerateRandomIdentityResponse:
     ]
     selected_category = random.choice(categories)
 
-    system_prompt = f"""You are creating a unique AI companion identity. Generate someone who feels real, grounded, and genuinely interesting to talk to.
+    # Build name-based gender inference instructions if a name is provided
+    name_instructions = ""
+    if request and request.name:
+        name_instructions = f"""
+IMPORTANT - NAME PROVIDED: The user has already chosen the name "{request.name}" for their companion.
+- Use this EXACT name in your response (do not generate a different name)
+- Infer the most likely gender from this name:
+  * For clearly feminine names (Emma, Sofia, Maria, Jessica, etc.) → use female gender, she/her pronouns
+  * For clearly masculine names (James, Marcus, David, Michael, etc.) → use male gender, he/him pronouns
+  * For ambiguous/gender-neutral names (Jordan, Alex, Taylor, Casey, Riley, Morgan, Sam, Jamie, Avery, Quinn, etc.) → use they/them pronouns, set voice_gender to "neutral", and pick either male or female appearance
+- Match the appearance gender and voice_gender to the pronouns (female for she/her, male for he/him)
+"""
 
+    system_prompt = f"""You are creating a unique AI companion identity. Generate someone who feels real, grounded, and genuinely interesting to talk to.
+{name_instructions}
 THIS TIME, create: {selected_category}
 
 Guidelines:
-- Use a realistic name appropriate to the character (common names are great! Sarah, Marcus, Kenji, Fatima, Devon, etc.)
-- The pronouns should fit the character naturally
+- {"Use the exact name provided above" if request and request.name else "Use a realistic name appropriate to the character (common names are great! Sarah, Marcus, Kenji, Fatima, Devon, etc.)"}
+- The pronouns should fit the character naturally{" based on the name provided" if request and request.name else ""}
 - The backstory should be grounded and relatable, 1-2 sentences that make you want to know more
 - Choose an archetype that fits their personality (caregiver, sage, explorer, creator, hero, jester, lover, magician, ruler, everyperson, innocent, rebel)
 - Optionally add a secondary archetype if it fits (or null if not)
@@ -2054,33 +2076,23 @@ IMPORTANT: The body_type MUST match the gender:
 - Include breast_size (0-100) ONLY for female
 - Include build (S/M/L) ONLY for male"""
 
-    user_prompt = """Generate a unique companion identity based on the category. Make them feel like a real, interesting person with genuine depth and warmth."""
+    if request and request.name:
+        user_prompt = f"""Generate a companion identity for someone named "{request.name}". Infer their gender from the name and create a matching appearance, pronouns, and voice. Make them feel like a real, interesting person with genuine depth."""
+    else:
+        user_prompt = """Generate a unique companion identity based on the category. Make them feel like a real, interesting person with genuine depth and warmth."""
 
     try:
-        # Get an available LLM provider using the routing system
+        # Get LLM provider - use same pattern as backstory generation
         llm_provider = None
+        encryption_key = app_state.settings.provider_key_encryption_secret
 
-        # First, try to get a model from the routing config for chat_simple use case
+        # Try to get provider from routing config
         if app_state.routing_config_service:
             try:
-                entries = await app_state.routing_config_service.get_routing_for_use_case("chat_simple")
-                for entry in entries:
-                    model = MODEL_REGISTRY.get(entry.model_id)
-                    if model is None:
-                        continue
-
-                    # Check provider availability
-                    provider_health = PROVIDER_HEALTH.get(model.provider)
-                    if provider_health is None or not provider_health.is_available:
-                        continue
-
-                    # Create provider based on the routed model
+                model = await app_state.routing_config_service.get_model_for_use_case("chat_simple")
+                if model:
                     if model.provider == "openai":
-                        # Get OpenAI API key from database
-                        openai_api_key = await app_state.routing_config_service.get_provider_api_key(
-                            "openai",
-                            app_state.settings.provider_key_encryption_secret,
-                        )
+                        openai_api_key = await app_state.routing_config_service.get_provider_api_key("openai", encryption_key)
                         if openai_api_key:
                             llm_provider = OpenAIProvider(
                                 app_state.settings,
@@ -2088,45 +2100,30 @@ IMPORTANT: The body_type MUST match the gender:
                                 api_key_override=openai_api_key,
                             )
                             logger.info("identity_generation_using_openai", model=model.model_id)
-                            break
-                        else:
-                            logger.warning("openai_api_key_not_found_in_database")
-                            continue
                     elif model.provider == "ollama" and app_state.ollama_provider:
                         llm_provider = app_state.ollama_provider.with_model(model.model_id)
                         logger.info("identity_generation_using_ollama", model=model.model_id)
-                        break
             except Exception as routing_error:
                 logger.warning("identity_routing_failed", error=str(routing_error))
 
-        # Fall back to Ollama if no routed provider found
+        # Fall back to Ollama if available
         if llm_provider is None and app_state.ollama_provider:
             llm_provider = app_state.ollama_provider
             logger.info("identity_generation_using_fallback_ollama")
 
-        # If still no provider, try OpenAI directly if API key is configured
-        if llm_provider is None:
-            # Try to get API key from database first, then fall back to settings
-            openai_api_key = None
-            if app_state.routing_config_service:
-                try:
-                    openai_api_key = await app_state.routing_config_service.get_provider_api_key(
-                        "openai",
-                        app_state.settings.provider_key_encryption_secret,
+        # Fall back to OpenAI if Ollama not available
+        if llm_provider is None and app_state.routing_config_service:
+            try:
+                openai_api_key = await app_state.routing_config_service.get_provider_api_key("openai", encryption_key)
+                if openai_api_key:
+                    llm_provider = OpenAIProvider(
+                        app_state.settings,
+                        model_override="gpt-4o-mini",
+                        api_key_override=openai_api_key,
                     )
-                except Exception as e:
-                    logger.warning("failed_to_get_openai_api_key_from_db", error=str(e))
-
-            # Fall back to settings if not in database
-            if not openai_api_key:
-                openai_api_key = app_state.settings.openai_api_key
-
-            if openai_api_key:
-                llm_provider = OpenAIProvider(
-                    app_state.settings,
-                    api_key_override=openai_api_key,
-                )
-                logger.info("identity_generation_using_direct_openai")
+                    logger.info("identity_generation_using_fallback_openai")
+            except Exception as e:
+                logger.warning("identity_openai_fallback_failed", error=str(e))
 
         if llm_provider is None:
             raise HTTPException(

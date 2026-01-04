@@ -90,6 +90,7 @@ type CompanionAppearance = FemaleAppearance | MaleAppearance;
 interface GeneratedCompanionData {
   primaryArchetype: Archetype;
   secondaryArchetype: Archetype | null;
+  pronouns: string;
   personality: {
     warmth: number;
     energy: number;
@@ -161,9 +162,13 @@ function generateLocalRandomCompanion(): GeneratedCompanionData {
         breastSize: size,
       };
 
+  // Set pronouns based on randomly selected gender
+  const pronouns = isMale ? 'he/him' : 'she/her';
+
   return {
     primaryArchetype: randomArchetype,
     secondaryArchetype,
+    pronouns,
     personality: {
       warmth: 0.4 + Math.random() * 0.4,
       energy: 0.3 + Math.random() * 0.5,
@@ -320,7 +325,7 @@ export function QuickStart({ onBack }: QuickStartProps) {
       spec: {
         identity: {
           name,
-          pronouns: 'they/them',
+          pronouns: randomCompanion.pronouns,
         },
         personality: {
           archetype: randomCompanion.primaryArchetype.id,
@@ -449,8 +454,8 @@ export function QuickStart({ onBack }: QuickStartProps) {
       let randomCompanion: GeneratedCompanionData;
 
       if (isAuthenticated) {
-        // Authenticated: Generate full companion via LLM
-        const llmGenerated = await generateRandomIdentity();
+        // Authenticated: Generate full companion via LLM (pass name for gender inference)
+        const llmGenerated = await generateRandomIdentity(companionName);
 
         // Find archetype objects from LLM-generated IDs
         const primaryArchetype = ARCHETYPES.find(a => a.id === llmGenerated.archetype) || ARCHETYPES[0];
@@ -484,6 +489,7 @@ export function QuickStart({ onBack }: QuickStartProps) {
         randomCompanion = {
           primaryArchetype,
           secondaryArchetype,
+          pronouns: llmGenerated.pronouns,
           personality: {
             warmth: llmGenerated.personality.warmth / 100,
             energy: llmGenerated.personality.energy / 100,
@@ -792,7 +798,7 @@ export function QuickStart({ onBack }: QuickStartProps) {
                     transition={{ delay: 0.3, duration: 0.5 }}
                     className="text-gray-400 text-base md:text-lg mb-6 md:mb-8"
                   >
-                    they/them •{' '}
+                    {generatedCompanion.pronouns} •{' '}
                     <span className="text-vibes-neon">{generatedCompanion.primaryArchetype.name}</span>
                     {generatedCompanion.secondaryArchetype && (
                       <>
@@ -890,7 +896,7 @@ export function QuickStart({ onBack }: QuickStartProps) {
                       <div className="absolute bottom-0 left-0 right-0 p-6 bg-gradient-to-t from-black/90 via-black/50 to-transparent z-20">
                         <h2 className="text-3xl font-bold font-display text-white">{companionName}</h2>
                         <p className="text-gray-300 text-sm">
-                          they/them • {generatedCompanion.primaryArchetype.name}
+                          {generatedCompanion.pronouns} • {generatedCompanion.primaryArchetype.name}
                         </p>
                       </div>
                     </motion.div>

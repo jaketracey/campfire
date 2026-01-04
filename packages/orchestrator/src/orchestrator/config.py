@@ -37,8 +37,9 @@ class Settings(BaseSettings):
     )
 
     # Provider API Key Encryption (for decrypting keys stored in database)
+    # NOTE: Must match gateway's default in provider-settings.ts
     provider_key_encryption_secret: str = Field(
-        default="dev-encryption-secret",
+        default="dev-only-encryption-key-not-for-production",
         validation_alias="PROVIDER_KEY_ENCRYPTION_SECRET"
     )
 
