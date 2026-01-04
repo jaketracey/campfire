@@ -125,7 +125,7 @@ export function createDbClient(connectionString: string) {
           ${edge.relationType}, ${edge.confidence}, ${edge.sourceEventId},
           NOW(), NOW(), ${edge.status}
         )
-        ON CONFLICT (source_entity_id, target_entity_id, relation_type) DO UPDATE SET
+        ON CONFLICT (user_id, companion_id, source_entity_id, target_entity_id, relation_type) DO UPDATE SET
           last_seen = NOW(),
           confidence = GREATEST(kg_edges.confidence, ${edge.confidence}),
           mention_count = kg_edges.mention_count + 1,
