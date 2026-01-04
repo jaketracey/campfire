@@ -544,6 +544,9 @@ export class AuthService {
       },
     }, tx);
 
+    // Record login for new user
+    await this.users.recordLogin(user.id, tx);
+
     // Create session
     const { session, token } = await this.createSession(user.id, deviceInfo, tx);
 
