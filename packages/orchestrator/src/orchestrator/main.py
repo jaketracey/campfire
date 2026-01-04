@@ -324,10 +324,12 @@ class GenerateBackstoryResponse(BaseModel):
 class GeneratedAppearance(BaseModel):
     """Generated appearance for a companion."""
 
+    gender: str | None = None  # female, male (inferred from voice_gender if not provided)
     ethnicity: str  # east-asian, south-asian, black, caucasian, latina, middle-eastern, mixed
-    body_type: str  # slim, athletic, curvy, plus-size
+    body_type: str  # female: slim, athletic, curvy, plus-size | male: slim, athletic, muscular, dad-bod
     hair_color: str  # black, brown, blonde, red, fantasy
-    breast_size: int  # 0-100
+    breast_size: int | None = None  # 0-100 (female only)
+    build: str | None = None  # S, M, L (male only)
 
 
 class GeneratedPersonality(BaseModel):
@@ -2035,14 +2037,22 @@ You must respond with valid JSON in this exact format:
     "directness": 30-80
   }},
   "appearance": {{
+    "gender": "female or male",
     "ethnicity": "one of: east-asian, south-asian, black, caucasian, latina, middle-eastern, mixed",
-    "body_type": "one of: slim, athletic, curvy, plus-size",
+    "body_type": "FOR FEMALE: one of slim, athletic, curvy, plus-size | FOR MALE: one of slim, athletic, muscular, dad-bod",
     "hair_color": "one of: black, brown, blonde, red, fantasy",
-    "breast_size": 0-100
+    "breast_size": "0-100 (only if female, omit if male)",
+    "build": "one of S, M, L (only if male, omit if female)"
   }},
   "visual_style": "one of: realistic, anime, stylized, abstract, minimal",
   "voice_gender": "feminine or masculine or neutral"
-}}"""
+}}
+
+IMPORTANT: The body_type MUST match the gender:
+- For female: use slim, athletic, curvy, or plus-size
+- For male: use slim, athletic, muscular, or dad-bod
+- Include breast_size (0-100) ONLY for female
+- Include build (S/M/L) ONLY for male"""
 
     user_prompt = """Generate a unique companion identity based on the category. Make them feel like a real, interesting person with genuine depth and warmth."""
 
@@ -2208,13 +2218,44 @@ You must respond with valid JSON in this exact format:
             directness=personality_data.get("directness", 50),
         )
 
-        # Extract appearance with defaults
+        # Extract appearance with defaults (gender-aware)
         appearance_data = result.get("appearance", {})
+        voice_gender = result.get("voice_gender", "neutral")
+
+        # Infer gender from appearance or voice_gender
+        gender = appearance_data.get("gender")
+        if not gender:
+            gender = "male" if voice_gender == "masculine" else "female"
+
+        # Ensure body_type is valid for the gender
+        body_type = appearance_data.get("body_type", "athletic")
+        female_body_types = ["slim", "athletic", "curvy", "plus-size"]
+        male_body_types = ["slim", "athletic", "muscular", "dad-bod"]
+
+        if gender == "male" and body_type not in male_body_types:
+            # Map female-only body types to male equivalents
+            if body_type == "curvy":
+                body_type = "dad-bod"
+            elif body_type == "plus-size":
+                body_type = "dad-bod"
+            else:
+                body_type = "athletic"
+        elif gender == "female" and body_type not in female_body_types:
+            # Map male-only body types to female equivalents
+            if body_type == "muscular":
+                body_type = "athletic"
+            elif body_type == "dad-bod":
+                body_type = "curvy"
+            else:
+                body_type = "athletic"
+
         appearance = GeneratedAppearance(
+            gender=gender,
             ethnicity=appearance_data.get("ethnicity", "mixed"),
-            body_type=appearance_data.get("body_type", "athletic"),
+            body_type=body_type,
             hair_color=appearance_data.get("hair_color", "brown"),
-            breast_size=appearance_data.get("breast_size", 50),
+            breast_size=appearance_data.get("breast_size", 50) if gender == "female" else None,
+            build=appearance_data.get("build", "M") if gender == "male" else None,
         )
 
         return GenerateRandomIdentityResponse(
