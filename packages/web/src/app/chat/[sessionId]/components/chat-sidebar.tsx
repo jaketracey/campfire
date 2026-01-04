@@ -68,7 +68,7 @@ interface ChatSidebarProps {
   onRequireAuth?: (trigger: SignupTrigger) => void;
 
   // Resize
-  sidebarRef: React.RefObject<HTMLDivElement>;
+  sidebarRef: React.RefObject<HTMLDivElement | null>;
   sidebarWidth: number;
   isResizing: boolean;
   isNearGrabber: boolean;
