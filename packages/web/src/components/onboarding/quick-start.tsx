@@ -9,7 +9,6 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import {
-  Sparkles,
   Info,
   Flame,
 } from 'lucide-react';
@@ -582,20 +581,11 @@ export function QuickStart({ onBack }: QuickStartProps) {
             transition={{ duration: 0.4, ease: [0.22, 1, 0.36, 1] }}
             className="space-y-8"
           >
-            <div className="text-center space-y-4">
-              <h2 className="text-3xl md:text-4xl font-bold font-display tracking-tight text-white">
-                Quick Start
-              </h2>
-              <p className="text-gray-400 max-w-md mx-auto">
-                Create a companion in 60 seconds. You can customize everything later.
-              </p>
-            </div>
-
             <form onSubmit={handleSubmit(onNameSubmit)} className="space-y-6">
-              <div className="space-y-3">
-                <label className="text-sm font-bold tracking-widest uppercase text-gray-500 font-display">
+              <div className="space-y-6 text-center">
+                <h2 className="text-3xl md:text-4xl font-bold font-display tracking-tight text-white">
                   What should we call your companion?
-                </label>
+                </h2>
                 <Input
                   {...register('name')}
                   ref={(e) => {
@@ -617,14 +607,13 @@ export function QuickStart({ onBack }: QuickStartProps) {
                 )}
               </div>
 
-              <div className="flex gap-3 pt-4">
+              <div className="flex pt-4">
                 <Button
                   type="submit"
                   size="lg"
                   disabled={!isValid || isCreating}
-                  className="flex-1 h-14 rounded-xl bg-gradient-to-r from-vibes-cyan to-vibes-neon hover:shadow-[0_0_30px_rgba(6,182,212,0.3)] transition-all font-bold text-lg disabled:opacity-50"
+                  className="flex-1 h-16 md:h-20 rounded-2xl bg-gradient-to-r from-vibes-cyan to-vibes-neon hover:shadow-[0_0_30px_rgba(6,182,212,0.3)] transition-all font-bold text-xl md:text-2xl disabled:opacity-50"
                 >
-                  <Sparkles className="mr-2 h-5 w-5" />
                   Create Companion
                 </Button>
               </div>
