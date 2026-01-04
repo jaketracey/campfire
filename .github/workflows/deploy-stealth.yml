@@ -120,8 +120,9 @@ jobs:
           set -e
           cd /opt/campfire/infra/docker
 
-          echo "=== Clearing Docker builder cache ==="
+          echo "=== Clearing Docker caches ==="
           docker builder prune -af || true
+          docker system prune -af || true
 
           echo "=== Building containers ==="
           BUILD_FLAGS=""
