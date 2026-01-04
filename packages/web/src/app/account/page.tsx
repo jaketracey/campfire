@@ -512,34 +512,28 @@ export default function AccountPage() {
           </div>
 
           {/* Quick Links - At the top */}
-          <div className="flex flex-wrap gap-2 sm:gap-3">
+          <div className="flex flex-col sm:flex-row sm:flex-wrap gap-2 sm:gap-3">
             <Link
               href="/account/tokens"
-              className="flex items-center gap-2 px-4 py-2 rounded-lg bg-white/[0.02] border border-white/5 hover:bg-white/[0.05] hover:border-white/10 transition-all group"
+              className="flex items-center justify-between sm:justify-start gap-2 px-4 py-3 sm:py-2 rounded-lg bg-white/[0.02] border border-white/5 hover:bg-white/[0.05] hover:border-white/10 transition-all group"
             >
-              <Coins className="h-4 w-4 text-amber-500" />
-              <span className="text-sm text-white font-medium">Purchase Tokens</span>
+              <div className="flex items-center gap-2">
+                <Coins className="h-4 w-4 text-amber-500" />
+                <span className="text-sm text-white font-medium">Purchase Tokens</span>
+              </div>
               <ChevronRight className="h-4 w-4 text-gray-500 group-hover:text-white transition-colors" />
             </Link>
 
             <Link
               href="/account/media"
-              className="flex items-center gap-2 px-4 py-2 rounded-lg bg-white/[0.02] border border-white/5 hover:bg-white/[0.05] hover:border-white/10 transition-all group"
+              className="flex items-center justify-between sm:justify-start gap-2 px-4 py-3 sm:py-2 rounded-lg bg-white/[0.02] border border-white/5 hover:bg-white/[0.05] hover:border-white/10 transition-all group"
             >
-              <ImageIcon className="h-4 w-4 text-blue-500" />
-              <span className="text-sm text-white font-medium">Media Gallery</span>
+              <div className="flex items-center gap-2">
+                <ImageIcon className="h-4 w-4 text-blue-500" />
+                <span className="text-sm text-white font-medium">Media Gallery</span>
+              </div>
               <ChevronRight className="h-4 w-4 text-gray-500 group-hover:text-white transition-colors" />
             </Link>
-
-            <button
-              onClick={logout}
-              className="flex items-center gap-2 px-4 py-2 rounded-lg bg-white/[0.02] border border-white/5 hover:bg-red-500/10 hover:border-red-500/20 transition-all group"
-            >
-              <LogOut className="h-4 w-4 text-red-500" />
-              <span className="text-sm text-gray-400 group-hover:text-red-400 font-medium transition-colors">
-                Sign Out
-              </span>
-            </button>
           </div>
 
           {/* Main Content with Tabs */}
@@ -647,6 +641,20 @@ export default function AccountPage() {
               </Card>
             </div>
           </div>
+
+          {/* Sign Out - At the bottom */}
+          <button
+            onClick={logout}
+            className="flex items-center justify-between sm:justify-start gap-2 px-4 py-3 sm:py-2 w-full sm:w-auto rounded-lg bg-white/[0.02] border border-white/5 hover:bg-red-500/10 hover:border-red-500/20 transition-all group"
+          >
+            <div className="flex items-center gap-2">
+              <LogOut className="h-4 w-4 text-red-500" />
+              <span className="text-sm text-gray-400 group-hover:text-red-400 font-medium transition-colors">
+                Sign Out
+              </span>
+            </div>
+            <ChevronRight className="h-4 w-4 text-gray-500 group-hover:text-red-400 transition-colors sm:hidden" />
+          </button>
         </motion.div>
     </div>
   );
