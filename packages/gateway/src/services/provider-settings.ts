@@ -958,7 +958,24 @@ export class ProviderSettingsService {
   // ===========================================================================
 
   /**
-   * List image models for an image provider
+   * List all image models across all image providers
+   */
+  async listAllImageModels(query: ModelListQuery, tx?: TransactionContext): Promise<PaginatedResult<ModelConfigWithProvider>> {
+    const validated = ModelListQuerySchema.parse(query);
+
+    const filters: ModelListFilters = {
+      provider_config_id: validated.providerConfigId,
+      is_enabled: validated.isEnabled,
+      category: 'image',
+      limit: validated.limit,
+      offset: validated.offset,
+    };
+
+    return this.repo.listModels(filters, tx);
+  }
+
+  /**
+   * List image models for a specific image provider
    */
   async listImageModels(providerConfigId: UUID, query: ModelListQuery, tx?: TransactionContext): Promise<PaginatedResult<ModelConfigWithProvider>> {
     const validated = ModelListQuerySchema.parse(query);

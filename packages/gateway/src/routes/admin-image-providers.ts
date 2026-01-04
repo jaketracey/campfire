@@ -454,6 +454,47 @@ export async function adminImageModelsRoutes(app: FastifyInstance): Promise<void
   app.addHook('preHandler', requireAdmin);
 
   /**
+   * GET /admin/image-models - List all image models
+   */
+  app.get('/', async (request: FastifyRequest, reply: FastifyReply) => {
+    const queryResult = ModelListQuerySchema.safeParse(request.query);
+    if (!queryResult.success) {
+      return reply.status(400).send({
+        error: 'Validation Error',
+        message: 'Invalid query parameters',
+        details: queryResult.error.issues,
+      });
+    }
+
+    const result = await service.listAllImageModels(queryResult.data);
+
+    return reply.send({
+      success: true,
+      data: {
+        models: result.data.map(m => ({
+          id: m.id,
+          providerConfigId: m.provider_config_id,
+          modelId: m.model_id,
+          displayName: m.display_name,
+          isEnabled: m.is_enabled,
+          contextWindow: m.context_window,
+          maxOutputTokens: m.max_output_tokens,
+          inputCostPerMillion: m.input_cost_per_million,
+          outputCostPerMillion: m.output_cost_per_million,
+          capabilities: m.capabilities,
+          metadata: m.metadata,
+          provider: m.provider,
+          providerDisplayName: m.provider_display_name,
+          providerIsEnabled: m.provider_is_enabled,
+          createdAt: m.created_at.toISOString(),
+          updatedAt: m.updated_at.toISOString(),
+        })),
+        hasMore: result.hasMore,
+      },
+    });
+  });
+
+  /**
    * PATCH /admin/image-models/:modelId - Update an image model
    */
   app.patch('/:modelId', async (request: FastifyRequest, reply: FastifyReply) => {

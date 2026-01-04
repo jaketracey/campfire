@@ -48,6 +48,7 @@ export interface ProviderListFilters {
 export interface ModelListFilters {
   provider_config_id?: UUID;
   is_enabled?: boolean;
+  category?: 'text' | 'image';
   limit?: number;
   offset?: number;
 }
@@ -454,7 +455,7 @@ export class ProviderSettingsRepository {
     tx?: TransactionContext
   ): Promise<PaginatedResult<ModelConfigWithProvider>> {
     const db = this.getSql(tx);
-    const { provider_config_id, is_enabled, limit = 100, offset = 0 } = filters;
+    const { provider_config_id, is_enabled, category, limit = 100, offset = 0 } = filters;
 
     const result = await db`
       SELECT
@@ -467,6 +468,7 @@ export class ProviderSettingsRepository {
       WHERE
         (${provider_config_id ?? null}::uuid IS NULL OR mc.provider_config_id = ${provider_config_id ?? null})
         AND (${is_enabled ?? null}::boolean IS NULL OR mc.is_enabled = ${is_enabled ?? null})
+        AND (${category ?? null}::text IS NULL OR pc.category = ${category ?? null})
       ORDER BY pc.priority ASC, mc.display_name ASC
       LIMIT ${limit + 1}
       OFFSET ${offset}
