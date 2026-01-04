@@ -64,7 +64,7 @@ export default function AccountPage() {
   const [isSavingPrivacy, setIsSavingPrivacy] = useState(false);
 
   // Safety level state
-  const [safetyLevel, setSafetyLevel] = useState<string>('standard');
+  const [safetyLevel, setSafetyLevel] = useState<string>('permissive');
   const [isSavingSafety, setIsSavingSafety] = useState(false);
 
   useEffect(() => {
@@ -90,7 +90,7 @@ export default function AccountPage() {
       const prefs = user.preferences as Record<string, unknown>;
       setConsentToMemory((prefs.consentToMemory as boolean) ?? true);
       setConsentToLearning((prefs.consentToLearning as boolean) ?? true);
-      setSafetyLevel((prefs.safetyLevel as string) ?? 'standard');
+      setSafetyLevel((prefs.safetyLevel as string) ?? 'permissive');
     }
   }, [user?.preferences]);
 
@@ -187,7 +187,7 @@ export default function AccountPage() {
       console.error('Failed to update safety level:', error);
       // Revert on error
       const currentPrefs = (user.preferences as Record<string, unknown>) || {};
-      setSafetyLevel((currentPrefs.safetyLevel as string) ?? 'standard');
+      setSafetyLevel((currentPrefs.safetyLevel as string) ?? 'permissive');
     } finally {
       setIsSavingSafety(false);
     }
@@ -369,7 +369,6 @@ export default function AccountPage() {
             <div className="flex items-center gap-2">
               <span className="text-sm font-medium text-white">Standard</span>
               <span className="px-1.5 py-0.5 text-xs bg-blue-500/20 text-blue-400 rounded">PG</span>
-              <span className="px-1.5 py-0.5 text-xs bg-gray-500/20 text-gray-400 rounded">Default</span>
             </div>
             <p className="text-xs text-gray-500 mt-1">Mild themes allowed. Suitable for general audiences.</p>
           </Label>
@@ -382,6 +381,7 @@ export default function AccountPage() {
             <div className="flex items-center gap-2">
               <span className="text-sm font-medium text-white">Mature</span>
               <span className="px-1.5 py-0.5 text-xs bg-amber-500/20 text-amber-400 rounded">PG-13</span>
+              <span className="px-1.5 py-0.5 text-xs bg-gray-500/20 text-gray-400 rounded">Default</span>
             </div>
             <p className="text-xs text-gray-500 mt-1">Teen-appropriate content. Some suggestive themes allowed.</p>
           </Label>
