@@ -107,6 +107,7 @@ services:
       FLOWGUARD_BASE_URL: ${FLOWGUARD_BASE_URL:-https://flowguard.yoursafe.com}
       # Google OAuth
       GOOGLE_OAUTH_CLIENT_ID: ${GOOGLE_OAUTH_CLIENT_ID:-}
+      GOOGLE_OAUTH_CLIENT_SECRET: ${GOOGLE_OAUTH_CLIENT_SECRET:-}
     extra_hosts:
       - "host.docker.internal:host-gateway"
     depends_on:
