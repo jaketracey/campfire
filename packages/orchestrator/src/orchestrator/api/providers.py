@@ -275,11 +275,29 @@ async def _test_fal(api_key: str) -> TestProviderResponse:
                     latency_ms=latency_ms,
                     model_tested="fal-ai/flux/schnell",
                 )
-            elif response.status_code == 401 or response.status_code == 403:
+            elif response.status_code in (401, 403):
+                # Try to parse the actual error from FAL
+                try:
+                    error_data = response.json()
+                    detail = error_data.get("detail", "")
+                    if "locked" in detail.lower() or "balance" in detail.lower():
+                        return TestProviderResponse(
+                            success=False,
+                            latency_ms=latency_ms,
+                            error=f"Account issue: {detail}",
+                        )
+                    elif "no user found" in detail.lower():
+                        return TestProviderResponse(
+                            success=False,
+                            latency_ms=latency_ms,
+                            error="Invalid API key",
+                        )
+                except Exception:
+                    pass
                 return TestProviderResponse(
                     success=False,
                     latency_ms=latency_ms,
-                    error="Invalid API key",
+                    error="Invalid API key or unauthorized",
                 )
             else:
                 error_text = response.text[:200]
