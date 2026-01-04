@@ -20,6 +20,7 @@ import {
 } from '../utils/companion-assets.js';
 import { enqueueImageRenditionJob } from '../utils/queue.js';
 import { getRenditionKeyPrefix, type ImageRenditions } from '@campfire/shared';
+import { getLLMUsageService } from '../services/llm-usage.js';
 
 // Orchestrator configuration
 const ORCHESTRATOR_URL = process.env['ORCHESTRATOR_URL'] || 'http://localhost:8000';
@@ -288,6 +289,7 @@ interface OrchestratorImageGenResponse {
   height: number;
   latency_ms: number;
   provider: string;
+  model_id: string;
   prompt_used: string;
 }
 
@@ -303,7 +305,7 @@ async function generateWithOrchestrator(
   referenceImageUrl?: string,
   referenceStrength?: number,
   isAnchor?: boolean
-): Promise<{ imageBuffer: Buffer; latencyMs: number; provider: string; format: string }> {
+): Promise<{ imageBuffer: Buffer; latencyMs: number; provider: string; modelId: string; format: string }> {
   const url = `${ORCHESTRATOR_URL}/imagegen/generate`;
 
   logger.info({ url, prompt: prompt.slice(0, 100), emotionalState, style, hasReference: !!referenceImageUrl, isAnchor }, 'Calling orchestrator for image generation');
@@ -332,7 +334,7 @@ async function generateWithOrchestrator(
   }
 
   const result = await response.json() as OrchestratorImageGenResponse;
-  logger.info({ provider: result.provider, latency_ms: result.latency_ms }, 'Orchestrator image generation response');
+  logger.info({ provider: result.provider, modelId: result.model_id, latency_ms: result.latency_ms }, 'Orchestrator image generation response');
 
   // Decode base64 image
   const imageBuffer = Buffer.from(result.image_base64, 'base64');
@@ -341,6 +343,7 @@ async function generateWithOrchestrator(
     imageBuffer,
     latencyMs: result.latency_ms,
     provider: result.provider,
+    modelId: result.model_id,
     format: result.format,
   };
 }
@@ -599,9 +602,12 @@ export async function imagegenRoutes(app: FastifyInstance): Promise<void> {
           companionId: params.companionId,
         }, 'Generating image via orchestrator');
 
+        // Capture request start time for cost tracking
+        const requestStartTime = new Date();
+
         // Generate with orchestrator (uses ComfyUI or FAL)
         // If referenceImageUrl is provided, ComfyUI will use IP-Adapter for consistency
-        const { imageBuffer, latencyMs, provider, format } = await generateWithOrchestrator(
+        const { imageBuffer, latencyMs, provider, modelId, format } = await generateWithOrchestrator(
           fullPrompt,
           emotionalState,
           style,
@@ -647,7 +653,24 @@ export async function imagegenRoutes(app: FastifyInstance): Promise<void> {
               provider
             );
 
-            logger.info({ imageId, s3Key, latencyMs, provider }, 'Image saved to S3 and database');
+            logger.info({ imageId, s3Key, latencyMs, provider, modelId }, 'Image saved to S3 and database');
+
+            // Record image usage for cost tracking
+            try {
+              const llmUsage = getLLMUsageService();
+              await llmUsage.recordImageUsage({
+                user_id: params.userId,
+                session_id: params.sessionId ?? null,
+                companion_id: params.companionId ?? null,
+                provider,
+                model: modelId,
+                latency_ms: latencyMs,
+                request_started_at: requestStartTime,
+                request_completed_at: new Date(),
+              });
+            } catch (usageErr) {
+              logger.warn({ error: usageErr, imageId }, 'Failed to record image usage');
+            }
 
             // Queue rendition processing job (async, non-blocking)
             if (imageId) {
@@ -883,10 +906,13 @@ export async function imagegenRoutes(app: FastifyInstance): Promise<void> {
             style,
           });
 
+          // Capture request start time for cost tracking
+          const anchorStartTime = new Date();
+
           // Generate with orchestrator
           // For primary anchor (first image), no reference - let it establish the identity
           // For subsequent images, use the primary anchor as reference for consistency
-          const { imageBuffer, latencyMs, provider, format } = await generateWithOrchestrator(
+          const { imageBuffer, latencyMs, provider, modelId, format } = await generateWithOrchestrator(
             fullPrompt,
             emotionalState,
             style,
@@ -969,6 +995,23 @@ export async function imagegenRoutes(app: FastifyInstance): Promise<void> {
             latencyMs,
             provider
           );
+
+          // Record image usage for cost tracking
+          try {
+            const llmUsage = getLLMUsageService();
+            await llmUsage.recordImageUsage({
+              user_id: userId,
+              session_id: anchorSessionId,
+              companion_id: companionId,
+              provider,
+              model: modelId,
+              latency_ms: latencyMs,
+              request_started_at: anchorStartTime,
+              request_completed_at: new Date(),
+            });
+          } catch (usageErr) {
+            logger.warn({ error: usageErr, imageId }, 'Failed to record anchor image usage');
+          }
 
           // Queue rendition processing for anchor images
           if (imageId) {
@@ -1172,7 +1215,10 @@ export async function imagegenRoutes(app: FastifyInstance): Promise<void> {
               style,
             });
 
-            const { imageBuffer, latencyMs, provider } = await generateWithOrchestrator(
+            // Capture request start time for cost tracking
+            const anchorStartTime = new Date();
+
+            const { imageBuffer, latencyMs, provider, modelId } = await generateWithOrchestrator(
               fullPrompt,
               emotionalState,
               style,
@@ -1252,6 +1298,23 @@ export async function imagegenRoutes(app: FastifyInstance): Promise<void> {
               latencyMs,
               provider
             );
+
+            // Record image usage for cost tracking
+            try {
+              const llmUsage = getLLMUsageService();
+              await llmUsage.recordImageUsage({
+                user_id: userId,
+                session_id: anchorSessionId,
+                companion_id: companionId,
+                provider,
+                model: modelId,
+                latency_ms: latencyMs,
+                request_started_at: anchorStartTime,
+                request_completed_at: new Date(),
+              });
+            } catch (usageErr) {
+              logger.warn({ error: usageErr, imageId }, 'Failed to record anchor image usage (SSE)');
+            }
 
             // Queue rendition processing for anchor images
             if (imageId) {

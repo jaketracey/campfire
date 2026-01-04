@@ -210,3 +210,63 @@ class ImageProvider(ABC):
     ) -> str:
         """Analyze an image and return a description."""
         ...
+
+
+@dataclass
+class VideoResult:
+    """Result from video generation."""
+
+    video_url: str
+    request_id: str
+    status: str
+    duration_seconds: float
+    width: int
+    height: int
+    latency_ms: float = 0.0
+    thumbnail_url: str | None = None
+    file_size_bytes: int | None = None
+
+
+class VideoProvider(ABC):
+    """Abstract base class for video generation providers."""
+
+    @property
+    @abstractmethod
+    def name(self) -> str:
+        """Provider name."""
+        ...
+
+    @abstractmethod
+    async def generate(
+        self,
+        prompt: str,
+        source_image_url: str | None = None,
+        duration_seconds: int = 5,
+        width: int = 1080,
+        height: int = 1920,
+        model_id: str | None = None,
+    ) -> VideoResult:
+        """Generate a video from a text prompt and/or source image.
+
+        Args:
+            prompt: The motion/action prompt for video generation
+            source_image_url: URL of source image to animate (image-to-video)
+            duration_seconds: Target video duration
+            width: Video width in pixels
+            height: Video height in pixels
+            model_id: Specific model to use
+
+        Returns:
+            VideoResult with video URL and metadata
+        """
+        ...
+
+    @abstractmethod
+    async def list_models(self) -> list[dict[str, Any]]:
+        """List available video models with capabilities."""
+        ...
+
+    @abstractmethod
+    async def health_check(self) -> bool:
+        """Check if the provider is accessible."""
+        ...

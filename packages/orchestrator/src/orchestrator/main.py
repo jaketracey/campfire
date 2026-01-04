@@ -25,6 +25,7 @@ from orchestrator.prompts.manager import PromptManager
 from orchestrator.providers.animatediff import AnimateDiffProvider
 from orchestrator.providers.comfyui import ComfyUIProvider
 from orchestrator.providers.fal import FalProvider
+from orchestrator.providers.fal_video import FalVideoProvider
 from orchestrator.providers.ollama import OllamaProvider
 from orchestrator.providers.openai import OpenAIProvider
 from orchestrator.routing.model_registry import MODEL_REGISTRY, PROVIDER_HEALTH
@@ -239,6 +240,7 @@ class ImageGenResponse(BaseModel):
     height: int
     latency_ms: float
     provider: str
+    model_id: str
     prompt_used: str
 
 
@@ -413,6 +415,7 @@ class AppState:
     image_router: ImageModelRouter | None
     comfyui_provider: ComfyUIProvider | None
     fal_provider: FalProvider | None
+    fal_video_provider: FalVideoProvider | None
     ollama_provider: OllamaProvider | None
     prompt_enhancer: PromptEnhancer | None
     animatediff_provider: AnimateDiffProvider | None
@@ -535,6 +538,12 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         app_state.fal_provider = FalProvider(settings)
         logger.info("fal_provider_initialized")
 
+        # Initialize FAL video provider (uses same API key)
+        app_state.fal_video_provider = FalVideoProvider(settings)
+        logger.info("fal_video_provider_initialized")
+    else:
+        app_state.fal_video_provider = None
+
     # Initialize Ollama provider for LLM tasks (backstory generation, etc.)
     app_state.ollama_provider = OllamaProvider(settings)
     if await app_state.ollama_provider.health_check():
@@ -570,6 +579,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         policy_version=app_state.safety_gate.policy_version,
         comfyui_enabled=app_state.comfyui_provider is not None,
         fal_enabled=app_state.fal_provider is not None,
+        fal_video_enabled=app_state.fal_video_provider is not None,
         ollama_enabled=app_state.ollama_provider is not None,
         prompt_enhancement_enabled=app_state.prompt_enhancer is not None,
         animatediff_enabled=app_state.animatediff_provider is not None,
@@ -1084,6 +1094,7 @@ async def generate_image(request: ImageGenRequest) -> ImageGenResponse:
                 height=result["height"],
                 latency_ms=result["latency_ms"],
                 provider="comfyui",
+                model_id=model_id or "comfyui/default",
                 prompt_used=full_prompt,
             )
 
@@ -1132,6 +1143,7 @@ async def generate_image(request: ImageGenRequest) -> ImageGenResponse:
                 height=result["height"],
                 latency_ms=result["latency_ms"],
                 provider="fal",
+                model_id=model_id or "fal/flux-schnell",
                 prompt_used=full_prompt,
             )
 
@@ -1307,9 +1319,155 @@ async def get_video_providers() -> dict[str, Any]:
             "motion_module": app_state.settings.animatediff_motion_module,
         })
 
+    if app_state.fal_video_provider:
+        providers.append({
+            "name": "fal_video",
+            "available": True,
+            "preferred": False,
+        })
+
     return {
         "providers": providers,
-        "default": "animatediff" if app_state.animatediff_provider else None,
+        "default": "animatediff" if app_state.animatediff_provider else "fal_video" if app_state.fal_video_provider else None,
+    }
+
+
+# ===========================================================================
+# Fal.ai Video Generation Endpoints (for Ad Creatives)
+# ===========================================================================
+
+
+class FalVideoGenRequest(BaseModel):
+    """Request model for Fal.ai video generation."""
+
+    prompt: str
+    source_image_url: str | None = None
+    duration_seconds: int = Field(default=5, ge=1, le=30)
+    width: int = Field(default=1080, ge=480, le=1920)
+    height: int = Field(default=1920, ge=480, le=1920)
+    model_id: str | None = None  # e.g., "fal/kling-1.6-pro"
+
+
+class FalVideoGenResponse(BaseModel):
+    """Response model for Fal.ai video generation."""
+
+    video_url: str
+    thumbnail_url: str | None
+    duration_seconds: float
+    width: int
+    height: int
+    latency_ms: float
+    provider: str
+    model_id: str
+    request_id: str
+
+
+@app.post(
+    "/videogen/fal/generate",
+    response_model=FalVideoGenResponse,
+    responses={
+        400: {"model": ErrorResponse},
+        503: {"model": ErrorResponse},
+    },
+)
+async def generate_fal_video(request: FalVideoGenRequest) -> FalVideoGenResponse:
+    """Generate a video using Fal.ai video models.
+
+    Supports image-to-video generation for ad creatives.
+    Uses models like Kling, Runway Gen-3, MiniMax, Luma, and Hunyuan.
+    """
+    logger.info(
+        "fal_videogen_request",
+        prompt_length=len(request.prompt) if request.prompt else 0,
+        prompt=request.prompt[:200] if request.prompt else None,
+        model_id=request.model_id,
+        has_source_image=request.source_image_url is not None,
+        duration_seconds=request.duration_seconds,
+        size=f"{request.width}x{request.height}",
+    )
+
+    # Check if Fal video provider is available
+    if not app_state.fal_video_provider:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Fal.ai video generation provider not available. Ensure FAL_API_KEY is configured.",
+        )
+
+    try:
+        result = await app_state.fal_video_provider.generate(
+            prompt=request.prompt,
+            source_image_url=request.source_image_url,
+            duration_seconds=request.duration_seconds,
+            width=request.width,
+            height=request.height,
+            model_id=request.model_id,
+        )
+
+        logger.info(
+            "fal_videogen_success",
+            provider="fal_video",
+            model_id=request.model_id or "fal/kling-1.6-standard",
+            latency_ms=result.latency_ms,
+            duration_seconds=result.duration_seconds,
+        )
+
+        return FalVideoGenResponse(
+            video_url=result.video_url,
+            thumbnail_url=result.thumbnail_url,
+            duration_seconds=result.duration_seconds,
+            width=result.width,
+            height=result.height,
+            latency_ms=result.latency_ms,
+            provider="fal_video",
+            model_id=request.model_id or "fal/kling-1.6-standard",
+            request_id=result.request_id,
+        )
+
+    except ValueError as e:
+        logger.warning("fal_videogen_validation_error", error=str(e))
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e),
+        )
+    except Exception as e:
+        logger.error("fal_videogen_failed", error=str(e))
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Video generation failed: {str(e)}",
+        )
+
+
+@app.get("/videogen/fal/models")
+async def list_fal_video_models() -> dict[str, Any]:
+    """List available Fal.ai video models with capabilities and pricing."""
+    if not app_state.fal_video_provider:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Fal.ai video provider not available",
+        )
+
+    models = await app_state.fal_video_provider.list_models()
+
+    return {
+        "models": models,
+        "default_model": "fal/kling-1.6-standard",
+        "provider": "fal_video",
+    }
+
+
+@app.get("/videogen/fal/health")
+async def get_fal_video_health() -> dict[str, Any]:
+    """Get health status of Fal.ai video provider."""
+    if not app_state.fal_video_provider:
+        return {
+            "available": False,
+            "configured": False,
+        }
+
+    is_healthy = await app_state.fal_video_provider.health_check()
+    return {
+        "available": is_healthy,
+        "configured": True,
     }
 
 

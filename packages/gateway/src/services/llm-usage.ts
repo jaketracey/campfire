@@ -360,6 +360,98 @@ export class LLMUsageService {
     logger.info('Model pricing cache cleared');
   }
 
+  // ===========================================================================
+  // Image Usage Recording
+  // ===========================================================================
+
+  /**
+   * Get image model cost from model_configs metadata
+   * Falls back to provider-based defaults if not found
+   */
+  async getImageModelCost(modelId: string): Promise<number> {
+    try {
+      // Look up model in database
+      const { data: models } = await this.providerRepo.listModels({
+        is_enabled: true,
+        category: 'image',
+      });
+
+      // Find matching model
+      const model = models.find(m => m.model_id === modelId);
+      if (model?.metadata && typeof model.metadata === 'object') {
+        const metadata = model.metadata as { cost_per_image?: number };
+        if (typeof metadata.cost_per_image === 'number') {
+          return metadata.cost_per_image;
+        }
+      }
+    } catch (error) {
+      logger.warn({ error, modelId }, 'Failed to fetch image model pricing from database');
+    }
+
+    // Fallback pricing based on known providers
+    if (modelId.startsWith('comfyui')) {
+      return 0; // Local, no cost
+    }
+    if (modelId.includes('flux-schnell')) {
+      return 0.003;
+    }
+    if (modelId.includes('flux-dev')) {
+      return 0.025;
+    }
+    if (modelId.includes('flux-pro') || modelId.includes('flux-1.1-pro')) {
+      return 0.04;
+    }
+
+    logger.warn({ modelId }, 'Unknown image model pricing, defaulting to zero');
+    return 0;
+  }
+
+  /**
+   * Record image generation usage
+   * Uses request_type='image' and looks up cost from model_configs
+   */
+  async recordImageUsage(
+    input: {
+      user_id: string;
+      session_id?: string | null;
+      companion_id?: string | null;
+      provider: string;
+      model: string;
+      latency_ms?: number | null;
+      request_started_at: Date;
+      request_completed_at: Date;
+      trace_id?: string | null;
+    },
+    tx?: TransactionContext
+  ): Promise<UsageRecordResult & { budget_status: BudgetCheckResult }> {
+    // Look up image model cost
+    const costPerImage = await this.getImageModelCost(input.model);
+
+    logger.info({
+      userId: input.user_id,
+      provider: input.provider,
+      model: input.model,
+      costPerImage,
+    }, 'Recording image usage');
+
+    // Record using existing infrastructure with image-specific defaults
+    return this.recordUsage({
+      user_id: input.user_id,
+      session_id: input.session_id,
+      companion_id: input.companion_id,
+      provider: input.provider,
+      model: input.model,
+      input_tokens: 0,
+      output_tokens: 0,
+      cost_usd: costPerImage,
+      latency_ms: input.latency_ms,
+      request_type: 'image',
+      request_started_at: input.request_started_at,
+      request_completed_at: input.request_completed_at,
+      trace_id: input.trace_id,
+    }, tx);
+  }
+
   /**
    * Check budget and create alerts if thresholds are exceeded
    */
