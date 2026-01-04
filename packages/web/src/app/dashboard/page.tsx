@@ -15,7 +15,7 @@ import {
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
 import { motion } from 'framer-motion';
-import { MessageCircle, Plus, RotateCcw, Sparkles, Trash2, ArrowRight, Check, Users, Settings, BookOpen, ChevronLeft, ChevronRight } from 'lucide-react';
+import { MessageCircle, Plus, RotateCcw, Trash2, ArrowRight, Check, Users, Settings, BookOpen, ChevronLeft, ChevronRight } from 'lucide-react';
 import { ShareCompanionDialog } from '@/components/companion/share-companion-dialog';
 import { BackstoryModal } from '@/components/companion/backstory-modal';
 import { CompanionCardImage } from '@/components/companion/companion-card-image';
@@ -375,9 +375,6 @@ export default function DashboardPage() {
             <Card className="bg-white/[0.01] backdrop-blur-3xl border border-white/10 overflow-hidden relative">
               <div className="absolute inset-0 bg-gradient-to-br from-campfire-500/5 via-transparent to-campfire-500/5 pointer-events-none" />
               <CardContent className="flex flex-col items-center justify-center py-24 text-center space-y-8 relative z-10">
-                <div className="h-24 w-24 rounded-3xl bg-campfire-500/10 border border-campfire-500/20 flex items-center justify-center shadow-[0_0_50px_rgba(249,115,22,0.15)]">
-                  <Sparkles className="h-12 w-12 text-campfire-500 animate-pulse" />
-                </div>
                 <div className="space-y-4">
                   <h2 className="text-3xl font-bold font-display text-white">Ready to ignite?</h2>
                   <p className="text-gray-400 text-lg max-w-md mx-auto">
