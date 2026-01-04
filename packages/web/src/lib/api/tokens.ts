@@ -24,7 +24,10 @@ export interface TokenBundle {
   tokens: number;
   priceCents: number;
   bonusTokens: number;
-  stripeProductId: string;
+  totalTokens: number;
+  description?: string;
+  displayOrder?: number;
+  currency?: string;
   isPopular?: boolean;
 }
 
@@ -37,10 +40,20 @@ export interface TokenBundlesResponse {
 }
 
 /**
- * Checkout session response
+ * Payment session response from Flowguard
  */
-export interface CheckoutSessionResponse {
-  url: string;
+export interface PaymentSessionResponse {
+  sessionId: string;
+  referenceId: string;
+  bundle: {
+    id: string;
+    name: string;
+    tokens: number;
+    bonusTokens: number;
+    totalTokens: number;
+    priceCents: number;
+  };
+  expiresAt: string;
 }
 
 /**
@@ -59,14 +72,15 @@ export async function getTokenBundles(): Promise<TokenBundle[]> {
 }
 
 /**
- * Create a Stripe checkout session for purchasing tokens
+ * Create a Flowguard payment session for purchasing tokens.
+ * Returns a sessionId for use with the Flowguard frontend SDK.
  */
-export async function createTokenCheckout(
+export async function createTokenSession(
   bundleId: string,
   successUrl: string,
   cancelUrl: string
-): Promise<{ url: string }> {
-  return post<CheckoutSessionResponse>('/gifts/tokens/checkout', {
+): Promise<PaymentSessionResponse> {
+  return post<PaymentSessionResponse>('/gifts/tokens/session', {
     bundleId,
     successUrl,
     cancelUrl,

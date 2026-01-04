@@ -333,6 +333,35 @@ export async function testProviderConnection(id: string): Promise<ConnectionTest
   return response.data;
 }
 
+/**
+ * Discovered model from provider API
+ */
+export interface DiscoveredModel {
+  modelId: string;
+  displayName: string;
+  contextWindow?: number;
+  maxOutputTokens?: number;
+  inputCostPerMillion?: number;
+  outputCostPerMillion?: number;
+  capabilities?: string[];
+}
+
+/**
+ * Discover available models from a provider's API
+ */
+export async function discoverProviderModels(id: string): Promise<{
+  success: boolean;
+  models: DiscoveredModel[];
+  error?: string;
+}> {
+  const response = await get<ApiResponse<{
+    success: boolean;
+    models: DiscoveredModel[];
+    error?: string;
+  }>>(`/admin/providers/${id}/discover-models`);
+  return response.data;
+}
+
 // ============================================================================
 // Model API
 // ============================================================================

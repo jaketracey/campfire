@@ -41,6 +41,26 @@ export interface MemoryListFilters extends PaginationOptions {
 }
 
 /**
+ * Composite scoring weights for vector search
+ */
+export interface CompositeWeights {
+  similarity?: number;  // default 0.6
+  importance?: number;  // default 0.2
+  recency?: number;     // default 0.1
+  access?: number;      // default 0.1
+}
+
+/**
+ * Default composite scoring weights
+ */
+export const DEFAULT_COMPOSITE_WEIGHTS: Required<CompositeWeights> = {
+  similarity: 0.6,
+  importance: 0.2,
+  recency: 0.1,
+  access: 0.1,
+};
+
+/**
  * Vector search options
  */
 export interface VectorSearchOptions {
@@ -51,6 +71,14 @@ export interface VectorSearchOptions {
   minSimilarity?: number;
   contentTypes?: MemoryContentType[];
   minImportance?: number;
+  /** Enable composite scoring (similarity + importance + recency + access) */
+  useCompositeScoring?: boolean;
+  /** Custom weights for composite scoring */
+  weights?: CompositeWeights;
+  /** Keywords for hybrid search (vector + keyword matching) */
+  keywords?: string[];
+  /** Boost factor for keyword matches in hybrid search (default 0.3) */
+  keywordBoost?: number;
 }
 
 /**
@@ -229,10 +257,43 @@ export class MemoriesRepository {
     options: VectorSearchOptions,
     tx?: TransactionContext
   ): Promise<MemoryWithSimilarity[]> {
+    // Get vector search results
+    const vectorResults = await this.vectorSearchCore(options, tx);
+
+    // If no keywords provided, return vector results directly
+    if (!options.keywords?.length) {
+      return vectorResults;
+    }
+
+    // Hybrid search: combine vector results with keyword results using RRF
+    const keywordResults = await this.searchByText({
+      userId: options.userId,
+      companionId: options.companionId,
+      query: options.keywords.join(' '),
+      limit: options.limit ?? 10,
+      contentTypes: options.contentTypes,
+    }, tx);
+
+    return this.mergeWithRRF(
+      vectorResults,
+      keywordResults,
+      options.keywordBoost ?? 0.3,
+      options.limit ?? 10
+    );
+  }
+
+  /**
+   * Core vector search with optional composite scoring
+   */
+  private async vectorSearchCore(
+    options: VectorSearchOptions,
+    tx?: TransactionContext
+  ): Promise<MemoryWithSimilarity[]> {
     const db = this.getSql(tx);
     const limit = options.limit ?? 10;
     const minSimilarity = options.minSimilarity ?? 0.7;
     const embeddingValue = `[${options.embedding.join(',')}]`;
+    const useComposite = options.useCompositeScoring ?? true; // Default to composite scoring
 
     // Build conditions
     const conditions: ReturnType<typeof db>[] = [
@@ -251,24 +312,109 @@ export class MemoriesRepository {
 
     const whereClause = db`WHERE ${conditions.reduce((acc, cond, i) => (i === 0 ? cond : db`${acc} AND ${cond}`))}`;
 
-    const result = await db`
-      SELECT
-        id, user_id, companion_id, content, content_type, status,
-        importance, access_count, last_accessed_at,
-        source_event_id, source_turn_id, metadata, tags,
-        valid_from, valid_until, expires_at, created_at, updated_at,
-        1 - (embedding <=> ${db.unsafe(`'${embeddingValue}'::vector`)}) as similarity
-      FROM memories
-      ${whereClause}
-        AND 1 - (embedding <=> ${db.unsafe(`'${embeddingValue}'::vector`)}) >= ${minSimilarity}
-      ORDER BY embedding <=> ${db.unsafe(`'${embeddingValue}'::vector`)}
-      LIMIT ${limit}
-    `;
+    if (useComposite) {
+      // Composite scoring: combine similarity, importance, recency, and access frequency
+      const weights = {
+        ...DEFAULT_COMPOSITE_WEIGHTS,
+        ...options.weights,
+      };
 
-    return result.map(row => ({
-      ...this.mapMemory(row),
-      similarity: parseFloat(row['similarity'] as string),
-    }));
+      const result = await db`
+        SELECT
+          id, user_id, companion_id, content, content_type, status,
+          importance, access_count, last_accessed_at,
+          source_event_id, source_turn_id, metadata, tags,
+          valid_from, valid_until, expires_at, created_at, updated_at,
+          1 - (embedding <=> ${db.unsafe(`'${embeddingValue}'::vector`)}) as similarity,
+          GREATEST(0, 1 - EXTRACT(EPOCH FROM (NOW() - created_at)) / (365 * 86400)) as recency_score,
+          LEAST(1.0, COALESCE(access_count, 0)::real / 10) as access_score,
+          (
+            ${weights.similarity} * (1 - (embedding <=> ${db.unsafe(`'${embeddingValue}'::vector`)})) +
+            ${weights.importance} * importance +
+            ${weights.recency} * GREATEST(0, 1 - EXTRACT(EPOCH FROM (NOW() - created_at)) / (365 * 86400)) +
+            ${weights.access} * LEAST(1.0, COALESCE(access_count, 0)::real / 10)
+          ) as composite_score
+        FROM memories
+        ${whereClause}
+          AND 1 - (embedding <=> ${db.unsafe(`'${embeddingValue}'::vector`)}) >= ${minSimilarity}
+        ORDER BY composite_score DESC
+        LIMIT ${limit}
+      `;
+
+      return result.map(row => ({
+        ...this.mapMemory(row),
+        similarity: parseFloat(row['similarity'] as string),
+      }));
+    } else {
+      // Simple similarity-only scoring (original behavior)
+      const result = await db`
+        SELECT
+          id, user_id, companion_id, content, content_type, status,
+          importance, access_count, last_accessed_at,
+          source_event_id, source_turn_id, metadata, tags,
+          valid_from, valid_until, expires_at, created_at, updated_at,
+          1 - (embedding <=> ${db.unsafe(`'${embeddingValue}'::vector`)}) as similarity
+        FROM memories
+        ${whereClause}
+          AND 1 - (embedding <=> ${db.unsafe(`'${embeddingValue}'::vector`)}) >= ${minSimilarity}
+        ORDER BY embedding <=> ${db.unsafe(`'${embeddingValue}'::vector`)}
+        LIMIT ${limit}
+      `;
+
+      return result.map(row => ({
+        ...this.mapMemory(row),
+        similarity: parseFloat(row['similarity'] as string),
+      }));
+    }
+  }
+
+  /**
+   * Merge vector and keyword results using Reciprocal Rank Fusion (RRF)
+   * RRF formula: score = sum(1 / (k + rank)) for each result list
+   */
+  private mergeWithRRF(
+    vectorResults: MemoryWithSimilarity[],
+    keywordResults: Memory[],
+    keywordBoost: number,
+    limit: number
+  ): MemoryWithSimilarity[] {
+    const k = 60; // RRF constant (commonly used value)
+    const scores = new Map<string, { score: number; memory: MemoryWithSimilarity }>();
+
+    // Score vector results
+    vectorResults.forEach((memory, rank) => {
+      const rrfScore = 1 / (k + rank + 1);
+      scores.set(memory.id, {
+        score: rrfScore,
+        memory,
+      });
+    });
+
+    // Score keyword results with boost factor
+    keywordResults.forEach((memory, rank) => {
+      const rrfScore = keywordBoost / (k + rank + 1);
+      const existing = scores.get(memory.id);
+
+      if (existing) {
+        // Memory found in both - add scores
+        existing.score += rrfScore;
+      } else {
+        // Only in keyword results - create new entry
+        scores.set(memory.id, {
+          score: rrfScore,
+          memory: {
+            ...memory,
+            similarity: 0.5, // Default similarity for keyword-only matches
+          },
+        });
+      }
+    });
+
+    // Sort by combined RRF score and return top N
+    return Array.from(scores.values())
+      .sort((a, b) => b.score - a.score)
+      .slice(0, limit)
+      .map(entry => entry.memory);
   }
 
   async searchByVectorUsingFunction(

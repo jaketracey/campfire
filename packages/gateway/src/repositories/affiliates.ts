@@ -344,7 +344,7 @@ export class AffiliatesRepository {
 
     const result = await db`
       INSERT INTO affiliate_conversions (
-        affiliate_id, user_id, click_id, plan_tier, commission_amount, status, stripe_invoice_id
+        affiliate_id, user_id, click_id, plan_tier, commission_amount, status, flowguard_transaction_id
       ) VALUES (
         ${data.affiliate_id},
         ${data.user_id ?? null},
@@ -352,11 +352,11 @@ export class AffiliatesRepository {
         ${data.plan_tier},
         ${data.commission_amount},
         ${data.status ?? 'pending'},
-        ${data.stripe_invoice_id ?? null}
+        ${data.flowguard_transaction_id ?? null}
       )
       RETURNING
         id, affiliate_id, user_id, click_id, plan_tier, commission_amount,
-        status, rejection_reason, paid_at, stripe_invoice_id, created_at, updated_at
+        status, rejection_reason, paid_at, flowguard_transaction_id, created_at, updated_at
     `;
 
     logger.info(
@@ -371,7 +371,7 @@ export class AffiliatesRepository {
     const result = await db`
       SELECT
         id, affiliate_id, user_id, click_id, plan_tier, commission_amount,
-        status, rejection_reason, paid_at, stripe_invoice_id, created_at, updated_at
+        status, rejection_reason, paid_at, flowguard_transaction_id, created_at, updated_at
       FROM affiliate_conversions
       WHERE id = ${id}
     `;
@@ -383,7 +383,7 @@ export class AffiliatesRepository {
     const result = await db`
       SELECT
         id, affiliate_id, user_id, click_id, plan_tier, commission_amount,
-        status, rejection_reason, paid_at, stripe_invoice_id, created_at, updated_at
+        status, rejection_reason, paid_at, flowguard_transaction_id, created_at, updated_at
       FROM affiliate_conversions
       WHERE user_id = ${userId}
       ORDER BY created_at DESC
@@ -404,7 +404,7 @@ export class AffiliatesRepository {
       WHERE id = ${id}
       RETURNING
         id, affiliate_id, user_id, click_id, plan_tier, commission_amount,
-        status, rejection_reason, paid_at, stripe_invoice_id, created_at, updated_at
+        status, rejection_reason, paid_at, flowguard_transaction_id, created_at, updated_at
     `;
 
     if (!result[0]) {
@@ -462,7 +462,7 @@ export class AffiliatesRepository {
       `
       SELECT
         c.id, c.affiliate_id, c.user_id, c.click_id, c.plan_tier, c.commission_amount,
-        c.status, c.rejection_reason, c.paid_at, c.stripe_invoice_id, c.created_at, c.updated_at,
+        c.status, c.rejection_reason, c.paid_at, c.flowguard_transaction_id, c.created_at, c.updated_at,
         a.name as affiliate_name, a.code as affiliate_code,
         u.email as user_email
       FROM affiliate_conversions c
@@ -506,7 +506,7 @@ export class AffiliatesRepository {
       const conversions = await db`
         SELECT
           id, affiliate_id, user_id, click_id, plan_tier, commission_amount,
-          status, rejection_reason, paid_at, stripe_invoice_id, created_at, updated_at
+          status, rejection_reason, paid_at, flowguard_transaction_id, created_at, updated_at
         FROM affiliate_conversions
         WHERE affiliate_id = ${row.affiliate_id}
           AND status = 'approved'
@@ -703,7 +703,7 @@ export class AffiliatesRepository {
       status: row.status as ConversionStatus,
       rejection_reason: row.rejection_reason as string | null,
       paid_at: row.paid_at ? new Date(row.paid_at as string) : null,
-      stripe_invoice_id: row.stripe_invoice_id as string | null,
+      flowguard_transaction_id: row.flowguard_transaction_id as string | null,
       created_at: new Date(row.created_at as string),
       updated_at: new Date(row.updated_at as string),
     };

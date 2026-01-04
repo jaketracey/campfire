@@ -54,6 +54,13 @@ export default function ProvidersPage() {
   };
 
   const getHealthStatus = (provider: Provider) => {
+    // Local providers (ollama) don't need API keys
+    const isLocalProvider = provider.provider === 'ollama';
+
+    // If no API key configured and not a local provider, can't determine health status
+    if (!provider.hasApiKey && !isLocalProvider) {
+      return 'not_configured';
+    }
     const testResult = testResults[provider.id];
     if (testResult) {
       return testResult.success ? 'online' : 'offline';
@@ -80,6 +87,12 @@ export default function ProvidersPage() {
         return (
           <Badge variant="destructive">
             Offline
+          </Badge>
+        );
+      case 'not_configured':
+        return (
+          <Badge variant="secondary" className="bg-amber-500/10 text-amber-500">
+            Not Configured
           </Badge>
         );
       default:
@@ -111,8 +124,11 @@ export default function ProvidersPage() {
   }
 
   const enabledProviders = providers.filter((p) => p.isEnabled).length;
-  const configuredProviders = providers.filter((p) => p.hasApiKey).length;
-  const healthyProviders = providers.filter((p) => p.health?.isAvailable).length;
+  const configuredProviders = providers.filter((p) => p.hasApiKey || p.provider === 'ollama').length;
+  // Only count configured providers (API key or local) as potentially healthy
+  const healthyProviders = providers.filter((p) =>
+    (p.hasApiKey || p.provider === 'ollama') && p.health?.isAvailable
+  ).length;
 
   return (
     <div className="space-y-6">
@@ -256,6 +272,8 @@ export default function ProvidersPage() {
                           )}
                           {provider.hasApiKey ? (
                             <span className="text-green-500">API key configured</span>
+                          ) : provider.provider === 'ollama' ? (
+                            <span className="text-blue-500">Local provider</span>
                           ) : (
                             <span className="text-amber-500">No API key</span>
                           )}
@@ -270,7 +288,7 @@ export default function ProvidersPage() {
                         variant="outline"
                         size="sm"
                         onClick={() => handleTestConnection(provider.id)}
-                        disabled={testingProvider === provider.id || !provider.hasApiKey}
+                        disabled={testingProvider === provider.id || (!provider.hasApiKey && provider.provider !== 'ollama')}
                         className="gap-2"
                       >
                         {testingProvider === provider.id ? (

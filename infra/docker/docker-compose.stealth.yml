@@ -102,9 +102,10 @@ services:
       # Ollama via SSH tunnel (host.docker.internal maps to host)
       OLLAMA_ENABLED: ${OLLAMA_ENABLED:-true}
       OLLAMA_BASE_URL: http://host.docker.internal:11434
-      # Stripe
-      STRIPE_SECRET_KEY: ${STRIPE_SECRET_KEY:-}
-      STRIPE_WEBHOOK_SECRET: ${STRIPE_WEBHOOK_SECRET:-}
+      # Flowguard (Verotel/YoursAfe) Payment Processing
+      FLOWGUARD_SHOP_ID: ${FLOWGUARD_SHOP_ID:-}
+      FLOWGUARD_SIGNATURE_KEY: ${FLOWGUARD_SIGNATURE_KEY:-}
+      FLOWGUARD_BASE_URL: ${FLOWGUARD_BASE_URL:-https://flowguard.yoursafe.com}
       # Google OAuth
       GOOGLE_OAUTH_CLIENT_ID: ${GOOGLE_OAUTH_CLIENT_ID:-}
     extra_hosts:
@@ -200,7 +201,7 @@ services:
       NEXT_PUBLIC_WS_URL: wss://${DOMAIN:-campfire.noice.work}
       NEXT_PUBLIC_POSTHOG_KEY: ${POSTHOG_API_KEY:-}
       NEXT_PUBLIC_POSTHOG_HOST: ${POSTHOG_HOST:-https://app.posthog.com}
-      NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY: ${STRIPE_PUBLISHABLE_KEY:-}
+      NEXT_PUBLIC_FLOWGUARD_SHOP_ID: ${FLOWGUARD_SHOP_ID:-}
       NEXT_PUBLIC_GOOGLE_OAUTH_CLIENT_ID: ${GOOGLE_OAUTH_CLIENT_ID:-}
     depends_on:
       gateway:

@@ -42,8 +42,35 @@ class ProvidersHealthResponse(BaseModel):
     timestamp: float
 
 
+def _get_db_provider_configs() -> list[dict] | None:
+    """Try to get provider configs from the routing config service (DB-backed).
+
+    Returns:
+        list[dict] or None if service not available.
+    """
+    try:
+        from orchestrator.main import app_state
+
+        if (
+            app_state.routing_config_service is not None
+            and app_state.routing_config_service.is_initialized
+        ):
+            cache_status = app_state.routing_config_service.get_cache_status()
+            db_configs = cache_status.get("provider_configs", [])
+            if db_configs:
+                return db_configs
+    except Exception as e:
+        logger.debug("failed_to_get_db_provider_configs", error=str(e))
+
+    return None
+
+
 def _get_provider_config() -> tuple[dict[str, dict[str, Any]], str, str]:
-    """Determine provider configuration from settings.
+    """Determine provider configuration from DB and/or environment settings.
+
+    Merges database-stored provider configs with environment variable configs.
+    DB configs provide: is_enabled, has_api_key, priority
+    Env vars provide: local providers (ollama, bedrock), fallback API keys
 
     Returns dict with provider name -> config info including:
     - is_configured: whether API key or enablement flag is set
@@ -51,66 +78,97 @@ def _get_provider_config() -> tuple[dict[str, dict[str, Any]], str, str]:
     - model: the model being used
     """
     settings = get_settings()
+    db_configs = _get_db_provider_configs()
 
-    # Determine primary provider (same logic as orchestrator.py:84-94)
+    # Build a lookup from DB configs
+    db_lookup: dict[str, dict] = {}
+    if db_configs:
+        for cfg in db_configs:
+            db_lookup[cfg["provider"]] = cfg
+
+    # Determine primary provider
+    # Priority: bedrock (env) > ollama (env) > highest priority DB provider > openai
     primary_provider = "openai"  # default
+
     if settings.bedrock_enabled:
         primary_provider = "bedrock"
     elif settings.ollama_enabled:
         primary_provider = "ollama"
+    elif db_configs:
+        # Find highest priority (lowest number) enabled DB provider with API key
+        for cfg in db_configs:  # Already sorted by priority
+            if cfg["is_enabled"] and cfg["has_api_key"]:
+                primary_provider = cfg["provider"]
+                break
 
-    # Fallback is always anthropic (orchestrator.py:96)
+    # Fallback is always anthropic
     fallback_provider = "anthropic"
 
     providers: dict[str, dict[str, Any]] = {}
 
-    # Anthropic - always fallback, configured if API key present
+    # Helper to check if provider is configured (DB or env)
+    def is_db_configured(provider: str) -> bool:
+        cfg = db_lookup.get(provider)
+        return cfg is not None and cfg["is_enabled"] and cfg["has_api_key"]
+
+    # Anthropic - fallback, configured if DB has key OR env has key
+    anthropic_configured = is_db_configured("anthropic") or bool(settings.anthropic_api_key)
     providers["anthropic"] = {
-        "is_configured": bool(settings.anthropic_api_key),
-        "role": "fallback" if settings.anthropic_api_key else "not_configured",
-        "model": settings.anthropic_model if settings.anthropic_api_key else None,
+        "is_configured": anthropic_configured,
+        "role": "fallback" if anthropic_configured else "not_configured",
+        "model": settings.anthropic_model if anthropic_configured else None,
+        "source": "database" if is_db_configured("anthropic") else ("env" if settings.anthropic_api_key else None),
     }
 
-    # OpenAI - primary if no bedrock/ollama, configured if API key present
+    # OpenAI - primary if no bedrock/ollama, configured if DB or env has key
+    openai_configured = is_db_configured("openai") or bool(settings.openai_api_key)
     providers["openai"] = {
-        "is_configured": bool(settings.openai_api_key),
-        "role": "primary" if primary_provider == "openai" and settings.openai_api_key else (
-            "available" if settings.openai_api_key else "not_configured"
+        "is_configured": openai_configured,
+        "role": "primary" if primary_provider == "openai" and openai_configured else (
+            "available" if openai_configured else "not_configured"
         ),
-        "model": settings.openai_model if settings.openai_api_key else None,
+        "model": settings.openai_model if openai_configured else None,
+        "source": "database" if is_db_configured("openai") else ("env" if settings.openai_api_key else None),
     }
 
-    # Ollama - primary if enabled, always "configured" since it's local
+    # Ollama - local provider, always configured via env
     providers["ollama"] = {
         "is_configured": settings.ollama_enabled,
         "role": "primary" if primary_provider == "ollama" else (
             "available" if settings.ollama_enabled else "not_configured"
         ),
         "model": settings.ollama_model if settings.ollama_enabled else None,
+        "source": "env" if settings.ollama_enabled else None,
     }
 
-    # Bedrock - primary if enabled
+    # Bedrock - AWS provider, configured via env
     providers["bedrock"] = {
         "is_configured": settings.bedrock_enabled,
-        "role": "primary" if primary_provider == "bedrock" else "not_configured",
+        "role": "primary" if primary_provider == "bedrock" else (
+            "available" if settings.bedrock_enabled else "not_configured"
+        ),
         "model": settings.bedrock_default_model if settings.bedrock_enabled else None,
+        "source": "env" if settings.bedrock_enabled else None,
     }
 
-    # Together - available if API key present
-    # Note: no explicit together_api_key in settings, check if exists
-    together_key = getattr(settings, "together_api_key", "")
+    # Together - configured if DB has key OR env has key
+    together_env_key = getattr(settings, "together_api_key", "")
+    together_configured = is_db_configured("together") or bool(together_env_key)
     providers["together"] = {
-        "is_configured": bool(together_key),
-        "role": "available" if together_key else "not_configured",
+        "is_configured": together_configured,
+        "role": "available" if together_configured else "not_configured",
         "model": None,
+        "source": "database" if is_db_configured("together") else ("env" if together_env_key else None),
     }
 
-    # Groq - available if API key present
-    groq_key = getattr(settings, "groq_api_key", "")
+    # Groq - configured if DB has key OR env has key
+    groq_env_key = getattr(settings, "groq_api_key", "")
+    groq_configured = is_db_configured("groq") or bool(groq_env_key)
     providers["groq"] = {
-        "is_configured": bool(groq_key),
-        "role": "available" if groq_key else "not_configured",
+        "is_configured": groq_configured,
+        "role": "available" if groq_configured else "not_configured",
         "model": None,
+        "source": "database" if is_db_configured("groq") else ("env" if groq_env_key else None),
     }
 
     return providers, primary_provider, fallback_provider

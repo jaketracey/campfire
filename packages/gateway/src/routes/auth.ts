@@ -12,16 +12,28 @@ import { getAuthService } from '../services/auth.js';
 import { getReferralsService } from '../services/referrals.js';
 import { getUsersRepository, getReferralsRepository, getAffiliatesRepository } from '../repositories/index.js';
 import { parseAffiliateCookie, AFFILIATE_COOKIE } from './affiliate-tracking.js';
+import { getAdConversionsService } from '../services/ad-conversions.js';
 
 /**
  * Request schemas
  */
+const UtmParamsSchema = z.object({
+  utm_source: z.string().max(100).optional(),
+  utm_medium: z.string().max(100).optional(),
+  utm_campaign: z.string().max(255).optional(),
+  utm_term: z.string().max(255).optional(),
+  utm_content: z.string().max(255).optional(),
+  gclid: z.string().max(255).optional(),
+  fbclid: z.string().max(255).optional(),
+}).optional();
+
 const SignupBodySchema = z.object({
   email: z.string().email('Invalid email format'),
   password: z.string().min(8, 'Password must be at least 8 characters'),
   displayName: z.string().min(1).max(100).optional(),
   referralCode: z.string().max(20).optional(),
   inviteToken: z.string().optional(),
+  utmParams: UtmParamsSchema,
 });
 
 const LoginBodySchema = z.object({
@@ -61,7 +73,7 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
         });
       }
 
-      const { email, password, displayName, referralCode, inviteToken } = parseResult.data;
+      const { email, password, displayName, referralCode, inviteToken, utmParams } = parseResult.data;
       span.setAttributes({ 'auth.email': email });
 
       try {
@@ -133,6 +145,29 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
             // Don't fail signup if affiliate tracking fails
             logger.warn({ userId: result.user.id, error: affError }, 'Failed to record affiliate tracking');
           }
+        }
+
+        // Store UTM tracking data and record signup conversion
+        if (utmParams && Object.keys(utmParams).length > 0) {
+          try {
+            await usersRepo.updateUserUtmData(result.user.id, utmParams);
+            logger.info(
+              { userId: result.user.id, utmSource: utmParams.utm_source, utmCampaign: utmParams.utm_campaign },
+              'UTM tracking recorded during signup'
+            );
+          } catch (utmError) {
+            // Don't fail signup if UTM tracking fails
+            logger.warn({ userId: result.user.id, error: utmError }, 'Failed to record UTM tracking');
+          }
+        }
+
+        // Record signup conversion for ad attribution
+        try {
+          const adConversionsService = getAdConversionsService();
+          await adConversionsService.recordSignupConversion(result.user.id);
+        } catch (convError) {
+          // Don't fail signup if conversion tracking fails
+          logger.warn({ userId: result.user.id, error: convError }, 'Failed to record signup conversion');
         }
 
         // Generate JWT tokens with user's role

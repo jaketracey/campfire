@@ -206,3 +206,31 @@ class RoutingConfigRepository:
         )
 
         return {row["provider"]: row["is_enabled"] for row in rows}
+
+    async def get_provider_configs(self) -> list[dict]:
+        """Get full provider configuration including API key presence.
+
+        Returns:
+            list[dict]: Provider configurations with:
+                - provider: Provider name
+                - display_name: Human-readable name
+                - is_enabled: Whether provider is enabled
+                - has_api_key: Whether an API key is configured
+                - priority: Provider priority (lower = higher priority)
+        """
+        rows = await DatabasePool.fetch(
+            """
+            SELECT
+                provider,
+                display_name,
+                is_enabled,
+                api_key_encrypted IS NOT NULL as has_api_key,
+                priority
+            FROM provider_configs
+            ORDER BY priority ASC
+            """
+        )
+
+        configs = [dict(row) for row in rows]
+        logger.debug("fetched_provider_configs", count=len(configs))
+        return configs

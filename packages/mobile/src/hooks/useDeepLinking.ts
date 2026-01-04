@@ -4,16 +4,16 @@ import type { WebView } from 'react-native-webview';
 
 /**
  * Deep link URL patterns:
- * - campfire://chat/{sessionId}    -> /chat/{sessionId}
- * - campfire://onboarding          -> /onboard
- * - campfire://account             -> /account
- * - campfire://account/tokens      -> /account/tokens
- * - campfire://account/media       -> /account/media
+ * - ignite://chat/{sessionId}    -> /chat/{sessionId}
+ * - ignite://onboarding          -> /onboard
+ * - ignite://account             -> /account
+ * - ignite://account/tokens      -> /account/tokens
+ * - ignite://account/media       -> /account/media
  *
  * Universal links:
- * - https://app.campfire.app/chat/{id}
- * - https://app.campfire.app/onboard
- * - https://app.campfire.app/account/*
+ * - https://ignite.cam/chat/{id}
+ * - https://ignite.cam/onboard
+ * - https://ignite.cam/account/*
  */
 
 export interface UseDeepLinkingOptions {
@@ -27,8 +27,8 @@ export function parseDeepLinkToPath(url: string, baseUrl: string): string | null
   try {
     const parsed = Linking.parse(url);
 
-    // Handle campfire:// scheme
-    if (parsed.scheme === 'campfire') {
+    // Handle ignite:// scheme
+    if (parsed.scheme === 'ignite') {
       const path = parsed.path || '';
       const queryString = parsed.queryParams
         ? '?' + new URLSearchParams(parsed.queryParams as Record<string, string>).toString()
@@ -133,7 +133,7 @@ export function useDeepLinking(
 export function createDeepLink(path: string): string {
   // Remove leading slash if present
   const cleanPath = path.startsWith('/') ? path.slice(1) : path;
-  return `campfire://${cleanPath}`;
+  return `ignite://${cleanPath}`;
 }
 
 /**

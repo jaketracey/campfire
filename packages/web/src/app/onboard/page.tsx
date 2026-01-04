@@ -90,7 +90,7 @@ export default function OnboardingPage() {
       )}
 
       {/* Main Content Area */}
-      <main className={`relative z-10 flex-1 flex flex-col items-center p-4 md:p-8 ${currentStep === 1 ? 'pt-20' : ''}`}>
+      <main className={`relative z-10 flex-1 flex flex-col items-center lg:justify-center p-4 md:p-8 ${currentStep === 1 ? 'pt-20' : ''}`}>
         <AnimatePresence mode="wait">
           <motion.div
             key={currentStep}

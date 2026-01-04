@@ -31,6 +31,7 @@ class CachedRoutingConfig:
     routing_rules: dict[str, list[DBRoutingEntry]]
     models: list[DBModelConfig]
     provider_status: dict[str, bool]
+    provider_configs: list[dict]  # Full provider configs with API key presence
     loaded_at: float
     ttl_seconds: float = 60.0
 
@@ -96,6 +97,7 @@ class RoutingConfigService:
                 models = await self._repository.get_all_enabled_models()
                 routing_rules = await self._repository.get_all_routing_rules()
                 provider_status = await self._repository.get_provider_status()
+                provider_configs = await self._repository.get_provider_configs()
 
                 # Update MODEL_REGISTRY with database models
                 models_registered = 0
@@ -115,6 +117,7 @@ class RoutingConfigService:
                     routing_rules=routing_rules,
                     models=models,
                     provider_status=provider_status,
+                    provider_configs=provider_configs,
                     loaded_at=time.time(),
                     ttl_seconds=self._cache_ttl,
                 )
@@ -124,6 +127,7 @@ class RoutingConfigService:
                     models_fetched=len(models),
                     models_registered=models_registered,
                     use_cases=list(routing_rules.keys()),
+                    provider_configs=len(provider_configs),
                 )
             except Exception as e:
                 logger.error("routing_config_refresh_failed", error=str(e))
@@ -263,6 +267,7 @@ class RoutingConfigService:
                 "cache_loaded": False,
                 "models_count": 0,
                 "use_cases": [],
+                "provider_configs": [],
             }
 
         return {
@@ -275,6 +280,7 @@ class RoutingConfigService:
             "providers_enabled": {
                 k: v for k, v in self._cache.provider_status.items() if v
             },
+            "provider_configs": self._cache.provider_configs,
         }
 
     @property

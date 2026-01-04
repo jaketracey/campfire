@@ -55,7 +55,7 @@ export interface AffiliateConversion {
   status: ConversionStatus;
   rejectionReason?: string;
   paidAt: string | null;
-  stripeInvoiceId?: string;
+  flowguardTransactionId?: string;
   createdAt: string;
 }
 

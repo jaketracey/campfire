@@ -1,6 +1,7 @@
 """Gift recall service for surprise gift mentions during conversations."""
 
 import random
+import re
 from datetime import datetime, timedelta
 from typing import Any
 from uuid import UUID
@@ -12,6 +13,23 @@ from orchestrator.config import Settings
 from orchestrator.models.gifts import GiftMemory, GiftRecallContext
 
 logger = structlog.get_logger()
+
+# Stop words to exclude from keyword matching
+GIFT_KEYWORD_STOP_WORDS = frozenset({
+    "the", "a", "an", "and", "or", "but", "in", "on", "at", "to", "for",
+    "of", "with", "by", "from", "as", "is", "was", "are", "were", "been",
+    "be", "have", "has", "had", "do", "does", "did", "will", "would",
+    "could", "should", "may", "might", "must", "shall", "can", "need",
+    "this", "that", "these", "those", "what", "which", "who", "whom",
+    "how", "when", "where", "why", "all", "each", "every", "both",
+    "few", "more", "most", "other", "some", "such", "no", "nor", "not",
+    "only", "own", "same", "so", "than", "too", "very", "just", "also",
+    "now", "here", "there", "then", "once", "still", "even", "well",
+    "back", "being", "through", "way", "your", "you", "they", "them",
+    "their", "its", "our", "his", "her", "him", "she", "he", "it", "we",
+    "about", "into", "over", "after", "before", "between", "under",
+    "again", "further", "because", "while", "during", "until", "against",
+})
 
 
 class GiftRecallService:
@@ -26,6 +44,11 @@ class GiftRecallService:
     BASE_RECALL_PROBABILITY = 0.05  # 5% base chance per turn
     MAX_RECALL_PROBABILITY = 0.25  # Cap at 25% after time scaling
     PROBABILITY_INCREASE_PER_DAY = 0.005  # Increase by 0.5% per day since last recall
+
+    # Context-aware relevance scoring
+    CONTEXT_RELEVANCE_BOOST = 0.15  # Max probability boost for highly relevant gifts
+    KEYWORD_MATCH_WEIGHT = 0.05  # Weight per matching keyword
+    MAX_KEYWORD_BOOST = 0.10  # Cap on keyword-based boost
 
     # Timing constraints
     MIN_TURNS_BETWEEN_RECALLS = 10  # Minimum turns between gift recalls
@@ -246,21 +269,25 @@ class GiftRecallService:
             if not gifts:
                 return None
 
-            # Select a gift (could be random or most relevant)
-            selected = random.choice(gifts) if len(gifts) > 1 else gifts[0]
+            # Convert to GiftMemory objects for scoring
+            gift_memories = [
+                GiftMemory(
+                    gift_id=UUID(g["id"]),
+                    title=g["title"],
+                    description=g["description"],
+                    emotional_meaning=g.get("emotionalMeaning", ""),
+                    direction=g["direction"],
+                    gift_type=g["giftType"],
+                    created_at=datetime.fromisoformat(
+                        g["createdAt"].replace("Z", "+00:00")
+                    ),
+                    emotional_significance=g.get("emotionalSignificance", 0.5),
+                )
+                for g in gifts
+            ]
 
-            return GiftMemory(
-                gift_id=UUID(selected["id"]),
-                title=selected["title"],
-                description=selected["description"],
-                emotional_meaning=selected.get("emotionalMeaning", ""),
-                direction=selected["direction"],
-                gift_type=selected["giftType"],
-                created_at=datetime.fromisoformat(
-                    selected["createdAt"].replace("Z", "+00:00")
-                ),
-                emotional_significance=selected.get("emotionalSignificance", 0.5),
-            )
+            # Select the most contextually relevant gift
+            return self._select_most_relevant_gift(gift_memories, current_context)
 
         except Exception as e:
             logger.warning(
@@ -379,6 +406,141 @@ class GiftRecallService:
                 companion_id=str(companion_id),
             )
             return []
+
+    def _extract_keywords(self, text: str) -> set[str]:
+        """Extract meaningful keywords from text.
+
+        Filters out stop words and returns a set of lowercase keywords
+        with at least 3 characters.
+
+        Args:
+            text: Text to extract keywords from.
+
+        Returns:
+            Set of lowercase keywords.
+        """
+        if not text:
+            return set()
+
+        # Extract words with at least 3 characters
+        words = re.findall(r'\b[a-z]{3,}\b', text.lower())
+
+        # Filter out stop words
+        return {w for w in words if w not in GIFT_KEYWORD_STOP_WORDS}
+
+    def _get_gift_keywords(self, gift: GiftMemory) -> set[str]:
+        """Extract keywords from a gift's text content.
+
+        Combines title, description, and emotional meaning for
+        comprehensive keyword matching.
+
+        Args:
+            gift: The gift memory to extract keywords from.
+
+        Returns:
+            Set of keywords from the gift.
+        """
+        text = f"{gift.title} {gift.description} {gift.emotional_meaning}"
+        return self._extract_keywords(text)
+
+    def _score_gift_relevance(
+        self,
+        gift: GiftMemory,
+        context_keywords: set[str],
+    ) -> float:
+        """Score a gift's relevance to the current context.
+
+        Calculates relevance based on keyword overlap between the gift
+        content and the current conversation context.
+
+        Args:
+            gift: The gift to score.
+            context_keywords: Keywords from the current context.
+
+        Returns:
+            Relevance score between 0.0 and 1.0.
+        """
+        if not context_keywords:
+            return 0.0
+
+        gift_keywords = self._get_gift_keywords(gift)
+        if not gift_keywords:
+            return 0.0
+
+        # Count matching keywords
+        matches = gift_keywords & context_keywords
+        match_count = len(matches)
+
+        if match_count == 0:
+            return 0.0
+
+        # Calculate score: weight per match, capped at MAX_KEYWORD_BOOST
+        raw_boost = match_count * self.KEYWORD_MATCH_WEIGHT
+        capped_boost = min(raw_boost, self.MAX_KEYWORD_BOOST)
+
+        # Normalize to 0-1 range relative to max boost
+        relevance = capped_boost / self.CONTEXT_RELEVANCE_BOOST
+
+        logger.debug(
+            "gift_relevance_scored",
+            gift_id=str(gift.gift_id),
+            gift_title=gift.title,
+            matching_keywords=list(matches),
+            relevance_score=relevance,
+        )
+
+        return relevance
+
+    def _select_most_relevant_gift(
+        self,
+        gifts: list[GiftMemory],
+        current_context: str,
+    ) -> GiftMemory:
+        """Select the most contextually relevant gift.
+
+        Scores all gifts based on keyword relevance and returns the
+        most relevant one. Falls back to random selection if no
+        clear winner.
+
+        Args:
+            gifts: List of eligible gifts.
+            current_context: Current conversation context.
+
+        Returns:
+            The most relevant gift.
+        """
+        if len(gifts) == 1:
+            return gifts[0]
+
+        context_keywords = self._extract_keywords(current_context)
+
+        if not context_keywords:
+            # No context keywords - select randomly
+            return random.choice(gifts)
+
+        # Score all gifts
+        scored_gifts = [
+            (gift, self._score_gift_relevance(gift, context_keywords))
+            for gift in gifts
+        ]
+
+        # Sort by relevance score descending
+        scored_gifts.sort(key=lambda x: x[1], reverse=True)
+
+        best_gift, best_score = scored_gifts[0]
+
+        if best_score > 0:
+            logger.info(
+                "selected_relevant_gift",
+                gift_id=str(best_gift.gift_id),
+                gift_title=best_gift.title,
+                relevance_score=best_score,
+                alternatives_count=len(gifts) - 1,
+            )
+            return best_gift
+
+        # No relevant matches - select randomly
+        return random.choice(gifts)
 
     def clear_session_tracking(self, session_id: UUID) -> None:
         """Clear tracking data for a session.

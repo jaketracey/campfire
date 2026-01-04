@@ -1,6 +1,6 @@
 /**
  * Billing Service
- * Business logic for subscriptions, usage tracking, and Stripe integration.
+ * Business logic for subscriptions, usage tracking, and Flowguard integration.
  */
 
 import { z } from 'zod';
@@ -29,8 +29,8 @@ import type { TransactionContext } from '../repositories/types.js';
 // ============================================================================
 
 export const CreateSubscriptionInputSchema = z.object({
-  stripeCustomerId: z.string().min(1),
-  stripeSubscriptionId: z.string().optional(),
+  flowguardCustomerId: z.string().min(1),
+  flowguardSubscriptionId: z.string().optional(),
   plan: z.enum(['free', 'starter', 'pro', 'enterprise']),
   status: z.enum(['trialing', 'active', 'past_due', 'canceled', 'unpaid', 'incomplete', 'incomplete_expired']).optional(),
   periodStart: z.date().optional(),
@@ -213,7 +213,7 @@ export class BillingService {
   }
 
   /**
-   * Create or update subscription from Stripe webhook
+   * Create or update subscription from Flowguard postback
    */
   async syncSubscription(
     userId: string,
@@ -230,7 +230,7 @@ export class BillingService {
     if (subscription) {
       // Update existing
       subscription = await this.billing.updateSubscription(subscription.id, {
-        stripe_subscription_id: validated.stripeSubscriptionId,
+        flowguard_subscription_id: validated.flowguardSubscriptionId,
         plan: validated.plan,
         status: validated.status,
         current_period_start: validated.periodStart,
@@ -241,8 +241,8 @@ export class BillingService {
       // Create new
       subscription = await this.billing.createSubscription({
         user_id: userId,
-        stripe_customer_id: validated.stripeCustomerId,
-        stripe_subscription_id: validated.stripeSubscriptionId ?? '',
+        flowguard_customer_id: validated.flowguardCustomerId,
+        flowguard_subscription_id: validated.flowguardSubscriptionId ?? '',
         plan: validated.plan,
         status: validated.status ?? 'active',
         current_period_start: validated.periodStart ?? new Date(),
@@ -356,42 +356,42 @@ export class BillingService {
   }
 
   /**
-   * Process a Stripe webhook event
+   * Process a Flowguard postback event
    */
-  async processWebhookEvent(
-    stripeEventId: string,
+  async processPostbackEvent(
+    flowguardEventId: string,
     eventType: string,
     payload: JSONObject,
     tx?: TransactionContext
   ): Promise<BillingEvent> {
     // Check if event already processed (idempotency)
-    const existing = await this.billing.findBillingEventByStripeId(stripeEventId, tx);
+    const existing = await this.billing.findBillingEventByFlowguardId(flowguardEventId, tx);
     if (existing) {
-      logger.debug({ stripeEventId }, 'Webhook event already processed');
+      logger.debug({ flowguardEventId }, 'Postback event already processed');
       return existing;
     }
 
     // Create billing event record
     const billingEvent = await this.billing.createBillingEvent({
-      stripe_event_id: stripeEventId,
-      stripe_event_type: eventType,
+      flowguard_event_id: flowguardEventId,
+      flowguard_event_type: eventType,
       payload,
     }, tx);
 
     try {
       // Process based on event type
-      await this.handleWebhookEvent(eventType, payload, tx);
+      await this.handlePostbackEvent(eventType, payload, tx);
 
       // Mark as processed
       await this.billing.markBillingEventProcessed(billingEvent.id, null, tx);
 
-      logger.info({ stripeEventId, eventType }, 'Webhook event processed');
+      logger.info({ flowguardEventId, eventType }, 'Postback event processed');
     } catch (error) {
       // Mark as failed
       const errorMessage = error instanceof Error ? error.message : 'Unknown error';
       await this.billing.markBillingEventProcessed(billingEvent.id, errorMessage, tx);
 
-      logger.error({ stripeEventId, eventType, error: errorMessage }, 'Webhook event processing failed');
+      logger.error({ flowguardEventId, eventType, error: errorMessage }, 'Postback event processing failed');
       throw error;
     }
 
@@ -399,59 +399,56 @@ export class BillingService {
   }
 
   /**
-   * Handle specific webhook event types
+   * Handle specific Flowguard postback event types
    */
-  private async handleWebhookEvent(
+  private async handlePostbackEvent(
     eventType: string,
     payload: JSONObject,
     tx?: TransactionContext
   ): Promise<void> {
-    const data = payload.data as Record<string, unknown> | undefined;
-    const object = data?.object as Record<string, unknown> | undefined;
-
     switch (eventType) {
-      case 'customer.subscription.created':
-      case 'customer.subscription.updated': {
-        // Extract subscription data and sync
-        const customerId = object?.customer as string;
-        const subscriptionId = object?.id as string;
-        const status = object?.status as SubscriptionStatus;
-        const planId = (object?.items as Record<string, unknown>)?.data as Array<Record<string, unknown>>;
+      case 'subscription:initial': {
+        // New subscription created and initial payment successful
+        const customerId = payload.custom1 as string; // userId stored in custom1
+        const subscriptionId = payload.subscriptionId as string;
         // ... additional processing
         break;
       }
 
-      case 'customer.subscription.deleted': {
-        // Handle subscription deletion
+      case 'subscription:rebill': {
+        // Recurring payment successful - reset usage counters
+        const customerId = payload.custom1 as string;
+        // Find subscription by Flowguard customer and reset usage
         break;
       }
 
-      case 'invoice.paid': {
-        // Reset usage counters for new period
-        const customerId = object?.customer as string;
-        // Find subscription by stripe customer and reset usage
-        break;
-      }
-
-      case 'invoice.payment_failed': {
-        // Handle payment failure
-        const customerId = object?.customer as string;
+      case 'subscription:cancel':
+      case 'subscription:expire': {
+        // Handle subscription cancellation/expiration
+        const subscriptionId = payload.subscriptionId as string;
         // Update subscription status
         break;
       }
 
-      case 'checkout.session.completed': {
-        // Handle successful checkout
+      case 'purchase:completed': {
+        // Handle successful one-time purchase
+        const transactionId = payload.transactionId as string;
+        break;
+      }
+
+      case 'credit': {
+        // Handle refund/credit
+        const transactionId = payload.transactionId as string;
         break;
       }
 
       default:
-        logger.debug({ eventType }, 'Unhandled webhook event type');
+        logger.debug({ eventType }, 'Unhandled postback event type');
     }
   }
 
   /**
-   * Retry failed webhook events (background job)
+   * Retry failed postback events (background job)
    */
   async retryFailedEvents(tx?: TransactionContext): Promise<number> {
     const failedEvents = await this.billing.getFailedBillingEvents(10, tx);
@@ -459,7 +456,7 @@ export class BillingService {
 
     for (const event of failedEvents) {
       try {
-        await this.handleWebhookEvent(event.stripe_event_type, event.payload, tx);
+        await this.handlePostbackEvent(event.flowguard_event_type, event.payload, tx);
         await this.billing.markBillingEventProcessed(event.id, null, tx);
         successCount++;
       } catch (error) {
@@ -470,37 +467,38 @@ export class BillingService {
     }
 
     if (successCount > 0) {
-      logger.info({ successCount, totalAttempted: failedEvents.length }, 'Retried failed webhook events');
+      logger.info({ successCount, totalAttempted: failedEvents.length }, 'Retried failed postback events');
     }
 
     return successCount;
   }
 
   /**
-   * Sync unsynced usage records to Stripe (background job)
+   * Sync unsynced usage records to Flowguard (background job)
+   * Note: Flowguard doesn't have a usage record API, so this is a placeholder
+   * for potential future integration or internal tracking.
    */
-  async syncUsageToStripe(tx?: TransactionContext): Promise<number> {
+  async syncUsageToFlowguard(tx?: TransactionContext): Promise<number> {
     const unsyncedRecords = await this.billing.getUnsyncedUsageRecords(100, tx);
     let syncedCount = 0;
 
     for (const record of unsyncedRecords) {
       try {
-        // In production, this would call Stripe's usage record API
-        // const stripeUsageRecordId = await stripe.subscriptionItems.createUsageRecord(...)
-        const stripeUsageRecordId = `sur_${nanoid()}`; // Placeholder
+        // Flowguard doesn't have usage metering API, mark as synced for internal tracking
+        const flowguardUsageRecordId = `fg_${nanoid()}`;
 
-        await this.billing.markUsageSynced(record.id, stripeUsageRecordId, tx);
+        await this.billing.markUsageSynced(record.id, flowguardUsageRecordId, tx);
         syncedCount++;
       } catch (error) {
         logger.error(
           { recordId: record.id, error: error instanceof Error ? error.message : 'Unknown' },
-          'Failed to sync usage to Stripe'
+          'Failed to mark usage as synced'
         );
       }
     }
 
     if (syncedCount > 0) {
-      logger.info({ syncedCount }, 'Synced usage records to Stripe');
+      logger.info({ syncedCount }, 'Marked usage records as synced');
     }
 
     return syncedCount;

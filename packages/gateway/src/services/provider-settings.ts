@@ -421,6 +421,35 @@ export class ProviderSettingsService {
     return this.repo.listModels(filters, tx);
   }
 
+  /**
+   * Discover available models from a provider's API
+   */
+  async discoverProviderModels(providerId: UUID): Promise<{
+    success: boolean;
+    models: Array<{
+      modelId: string;
+      displayName: string;
+      contextWindow?: number;
+      maxOutputTokens?: number;
+      inputCostPerMillion?: number;
+      outputCostPerMillion?: number;
+      capabilities?: string[];
+    }>;
+    error?: string;
+  }> {
+    const { discoverModels } = await import('../utils/provider-model-discovery.js');
+
+    const provider = await this.repo.getProviderById(providerId);
+    if (!provider) {
+      return { success: false, models: [], error: 'Provider not found' };
+    }
+
+    const apiKey = await this.repo.getProviderApiKey(providerId, PROVIDER_KEY_ENCRYPTION_SECRET);
+    const result = await discoverModels(provider.provider, apiKey, provider.api_base_url);
+
+    return result;
+  }
+
   // ===========================================================================
   // Routing Rules
   // ===========================================================================

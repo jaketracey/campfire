@@ -22,6 +22,7 @@ async function bootstrap() {
   const { ImageRenditionWorker } = await import('./image/worker.js');
   const { VideoGenerationWorker } = await import('./video/worker.js');
   const { GiftGenerationWorker } = await import('./gift/worker.js');
+  const { AdSpendSyncWorker, LtvCalculationWorker, createAdSpendSyncQueue, createLtvCalculationQueue } = await import('./ads/index.js');
   const { createDbClient } = await import('./db/client.js');
   const { createS3Client } = await import('./storage/s3.js');
 
@@ -125,6 +126,23 @@ async function bootstrap() {
     concurrency: 2, // LLM + imagegen, moderate concurrency
   });
 
+  // Ad spend sync worker - syncs spend data from Google/Facebook Ads
+  const adSpendSyncWorker = new AdSpendSyncWorker({
+    connection,
+    db,
+    logger: logger.child({ worker: 'ad-spend-sync' }),
+    concurrency: 2,
+  });
+
+  // LTV calculation worker - calculates user lifetime value
+  const ltvCalculationWorker = new LtvCalculationWorker({
+    connection,
+    db,
+    logger: logger.child({ worker: 'ltv-calculation' }),
+    concurrency: 3,
+    batchSize: 100,
+  });
+
   // Start all workers
   await Promise.all([
     vaultWorker.start(),
@@ -136,9 +154,14 @@ async function bootstrap() {
     imageRenditionWorker.start(),
     videoGenerationWorker.start(),
     giftGenerationWorker.start(),
+    adSpendSyncWorker.start(),
+    ltvCalculationWorker.start(),
   ].filter(Boolean));
 
   logger.info('All projection workers started successfully');
+
+  // Set up scheduled jobs for ad spend sync and LTV calculation
+  await setupScheduledJobs(connection, logger);
 
   // Graceful shutdown
   const shutdown = async () => {
@@ -153,10 +176,60 @@ async function bootstrap() {
       imageRenditionWorker.stop(),
       videoGenerationWorker.stop(),
       giftGenerationWorker.stop(),
+      adSpendSyncWorker.stop(),
+      ltvCalculationWorker.stop(),
     ].filter(Boolean));
     await connection.quit();
     process.exit(0);
   };
+
+  /**
+   * Set up scheduled jobs using BullMQ repeatable jobs.
+   * - Ad Spend Sync: Daily at 6 AM UTC
+   * - LTV Calculation: Daily at 7 AM UTC
+   */
+  async function setupScheduledJobs(redisConnection: typeof connection, log: typeof logger) {
+    const adSpendQueue = createAdSpendSyncQueue(redisConnection);
+    const ltvQueue = createLtvCalculationQueue(redisConnection);
+
+    // Schedule daily ad spend sync at 6 AM UTC
+    // Syncs yesterday's data from all active ad accounts
+    await adSpendQueue.upsertJobScheduler(
+      'daily-ad-spend-sync',
+      {
+        pattern: '0 6 * * *', // 6:00 AM UTC daily
+        tz: 'UTC',
+      },
+      {
+        name: 'daily-ad-spend-sync',
+        data: {}, // Empty data = sync all active accounts for yesterday
+        opts: {
+          attempts: 3,
+          backoff: { type: 'exponential', delay: 60000 },
+        },
+      }
+    );
+    log.info('Scheduled daily ad spend sync at 6 AM UTC');
+
+    // Schedule daily LTV calculation at 7 AM UTC
+    // Recalculates LTV for all users with payments
+    await ltvQueue.upsertJobScheduler(
+      'daily-ltv-calculation',
+      {
+        pattern: '0 7 * * *', // 7:00 AM UTC daily
+        tz: 'UTC',
+      },
+      {
+        name: 'daily-ltv-calculation',
+        data: {}, // Empty data = calculate for all users
+        opts: {
+          attempts: 3,
+          backoff: { type: 'exponential', delay: 30000 },
+        },
+      }
+    );
+    log.info('Scheduled daily LTV calculation at 7 AM UTC');
+  }
 
   process.on('SIGTERM', shutdown);
   process.on('SIGINT', shutdown);

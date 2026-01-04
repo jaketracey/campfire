@@ -125,12 +125,12 @@ export type AnalyzePersonalityResponse = z.infer<typeof AnalyzePersonalityRespon
  * Default welcome messages when no profile exists
  */
 export const DEFAULT_WELCOME_MESSAGES: ((name: string) => string)[] = [
-  (name) => `Welcome back, ${name}. Your companions are waiting.`,
-  (name) => `Good to see you, ${name}. The fire burns bright tonight.`,
-  (name) => `${name}, your sanctuary awaits.`,
-  (name) => `Welcome, ${name}. What stories shall we share today?`,
-  (name) => `The campfire glows for you, ${name}.`,
-  (name) => `${name}, step into the warmth. Your companions remember you.`,
+  (name) => `${name}, your companions have been thinking of you.`,
+  (name) => `Ready to spark something new, ${name}?`,
+  (name) => `${name}, the spark is waiting for you.`,
+  (name) => `Let's pick up where we left off, ${name}.`,
+  (name) => `${name}, your companions missed you.`,
+  (name) => `Good to see you, ${name}.`,
 ];
 
 /**
@@ -148,23 +148,23 @@ export function getRandomDefaultWelcome(name: string): string {
 export const GREETING_TEMPLATES: Record<GreetingStyle, string[]> = {
   warm: [
     'So lovely to see you again, {name}.',
-    'Welcome back, dear {name}.',
-    '{name}, it warms our hearts to see you.',
+    '{name}, we missed you.',
+    '{name}, your spark never fades.',
   ],
   playful: [
-    'Hey there, {name}! Ready for some fun?',
-    'Look who\'s back! Hey {name}!',
-    '{name}! The party can start now!',
+    '{name}, ready to have some fun?',
+    'Look who\'s back! Things just got interesting.',
+    '{name}! We\'ve been waiting for you.',
   ],
   formal: [
-    'Good evening, {name}. Welcome back.',
-    'Welcome, {name}. Your session awaits.',
-    'Greetings, {name}. We\'ve been expecting you.',
+    'Good to see you, {name}.',
+    '{name}, your companions await.',
+    '{name}, we\'ve been expecting you.',
   ],
   friendly: [
-    'Hey {name}! Great to see you.',
-    'Welcome back, {name}!',
-    '{name}, glad you\'re here!',
+    'Great to see you, {name}.',
+    '{name}, glad you\'re back!',
+    '{name}, your companions are ready.',
   ],
 };
 
@@ -189,7 +189,7 @@ export function buildPersonalizedWelcome(
   if (companionName) {
     const companionMessages = [
       `${companionName} has been thinking of you.`,
-      `${companionName} is eager to continue your conversation.`,
+      `${companionName} is excited to see you.`,
       `${companionName} remembers where you left off.`,
     ];
     const companionMsg = companionMessages[Math.floor(Math.random() * companionMessages.length)];

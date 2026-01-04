@@ -305,6 +305,32 @@ export async function adminProvidersRoutes(app: FastifyInstance): Promise<void> 
   });
 
   /**
+   * GET /admin/providers/:providerId/discover-models - Discover available models from provider API
+   */
+  app.get('/:providerId/discover-models', async (request: FastifyRequest, reply: FastifyReply) => {
+    const paramsResult = ProviderIdParamsSchema.safeParse(request.params);
+    if (!paramsResult.success) {
+      return reply.status(400).send({
+        error: 'Validation Error',
+        message: 'Invalid provider ID',
+        details: paramsResult.error.issues,
+      });
+    }
+
+    const result = await service.discoverProviderModels(paramsResult.data.providerId);
+
+    logger.info(
+      { providerId: paramsResult.data.providerId, modelCount: result.models.length, success: result.success, adminUserId: request.user!.userId },
+      'Provider models discovered via admin'
+    );
+
+    return reply.send({
+      success: true,
+      data: result,
+    });
+  });
+
+  /**
    * POST /admin/providers/:providerId/test - Test provider connection
    */
   app.post('/:providerId/test', async (request: FastifyRequest, reply: FastifyReply) => {

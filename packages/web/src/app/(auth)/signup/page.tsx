@@ -1,7 +1,8 @@
 'use client';
 
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect, useMemo } from 'react';
 import Link from 'next/link';
+import { useSearchParams } from 'next/navigation';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
@@ -44,6 +45,11 @@ const signupSchema = z
 
 type SignupFormData = z.infer<typeof signupSchema>;
 
+// UTM parameters to capture
+const UTM_PARAMS = ['utm_source', 'utm_medium', 'utm_campaign', 'utm_term', 'utm_content', 'gclid', 'fbclid'] as const;
+type UtmParamKey = typeof UTM_PARAMS[number];
+type UtmParams = Partial<Record<UtmParamKey, string>>;
+
 const passwordRequirements = [
   { regex: /.{8,}/, label: 'At least 8 characters' },
   { regex: /[A-Z]/, label: 'One uppercase letter' },
@@ -54,6 +60,7 @@ const passwordRequirements = [
 export default function SignupPage() {
   const { toast } = useToast();
   const { signup, loginWithGoogle, isLoading: authLoading } = useAuth();
+  const searchParams = useSearchParams();
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -61,11 +68,48 @@ export default function SignupPage() {
 
   const isLoading = authLoading || isSubmitting || isGoogleLoading;
 
+  // Extract UTM parameters from URL
+  const utmParams = useMemo<UtmParams>(() => {
+    const params: UtmParams = {};
+    for (const key of UTM_PARAMS) {
+      const value = searchParams.get(key);
+      if (value) {
+        params[key] = value;
+      }
+    }
+    return params;
+  }, [searchParams]);
+
+  // Store UTM params in localStorage as backup
+  useEffect(() => {
+    if (Object.keys(utmParams).length > 0) {
+      localStorage.setItem('utm_params', JSON.stringify(utmParams));
+    }
+  }, [utmParams]);
+
+  // Helper to get UTM params (from current state or localStorage backup)
+  const getUtmParams = useCallback((): UtmParams => {
+    if (Object.keys(utmParams).length > 0) {
+      return utmParams;
+    }
+    // Try localStorage backup
+    try {
+      const stored = localStorage.getItem('utm_params');
+      if (stored) {
+        return JSON.parse(stored) as UtmParams;
+      }
+    } catch {
+      // Ignore parse errors
+    }
+    return {};
+  }, [utmParams]);
+
   const handleGoogleSuccess = useCallback(
     async (idToken: string) => {
       setIsGoogleLoading(true);
       try {
-        await loginWithGoogle({ idToken }, true);
+        const params = getUtmParams();
+        await loginWithGoogle({ idToken, utmParams: params }, true);
         toast({
           title: 'Account created!',
           description: 'Welcome to Ignite.',
@@ -82,7 +126,7 @@ export default function SignupPage() {
         setIsGoogleLoading(false);
       }
     },
-    [loginWithGoogle, toast]
+    [loginWithGoogle, toast, getUtmParams]
   );
 
   const handleGoogleError = useCallback(
@@ -115,10 +159,12 @@ export default function SignupPage() {
   const onSubmit = async (data: SignupFormData) => {
     setIsSubmitting(true);
     try {
+      const params = getUtmParams();
       await signup({
         email: data.email,
         password: data.password,
         displayName: data.name,
+        utmParams: params,
       });
 
       toast({

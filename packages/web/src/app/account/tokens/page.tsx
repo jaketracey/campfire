@@ -4,18 +4,21 @@ import { useState, useEffect } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import type { Route } from 'next';
-import { Coins, ArrowLeft, Sparkles, Check, Loader2 } from 'lucide-react';
+import { Coins, ArrowLeft, Sparkles, Check, Loader2, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { AnimatedFlame } from '@/components/ui/animated-flame';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { useToast } from '@/hooks/use-toast';
 import { useRequireAuth } from '@/hooks/use-auth';
+import { FlowguardPayment } from '@/components/payment/flowguard-payment';
 import {
   getTokenBalance,
   getTokenBundles,
-  createTokenCheckout,
+  createTokenSession,
   type TokenBalance,
   type TokenBundle,
+  type PaymentSessionResponse,
 } from '@/lib/api/tokens';
 
 export default function TokensPage() {
@@ -28,8 +31,10 @@ export default function TokensPage() {
   const [bundles, setBundles] = useState<TokenBundle[]>([]);
   const [loading, setLoading] = useState(true);
   const [purchasingId, setPurchasingId] = useState<string | null>(null);
+  const [paymentSession, setPaymentSession] = useState<PaymentSessionResponse | null>(null);
+  const [showPaymentDialog, setShowPaymentDialog] = useState(false);
 
-  // Check for success query param
+  // Check for success query param (for redirect-based flows)
   useEffect(() => {
     if (searchParams.get('success') === 'true') {
       toast({
@@ -69,22 +74,57 @@ export default function TokensPage() {
     fetchData();
   }, [authLoading, isAuthenticated, toast]);
 
+  // Refresh balance after changes
+  const refreshBalance = async () => {
+    try {
+      const balanceData = await getTokenBalance();
+      setBalance(balanceData);
+    } catch (err) {
+      console.error('Failed to refresh balance:', err);
+    }
+  };
+
   const handlePurchase = async (bundle: TokenBundle) => {
     setPurchasingId(bundle.id);
     try {
       const successUrl = `${window.location.origin}/account/tokens?success=true`;
       const cancelUrl = `${window.location.origin}/account/tokens`;
-      const { url } = await createTokenCheckout(bundle.id, successUrl, cancelUrl);
-      window.location.href = url;
+      const session = await createTokenSession(bundle.id, successUrl, cancelUrl);
+      setPaymentSession(session);
+      setShowPaymentDialog(true);
     } catch (err) {
-      console.error('Failed to create checkout:', err);
+      console.error('Failed to create payment session:', err);
       toast({
         title: 'Error',
         description: 'Failed to start checkout. Please try again.',
         variant: 'destructive',
       });
+    } finally {
       setPurchasingId(null);
     }
+  };
+
+  const handlePaymentSuccess = async () => {
+    setShowPaymentDialog(false);
+    setPaymentSession(null);
+    toast({
+      title: 'Purchase successful!',
+      description: 'Your tokens have been added to your account.',
+    });
+    await refreshBalance();
+  };
+
+  const handlePaymentError = (error: string) => {
+    toast({
+      title: 'Payment failed',
+      description: error,
+      variant: 'destructive',
+    });
+  };
+
+  const handlePaymentCancel = () => {
+    setShowPaymentDialog(false);
+    setPaymentSession(null);
   };
 
   const formatPrice = (cents: number) => {
@@ -261,6 +301,28 @@ export default function TokensPage() {
           </>
         )}
       </main>
+
+      {/* Payment Dialog */}
+      <Dialog open={showPaymentDialog} onOpenChange={setShowPaymentDialog}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Coins className="h-5 w-5 text-amber-500" />
+              Purchase Tokens
+            </DialogTitle>
+          </DialogHeader>
+          {paymentSession && (
+            <FlowguardPayment
+              sessionId={paymentSession.sessionId}
+              amount={paymentSession.bundle.priceCents}
+              description={`${paymentSession.bundle.name} - ${paymentSession.bundle.totalTokens.toLocaleString()} tokens`}
+              onSuccess={handlePaymentSuccess}
+              onError={handlePaymentError}
+              onCancel={handlePaymentCancel}
+            />
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

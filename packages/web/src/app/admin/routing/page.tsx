@@ -15,6 +15,7 @@ import {
 import {
   listRoutingRules,
   listModels,
+  listProviders,
   createRoutingRule,
   updateRoutingRule,
   deleteRoutingRule,
@@ -25,10 +26,12 @@ import {
   type UseCaseType,
   type RoutingRule,
   type ModelWithProvider,
+  type Provider,
   type CreateRoutingRuleInput,
   type UpdateRoutingRuleInput,
   type ValidationResult,
 } from '@/lib/api/providers';
+import { ModelSelector } from '@/components/admin/model-selector';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -69,6 +72,7 @@ export default function RoutingPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [rules, setRules] = useState<RoutingRule[]>([]);
   const [models, setModels] = useState<ModelWithProvider[]>([]);
+  const [providers, setProviders] = useState<Provider[]>([]);
   const [activeTab, setActiveTab] = useState<UseCaseType>('chat_simple');
   const [validation, setValidation] = useState<ValidationResult | null>(null);
   const [isSyncing, setIsSyncing] = useState(false);
@@ -98,13 +102,14 @@ export default function RoutingPage() {
 
   const fetchData = useCallback(async () => {
     try {
-      const [rulesRes, modelsRes] = await Promise.all([
+      const [rulesRes, modelsRes, providersRes] = await Promise.all([
         listRoutingRules(),
         listModels({ isEnabled: true }),
+        listProviders({ isEnabled: true }),
       ]);
-      console.log('Models fetched:', modelsRes.models.length, modelsRes.models);
       setRules(rulesRes.rules);
       setModels(modelsRes.models);
+      setProviders(providersRes.providers);
     } catch (error) {
       console.error('Failed to fetch routing data:', error);
     } finally {
@@ -260,10 +265,6 @@ export default function RoutingPage() {
   }
 
   const enabledModels = models.filter((m) => m.isEnabled && m.providerIsEnabled);
-  console.log('Enabled models after filter:', enabledModels.length, 'from', models.length, 'total');
-  if (models.length > 0 && enabledModels.length === 0) {
-    console.log('Sample model:', models[0]);
-  }
   const useCasesWithRules = new Set(rules.map((r) => r.useCase));
   const unconfiguredUseCases = USE_CASE_TYPES.filter((uc) => !useCasesWithRules.has(uc));
 
@@ -530,31 +531,14 @@ export default function RoutingPage() {
           </DialogHeader>
           <div className="space-y-4 py-4">
             {!editingRule && (
-              <div className="space-y-2">
-                <Label>Model</Label>
-                <Select
-                  value={ruleForm.modelConfigId}
-                  onValueChange={(v) => setRuleForm({ ...ruleForm, modelConfigId: v })}
-                >
-                  <SelectTrigger className="bg-white/5 border-white/10">
-                    <SelectValue placeholder="Select a model" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {enabledModels.length === 0 ? (
-                      <div className="p-2 text-sm text-gray-500">No models available. Configure models in Providers first.</div>
-                    ) : (
-                      enabledModels.map((model) => (
-                        <SelectItem key={model.id} value={model.id}>
-                          <div className="flex items-center gap-2">
-                            <span>{model.displayName}</span>
-                            <span className="text-xs text-gray-500">({model.provider})</span>
-                          </div>
-                        </SelectItem>
-                      ))
-                    )}
-                  </SelectContent>
-                </Select>
-              </div>
+              <ModelSelector
+                providers={providers}
+                models={enabledModels}
+                value={ruleForm.modelConfigId}
+                onChange={(v) => setRuleForm({ ...ruleForm, modelConfigId: v })}
+                onModelAdded={fetchData}
+                isLoading={isLoading}
+              />
             )}
 
             <div className="space-y-2">

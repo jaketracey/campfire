@@ -359,6 +359,19 @@ export type {
   SessionSearchResponse,
 } from './session-search.js';
 
+// Ads repository
+import { getAdsRepository as _getAdsRepository } from './ads.js';
+export {
+  AdsRepository,
+  getAdsRepository,
+} from './ads.js';
+export type {
+  AdAccountListFilters,
+  CampaignListFilters,
+  SpendListFilters,
+  ConversionListFilters as AdConversionListFilters,
+} from './ads.js';
+
 /**
  * Initialize all repositories
  * Call this at application startup to ensure singleton instances are created
@@ -387,6 +400,7 @@ export function initializeRepositories(): void {
   _getAnalyticsRepository();
   _getEngagementRepository();
   _getSessionSearchRepository();
+  _getAdsRepository();
 }
 
 /**
@@ -418,5 +432,6 @@ export function getRepositories() {
     analytics: _getAnalyticsRepository(),
     engagement: _getEngagementRepository(),
     sessionSearch: _getSessionSearchRepository(),
+    ads: _getAdsRepository(),
   };
 }

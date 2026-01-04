@@ -126,6 +126,11 @@ export class KnowledgeGraphProjectionWorker {
             mention_count = mention_count + 1
         WHERE id = ${existingEdge.id}
       `;
+
+      // Reinforce the source memory when entity is mentioned again
+      // This helps important/recurring topics stay prominent in memory
+      await this.reinforceSourceMemory(existingEdge.id as string, 0.05);
+
       this.config.logger.info(
         { userId, edgeId: existingEdge.id, existingStatus: existingEdge.status },
         'Updated existing KG edge'
@@ -199,6 +204,49 @@ export class KnowledgeGraphProjectionWorker {
       { userId, memoryId, edgesRemoved: edges.length },
       'KG edges cascade deleted from memory'
     );
+  }
+
+  /**
+   * Reinforce the source memory when an entity is mentioned again.
+   *
+   * When the same relationship is detected again in conversation, this boosts
+   * the importance of the original memory that created the edge. This helps
+   * recurring topics and important relationships stay prominent.
+   *
+   * @param edgeId - The edge that was just updated
+   * @param boost - Amount to increase importance (default 0.05)
+   */
+  private async reinforceSourceMemory(edgeId: string, boost: number = 0.05): Promise<void> {
+    try {
+      const result = await this.config.db.sql`
+        UPDATE memories m
+        SET importance = LEAST(1.0, importance + ${boost}),
+            updated_at = NOW()
+        FROM kg_edges ke
+        WHERE ke.id = ${edgeId}
+          AND ke.source_event_id IS NOT NULL
+          AND m.source_event_id = ke.source_event_id
+        RETURNING m.id, m.importance
+      `;
+
+      if (result.length > 0) {
+        this.config.logger.debug(
+          {
+            memoryId: result[0].id,
+            edgeId,
+            boost,
+            newImportance: result[0].importance,
+          },
+          'Reinforced memory on entity repetition'
+        );
+      }
+    } catch (err) {
+      // Non-critical operation - log warning but don't fail the job
+      this.config.logger.warn(
+        { err, edgeId, boost },
+        'Failed to reinforce source memory'
+      );
+    }
   }
 
   private async ensureEntityWithData(

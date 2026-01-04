@@ -9,6 +9,7 @@ import {
   getSessionsRepository,
   getCompanionsRepository,
   getBillingRepository,
+  getMemoriesRepository,
   type SessionWithStats,
   type SessionListFilters,
   type PaginatedResult,
@@ -90,10 +91,15 @@ export class SessionsService {
   private sessions = getSessionsRepository();
   private companions = getCompanionsRepository();
   private billing = getBillingRepository();
+  private memories = getMemoriesRepository();
   private events = getEventsService();
 
   // Session timeout: 30 minutes of inactivity
   private readonly SESSION_TIMEOUT_MS = 30 * 60 * 1000;
+
+  // Memory decay tracking: rate limit to once per 24 hours per user-companion pair
+  private readonly DECAY_COOLDOWN_MS = 24 * 60 * 60 * 1000;
+  private readonly decayLastRun = new Map<string, number>();
 
   /**
    * Start a new session
@@ -149,8 +155,48 @@ export class SessionsService {
       metadata: validated.metadata,
     });
 
+    // Trigger memory decay asynchronously (non-blocking)
+    this.triggerMemoryDecayIfNeeded(userId, validated.companionId).catch(err => {
+      logger.warn({ err, userId, companionId: validated.companionId }, 'Memory decay failed');
+    });
+
     logger.info({ userId, sessionId: session.id, companionId: validated.companionId }, 'Session started');
     return session;
+  }
+
+  /**
+   * Trigger memory decay if cooldown period has passed
+   * Rate limited to once per 24 hours per user-companion pair
+   */
+  private async triggerMemoryDecayIfNeeded(userId: string, companionId: string): Promise<void> {
+    const pairKey = `${userId}:${companionId}`;
+    const lastRun = this.decayLastRun.get(pairKey);
+    const now = Date.now();
+
+    // Check if cooldown has passed
+    if (lastRun && now - lastRun < this.DECAY_COOLDOWN_MS) {
+      return; // Still in cooldown period
+    }
+
+    // Apply decay (default 1% decay rate)
+    const decayedCount = await this.memories.applyDecay(userId, companionId, 0.01);
+
+    // Update tracking
+    this.decayLastRun.set(pairKey, now);
+
+    // Clean up old entries to prevent memory leaks (keep last 1000)
+    if (this.decayLastRun.size > 1000) {
+      const entries = Array.from(this.decayLastRun.entries())
+        .sort((a, b) => a[1] - b[1]);
+      const toRemove = entries.slice(0, entries.length - 1000);
+      for (const [key] of toRemove) {
+        this.decayLastRun.delete(key);
+      }
+    }
+
+    if (decayedCount > 0) {
+      logger.info({ userId, companionId, decayedCount }, 'Applied memory decay on session start');
+    }
   }
 
   /**

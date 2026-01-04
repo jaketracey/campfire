@@ -41,6 +41,7 @@
     "@tanstack/react-query": "^5.62.7",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
+    "cmdk": "^1.1.1",
     "date-fns": "^4.1.0",
     "framer-motion": "^11.15.0",
     "gsap": "^3.14.2",

@@ -32,10 +32,21 @@ export interface LoginCredentials {
   password: string;
 }
 
+export interface UtmParams {
+  utm_source?: string;
+  utm_medium?: string;
+  utm_campaign?: string;
+  utm_term?: string;
+  utm_content?: string;
+  gclid?: string;
+  fbclid?: string;
+}
+
 export interface SignupCredentials {
   email: string;
   password: string;
   displayName?: string;
+  utmParams?: UtmParams;
 }
 
 export interface LoginResponse {
@@ -105,6 +116,7 @@ export type AuthErrorCode =
 
 export interface GoogleAuthCredentials {
   idToken: string;
+  utmParams?: UtmParams;
 }
 
 export interface GoogleAuthResponse {

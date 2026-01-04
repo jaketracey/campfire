@@ -287,6 +287,37 @@ export {
   getEngagementService,
 } from './engagement.js';
 
+// Ad Conversions service
+import { getAdConversionsService as _getAdConversionsService } from './ad-conversions.js';
+export {
+  AdConversionsService,
+  getAdConversionsService,
+} from './ad-conversions.js';
+export type {
+  ConversionResult,
+  LtvCalculation,
+} from './ad-conversions.js';
+
+// Google Ads service
+import { getGoogleAdsService as _getGoogleAdsService } from './google-ads.js';
+export {
+  GoogleAdsService,
+  getGoogleAdsService,
+} from './google-ads.js';
+export type {
+  SyncResult as GoogleAdsSyncResult,
+} from './google-ads.js';
+
+// Facebook Ads service
+import { getFacebookAdsService as _getFacebookAdsService } from './facebook-ads.js';
+export {
+  FacebookAdsService,
+  getFacebookAdsService,
+} from './facebook-ads.js';
+export type {
+  SyncResult as FacebookAdsSyncResult,
+} from './facebook-ads.js';
+
 /**
  * Initialize all services
  * Call this at application startup to ensure singleton instances are created
@@ -308,6 +339,9 @@ export function initializeServices(): void {
   _getAffiliatesService();
   _getAnalyticsService();
   _getEngagementService();
+  _getAdConversionsService();
+  _getGoogleAdsService();
+  _getFacebookAdsService();
 }
 
 /**
@@ -332,6 +366,9 @@ export function getServices() {
     affiliates: _getAffiliatesService(),
     analytics: _getAnalyticsService(),
     engagement: _getEngagementService(),
+    adConversions: _getAdConversionsService(),
+    googleAds: _getGoogleAdsService(),
+    facebookAds: _getFacebookAdsService(),
   };
 }
 
@@ -355,4 +392,7 @@ export interface ServiceContext {
   affiliates: ReturnType<typeof _getAffiliatesService>;
   analytics: ReturnType<typeof _getAnalyticsService>;
   engagement: ReturnType<typeof _getEngagementService>;
+  adConversions: ReturnType<typeof _getAdConversionsService>;
+  googleAds: ReturnType<typeof _getGoogleAdsService>;
+  facebookAds: ReturnType<typeof _getFacebookAdsService>;
 }

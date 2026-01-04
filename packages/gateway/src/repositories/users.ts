@@ -25,6 +25,19 @@ import type {
 export type OAuthProvider = 'google' | 'github' | 'apple';
 
 /**
+ * UTM tracking parameters
+ */
+export interface UtmParams {
+  utm_source?: string;
+  utm_medium?: string;
+  utm_campaign?: string;
+  utm_term?: string;
+  utm_content?: string;
+  gclid?: string;
+  fbclid?: string;
+}
+
+/**
  * User OAuth account record
  */
 export interface UserOAuthAccount {
@@ -334,6 +347,71 @@ export class UsersRepository {
     return {
       affiliate_id: result[0]['affiliate_id'] as string | null,
       affiliate_click_id: result[0]['affiliate_click_id'] as string | null,
+    };
+  }
+
+  /**
+   * Update user UTM tracking data
+   */
+  async updateUserUtmData(
+    id: string,
+    data: UtmParams,
+    tx?: TransactionContext
+  ): Promise<void> {
+    const db = this.getSql(tx);
+
+    await db`
+      UPDATE users
+      SET
+        utm_source = COALESCE(${data.utm_source ?? null}, utm_source),
+        utm_medium = COALESCE(${data.utm_medium ?? null}, utm_medium),
+        utm_campaign = COALESCE(${data.utm_campaign ?? null}, utm_campaign),
+        utm_term = COALESCE(${data.utm_term ?? null}, utm_term),
+        utm_content = COALESCE(${data.utm_content ?? null}, utm_content),
+        ad_click_id = COALESCE(${data.gclid ?? data.fbclid ?? null}, ad_click_id),
+        ad_click_platform = COALESCE(${data.gclid ? 'google_ads' : data.fbclid ? 'facebook_ads' : null}, ad_click_platform)
+      WHERE id = ${id}
+    `;
+  }
+
+  /**
+   * Get user UTM data
+   */
+  async getUserUtmData(
+    id: string,
+    tx?: TransactionContext
+  ): Promise<UtmParams | null> {
+    const db = this.getSql(tx);
+
+    const result = await db`
+      SELECT
+        utm_source,
+        utm_medium,
+        utm_campaign,
+        utm_term,
+        utm_content,
+        ad_click_id,
+        ad_click_platform
+      FROM users
+      WHERE id = ${id}
+    `;
+
+    if (!result[0]) {
+      return null;
+    }
+
+    const row = result[0];
+    const platform = row['ad_click_platform'] as string | null;
+    const clickId = row['ad_click_id'] as string | null;
+
+    return {
+      utm_source: row['utm_source'] as string | undefined,
+      utm_medium: row['utm_medium'] as string | undefined,
+      utm_campaign: row['utm_campaign'] as string | undefined,
+      utm_term: row['utm_term'] as string | undefined,
+      utm_content: row['utm_content'] as string | undefined,
+      gclid: platform === 'google_ads' ? clickId ?? undefined : undefined,
+      fbclid: platform === 'facebook_ads' ? clickId ?? undefined : undefined,
     };
   }
 

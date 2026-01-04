@@ -207,7 +207,9 @@ export default function DashboardPage() {
       setSessions(mappedSessions);
 
       // Generate personalized welcome message
-      const userName = user.email?.split('@')[0] || 'friend';
+      // Prefer displayName (first name only), fallback to email prefix
+      const fullName = user.displayName || user.email?.split('@')[0] || 'friend';
+      const userName = fullName.split(' ')[0]; // Just the first name
       if (personalityProfile) {
         // Get the most recent companion for companion-aware message
         const recentCompanion = mappedSessions[0]?.companionName;
@@ -222,7 +224,7 @@ export default function DashboardPage() {
     } finally {
       setLoading(false);
     }
-  }, [isAuthenticated, user?.id, user?.email]);
+  }, [isAuthenticated, user?.id, user?.email, user?.displayName]);
 
   useEffect(() => {
     if (isInitialized && isAuthenticated) {
@@ -292,12 +294,10 @@ export default function DashboardPage() {
         <div className="flex flex-col md:flex-row md:items-start justify-between gap-6">
           <div className="space-y-2">
             <h1 className="text-5xl md:text-6xl font-bold font-display tracking-tight text-white">
-              Your <span className="text-transparent bg-clip-text bg-gradient-to-r from-campfire-400 via-campfire-500 to-campfire-600">Sanctuary</span>
+              Hey <span className="text-transparent bg-clip-text bg-gradient-to-r from-campfire-400 via-campfire-500 to-campfire-600">gorgeous</span>
             </h1>
             <p className="text-gray-400 text-lg max-w-xl">
-              {welcomeMessage || (user?.email
-                ? `Welcome back, ${user.email.split('@')[0]}. Your companions are waiting.`
-                : 'Manage your digital sanctuary and companions.')}
+              {welcomeMessage || 'Your companions are excited to see you.'}
             </p>
           </div>
           <div className="flex flex-col lg:flex-row gap-3 md:pt-6">
@@ -379,9 +379,9 @@ export default function DashboardPage() {
                   <Sparkles className="h-12 w-12 text-campfire-500 animate-pulse" />
                 </div>
                 <div className="space-y-4">
-                  <h2 className="text-3xl font-bold font-display text-white">Your sanctuary awaits...</h2>
+                  <h2 className="text-3xl font-bold font-display text-white">Ready to ignite?</h2>
                   <p className="text-gray-400 text-lg max-w-md mx-auto">
-                    Every great journey begins with a single spark. Create your first AI companion and bring your digital sanctuary to life.
+                    Every spark starts somewhere. Design your first companion and see where the conversation takes you.
                   </p>
                 </div>
                 <Button
@@ -389,7 +389,7 @@ export default function DashboardPage() {
                   size="xl"
                   className="h-16 px-12 rounded-full bg-gradient-to-r from-campfire-500 to-campfire-600 text-white font-bold text-xl shadow-[0_0_30px_rgba(249,115,22,0.3)] hover:scale-105 transition-all"
                 >
-                  Invite a Companion
+                  Create Your First Companion
                 </Button>
               </CardContent>
             </Card>
@@ -747,16 +747,6 @@ export default function DashboardPage() {
         </section>
 
       </motion.div>
-
-      {/* Styles for animation */}
-      <style jsx global>{`
-        .line-clamp-2 {
-          display: -webkit-box;
-          -webkit-line-clamp: 2;
-          -webkit-box-orient: vertical;
-          overflow: hidden;
-        }
-      `}</style>
 
       {/* Delete Confirmation Dialog */}
       <AlertDialog open={!!companionToDelete} onOpenChange={(open) => !open && setCompanionToDelete(null)}>

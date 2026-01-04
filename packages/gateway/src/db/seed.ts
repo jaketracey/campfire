@@ -81,6 +81,42 @@ async function seed(sql: postgres.Sql): Promise<SeedData> {
   console.log(`[Seed] Created ${users.length} users`);
 
   // =========================================================================
+  // Admin User
+  // =========================================================================
+  console.log('[Seed] Creating admin user...');
+
+  const adminPasswordHash = '$2b$12$aK7XfxiF4WIlFrOWivrZBe7lW.NbbtLIrj0JnwDXa1HfNAlc/PdAu';
+
+  await sql`
+    INSERT INTO users (id, email, password_hash, email_verified, status, role)
+    VALUES (
+      '00000000-0000-0000-0000-000000000100',
+      'jaketracey@gmail.com',
+      ${adminPasswordHash},
+      TRUE,
+      'active',
+      'admin'
+    )
+    ON CONFLICT (email_normalized) DO UPDATE SET
+      password_hash = EXCLUDED.password_hash,
+      role = EXCLUDED.role
+  `;
+
+  await sql`
+    INSERT INTO user_profiles (user_id, display_name, timezone, locale, preferences)
+    VALUES (
+      '00000000-0000-0000-0000-000000000100',
+      'Jake Tracey',
+      'America/New_York',
+      'en-US',
+      '{"theme": "dark", "notifications": true}'
+    )
+    ON CONFLICT (user_id) DO UPDATE SET display_name = EXCLUDED.display_name
+  `;
+
+  console.log('[Seed] Created admin user: jaketracey@gmail.com');
+
+  // =========================================================================
   // Companions
   // =========================================================================
   console.log('[Seed] Creating test companions...');
@@ -461,8 +497,8 @@ async function seed(sql: postgres.Sql): Promise<SeedData> {
   const subscriptions = [
     {
       user_id: '00000000-0000-0000-0000-000000000001',
-      stripe_customer_id: 'cus_test_alice_001',
-      stripe_subscription_id: 'sub_test_alice_001',
+      flowguard_customer_id: 'fg_test_alice_001',
+      flowguard_subscription_id: 'fgsub_test_alice_001',
       status: 'active',
       plan: 'pro',
       voice_minutes_limit: 1000,
@@ -471,8 +507,8 @@ async function seed(sql: postgres.Sql): Promise<SeedData> {
     },
     {
       user_id: '00000000-0000-0000-0000-000000000002',
-      stripe_customer_id: 'cus_test_bob_001',
-      stripe_subscription_id: 'sub_test_bob_001',
+      flowguard_customer_id: 'fg_test_bob_001',
+      flowguard_subscription_id: 'fgsub_test_bob_001',
       status: 'active',
       plan: 'starter',
       voice_minutes_limit: 100,
@@ -481,7 +517,7 @@ async function seed(sql: postgres.Sql): Promise<SeedData> {
     },
     {
       user_id: '00000000-0000-0000-0000-000000000003',
-      stripe_customer_id: 'cus_test_charlie_001',
+      flowguard_customer_id: 'fg_test_charlie_001',
       status: 'trialing',
       plan: 'free',
       voice_minutes_limit: 10,
@@ -493,12 +529,12 @@ async function seed(sql: postgres.Sql): Promise<SeedData> {
   for (const sub of subscriptions) {
     await sql`
       INSERT INTO subscriptions (
-        user_id, stripe_customer_id, stripe_subscription_id,
+        user_id, flowguard_customer_id, flowguard_subscription_id,
         status, plan, voice_minutes_limit, message_limit, companion_limit,
         current_period_start, current_period_end
       )
       VALUES (
-        ${sub.user_id}, ${sub.stripe_customer_id}, ${sub.stripe_subscription_id ?? null},
+        ${sub.user_id}, ${sub.flowguard_customer_id}, ${sub.flowguard_subscription_id ?? null},
         ${sub.status}::subscription_status, ${sub.plan}::subscription_plan,
         ${sub.voice_minutes_limit}, ${sub.message_limit}, ${sub.companion_limit},
         NOW(), NOW() + INTERVAL '30 days'
@@ -573,8 +609,8 @@ async function seed(sql: postgres.Sql): Promise<SeedData> {
       tokens: 100,
       price_cents: 499,
       currency: 'usd',
-      stripe_price_id: 'price_tokens_starter_100',
-      stripe_product_id: 'prod_tokens_starter',
+      flowguard_price_id: 'fg_price_tokens_starter_100',
+      flowguard_product_id: 'fg_prod_tokens_starter',
       display_order: 1,
       bonus_tokens: 0,
     },
@@ -584,8 +620,8 @@ async function seed(sql: postgres.Sql): Promise<SeedData> {
       tokens: 500,
       price_cents: 1999,
       currency: 'usd',
-      stripe_price_id: 'price_tokens_popular_500',
-      stripe_product_id: 'prod_tokens_popular',
+      flowguard_price_id: 'fg_price_tokens_popular_500',
+      flowguard_product_id: 'fg_prod_tokens_popular',
       display_order: 2,
       bonus_tokens: 50,
     },
@@ -595,8 +631,8 @@ async function seed(sql: postgres.Sql): Promise<SeedData> {
       tokens: 1200,
       price_cents: 3999,
       currency: 'usd',
-      stripe_price_id: 'price_tokens_value_1200',
-      stripe_product_id: 'prod_tokens_value',
+      flowguard_price_id: 'fg_price_tokens_value_1200',
+      flowguard_product_id: 'fg_prod_tokens_value',
       display_order: 3,
       bonus_tokens: 200,
     },
@@ -606,8 +642,8 @@ async function seed(sql: postgres.Sql): Promise<SeedData> {
       tokens: 3000,
       price_cents: 7999,
       currency: 'usd',
-      stripe_price_id: 'price_tokens_ultimate_3000',
-      stripe_product_id: 'prod_tokens_ultimate',
+      flowguard_price_id: 'fg_price_tokens_ultimate_3000',
+      flowguard_product_id: 'fg_prod_tokens_ultimate',
       display_order: 4,
       bonus_tokens: 600,
     },
@@ -617,13 +653,13 @@ async function seed(sql: postgres.Sql): Promise<SeedData> {
     await sql`
       INSERT INTO token_bundles (
         name, description, tokens, price_cents, currency,
-        stripe_price_id, stripe_product_id, display_order, bonus_tokens, is_active
+        flowguard_price_id, flowguard_product_id, display_order, bonus_tokens, is_active
       )
       VALUES (
         ${bundle.name}, ${bundle.description}, ${bundle.tokens}, ${bundle.price_cents}, ${bundle.currency},
-        ${bundle.stripe_price_id}, ${bundle.stripe_product_id}, ${bundle.display_order}, ${bundle.bonus_tokens}, TRUE
+        ${bundle.flowguard_price_id}, ${bundle.flowguard_product_id}, ${bundle.display_order}, ${bundle.bonus_tokens}, TRUE
       )
-      ON CONFLICT (stripe_price_id) DO UPDATE SET
+      ON CONFLICT (flowguard_price_id) DO UPDATE SET
         name = EXCLUDED.name,
         tokens = EXCLUDED.tokens,
         price_cents = EXCLUDED.price_cents,

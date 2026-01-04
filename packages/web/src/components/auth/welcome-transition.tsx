@@ -83,7 +83,7 @@ export function WelcomeTransition({ children }: WelcomeTransitionProps) {
     if (transitionData.type === 'signup') {
       return {
         title: 'Welcome to Ignite',
-        subtitle: 'Your sanctuary awaits',
+        subtitle: 'Let\'s spark something special',
       };
     }
     return {
