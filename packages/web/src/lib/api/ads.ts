@@ -104,14 +104,14 @@ export async function listAdAccounts(): Promise<{ success: boolean; data: { acco
  * Get Google Ads OAuth authorization URL
  */
 export async function connectGoogleAds(): Promise<{ success: boolean; data: { authUrl: string } }> {
-  return post('/admin/ads/accounts/google/connect');
+  return post('/admin/ads/connect/google');
 }
 
 /**
  * Get Facebook Ads OAuth authorization URL
  */
 export async function connectFacebookAds(): Promise<{ success: boolean; data: { authUrl: string } }> {
-  return post('/admin/ads/accounts/facebook/connect');
+  return post('/admin/ads/connect/facebook');
 }
 
 /**
