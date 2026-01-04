@@ -3,13 +3,41 @@
 import { useEffect, useRef } from 'react';
 import gsap from 'gsap';
 
+// Mix of female and male companion images for background animation
 const COMPANIONS = [
-    'black-athletic-black.png', 'black-curvy-brown.png', 'black-plus-size-red.png',
-    'caucasian-athletic-blonde.png', 'caucasian-curvy-black.png', 'caucasian-plus-size-brown.png',
-    'east-asian-athletic-red.png', 'east-asian-curvy-black.png', 'east-asian-slim-blonde.png',
-    'latina-athletic-brown.png', 'latina-curvy-red.png', 'latina-plus-size-black.png',
-    'south-asian-athletic-blonde.png', 'south-asian-curvy-red.png', 'south-asian-plus-size-fantasy.png',
-    'black-slim-brown.png', 'caucasian-slim-red.png'
+    // Female companions - diverse ethnicities and body types
+    'female/black-athletic-blonde-bS.png',
+    'female/black-curvy-black-bL.png',
+    'female/caucasian-athletic-blonde-bL.png',
+    'female/caucasian-curvy-blonde-bM.png',
+    'female/caucasian-slim-brown-bL.png',
+    'female/east-asian-athletic-black-bL.png',
+    'female/east-asian-curvy-blonde-bM.png',
+    'female/east-asian-slim-fantasy-bL.png',
+    'female/latina-athletic-black-bM.png',
+    'female/latina-curvy-red-bS.png',
+    'female/middle-eastern-athletic-fantasy-bL.png',
+    'female/middle-eastern-curvy-blonde-bS.png',
+    'female/mixed-athletic-red-bL.png',
+    'female/mixed-curvy-black-bS.png',
+    'female/south-asian-athletic-blonde-bL.png',
+    'female/south-asian-curvy-brown-bM.png',
+    'female/south-asian-plus-size-fantasy-bL.png',
+    // Male companions - diverse ethnicities and body types
+    'male/black-muscular-black-buildS.png',
+    'male/black-slim-blonde-buildL.png',
+    'male/caucasian-muscular-brown-buildL.png',
+    'male/caucasian-dad-bod-fantasy-buildS.png',
+    'male/east-asian-athletic-blonde-buildL.png',
+    'male/east-asian-muscular-black-buildM.png',
+    'male/latina-muscular-brown-buildM.png',
+    'male/latina-slim-blonde-buildL.png',
+    'male/middle-eastern-muscular-fantasy-buildL.png',
+    'male/middle-eastern-slim-blonde-buildL.png',
+    'male/mixed-muscular-blonde-buildL.png',
+    'male/mixed-slim-brown-buildM.png',
+    'male/south-asian-athletic-brown-buildL.png',
+    'male/south-asian-muscular-fantasy-buildM.png',
 ];
 
 export function CompanionBackground() {
