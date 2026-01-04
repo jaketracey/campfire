@@ -7,6 +7,7 @@ import { nanoid } from 'nanoid';
 import { z } from 'zod';
 import { getUsersRepository, getReferralsRepository, getGiftsRepository, type UserWithStats, type UserListFilters } from '../repositories/index.js';
 import { logger } from '../observability/logger.js';
+import { enqueueEmailJob } from '../utils/queue.js';
 import type { User, UserRole, UserStatus, PendingInvite } from '../db/types.js';
 import type { TransactionContext, PaginatedResult } from '../repositories/types.js';
 
@@ -154,8 +155,37 @@ export class AdminService {
     const webUrl = process.env.WEB_URL || 'http://localhost:3000';
     const inviteUrl = `${webUrl}/signup?invite=${token}`;
 
-    // TODO: Queue invite email
-    // await emailService.sendInviteEmail(validated.email, inviteUrl, validated.message);
+    // Get inviter name for the email
+    const inviter = await this.users.findById(invitedByUserId, tx);
+    const invitedByName = inviter?.email?.split('@')[0] || undefined;
+
+    // Queue invite email
+    const emailJobId = await enqueueEmailJob({
+      type: 'transactional',
+      templateName: 'invite',
+      recipientEmail: validated.email,
+      context: {
+        inviteUrl,
+        message: validated.message,
+        invitedByName,
+      },
+      metadata: {
+        traceId: nanoid(),
+      },
+      priority: 'high',
+    });
+
+    if (emailJobId) {
+      logger.info(
+        { email: validated.email, invitedBy: invitedByUserId, emailJobId },
+        'Invite email queued'
+      );
+    } else {
+      logger.warn(
+        { email: validated.email, invitedBy: invitedByUserId },
+        'Failed to queue invite email - Redis may not be available'
+      );
+    }
 
     logger.info(
       { email: validated.email, invitedBy: invitedByUserId },

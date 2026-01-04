@@ -50,6 +50,12 @@ export interface AffiliateWelcomeContext extends BaseTemplateContext {
   commissionPremium: string;
 }
 
+export interface InviteContext extends BaseTemplateContext {
+  inviteUrl: string;
+  message?: string;
+  invitedByName?: string;
+}
+
 /** Generate signed unsubscribe URL */
 export function generateUnsubscribeUrl(
   identifier: string,
@@ -340,6 +346,41 @@ export const templates = {
   `,
       ctx
     ),
+
+  invite: (ctx: InviteContext) =>
+    baseTemplate(
+      `
+    <mj-text font-size="24px" font-weight="bold" padding-bottom="20px">
+      You're invited to Ignite!
+    </mj-text>
+    <mj-text>
+      Hi${ctx.recipientName ? ` ${ctx.recipientName}` : ''},
+    </mj-text>
+    <mj-text>
+      ${ctx.invitedByName ? `${ctx.invitedByName} has invited you to join` : "You've been invited to join"} Ignite, where you can create your own AI companion for meaningful conversations.
+    </mj-text>
+    ${
+      ctx.message
+        ? `
+    <mj-text font-style="italic" color="#666666" padding="20px 0">
+      "${ctx.message}"
+    </mj-text>
+    `
+        : ''
+    }
+    <mj-button href="${ctx.inviteUrl}" padding="30px 0">
+      Accept Invitation
+    </mj-button>
+    <mj-text font-size="14px" color="#666666">
+      This invitation link will expire in 7 days. Click the button above to create your account and get started.
+    </mj-text>
+    <mj-text font-size="12px" color="#999999" padding-top="20px">
+      If the button doesn't work, copy and paste this link into your browser:<br/>
+      <a href="${ctx.inviteUrl}" style="color: #FF6B35; word-break: break-all;">${ctx.inviteUrl}</a>
+    </mj-text>
+  `,
+      ctx
+    ),
 };
 
 export type TemplateType = keyof typeof templates;
@@ -352,6 +393,7 @@ type TemplateContextMap = {
   notification: NotificationContext;
   newsletter: NewsletterContext;
   affiliateWelcome: AffiliateWelcomeContext;
+  invite: InviteContext;
 };
 
 /** Compile MJML to HTML */
@@ -408,6 +450,7 @@ export function getDefaultSubject(templateName: string): string {
     notification: 'Notification from Ignite',
     newsletter: 'Ignite Newsletter',
     affiliateWelcome: 'Welcome to the Ignite Affiliate Program',
+    invite: "You're invited to Ignite!",
   };
   return subjects[templateName] || 'Message from Ignite';
 }
