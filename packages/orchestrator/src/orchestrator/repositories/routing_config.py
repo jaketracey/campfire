@@ -202,6 +202,7 @@ class RoutingConfigRepository:
             """
             SELECT provider, is_enabled
             FROM provider_configs
+            WHERE category = 'text'
             """
         )
 
@@ -227,6 +228,7 @@ class RoutingConfigRepository:
                 api_key_encrypted IS NOT NULL as has_api_key,
                 priority
             FROM provider_configs
+            WHERE category = 'text'
             ORDER BY priority ASC
             """
         )
