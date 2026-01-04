@@ -960,9 +960,10 @@ export async function companionsRoutes(app: FastifyInstance): Promise<void> {
   /**
    * POST /companions/generate-identity - Generate random companion identity
    * Uses LLM to generate a creative name, pronouns, and backstory
+   * Note: This endpoint is public to support onboarding for unauthenticated users
    */
-  app.post('/generate-identity', { preHandler: requireAuth }, async (request: FastifyRequest, reply: FastifyReply) => {
-    logger.info({ userId: request.user!.userId }, 'Generating random companion identity');
+  app.post('/generate-identity', async (request: FastifyRequest, reply: FastifyReply) => {
+    logger.info({ userId: request.user?.userId || 'anonymous' }, 'Generating random companion identity');
 
     try {
       const orchestratorResponse = await fetch(`${ORCHESTRATOR_URL}/identity/generate`, {
