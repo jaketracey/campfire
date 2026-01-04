@@ -12,6 +12,7 @@ import {
   Info,
   Flame,
 } from 'lucide-react';
+import { IgnitingFlame } from '@/components/ui/igniting-flame';
 import Image from 'next/image';
 import Link from 'next/link';
 import { createCompanion, createSession, generateBackstory, generateRandomIdentity, type GenerateBackstoryResult } from '@/lib/api';
@@ -637,38 +638,17 @@ export function QuickStart({ onBack }: QuickStartProps) {
           </motion.div>
         )}
 
-        {/* Transition: Flame animation */}
+        {/* Transition: Flame ignition animation */}
         {step === 'transition' && (
           <motion.div
             key="transition-step"
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
+            exit={{ opacity: 0, scale: 1.2 }}
             transition={{ duration: 0.3 }}
             className="flex items-center justify-center min-h-[300px]"
           >
-            <motion.div
-              initial={{ scale: 0, opacity: 0 }}
-              animate={{ scale: 1, opacity: 1 }}
-              exit={{ scale: 1.5, opacity: 0 }}
-              transition={{
-                duration: 0.6,
-                ease: [0.22, 1, 0.36, 1],
-              }}
-              className="relative"
-            >
-              {/* Glow effect */}
-              <motion.div
-                className="absolute inset-0 blur-3xl"
-                initial={{ opacity: 0, scale: 0.5 }}
-                animate={{ opacity: 0.6, scale: 1.5 }}
-                transition={{ duration: 0.8, ease: 'easeOut' }}
-                style={{
-                  background: 'radial-gradient(circle, rgba(249,115,22,0.6) 0%, rgba(239,68,68,0.3) 50%, transparent 70%)',
-                }}
-              />
-              <Flame className="h-24 w-24 text-orange-500 relative z-10" />
-            </motion.div>
+            <IgnitingFlame size={120} />
           </motion.div>
         )}
 
@@ -697,7 +677,7 @@ export function QuickStart({ onBack }: QuickStartProps) {
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             transition={{ duration: 0.5 }}
-            className="min-h-[60vh] flex flex-col items-center pt-24 md:pt-32"
+            className="min-h-[60vh] flex flex-col items-center pt-16 md:pt-16"
           >
             <AnimatePresence mode="wait">
               {/* Phase 1: Loading - Flame */}
@@ -741,7 +721,7 @@ export function QuickStart({ onBack }: QuickStartProps) {
                   animate={{ opacity: 1 }}
                   exit={{ opacity: 0, y: -30 }}
                   transition={{ duration: 0.6 }}
-                  className="text-center max-w-2xl md:max-w-4xl mx-auto px-4 pt-8 md:pt-12"
+                  className="text-center max-w-2xl md:max-w-4xl mx-auto px-4"
                 >
                   {/* Name - larger */}
                   <motion.h1
