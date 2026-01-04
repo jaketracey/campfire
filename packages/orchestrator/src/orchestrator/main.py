@@ -26,6 +26,8 @@ from orchestrator.providers.animatediff import AnimateDiffProvider
 from orchestrator.providers.comfyui import ComfyUIProvider
 from orchestrator.providers.fal import FalProvider
 from orchestrator.providers.ollama import OllamaProvider
+from orchestrator.providers.openai import OpenAIProvider
+from orchestrator.routing.model_registry import MODEL_REGISTRY, PROVIDER_HEALTH
 from orchestrator.queue import JobQueue, get_job_queue
 from orchestrator.routing.image_model_router import ImageModelRouter, ImageUseCase
 from orchestrator.safety.gate import SafetyGate, SafetyLevel
@@ -1617,10 +1619,49 @@ You must respond with valid JSON in this exact format:
     user_prompt = """Generate a unique companion identity based on the category. Make them feel like a real, interesting person with genuine depth and warmth."""
 
     try:
-        if not app_state.ollama_provider:
+        # Get an available LLM provider using the routing system
+        llm_provider = None
+
+        # First, try to get a model from the routing config for chat_simple use case
+        if app_state.routing_config_service:
+            try:
+                entries = await app_state.routing_config_service.get_routing_for_use_case("chat_simple")
+                for entry in entries:
+                    model = MODEL_REGISTRY.get(entry.model_id)
+                    if model is None:
+                        continue
+
+                    # Check provider availability
+                    provider_health = PROVIDER_HEALTH.get(model.provider)
+                    if provider_health is None or not provider_health.is_available:
+                        continue
+
+                    # Create provider based on the routed model
+                    if model.provider == "openai":
+                        llm_provider = OpenAIProvider(app_state.settings, model_override=model.model_id)
+                        logger.info("identity_generation_using_openai", model=model.model_id)
+                        break
+                    elif model.provider == "ollama" and app_state.ollama_provider:
+                        llm_provider = app_state.ollama_provider.with_model(model.model_id)
+                        logger.info("identity_generation_using_ollama", model=model.model_id)
+                        break
+            except Exception as routing_error:
+                logger.warning("identity_routing_failed", error=str(routing_error))
+
+        # Fall back to Ollama if no routed provider found
+        if llm_provider is None and app_state.ollama_provider:
+            llm_provider = app_state.ollama_provider
+            logger.info("identity_generation_using_fallback_ollama")
+
+        # If still no provider, try OpenAI directly if API key is configured
+        if llm_provider is None and app_state.settings.openai_api_key:
+            llm_provider = OpenAIProvider(app_state.settings)
+            logger.info("identity_generation_using_direct_openai")
+
+        if llm_provider is None:
             raise HTTPException(
                 status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-                detail="Ollama provider not available",
+                detail="No LLM provider available for identity generation",
             )
 
         # Retry logic for JSON parsing failures
@@ -1630,7 +1671,7 @@ You must respond with valid JSON in this exact format:
 
         for attempt in range(max_retries):
             try:
-                response = await app_state.ollama_provider.generate(
+                response = await llm_provider.generate(
                     messages=[
                         {"role": "system", "content": system_prompt},
                         {"role": "user", "content": user_prompt},
