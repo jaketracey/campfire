@@ -120,13 +120,12 @@ jobs:
           set -e
           cd /opt/campfire/infra/docker
 
-          echo "=== Clearing Docker caches ==="
-          docker builder prune -af || true
-          docker system prune -af || true
-
           echo "=== Building containers ==="
           BUILD_FLAGS=""
           if [ "${{ inputs.force_rebuild }}" = "true" ]; then
+            echo "Force rebuild requested - clearing Docker caches..."
+            docker builder prune -af || true
+            docker system prune -af || true
             BUILD_FLAGS="--no-cache"
           fi
           docker compose -f docker-compose.stealth.yml --env-file /opt/campfire/.env.stealth build $BUILD_FLAGS
