@@ -56,13 +56,8 @@ interface Companion {
   backstory: string | null;
 }
 
-// Get anchor image path based on ethnicity
-function getAnchorImageUrl(ethnicity: string | null): string | null {
-  if (!ethnicity) return null;
-  const validEthnicities = ['east-asian', 'south-asian', 'black', 'caucasian', 'latina', 'middle-eastern', 'mixed'];
-  if (validEthnicities.includes(ethnicity)) {
-    return `/images/companions/anchors/${ethnicity}.png`;
-  }
+// Anchor images are no longer used - companions use latestConversationImageUrl or avatarUrl
+function getAnchorImageUrl(_ethnicity: string | null): string | null {
   return null;
 }
 
@@ -272,13 +267,9 @@ export default function DashboardPage() {
     router.push('/onboard');
   };
 
-  // Show loading while checking auth or loading data
+  // Show nothing while checking auth or loading data
   if (!isInitialized || authLoading || loading) {
-    return (
-      <div className="flex items-center justify-center min-h-screen">
-        <div className="animate-pulse text-muted-foreground">Loading...</div>
-      </div>
-    );
+    return null;
   }
 
   // Don't render if not authenticated (will redirect)
