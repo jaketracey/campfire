@@ -4,6 +4,9 @@ import type { NextRequest } from 'next/server';
 // Routes that require authentication
 const protectedRoutes = ['/dashboard', '/chat', '/onboard', '/settings', '/admin'];
 
+// Public routes that are exceptions to protected routes above
+const publicRoutes = ['/chat/demo'];
+
 // Routes that should redirect to dashboard if authenticated
 const authRoutes = ['/login', '/signup', '/forgot-password'];
 
@@ -18,6 +21,11 @@ export function middleware(request: NextRequest) {
   // The actual token validation happens client-side
   const hasAuthCookie = request.cookies.has(AUTH_COOKIE);
 
+  // Check if requesting a public route (exceptions to protected routes)
+  const isPublicRoute = publicRoutes.some((route) =>
+    pathname.startsWith(route)
+  );
+
   // Check if requesting a protected route
   const isProtectedRoute = protectedRoutes.some((route) =>
     pathname.startsWith(route)
@@ -26,8 +34,8 @@ export function middleware(request: NextRequest) {
   // Check if requesting an auth route
   const isAuthRoute = authRoutes.some((route) => pathname.startsWith(route));
 
-  // Redirect unauthenticated users to login
-  if (isProtectedRoute && !hasAuthCookie) {
+  // Redirect unauthenticated users to login (but not for public routes)
+  if (isProtectedRoute && !isPublicRoute && !hasAuthCookie) {
     const loginUrl = new URL('/login', request.url);
     loginUrl.searchParams.set('redirect', pathname);
     return NextResponse.redirect(loginUrl);
