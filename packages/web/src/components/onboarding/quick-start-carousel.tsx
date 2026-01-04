@@ -1,23 +1,18 @@
 'use client';
 
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { IdentityDisplay } from './quick-start/identity-display';
 import { VisualsDisplay } from './quick-start/visuals-display';
 import { ArchetypeDisplay } from './quick-start/archetype-display';
 import { VoiceDisplay } from './quick-start/voice-display';
+import { useOnboardingStore } from '@/stores/onboarding-store';
 import type { AppearanceEthnicity, AppearanceBodyType, AppearanceHairColor, SizeCategory, CompanionGender } from '@/stores/onboarding-store';
 import type { CompanionAppearance } from '@/lib/api/companions';
 
 type CarouselSection = 'identity' | 'visuals' | 'archetype' | 'voice';
 
 const SECTIONS: CarouselSection[] = ['identity', 'visuals', 'archetype', 'voice'];
-const SECTION_LABELS: Record<CarouselSection, string> = {
-  identity: 'Identity',
-  visuals: 'Visuals',
-  archetype: 'Archetype',
-  voice: 'Voice',
-};
 
 interface GeneratedCompanionData {
   primaryArchetype: {
@@ -134,9 +129,14 @@ export function QuickStartCarousel({
 }: QuickStartCarouselProps) {
   const [currentSection, setCurrentSection] = useState<CarouselSection>('identity');
   const currentIndex = SECTIONS.indexOf(currentSection);
-  const progress = ((currentIndex + 1) / SECTIONS.length) * 100;
+  const { setQuickStartStep } = useOnboardingStore();
 
   const backstory = generateBackstorySnippet(generatedData.primaryArchetype.id);
+
+  // Sync current section index with store for stepper display
+  useEffect(() => {
+    setQuickStartStep(currentIndex);
+  }, [currentIndex, setQuickStartStep]);
 
   const handleSectionComplete = useCallback(() => {
     const nextIndex = currentIndex + 1;
@@ -189,33 +189,7 @@ export function QuickStartCarousel({
 
   return (
     <div className="w-full max-w-4xl mx-auto space-y-6">
-      {/* Progress indicator */}
-      <div className="flex items-center justify-between gap-4 px-4">
-        <div className="flex-1">
-          <div className="flex justify-between mb-2">
-            {SECTIONS.map((section, index) => (
-              <span
-                key={section}
-                className={`text-[10px] font-bold tracking-widest uppercase transition-colors ${
-                  index <= currentIndex ? 'text-vibes-cyan' : 'text-gray-600'
-                }`}
-              >
-                {SECTION_LABELS[section]}
-              </span>
-            ))}
-          </div>
-          <div className="h-1 w-full bg-white/5 rounded-full overflow-hidden border border-white/5">
-            <motion.div
-              className="h-full bg-gradient-to-r from-vibes-electric to-vibes-cyan shadow-[0_0_10px_rgba(6,182,212,0.5)]"
-              initial={{ width: 0 }}
-              animate={{ width: `${progress}%` }}
-              transition={{ duration: 0.4, ease: 'easeOut' }}
-            />
-          </div>
-        </div>
-      </div>
-
-      {/* Section content */}
+      {/* Section content - stepper is now rendered by onboard/page.tsx */}
       <AnimatePresence mode="wait">
         <motion.div
           key={currentSection}

@@ -163,6 +163,10 @@ export interface OnboardingState {
   anchorImages: AnchorImage[];
   anchorImagesComplete: boolean;
 
+  // Quick start state (for stepper positioning)
+  quickStartActive: boolean;
+  quickStartStep: number; // 0-3 for Identity, Visuals, Archetype, Voice
+
   // Actions
   setStep: (step: number) => void;
   nextStep: () => void;
@@ -184,6 +188,8 @@ export interface OnboardingState {
   setGenerationStarted: (started: boolean) => void;
   addAnchorImage: (anchor: AnchorImage) => void;
   setAnchorImagesComplete: (complete: boolean) => void;
+  setQuickStartActive: (active: boolean) => void;
+  setQuickStartStep: (step: number) => void;
   reset: () => void;
 }
 
@@ -244,6 +250,8 @@ export const useOnboardingStore = create<OnboardingState>()(
       generationStarted: false,
       anchorImages: [],
       anchorImagesComplete: false,
+      quickStartActive: false,
+      quickStartStep: 0,
 
       setStep: (step) => set({ currentStep: step }),
       nextStep: () => {
@@ -307,6 +315,8 @@ export const useOnboardingStore = create<OnboardingState>()(
           anchorImages: [...state.anchorImages, anchor],
         })),
       setAnchorImagesComplete: (complete) => set({ anchorImagesComplete: complete }),
+      setQuickStartActive: (active) => set({ quickStartActive: active }),
+      setQuickStartStep: (step) => set({ quickStartStep: step }),
       reset: () =>
         set({
           currentStep: 1,
@@ -330,6 +340,8 @@ export const useOnboardingStore = create<OnboardingState>()(
           generationStarted: false,
           anchorImages: [],
           anchorImagesComplete: false,
+          quickStartActive: false,
+          quickStartStep: 0,
         }),
     }),
     {

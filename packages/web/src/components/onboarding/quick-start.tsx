@@ -193,10 +193,27 @@ export function QuickStart({ onBack }: QuickStartProps) {
   const router = useRouter();
   const { toast } = useToast();
   const { isAuthenticated } = useAuth();
-  const { reset: resetOnboarding } = useOnboardingStore();
-  const [step, setStep] = useState<'name' | 'carousel' | 'creating'>('name');
+  const { reset: resetOnboarding, setQuickStartActive } = useOnboardingStore();
+  const [step, setStep] = useState<'name' | 'transition' | 'carousel' | 'creating'>('name');
+
   const [isCreating, setIsCreating] = useState(false);
   const [generatedCompanion, setGeneratedCompanion] = useState<GeneratedCompanionData | null>(null);
+
+  // Sync quickStartActive with carousel step
+  useEffect(() => {
+    setQuickStartActive(step === 'carousel');
+    return () => setQuickStartActive(false);
+  }, [step, setQuickStartActive]);
+
+  // Auto-advance from transition to carousel after flame animation
+  useEffect(() => {
+    if (step === 'transition' && generatedCompanion) {
+      const timer = setTimeout(() => {
+        setStep('carousel');
+      }, 1200); // Duration of flame animation
+      return () => clearTimeout(timer);
+    }
+  }, [step, generatedCompanion]);
   const [apiPromise, setApiPromise] = useState<Promise<{ companionId: string; sessionId: string }> | null>(null);
   const nameInputRef = useRef<HTMLInputElement>(null);
 
@@ -375,7 +392,8 @@ export function QuickStart({ onBack }: QuickStartProps) {
   const onNameSubmit = useCallback(async () => {
     if (!isValid || !companionName) return;
 
-    setIsCreating(true);
+    // Immediately show the flame transition
+    setStep('transition');
 
     try {
       let randomCompanion: GeneratedCompanionData;
@@ -450,11 +468,8 @@ export function QuickStart({ onBack }: QuickStartProps) {
         // No API calls - we'll create the companion after they sign up
       }
 
+      // Set companion data - the auto-advance useEffect will transition to carousel
       setGeneratedCompanion(randomCompanion);
-
-      // Show carousel
-      setIsCreating(false);
-      setStep('carousel');
     } catch (error) {
       console.error('Failed to generate companion:', error);
       toast({
@@ -462,7 +477,8 @@ export function QuickStart({ onBack }: QuickStartProps) {
         description: 'Something went wrong. Please try again.',
         variant: 'destructive',
       });
-      setIsCreating(false);
+      // Go back to name step on error
+      setStep('name');
     }
   }, [isValid, companionName, isAuthenticated, startApiCalls, toast]);
 
@@ -576,9 +592,9 @@ export function QuickStart({ onBack }: QuickStartProps) {
           <motion.div
             key="name-step"
             initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: isCreating ? 0.3 : 1, y: 0, filter: isCreating ? 'blur(4px)' : 'blur(0px)' }}
-            exit={{ opacity: 0, y: -20, scale: 0.95, filter: 'blur(10px)' }}
-            transition={{ duration: 0.4, ease: [0.22, 1, 0.36, 1] }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, scale: 0.95, filter: 'blur(10px)' }}
+            transition={{ duration: 0.3, ease: [0.22, 1, 0.36, 1] }}
             className="space-y-8"
           >
             <form onSubmit={handleSubmit(onNameSubmit)} className="space-y-6">
@@ -611,7 +627,7 @@ export function QuickStart({ onBack }: QuickStartProps) {
                 <Button
                   type="submit"
                   size="lg"
-                  disabled={!isValid || isCreating}
+                  disabled={!isValid}
                   className="flex-1 h-16 md:h-20 rounded-2xl bg-gradient-to-r from-vibes-cyan to-vibes-neon hover:shadow-[0_0_30px_rgba(6,182,212,0.3)] transition-all font-bold text-xl md:text-2xl disabled:opacity-50"
                 >
                   Create Companion
@@ -621,14 +637,49 @@ export function QuickStart({ onBack }: QuickStartProps) {
           </motion.div>
         )}
 
+        {/* Transition: Flame animation */}
+        {step === 'transition' && (
+          <motion.div
+            key="transition-step"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.3 }}
+            className="flex items-center justify-center min-h-[300px]"
+          >
+            <motion.div
+              initial={{ scale: 0, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 1.5, opacity: 0 }}
+              transition={{
+                duration: 0.6,
+                ease: [0.22, 1, 0.36, 1],
+              }}
+              className="relative"
+            >
+              {/* Glow effect */}
+              <motion.div
+                className="absolute inset-0 blur-3xl"
+                initial={{ opacity: 0, scale: 0.5 }}
+                animate={{ opacity: 0.6, scale: 1.5 }}
+                transition={{ duration: 0.8, ease: 'easeOut' }}
+                style={{
+                  background: 'radial-gradient(circle, rgba(249,115,22,0.6) 0%, rgba(239,68,68,0.3) 50%, transparent 70%)',
+                }}
+              />
+              <Flame className="h-24 w-24 text-orange-500 relative z-10" />
+            </motion.div>
+          </motion.div>
+        )}
+
         {/* Step 2: Carousel */}
         {step === 'carousel' && generatedCompanion && (
           <motion.div
             key="carousel-step"
-            initial={{ opacity: 0, scale: 0.98 }}
-            animate={{ opacity: 1, scale: 1 }}
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, scale: 0.98 }}
-            transition={{ duration: 0.4, ease: [0.22, 1, 0.36, 1] }}
+            transition={{ duration: 0.5, ease: [0.22, 1, 0.36, 1] }}
             className="w-full"
           >
             <QuickStartCarousel
@@ -649,40 +700,36 @@ export function QuickStart({ onBack }: QuickStartProps) {
             className="min-h-[60vh] flex flex-col items-center pt-24 md:pt-32"
           >
             <AnimatePresence mode="wait">
-              {/* Phase 1: Loading - Pulsing name */}
+              {/* Phase 1: Loading - Flame */}
               {revealPhase === 'loading' && (
                 <motion.div
                   key="loading"
                   initial={{ opacity: 0 }}
                   animate={{ opacity: 1 }}
-                  exit={{ opacity: 0, scale: 0.9 }}
+                  exit={{ opacity: 0, scale: 1.5 }}
                   transition={{ duration: 0.5 }}
-                  className="text-center"
+                  className="flex items-center justify-center"
                 >
-                  <motion.h1
-                    className="text-5xl md:text-7xl font-bold font-display text-white"
-                    animate={{
-                      textShadow: [
-                        '0 0 20px rgba(168, 85, 247, 0.3)',
-                        '0 0 60px rgba(168, 85, 247, 0.6)',
-                        '0 0 20px rgba(168, 85, 247, 0.3)',
-                      ],
-                    }}
+                  <motion.div
+                    animate={{ scale: [1, 1.1, 1] }}
                     transition={{
                       duration: 2,
                       repeat: Infinity,
                       ease: 'easeInOut',
                     }}
+                    className="relative"
                   >
-                    {companionName}
-                  </motion.h1>
-                  <motion.p
-                    className="text-gray-500 mt-4 text-sm tracking-widest uppercase"
-                    animate={{ opacity: [0.5, 1, 0.5] }}
-                    transition={{ duration: 2, repeat: Infinity }}
-                  >
-                    Awakening...
-                  </motion.p>
+                    {/* Glow effect */}
+                    <motion.div
+                      className="absolute inset-0 blur-3xl"
+                      animate={{ opacity: [0.4, 0.7, 0.4], scale: [1.3, 1.6, 1.3] }}
+                      transition={{ duration: 2, repeat: Infinity, ease: 'easeInOut' }}
+                      style={{
+                        background: 'radial-gradient(circle, rgba(249,115,22,0.6) 0%, rgba(239,68,68,0.3) 50%, transparent 70%)',
+                      }}
+                    />
+                    <Flame className="h-24 w-24 text-orange-500 relative z-10" />
+                  </motion.div>
                 </motion.div>
               )}
 
