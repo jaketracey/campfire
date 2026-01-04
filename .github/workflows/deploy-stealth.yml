@@ -88,8 +88,9 @@ jobs:
           docker compose -f docker-compose.stealth.yml --env-file /opt/campfire/.env.stealth restart nginx
           sleep 5
 
-          echo "=== Cleaning up old images ==="
+          echo "=== Cleaning up Docker to prevent disk fill ==="
           docker image prune -f
+          docker builder prune -f --keep-storage 5GB
 
           echo "=== Deployment complete ==="
           docker compose -f docker-compose.stealth.yml ps
