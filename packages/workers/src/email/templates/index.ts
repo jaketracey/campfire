@@ -123,12 +123,13 @@ const baseTemplate = (content: string, context: BaseTemplateContext) => `
   </mj-head>
   <mj-body background-color="#f4f4f4">
     <!-- Header -->
-    <mj-section background-color="#1a1a2e" padding="20px 0">
+    <mj-section background-color="#ffffff" padding="20px 30px">
       <mj-column>
         <mj-image
-          src="https://ignite.cam/logo-white.png"
+          src="https://ignite.cam/favicon/favicon-96x96.png"
           alt="Ignite"
-          width="150px"
+          width="48px"
+          align="left"
           href="https://ignite.cam"
         />
       </mj-column>
