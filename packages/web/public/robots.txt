@@ -1,0 +1,22 @@
+# Ignite - AI Companion Platform
+# https://ignite.cam
+
+User-agent: *
+Allow: /
+Allow: /companions/
+Allow: /privacy
+Allow: /terms
+
+# Protected routes
+Disallow: /admin/
+Disallow: /chat/
+Disallow: /account/
+Disallow: /dashboard/
+Disallow: /onboard/
+Disallow: /affiliate/
+
+# API and internal routes
+Disallow: /api/
+
+# Sitemap
+Sitemap: https://ignite.cam/sitemap.xml

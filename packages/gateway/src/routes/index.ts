@@ -43,6 +43,8 @@ import { affiliateTrackingRoutes } from './affiliate-tracking.js';
 import { adminAffiliatesRoutes } from './admin-affiliates.js';
 import { adminAnalyticsRoutes } from './admin-analytics.js';
 import { adminAdsRoutes } from './admin-ads.js';
+import { adminSeoRoutes } from './admin-seo.js';
+import { seoPublicRoutes } from './seo-public.js';
 import { videosRoutes, mediaRoutes } from './videos.js';
 import { logger } from '../observability/logger.js';
 
@@ -152,6 +154,12 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
 
       // Admin ads routes
       await api.register(adminAdsRoutes, { prefix: '/admin/ads' });
+
+      // Admin SEO routes
+      await api.register(adminSeoRoutes, { prefix: '/admin/seo' });
+
+      // Public SEO routes (for SSR/sitemap)
+      await api.register(seoPublicRoutes, { prefix: '/public' });
     },
     { prefix: '/api/v1' }
   );

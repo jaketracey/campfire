@@ -1857,3 +1857,81 @@ export interface UtmAttributionStats {
   total_revenue_cents: number;
   total_ltv_cents: number;
 }
+
+// ============================================================================
+// SEO Page Types
+// ============================================================================
+
+export type SeoPageStatus = 'draft' | 'generating' | 'published' | 'archived';
+
+/**
+ * JSON structure for SEO page generated content
+ */
+export interface SeoPageContentJson {
+  headline?: string;
+  tagline?: string;
+  personalitySummary?: string;
+  keyTraits?: string[];
+  conversationStarters?: string[];
+  [key: string]: unknown;
+}
+
+/**
+ * SEO page database record
+ */
+export interface SeoPage {
+  id: UUID;
+  companion_id: UUID;
+  slug: string;
+  title: string;
+  meta_description: string | null;
+  og_title: string | null;
+  og_description: string | null;
+  og_image_url: string | null;
+  content_html: string;
+  content_json: SeoPageContentJson;
+  status: SeoPageStatus;
+  version: number;
+  published_at: Timestamp | null;
+  generated_by_model: string | null;
+  generation_error: string | null;
+  created_by: UUID | null;
+  created_at: Timestamp;
+  updated_at: Timestamp;
+}
+
+/**
+ * SEO page insert/create payload
+ */
+export interface SeoPageInsert {
+  id?: UUID;
+  companion_id: UUID;
+  slug: string;
+  title: string;
+  meta_description?: string | null;
+  og_title?: string | null;
+  og_description?: string | null;
+  og_image_url?: string | null;
+  content_html?: string;
+  content_json?: SeoPageContentJson;
+  status?: SeoPageStatus;
+  created_by?: UUID | null;
+}
+
+/**
+ * SEO page update payload
+ */
+export interface SeoPageUpdate {
+  title?: string;
+  meta_description?: string | null;
+  og_title?: string | null;
+  og_description?: string | null;
+  og_image_url?: string | null;
+  content_html?: string;
+  content_json?: SeoPageContentJson;
+  status?: SeoPageStatus;
+  published_at?: Timestamp | null;
+  generated_by_model?: string | null;
+  generation_error?: string | null;
+  version?: number;
+}
