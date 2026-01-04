@@ -272,7 +272,7 @@ class ImageRoutingConfigRepository:
                 is_enabled,
                 api_key_encrypted IS NOT NULL as has_api_key,
                 priority,
-                base_url
+                api_base_url
             FROM provider_configs
             WHERE category = 'image'
             ORDER BY priority ASC
