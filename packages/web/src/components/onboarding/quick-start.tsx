@@ -867,9 +867,9 @@ export function QuickStart({ onBack }: QuickStartProps) {
                         <Button
                           size="lg"
                           onClick={handleIgnite}
-                          className="h-20 px-16 text-2xl font-bold rounded-2xl bg-gradient-to-r from-orange-500 via-red-500 to-pink-500 hover:from-orange-400 hover:via-red-400 hover:to-pink-400 shadow-[0_0_40px_rgba(239,68,68,0.5)] hover:shadow-[0_0_60px_rgba(239,68,68,0.7)] transition-all duration-300 hover:scale-105 active:scale-95"
+                          className="h-auto py-6 px-16 text-2xl font-bold rounded-2xl bg-gradient-to-r from-orange-500 via-red-500 to-pink-500 hover:from-orange-400 hover:via-red-400 hover:to-pink-400 shadow-[0_0_40px_rgba(239,68,68,0.5)] hover:shadow-[0_0_60px_rgba(239,68,68,0.7)] transition-all duration-300 hover:scale-105 active:scale-95 flex-col gap-2"
                         >
-                          <Flame className="mr-3 h-8 w-8" />
+                          <Flame className="h-10 w-10 text-white" />
                           IGNITE
                         </Button>
                         <p className="text-xs text-center text-gray-500 mt-6">
