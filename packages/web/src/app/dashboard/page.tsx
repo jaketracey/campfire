@@ -40,6 +40,7 @@ import type {
 } from '@/lib/api';
 import Link from 'next/link';
 import type { Route } from 'next';
+import { useOnboardingStore } from '@/stores/onboarding-store';
 
 interface Companion {
   id: string;
@@ -77,6 +78,7 @@ interface Session {
 
 export default function DashboardPage() {
   const router = useRouter();
+  const resetOnboarding = useOnboardingStore((state) => state.reset);
   const { isAuthenticated, isInitialized, user, isLoading: authLoading } = useAuth();
   const [companions, setCompanions] = useState<Companion[]>([]);
   const [sessions, setSessions] = useState<Session[]>([]);
@@ -265,6 +267,11 @@ export default function DashboardPage() {
     setTimeout(() => setCopiedCode(false), 2000);
   };
 
+  const handleDesignNewCompanion = () => {
+    resetOnboarding();
+    router.push('/onboard');
+  };
+
   // Show loading while checking auth or loading data
   if (!isInitialized || authLoading || loading) {
     return (
@@ -302,7 +309,7 @@ export default function DashboardPage() {
           </div>
           <div className="flex flex-col lg:flex-row gap-3 md:pt-6">
             <motion.button
-              onClick={() => router.push('/onboard')}
+              onClick={handleDesignNewCompanion}
               className="relative h-14 md:h-11 px-8 md:px-6 rounded-full bg-gradient-to-b from-white via-gray-100 to-gray-300 text-gray-900 font-bold text-lg md:text-base shadow-[0_4px_20px_rgba(255,255,255,0.2),inset_0_1px_0_rgba(255,255,255,0.8),inset_0_-2px_4px_rgba(0,0,0,0.1)] border border-white/50 transition-all overflow-hidden"
               whileHover={{
                 scale: 1.05,
@@ -395,7 +402,7 @@ export default function DashboardPage() {
                   </p>
                 </div>
                 <Button
-                  onClick={() => router.push('/onboard')}
+                  onClick={handleDesignNewCompanion}
                   size="xl"
                   className="h-16 px-12 rounded-full bg-gradient-to-r from-campfire-500 to-campfire-600 text-white font-bold text-xl shadow-[0_0_30px_rgba(249,115,22,0.3)] hover:scale-105 transition-all"
                 >

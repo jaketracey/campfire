@@ -11,6 +11,7 @@ import { useAuth } from '@/hooks/use-auth';
 import { listSessions, listCompanions } from '@/lib/api';
 import type { Session as APISession, Companion as APICompanion } from '@/lib/api';
 import { SessionSearch } from '@/components/chat/session-search';
+import { useOnboardingStore } from '@/stores/onboarding-store';
 
 /**
  * Session with enriched companion data for display
@@ -217,6 +218,7 @@ function ErrorState({ message, onRetry }: { message: string; onRetry: () => void
  */
 export default function ChatPage() {
   const router = useRouter();
+  const resetOnboarding = useOnboardingStore((state) => state.reset);
   const { isAuthenticated, isInitialized, isLoading: authLoading, user } = useAuth();
 
   const [sessions, setSessions] = useState<SessionWithCompanion[]>([]);
@@ -294,6 +296,7 @@ export default function ChatPage() {
   };
 
   const handleCreateCompanion = () => {
+    resetOnboarding();
     router.push('/onboard');
   };
 

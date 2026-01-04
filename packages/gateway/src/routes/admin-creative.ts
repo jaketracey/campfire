@@ -5,6 +5,8 @@
 
 import type { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
 import { z } from 'zod';
+import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3';
+import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { requireAdmin } from '../middleware/auth.js';
 import { logger } from '../observability/logger.js';
 import {
@@ -13,6 +15,14 @@ import {
   UpdateCreativeSchema,
 } from '../services/creative.js';
 import type { UUID } from '../db/types.js';
+
+// S3 configuration
+const S3_MEDIA_BUCKET = process.env['S3_MEDIA_BUCKET'] || 'campfire-dev-media';
+const S3_REGION = process.env['AWS_REGION'] || 'us-east-1';
+const S3_CDN_URL = process.env['S3_CDN_URL'] || `https://${S3_MEDIA_BUCKET}.s3.${S3_REGION}.amazonaws.com`;
+
+// Initialize S3 client
+const s3Client = new S3Client({ region: S3_REGION });
 
 // ============================================================================
 // Request Schemas
@@ -51,6 +61,12 @@ const UploadCombinedBodySchema = z.object({
 const PublishBodySchema = z.object({
   campaignId: z.string().optional(),
   adSetId: z.string().optional(),
+});
+
+const PresignUploadBodySchema = z.object({
+  creativeId: z.string().uuid(),
+  contentType: z.string().default('video/webm'),
+  fileSize: z.number().int().min(1),
 });
 
 // ============================================================================
@@ -468,6 +484,64 @@ export async function adminCreativeRoutes(app: FastifyInstance): Promise<void> {
       }
     }
   );
+
+  // ===========================================================================
+  // Presigned Upload Endpoint
+  // ===========================================================================
+
+  /**
+   * POST /presign-upload - Get presigned URL for direct S3 upload
+   */
+  app.post('/presign-upload', async (request: FastifyRequest, reply: FastifyReply) => {
+    try {
+      const body = PresignUploadBodySchema.parse(request.body);
+
+      const timestamp = Date.now();
+      const extension = body.contentType === 'video/webm' ? 'webm' : 'mp4';
+      const s3Key = `creatives/${body.creativeId}/final-${timestamp}.${extension}`;
+
+      // Generate presigned PUT URL (valid for 15 minutes)
+      const uploadUrl = await getSignedUrl(
+        s3Client,
+        new PutObjectCommand({
+          Bucket: S3_MEDIA_BUCKET,
+          Key: s3Key,
+          ContentType: body.contentType,
+          ContentLength: body.fileSize,
+        }),
+        { expiresIn: 900 }
+      );
+
+      const publicUrl = `${S3_CDN_URL}/${s3Key}`;
+
+      logger.info(
+        { creativeId: body.creativeId, s3Key, contentType: body.contentType },
+        'Generated presigned upload URL for creative'
+      );
+
+      return reply.send({
+        success: true,
+        data: {
+          uploadUrl,
+          s3Key,
+          publicUrl,
+        },
+      });
+    } catch (error) {
+      if (error instanceof z.ZodError) {
+        return reply.status(400).send({
+          success: false,
+          error: 'Validation error',
+          details: error.errors,
+        });
+      }
+      logger.error({ error }, 'Failed to generate presigned URL');
+      return reply.status(500).send({
+        success: false,
+        error: 'Failed to generate upload URL',
+      });
+    }
+  });
 
   // ===========================================================================
   // Video Models Endpoint

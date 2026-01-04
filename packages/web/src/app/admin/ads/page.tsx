@@ -1,19 +1,21 @@
 'use client';
 
 import { useState } from 'react';
-import { Target, BarChart3, Building2, RefreshCw } from 'lucide-react';
+import { Target, BarChart3, Building2, RefreshCw, Video } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import { OverviewTab } from '@/components/admin/ads/overview-tab';
 import { CampaignsTab } from '@/components/admin/ads/campaigns-tab';
 import { AccountsTab } from '@/components/admin/ads/accounts-tab';
+import { CreativeTab } from '@/components/admin/ads/creative-tab';
 
-type TabType = 'overview' | 'campaigns' | 'accounts';
+type TabType = 'overview' | 'campaigns' | 'accounts' | 'creative';
 
 const tabs: { id: TabType; label: string; icon: typeof Target }[] = [
   { id: 'overview', label: 'Overview', icon: BarChart3 },
   { id: 'campaigns', label: 'Campaigns', icon: Target },
   { id: 'accounts', label: 'Accounts', icon: Building2 },
+  { id: 'creative', label: 'Creative', icon: Video },
 ];
 
 export default function AdsPage() {
@@ -92,6 +94,9 @@ export default function AdsPage() {
         )}
         {activeTab === 'accounts' && (
           <AccountsTab refreshKey={refreshKey} />
+        )}
+        {activeTab === 'creative' && (
+          <CreativeTab refreshKey={refreshKey} />
         )}
       </div>
     </div>

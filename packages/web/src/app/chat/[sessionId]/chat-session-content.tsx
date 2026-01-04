@@ -19,6 +19,7 @@ import {
   MobileActionBar,
 } from './components';
 import type { ChatSessionContentProps } from './types';
+import { useOnboardingStore } from '@/stores/onboarding-store';
 
 export function ChatSessionContent({
   sessionId,
@@ -36,6 +37,12 @@ export function ChatSessionContent({
     onLimitReached,
     onRequireAuth,
   });
+  const resetOnboarding = useOnboardingStore((state) => state.reset);
+
+  const handleDesignNewCompanion = () => {
+    resetOnboarding();
+    chat.router.push('/onboard');
+  };
 
   // Show loading while checking auth
   if (chat.authLoading) {
@@ -97,7 +104,7 @@ export function ChatSessionContent({
         onResizeStart={chat.handleResizeStart}
         onMouseMoveNearGrabber={chat.handleMouseMoveNearGrabber}
         onMouseLeaveGrabber={chat.handleMouseLeaveGrabber}
-        onDesignCompanion={() => chat.router.push('/onboard')}
+        onDesignCompanion={handleDesignNewCompanion}
       />
 
       {/* Main Chat Area */}
@@ -115,7 +122,7 @@ export function ChatSessionContent({
           onToggleMobileMenu={() => chat.setShowMobileMenu(!chat.showMobileMenu)}
           onMobileNewChat={() => {
             chat.setShowMobileMenu(false);
-            chat.router.push('/onboard');
+            handleDesignNewCompanion();
           }}
           onMobileGallery={() => {
             chat.setShowMobileMenu(false);

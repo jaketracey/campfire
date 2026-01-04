@@ -916,7 +916,7 @@ export function QuickStart({ onBack }: QuickStartProps) {
                           onClick={handleIgnite}
                           className="h-auto py-6 px-16 text-2xl font-bold rounded-2xl bg-gradient-to-r from-orange-500 via-red-500 to-pink-500 hover:from-orange-400 hover:via-red-400 hover:to-pink-400 shadow-[0_0_40px_rgba(239,68,68,0.5)] hover:shadow-[0_0_60px_rgba(239,68,68,0.7)] transition-all duration-300 hover:scale-105 active:scale-95 flex-col gap-2"
                         >
-                          <Flame className="h-16 w-16 text-white" />
+                          <Flame className="h-[100px] w-[100px] text-white" />
                           IGNITE
                         </Button>
                         <p className="text-xs text-center text-gray-500 mt-6">
