@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState, useCallback, Fragment } from 'react';
-import { RefreshCw, ChevronLeft, ChevronRight, LifeBuoy, ChevronDown, Search } from 'lucide-react';
+import { RefreshCw, ChevronLeft, ChevronRight, LifeBuoy, ChevronDown, Search, Mail } from 'lucide-react';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -23,10 +23,12 @@ import {
 import {
   listSupportTickets,
   updateTicketStatus,
+  sendTestEmail,
   type AdminSupportTicket,
   type TicketStatus,
   type SupportCategory,
 } from '@/lib/api/support';
+import { CreateTicketDialog } from '@/components/admin/create-ticket-dialog';
 import { formatDistanceToNow, format } from 'date-fns';
 import { useToast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
@@ -41,9 +43,9 @@ const STATUS_LABELS: Record<TicketStatus, string> = {
 };
 
 const CATEGORY_LABELS: Record<SupportCategory, string> = {
-  bug_report: 'Bug Report',
+  bug: 'Bug Report',
   feature_request: 'Feature Request',
-  account_issue: 'Account',
+  account: 'Account',
   billing: 'Billing',
   other: 'Other',
 };
@@ -77,6 +79,7 @@ export default function AdminSupportPage() {
   const [expandedTicketId, setExpandedTicketId] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [debouncedSearch, setDebouncedSearch] = useState('');
+  const [isSendingTestEmail, setIsSendingTestEmail] = useState(false);
 
   // Debounce search
   useEffect(() => {
@@ -113,6 +116,26 @@ export default function AdminSupportPage() {
   useEffect(() => {
     fetchTickets();
   }, [fetchTickets]);
+
+  const handleSendTestEmail = async () => {
+    setIsSendingTestEmail(true);
+    try {
+      const response = await sendTestEmail();
+      toast({
+        title: 'Test Email Sent',
+        description: `Test email queued for ${response.data.recipientEmail}`,
+      });
+    } catch (error) {
+      console.error('Failed to send test email:', error);
+      toast({
+        title: 'Error',
+        description: 'Failed to send test email. Is Redis running?',
+        variant: 'destructive',
+      });
+    } finally {
+      setIsSendingTestEmail(false);
+    }
+  };
 
   const handleStatusChange = async (ticketId: string, newStatus: TicketStatus) => {
     try {
@@ -153,6 +176,18 @@ export default function AdminSupportPage() {
         <div>
           <h1 className="text-3xl font-bold font-display text-white">Support Tickets</h1>
           <p className="text-gray-400 mt-1">Manage user support requests</p>
+        </div>
+        <div className="flex items-center gap-2">
+          <Button
+            variant="outline"
+            onClick={handleSendTestEmail}
+            disabled={isSendingTestEmail}
+            className="border-white/10 hover:bg-white/10 text-white"
+          >
+            <Mail className="mr-2 h-4 w-4" />
+            {isSendingTestEmail ? 'Sending...' : 'Send Test Email'}
+          </Button>
+          <CreateTicketDialog onTicketCreated={fetchTickets} />
         </div>
       </div>
 

@@ -6,14 +6,9 @@
 import { get, patch, post } from './client';
 
 /**
- * Support ticket category
+ * Support ticket category (matches backend schema)
  */
-export type SupportCategory =
-  | 'bug_report'
-  | 'feature_request'
-  | 'account_issue'
-  | 'billing'
-  | 'other';
+export type SupportCategory = 'bug' | 'feature_request' | 'account' | 'billing' | 'other';
 
 /**
  * Create support ticket request
@@ -121,4 +116,52 @@ export function updateTicketStatus(
   status: TicketStatus
 ): Promise<UpdateTicketStatusResponse> {
   return patch<UpdateTicketStatusResponse>(`/admin/support/tickets/${ticketId}`, { status });
+}
+
+// ============================================================================
+// Admin Test Email
+// ============================================================================
+
+export interface SendTestEmailResponse {
+  success: boolean;
+  data: {
+    message: string;
+    jobId: string;
+    recipientEmail: string;
+  };
+}
+
+/**
+ * Send test email to verify SES configuration (admin only)
+ */
+export function sendTestEmail(): Promise<SendTestEmailResponse> {
+  return post<SendTestEmailResponse>('/admin/support/test-email', {});
+}
+
+// ============================================================================
+// Admin Create Ticket
+// ============================================================================
+
+export interface AdminCreateTicketRequest {
+  userId: string;
+  category: SupportCategory;
+  subject: string;
+  message: string;
+}
+
+export interface AdminCreateTicketResponse {
+  success: boolean;
+  data: {
+    ticket: AdminSupportTicket;
+    emailQueued: boolean;
+  };
+}
+
+/**
+ * Create a support ticket on behalf of a user (admin only)
+ */
+export function adminCreateTicket(
+  request: AdminCreateTicketRequest
+): Promise<AdminCreateTicketResponse> {
+  return post<AdminCreateTicketResponse>('/admin/support/tickets', request);
 }
