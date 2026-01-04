@@ -14,7 +14,7 @@ interface ChatMessagesProps {
   streamingContent: string;
   isLoading: boolean;
   showTypingBetweenMessages: boolean;
-  messagesEndRef: React.RefObject<HTMLDivElement>;
+  messagesEndRef: React.RefObject<HTMLDivElement | null>;
   keyboardHeight: number;
 
   // Likes
