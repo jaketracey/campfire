@@ -2,21 +2,34 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 
-// Flowguard SDK types
+// Flowguard SDK types based on actual SDK API
 interface FlowguardInstance {
   remove: () => void;
-  submit: () => Promise<void>;
+  submit: () => void;
 }
 
-interface FlowguardSDK {
-  init: (options: FlowguardInitOptions) => FlowguardInstance;
+interface FlowguardElementConfig {
+  target: string;
+  placeholder?: string;
+  styles?: Record<string, unknown>;
 }
 
-interface FlowguardInitOptions {
+interface FlowguardConstructorOptions {
   sessionId: string;
-  onComplete?: () => void;
-  onDeclined?: (error?: string) => void;
+  cardNumber: FlowguardElementConfig;
+  expDate: FlowguardElementConfig;
+  cardholder: FlowguardElementConfig;
+  cvv: FlowguardElementConfig;
+  price?: FlowguardElementConfig;
+  remember?: FlowguardElementConfig;
+  styles?: Record<string, unknown>;
+  onSuccess?: () => void;
+  onDecline?: (error?: string) => void;
   onError?: (error: string) => void;
+}
+
+interface FlowguardConstructor {
+  new (options: FlowguardConstructorOptions): FlowguardInstance;
 }
 
 interface FlowguardState {
@@ -28,11 +41,18 @@ interface FlowguardState {
 
 declare global {
   interface Window {
-    Flowguard?: FlowguardSDK;
+    Flowguard?: FlowguardConstructor;
   }
 }
 
 const FLOWGUARD_SDK_URL = 'https://flowguard.yoursafe.com/js/flowguard.js';
+
+export interface FlowguardInitOptions {
+  sessionId: string;
+  onSuccess?: () => void;
+  onDecline?: (error?: string) => void;
+  onError?: (error: string) => void;
+}
 
 /**
  * Hook to manage Flowguard payment SDK.
@@ -98,19 +118,36 @@ export function useFlowguard() {
           instanceRef.current.remove();
         }
 
-        const instance = window.Flowguard.init({
+        // Create new Flowguard instance with target elements
+        // The SDK uses constructor pattern: new Flowguard({...})
+        const instance = new window.Flowguard({
           sessionId: options.sessionId,
-          onComplete: () => {
-            setState(prev => ({ ...prev, isSubmitting: false }));
-            options.onComplete?.();
+          cardNumber: {
+            target: '#card-number-element',
           },
-          onDeclined: (error) => {
+          expDate: {
+            target: '#exp-date-element',
+          },
+          cardholder: {
+            target: '#cardholder-element',
+          },
+          cvv: {
+            target: '#cvv-element',
+          },
+          price: {
+            target: '#price-element',
+          },
+          onSuccess: () => {
+            setState(prev => ({ ...prev, isSubmitting: false }));
+            options.onSuccess?.();
+          },
+          onDecline: (error) => {
             setState(prev => ({
               ...prev,
               isSubmitting: false,
               error: error || 'Payment declined'
             }));
-            options.onDeclined?.(error);
+            options.onDecline?.(error);
           },
           onError: (error) => {
             setState(prev => ({ ...prev, isSubmitting: false, error }));
@@ -138,7 +175,7 @@ export function useFlowguard() {
     setState(prev => ({ ...prev, isSubmitting: true, error: null }));
 
     try {
-      await instanceRef.current.submit();
+      instanceRef.current.submit();
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Payment submission failed';
       setState(prev => ({ ...prev, isSubmitting: false, error: message }));

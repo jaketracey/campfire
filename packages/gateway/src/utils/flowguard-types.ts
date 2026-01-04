@@ -19,14 +19,14 @@ export interface FlowguardConfig {
 // ============================================================================
 
 export interface FlowguardPurchaseRequest {
-  /** Amount in cents */
-  priceAmount: number;
+  /** Amount in format NNN.NN (e.g., '9.99') */
+  priceAmount: string;
   /** ISO 4217 currency code (e.g., 'USD', 'EUR') */
   priceCurrency: string;
   /** Description shown to customer */
-  description: string;
+  description?: string;
   /** Unique reference ID for this purchase */
-  referenceId: string;
+  referenceId?: string;
   /** Custom data to include in postback */
   custom1?: string;
   custom2?: string;
@@ -35,8 +35,10 @@ export interface FlowguardPurchaseRequest {
   successUrl: string;
   /** URL to redirect on declined/cancelled payment */
   declineUrl: string;
+  /** URL to receive postback notifications */
+  postbackUrl: string;
   /** Email of the customer */
-  email?: string;
+  email: string;
 }
 
 export interface FlowguardSubscriptionRequest {

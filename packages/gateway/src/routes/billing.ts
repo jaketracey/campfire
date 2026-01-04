@@ -79,6 +79,8 @@ export async function billingRoutes(app: FastifyInstance): Promise<void> {
 
       // Create Flowguard subscription session
       const referenceId = `sub_${nanoid()}`;
+      const apiBaseUrl = process.env.API_BASE_URL || 'https://ignite.cam';
+      const postbackUrl = `${apiBaseUrl}/api/v1/billing/postback`;
       const session = await startSubscriptionSession({
         subscriptionType: 'recurring',
         period: 'P1M', // Monthly
@@ -90,6 +92,7 @@ export async function billingRoutes(app: FastifyInstance): Promise<void> {
         custom2: priceId,
         successUrl,
         declineUrl: cancelUrl,
+        postbackUrl,
         email: user.email,
       });
 

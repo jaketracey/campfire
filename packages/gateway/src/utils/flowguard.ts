@@ -23,7 +23,7 @@ import type {
 // ============================================================================
 
 const DEFAULT_BASE_URL = 'https://flowguard.yoursafe.com';
-const DEFAULT_API_URL = 'https://api.yoursafe.com';
+const DEFAULT_API_URL = 'https://flowguard.yoursafe.com/api/merchant';
 
 function getConfig(): FlowguardConfig {
   return {
@@ -160,15 +160,15 @@ async function apiRequest<T>(
 
   const url = `${config.apiUrl}${endpoint}`;
 
+  // Flowguard API expects JWT as the request body with Content-Type: application/jwt
   const headers: Record<string, string> = {
-    'Content-Type': 'application/json',
-    Authorization: `Bearer ${token}`,
+    'Content-Type': 'application/jwt',
   };
 
   const response = await fetch(url, {
     method,
     headers,
-    body: body ? JSON.stringify(body) : undefined,
+    body: token,
   });
 
   if (!response.ok) {
@@ -202,7 +202,7 @@ export async function startPurchaseSession(
     'Starting Flowguard purchase session'
   );
 
-  const response = await apiRequest<FlowguardSessionResponse>('/flowguard/purchase/start', 'POST', {
+  const response = await apiRequest<FlowguardSessionResponse>('/purchase/start', 'POST', {
     shopId: config.shopId,
     priceAmount: request.priceAmount,
     priceCurrency: request.priceCurrency,
@@ -213,6 +213,7 @@ export async function startPurchaseSession(
     custom3: request.custom3,
     successUrl: request.successUrl,
     declineUrl: request.declineUrl,
+    postbackUrl: request.postbackUrl,
     email: request.email,
   });
 
@@ -251,7 +252,7 @@ export async function startSubscriptionSession(
     'Starting Flowguard subscription session'
   );
 
-  const response = await apiRequest<FlowguardSessionResponse>('/flowguard/subscription/start', 'POST', {
+  const response = await apiRequest<FlowguardSessionResponse>('/subscription/start', 'POST', {
     shopId: config.shopId,
     subscriptionType: request.subscriptionType,
     period: request.period,
@@ -293,7 +294,7 @@ export async function getSubscriptionStatus(
   }
 
   return apiRequest<FlowguardSubscriptionStatus>(
-    `/flowguard/subscription/${subscriptionId}/status`,
+    `/subscription/${subscriptionId}/status`,
     'GET'
   );
 }
@@ -311,7 +312,7 @@ export async function cancelSubscription(
   logger.info({ subscriptionId: request.subscriptionId }, 'Cancelling Flowguard subscription');
 
   const response = await apiRequest<FlowguardCancelResponse>(
-    `/flowguard/subscription/${request.subscriptionId}/cancel`,
+    `/subscription/${request.subscriptionId}/cancel`,
     'POST',
     { reason: request.reason }
   );

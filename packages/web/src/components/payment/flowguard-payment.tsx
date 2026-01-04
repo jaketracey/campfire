@@ -49,10 +49,10 @@ export function FlowguardPayment({
       try {
         await initialize({
           sessionId,
-          onComplete: () => {
+          onSuccess: () => {
             onSuccess?.();
           },
-          onDeclined: (declineError) => {
+          onDecline: (declineError) => {
             onError?.(declineError || 'Payment was declined');
           },
           onError: (errorMessage) => {

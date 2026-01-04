@@ -261,8 +261,10 @@ export async function giftsRoutes(app: FastifyInstance): Promise<void> {
 
       // Create Flowguard purchase session
       const referenceId = `tok_${nanoid()}`;
+      const apiBaseUrl = process.env.API_BASE_URL || 'https://ignite.cam';
+      const postbackUrl = `${apiBaseUrl}/api/v1/gifts/tokens/postback`;
       const session = await startPurchaseSession({
-        priceAmount: bundle.price_cents / 100, // Convert cents to dollars
+        priceAmount: (bundle.price_cents / 100).toFixed(2), // Format as "NNN.NN"
         priceCurrency: bundle.currency.toUpperCase(),
         description: `${bundle.name} - ${totalTokens} tokens`,
         referenceId,
@@ -271,6 +273,7 @@ export async function giftsRoutes(app: FastifyInstance): Promise<void> {
         custom3: totalTokens.toString(),
         successUrl,
         declineUrl: cancelUrl,
+        postbackUrl,
         email: user.email,
       });
 

@@ -80,9 +80,10 @@ export async function createTokenSession(
   successUrl: string,
   cancelUrl: string
 ): Promise<PaymentSessionResponse> {
-  return post<PaymentSessionResponse>('/gifts/tokens/session', {
+  const response = await post<{ success: boolean; data: PaymentSessionResponse }>('/gifts/tokens/session', {
     bundleId,
     successUrl,
     cancelUrl,
   });
+  return response.data;
 }
