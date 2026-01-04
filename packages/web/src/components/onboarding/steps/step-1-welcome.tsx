@@ -211,7 +211,7 @@ export function Step1Welcome() {
         </p>
       </div>
 
-      <div ref={buttonRef} className="pt-8 space-y-4 flex flex-col items-center">
+      <div ref={buttonRef} className="pt-8 flex flex-col md:flex-row items-center justify-center gap-4 md:gap-6">
         {/* Primary CTA - Full Designer */}
         <Button
           size="lg"
@@ -222,12 +222,8 @@ export function Step1Welcome() {
           <ArrowRight className="ml-3 h-6 w-6 group-hover:translate-x-2 transition-transform duration-300" />
         </Button>
 
-        {/* Divider */}
-        <div className="flex items-center gap-4 py-2 max-w-xs mx-auto">
-          <div className="flex-1 h-px bg-gradient-to-r from-transparent to-white/20" />
-          <span className="text-xs font-medium text-gray-500 uppercase tracking-widest">or</span>
-          <div className="flex-1 h-px bg-gradient-to-l from-transparent to-white/20" />
-        </div>
+        {/* Divider - vertical on mobile, inline on desktop */}
+        <span className="text-xs font-medium text-gray-500 uppercase tracking-widest">or</span>
 
         {/* Quick Start Option */}
         <motion.div
