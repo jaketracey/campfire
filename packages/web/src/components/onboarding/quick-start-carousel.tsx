@@ -6,7 +6,8 @@ import { IdentityDisplay } from './quick-start/identity-display';
 import { VisualsDisplay } from './quick-start/visuals-display';
 import { ArchetypeDisplay } from './quick-start/archetype-display';
 import { VoiceDisplay } from './quick-start/voice-display';
-import type { AppearanceEthnicity, AppearanceBodyType, AppearanceHairColor } from '@/stores/onboarding-store';
+import type { AppearanceEthnicity, AppearanceBodyType, AppearanceHairColor, SizeCategory, CompanionGender } from '@/stores/onboarding-store';
+import type { CompanionAppearance } from '@/lib/api/companions';
 
 type CarouselSection = 'identity' | 'visuals' | 'archetype' | 'voice';
 
@@ -46,13 +47,7 @@ interface GeneratedCompanionData {
     directness: number;
   };
   visualStyle: {
-    style_type: string;
-    appearance: {
-      ethnicity: AppearanceEthnicity;
-      bodyType: AppearanceBodyType;
-      hairColor: AppearanceHairColor;
-      breastSize: number;
-    };
+    appearance: CompanionAppearance;
   };
   voice: {
     id: string;
@@ -168,11 +163,7 @@ export function QuickStartCarousel({
         return (
           <VisualsDisplay
             key="visuals"
-            ethnicity={generatedData.visualStyle.appearance.ethnicity}
-            bodyType={generatedData.visualStyle.appearance.bodyType}
-            hairColor={generatedData.visualStyle.appearance.hairColor}
-            breastSize={generatedData.visualStyle.appearance.breastSize}
-            artStyle={generatedData.visualStyle.style_type}
+            appearance={generatedData.visualStyle.appearance}
             onComplete={handleSectionComplete}
           />
         );

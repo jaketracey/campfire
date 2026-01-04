@@ -63,6 +63,30 @@ const availableVoices: VoiceOption[] = [
 ];
 
 // Type for generated companion data
+type SizeCategory = 'S' | 'M' | 'L';
+type FemaleBodyType = 'slim' | 'athletic' | 'curvy' | 'plus-size';
+type MaleBodyType = 'slim' | 'athletic' | 'muscular' | 'dad-bod';
+type Ethnicity = 'east-asian' | 'south-asian' | 'black' | 'caucasian' | 'latina' | 'middle-eastern' | 'mixed';
+type HairColor = 'black' | 'brown' | 'blonde' | 'red' | 'fantasy';
+
+interface FemaleAppearance {
+  gender: 'female';
+  ethnicity: Ethnicity;
+  bodyType: FemaleBodyType;
+  hairColor: HairColor;
+  breastSize: SizeCategory;
+}
+
+interface MaleAppearance {
+  gender: 'male';
+  ethnicity: Ethnicity;
+  bodyType: MaleBodyType;
+  hairColor: HairColor;
+  build: SizeCategory;
+}
+
+type CompanionAppearance = FemaleAppearance | MaleAppearance;
+
 interface GeneratedCompanionData {
   primaryArchetype: Archetype;
   secondaryArchetype: Archetype | null;
@@ -79,13 +103,7 @@ interface GeneratedCompanionData {
     directness: number;
   };
   visualStyle: {
-    style_type: 'realistic' | 'anime' | 'stylized' | 'abstract' | 'minimal';
-    appearance: {
-      ethnicity: 'east-asian' | 'south-asian' | 'black' | 'caucasian' | 'latina' | 'middle-eastern' | 'mixed';
-      bodyType: 'slim' | 'athletic' | 'curvy' | 'plus-size';
-      hairColor: 'black' | 'brown' | 'blonde' | 'red' | 'fantasy';
-      breastSize: number;
-    };
+    appearance: CompanionAppearance;
   };
   voice: VoiceOption;
   boundaries: {
@@ -109,14 +127,39 @@ function generateLocalRandomCompanion(): GeneratedCompanionData {
   const otherArchetypes = ARCHETYPES.filter(a => a.id !== randomArchetype.id);
   const secondaryArchetype = Math.random() > 0.5 ? otherArchetypes[Math.floor(Math.random() * otherArchetypes.length)] : null;
 
-  const ethnicities = ['east-asian', 'south-asian', 'black', 'caucasian', 'latina', 'middle-eastern', 'mixed'] as const;
-  const bodyTypes = ['slim', 'athletic', 'curvy', 'plus-size'] as const;
-  const hairColors = ['black', 'brown', 'blonde', 'red', 'fantasy'] as const;
-  const styleTypes = ['realistic', 'anime', 'stylized'] as const;
+  const ethnicities: Ethnicity[] = ['east-asian', 'south-asian', 'black', 'caucasian', 'latina', 'middle-eastern', 'mixed'];
+  const femaleBodyTypes: FemaleBodyType[] = ['slim', 'athletic', 'curvy', 'plus-size'];
+  const maleBodyTypes: MaleBodyType[] = ['slim', 'athletic', 'muscular', 'dad-bod'];
+  const hairColors: HairColor[] = ['black', 'brown', 'blonde', 'red', 'fantasy'];
+  const sizeCategories: SizeCategory[] = ['S', 'M', 'L'];
 
   const femVoices = availableVoices.filter(v => v.gender === 'feminine');
   const mascVoices = availableVoices.filter(v => v.gender === 'masculine');
-  const voicePool = Math.random() > 0.5 ? femVoices : mascVoices;
+
+  // Randomly pick gender
+  const isMale = Math.random() > 0.5;
+  const voicePool = isMale ? mascVoices : femVoices;
+
+  // Generate gender-specific appearance
+  const ethnicity = ethnicities[Math.floor(Math.random() * ethnicities.length)];
+  const hairColor = hairColors[Math.floor(Math.random() * hairColors.length)];
+  const size = sizeCategories[Math.floor(Math.random() * sizeCategories.length)];
+
+  const appearance: CompanionAppearance = isMale
+    ? {
+        gender: 'male',
+        ethnicity,
+        bodyType: maleBodyTypes[Math.floor(Math.random() * maleBodyTypes.length)],
+        hairColor,
+        build: size,
+      }
+    : {
+        gender: 'female',
+        ethnicity,
+        bodyType: femaleBodyTypes[Math.floor(Math.random() * femaleBodyTypes.length)],
+        hairColor,
+        breastSize: size,
+      };
 
   return {
     primaryArchetype: randomArchetype,
@@ -134,13 +177,7 @@ function generateLocalRandomCompanion(): GeneratedCompanionData {
       directness: 0.3 + Math.random() * 0.4,
     },
     visualStyle: {
-      style_type: styleTypes[Math.floor(Math.random() * styleTypes.length)],
-      appearance: {
-        ethnicity: ethnicities[Math.floor(Math.random() * ethnicities.length)],
-        bodyType: bodyTypes[Math.floor(Math.random() * bodyTypes.length)],
-        hairColor: hairColors[Math.floor(Math.random() * hairColors.length)],
-        breastSize: 30 + Math.floor(Math.random() * 40),
-      },
+      appearance,
     },
     voice: voicePool[Math.floor(Math.random() * voicePool.length)],
     boundaries: {
@@ -244,13 +281,7 @@ export function QuickStart({ onBack }: QuickStartProps) {
       streamAnchorImages(
         {
           companionId: companion.id,
-          appearance: {
-            ethnicity: randomCompanion.visualStyle.appearance.ethnicity,
-            bodyType: randomCompanion.visualStyle.appearance.bodyType,
-            hairColor: randomCompanion.visualStyle.appearance.hairColor,
-            breastSize: randomCompanion.visualStyle.appearance.breastSize,
-          },
-          style: randomCompanion.visualStyle.style_type,
+          appearance: randomCompanion.visualStyle.appearance,
           personality: {
             warmth: Math.round(randomCompanion.personality.warmth * 100),
             playfulness: Math.round(randomCompanion.personality.playfulness * 100),
@@ -366,7 +397,23 @@ export function QuickStart({ onBack }: QuickStartProps) {
           ? voicesByGender[Math.floor(Math.random() * voicesByGender.length)]
           : availableVoices[0];
 
-        // Build companion data from LLM response
+        // Build companion data from LLM response (gender-aware)
+        const llmAppearance: CompanionAppearance = llmGenerated.appearance.gender === 'male'
+          ? {
+              gender: 'male',
+              ethnicity: llmGenerated.appearance.ethnicity as Ethnicity,
+              bodyType: llmGenerated.appearance.bodyType as MaleBodyType,
+              hairColor: llmGenerated.appearance.hairColor as HairColor,
+              build: (llmGenerated.appearance.build || 'M') as SizeCategory,
+            }
+          : {
+              gender: 'female',
+              ethnicity: llmGenerated.appearance.ethnicity as Ethnicity,
+              bodyType: llmGenerated.appearance.bodyType as FemaleBodyType,
+              hairColor: llmGenerated.appearance.hairColor as HairColor,
+              breastSize: (llmGenerated.appearance.breastSize || 'M') as SizeCategory,
+            };
+
         randomCompanion = {
           primaryArchetype,
           secondaryArchetype,
@@ -383,13 +430,7 @@ export function QuickStart({ onBack }: QuickStartProps) {
             directness: llmGenerated.personality.directness / 100,
           },
           visualStyle: {
-            style_type: llmGenerated.visualStyle,
-            appearance: {
-              ethnicity: llmGenerated.appearance.ethnicity,
-              bodyType: llmGenerated.appearance.bodyType,
-              hairColor: llmGenerated.appearance.hairColor,
-              breastSize: llmGenerated.appearance.breastSize,
-            },
+            appearance: llmAppearance,
           },
           voice: selectedVoice,
           boundaries: {
@@ -855,8 +896,8 @@ export function QuickStart({ onBack }: QuickStartProps) {
                         </Button>
                         <p className="text-xs text-center text-gray-500 mt-6">
                           By igniting {companionName}, you agree to our{' '}
-                          <Link href="/terms" className="underline hover:text-gray-300 transition-colors">Terms</Link> and{' '}
-                          <Link href="/privacy" className="underline hover:text-gray-300 transition-colors">Privacy Policy</Link>.
+                          <a href="/terms" className="underline hover:text-gray-300 transition-colors">Terms</a> and{' '}
+                          <a href="/privacy" className="underline hover:text-gray-300 transition-colors">Privacy Policy</a>.
                         </p>
                       </motion.div>
                     )}

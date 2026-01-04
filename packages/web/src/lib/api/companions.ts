@@ -8,12 +8,31 @@ import { get, post, patch, del } from './client';
 /**
  * Physical appearance for companion image generation
  */
-export interface CompanionAppearance {
-  ethnicity: 'east-asian' | 'south-asian' | 'black' | 'caucasian' | 'latina' | 'middle-eastern' | 'mixed';
-  bodyType: 'slim' | 'athletic' | 'curvy' | 'plus-size';
-  hairColor: 'black' | 'brown' | 'blonde' | 'red' | 'fantasy';
-  breastSize?: number; // 0-100
+export type AppearanceEthnicity = 'east-asian' | 'south-asian' | 'black' | 'caucasian' | 'latina' | 'middle-eastern' | 'mixed';
+export type FemaleBodyType = 'slim' | 'athletic' | 'curvy' | 'plus-size';
+export type MaleBodyType = 'slim' | 'athletic' | 'muscular' | 'dad-bod';
+export type AppearanceBodyType = FemaleBodyType | MaleBodyType;
+export type AppearanceHairColor = 'black' | 'brown' | 'blonde' | 'red' | 'fantasy';
+export type SizeCategory = 'S' | 'M' | 'L';
+
+interface BaseAppearance {
+  ethnicity: AppearanceEthnicity;
+  hairColor: AppearanceHairColor;
 }
+
+export interface FemaleAppearance extends BaseAppearance {
+  gender: 'female';
+  bodyType: FemaleBodyType;
+  breastSize: SizeCategory;
+}
+
+export interface MaleAppearance extends BaseAppearance {
+  gender: 'male';
+  bodyType: MaleBodyType;
+  build: SizeCategory;
+}
+
+export type CompanionAppearance = FemaleAppearance | MaleAppearance;
 
 /**
  * Companion visual style from spec
@@ -286,13 +305,15 @@ export interface GeneratedPersonality {
 }
 
 /**
- * Generated appearance for companion creation
+ * Generated appearance for companion creation (gender-aware)
  */
 export interface GeneratedAppearance {
+  gender: 'female' | 'male';
   ethnicity: 'east-asian' | 'south-asian' | 'black' | 'caucasian' | 'latina' | 'middle-eastern' | 'mixed';
-  bodyType: 'slim' | 'athletic' | 'curvy' | 'plus-size';
+  bodyType: 'slim' | 'athletic' | 'curvy' | 'plus-size' | 'muscular' | 'dad-bod';
   hairColor: 'black' | 'brown' | 'blonde' | 'red' | 'fantasy';
-  breastSize: number;
+  breastSize?: SizeCategory; // Female only
+  build?: SizeCategory; // Male only
 }
 
 /**
@@ -334,15 +355,29 @@ export async function generateRandomIdentity(): Promise<GeneratedIdentity> {
       directness: number;
     };
     appearance: {
+      gender?: 'female' | 'male';
       ethnicity: string;
       body_type: string;
       hair_color: string;
-      breast_size: number;
+      breast_size?: number;
+      build?: string;
     };
     visual_style: string;
     voice_gender: string;
     latency_ms: number;
   }>('/companions/generate-identity', {});
+
+  // Determine gender from response or infer from voice gender
+  const gender = response.appearance.gender ??
+    (response.voice_gender === 'masculine' ? 'male' : 'female');
+
+  // Convert size based on gender
+  const sizeCategory = (value: number | undefined): SizeCategory => {
+    if (!value) return 'M';
+    if (value <= 33) return 'S';
+    if (value <= 66) return 'M';
+    return 'L';
+  };
 
   return {
     name: response.name,
@@ -352,10 +387,12 @@ export async function generateRandomIdentity(): Promise<GeneratedIdentity> {
     secondaryArchetype: response.secondary_archetype,
     personality: response.personality,
     appearance: {
+      gender,
       ethnicity: response.appearance.ethnicity as GeneratedAppearance['ethnicity'],
       bodyType: response.appearance.body_type as GeneratedAppearance['bodyType'],
       hairColor: response.appearance.hair_color as GeneratedAppearance['hairColor'],
-      breastSize: response.appearance.breast_size,
+      breastSize: gender === 'female' ? sizeCategory(response.appearance.breast_size) : undefined,
+      build: gender === 'male' ? (response.appearance.build as SizeCategory || 'M') : undefined,
     },
     visualStyle: response.visual_style as GeneratedIdentity['visualStyle'],
     voiceGender: response.voice_gender as GeneratedIdentity['voiceGender'],

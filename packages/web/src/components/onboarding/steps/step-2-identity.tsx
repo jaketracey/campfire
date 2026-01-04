@@ -123,15 +123,25 @@ export function Step2Identity() {
         ? voicesByGender[Math.floor(Math.random() * voicesByGender.length)]
         : VOICES[0];
 
-      // Build visual style from LLM-generated values
+      // Build visual style from LLM-generated values (gender-aware)
+      const appearance = generated.appearance.gender === 'male'
+        ? {
+            gender: 'male' as const,
+            ethnicity: generated.appearance.ethnicity,
+            bodyType: generated.appearance.bodyType as 'slim' | 'athletic' | 'muscular' | 'dad-bod',
+            hairColor: generated.appearance.hairColor,
+            build: (generated.appearance.build || 'M') as 'S' | 'M' | 'L',
+          }
+        : {
+            gender: 'female' as const,
+            ethnicity: generated.appearance.ethnicity,
+            bodyType: generated.appearance.bodyType as 'slim' | 'athletic' | 'curvy' | 'plus-size',
+            hairColor: generated.appearance.hairColor,
+            breastSize: (generated.appearance.breastSize || 'M') as 'S' | 'M' | 'L',
+          };
+
       const visualStyle = {
-        avatarStyle: generated.visualStyle,
-        appearance: {
-          ethnicity: generated.appearance.ethnicity,
-          bodyType: generated.appearance.bodyType,
-          hairColor: generated.appearance.hairColor,
-          breastSize: generated.appearance.breastSize,
-        },
+        appearance,
         colorTheme: 'campfire' as const,
         animationLevel: 'moderate' as const,
       };
@@ -194,7 +204,6 @@ export function Step2Identity() {
             voice_id: selectedVoice.id,
           },
           visual_style: {
-            style_type: visualStyle.avatarStyle,
             appearance: visualStyle.appearance,
           },
         },
@@ -209,13 +218,7 @@ export function Step2Identity() {
       streamAnchorImages(
         {
           companionId: companion.id,
-          appearance: {
-            ethnicity: generated.appearance.ethnicity,
-            bodyType: generated.appearance.bodyType,
-            hairColor: generated.appearance.hairColor,
-            breastSize: generated.appearance.breastSize,
-          },
-          style: generated.visualStyle,
+          appearance: visualStyle.appearance,
           personality: {
             warmth: generated.personality.warmth,
             playfulness: generated.personality.playfulness,

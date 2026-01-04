@@ -17,13 +17,27 @@ import type { CompanionSpec } from '../db/types.js';
 // Orchestrator configuration
 const ORCHESTRATOR_URL = process.env['ORCHESTRATOR_URL'] || 'http://localhost:8000';
 
-// Appearance schema for validation
-const AppearanceSchema = z.object({
+// Appearance schema for validation (gender-aware discriminated union)
+const FemaleAppearanceSchema = z.object({
+  gender: z.literal('female'),
   ethnicity: z.enum(['east-asian', 'south-asian', 'black', 'caucasian', 'latina', 'middle-eastern', 'mixed']),
   bodyType: z.enum(['slim', 'athletic', 'curvy', 'plus-size']),
   hairColor: z.enum(['black', 'brown', 'blonde', 'red', 'fantasy']),
-  breastSize: z.number().min(0).max(100).optional(),
+  breastSize: z.enum(['S', 'M', 'L']),
 });
+
+const MaleAppearanceSchema = z.object({
+  gender: z.literal('male'),
+  ethnicity: z.enum(['east-asian', 'south-asian', 'black', 'caucasian', 'latina', 'middle-eastern', 'mixed']),
+  bodyType: z.enum(['slim', 'athletic', 'muscular', 'dad-bod']),
+  hairColor: z.enum(['black', 'brown', 'blonde', 'red', 'fantasy']),
+  build: z.enum(['S', 'M', 'L']),
+});
+
+const AppearanceSchema = z.discriminatedUnion('gender', [
+  FemaleAppearanceSchema,
+  MaleAppearanceSchema,
+]);
 
 // Request schemas - simplified input for API consumers
 const CreateCompanionSchema = z.object({
@@ -123,14 +137,8 @@ function buildSpec(input: {
     style_type: provided.visual_style?.style_type || 'default',
   };
   if (provided.visual_style?.appearance) {
-    const app = provided.visual_style.appearance;
-    const appearance: CompanionSpec['visual_style']['appearance'] = {
-      ethnicity: app.ethnicity,
-      bodyType: app.bodyType,
-      hairColor: app.hairColor,
-    };
-    if (app.breastSize !== undefined) appearance.breastSize = app.breastSize;
-    visual_style.appearance = appearance;
+    // Pass through the complete appearance object (gender-aware)
+    visual_style.appearance = provided.visual_style.appearance;
   }
   if (provided.visual_style?.palette) {
     visual_style.palette = provided.visual_style.palette;

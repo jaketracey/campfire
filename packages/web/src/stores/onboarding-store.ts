@@ -292,7 +292,7 @@ export const useOnboardingStore = create<OnboardingState>()(
         set((state) => ({
           visualStyle: {
             ...state.visualStyle,
-            appearance: { ...state.visualStyle.appearance, ...appearance },
+            appearance: { ...state.visualStyle.appearance, ...appearance } as PhysicalAppearance,
           },
         })),
       setBoundaries: (boundaries) =>

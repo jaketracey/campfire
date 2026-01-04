@@ -125,13 +125,8 @@ export function Step7Voice() {
             voice_id: voice.id,
           },
           visual_style: {
-            style_type: state.visualStyle.avatarStyle,
-            appearance: {
-              ethnicity: state.visualStyle.appearance.ethnicity,
-              bodyType: state.visualStyle.appearance.bodyType,
-              hairColor: state.visualStyle.appearance.hairColor,
-              breastSize: state.visualStyle.appearance.breastSize,
-            },
+            style_type: 'realistic',
+            appearance: state.visualStyle.appearance,
           },
           boundaries: {
             relationship_pacing: 'moderate',
@@ -151,13 +146,7 @@ export function Step7Voice() {
       streamAnchorImages(
         {
           companionId: companion.id,
-          appearance: {
-            ethnicity: state.visualStyle.appearance.ethnicity,
-            bodyType: state.visualStyle.appearance.bodyType,
-            hairColor: state.visualStyle.appearance.hairColor,
-            breastSize: state.visualStyle.appearance.breastSize,
-          },
-          style: state.visualStyle.avatarStyle,
+          appearance: state.visualStyle.appearance,
           personality: {
             warmth: state.personality.warmth,
             playfulness: state.personality.playfulness,
@@ -306,13 +295,8 @@ export function Step7Voice() {
             voice_id: targetVoice.id,
           },
           visual_style: {
-            style_type: state.visualStyle.avatarStyle,
-            appearance: {
-              ethnicity: state.visualStyle.appearance.ethnicity,
-              bodyType: state.visualStyle.appearance.bodyType,
-              hairColor: state.visualStyle.appearance.hairColor,
-              breastSize: state.visualStyle.appearance.breastSize,
-            },
+            style_type: 'realistic',
+            appearance: state.visualStyle.appearance,
           },
           boundaries: {
             relationship_pacing: 'moderate',
@@ -330,13 +314,7 @@ export function Step7Voice() {
       streamAnchorImages(
         {
           companionId: companion.id,
-          appearance: {
-            ethnicity: state.visualStyle.appearance.ethnicity,
-            bodyType: state.visualStyle.appearance.bodyType,
-            hairColor: state.visualStyle.appearance.hairColor,
-            breastSize: state.visualStyle.appearance.breastSize,
-          },
-          style: state.visualStyle.avatarStyle,
+          appearance: state.visualStyle.appearance,
           personality: {
             warmth: state.personality.warmth,
             playfulness: state.personality.playfulness,

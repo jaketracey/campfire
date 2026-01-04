@@ -5,7 +5,8 @@ import { motion } from 'framer-motion';
 import { Check, Sparkles } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import Image from 'next/image';
-import type { AppearanceEthnicity, AppearanceBodyType, AppearanceHairColor } from '@/stores/onboarding-store';
+import type { AppearanceEthnicity, AppearanceBodyType, AppearanceHairColor, SizeCategory, CompanionGender } from '@/stores/onboarding-store';
+import type { CompanionAppearance } from '@/lib/api/companions';
 
 // Options matching step-3-visuals.tsx
 const ethnicityOptions: Array<{
@@ -45,54 +46,29 @@ const artStyles = [
   { id: 'minimal', name: 'Minimal', description: 'Clean lines' },
 ];
 
-function getBreastSizeLabel(value: number): string {
-  if (value <= 20) return 'xs';
-  if (value <= 40) return 'sm';
-  if (value <= 60) return 'md';
-  if (value <= 80) return 'lg';
-  return 'xl';
+function getPreviewImagePath(appearance: CompanionAppearance): string {
+  const gender = appearance.gender;
+  const sizePrefix = gender === 'female' ? 'b' : 'build';
+  const size = gender === 'female'
+    ? (appearance as { breastSize: SizeCategory }).breastSize
+    : (appearance as { build: SizeCategory }).build;
+  return `/images/companions/${gender}/${appearance.ethnicity}-${appearance.bodyType}-${appearance.hairColor}-${sizePrefix}${size}.png`;
 }
 
-function getPreviewImagePath(
-  ethnicity: AppearanceEthnicity,
-  bodyType: AppearanceBodyType,
-  hairColor: AppearanceHairColor,
-  breastSize: number
-): string {
-  const breastLabel = getBreastSizeLabel(breastSize);
-  return `/images/companions/${ethnicity}-${bodyType}-${hairColor}-b${breastLabel}.png`;
-}
-
-function getFallbackImagePath(ethnicity: AppearanceEthnicity): string {
-  const fallbacks: Record<AppearanceEthnicity, string> = {
-    'east-asian': '/images/companions/east-asian-slim-black.png',
-    'south-asian': '/images/companions/south-asian-slim-black.png',
-    'black': '/images/companions/black-slim-black.png',
-    'caucasian': '/images/companions/caucasian-slim-black.png',
-    'latina': '/images/companions/latina-slim-black.png',
-    'middle-eastern': '/images/companions/middle-eastern-slim-black.png',
-    'mixed': '/images/companions/black-athletic-black.png',
-  };
-  return fallbacks[ethnicity];
+function getFallbackImagePath(ethnicity: AppearanceEthnicity, gender: CompanionGender): string {
+  return `/images/companions/${gender}/${ethnicity}-athletic-black-${gender === 'female' ? 'b' : 'build'}M.png`;
 }
 
 interface VisualsDisplayProps {
-  ethnicity: AppearanceEthnicity;
-  bodyType: AppearanceBodyType;
-  hairColor: AppearanceHairColor;
-  breastSize: number;
-  artStyle: string;
+  appearance: CompanionAppearance;
   onComplete: () => void;
 }
 
 export function VisualsDisplay({
-  ethnicity,
-  bodyType,
-  hairColor,
-  breastSize,
-  artStyle,
+  appearance,
   onComplete,
 }: VisualsDisplayProps) {
+  const { ethnicity, bodyType, hairColor, gender } = appearance;
   const [showEthnicity, setShowEthnicity] = useState(false);
   const [showBodyType, setShowBodyType] = useState(false);
   const [showHairColor, setShowHairColor] = useState(false);
@@ -100,12 +76,12 @@ export function VisualsDisplay({
   const [imageError, setImageError] = useState(false);
 
   const previewImagePath = useMemo(() => {
-    return getPreviewImagePath(ethnicity, bodyType, hairColor, breastSize);
-  }, [ethnicity, bodyType, hairColor, breastSize]);
+    return getPreviewImagePath(appearance);
+  }, [appearance]);
 
   const fallbackImagePath = useMemo(() => {
-    return getFallbackImagePath(ethnicity);
-  }, [ethnicity]);
+    return getFallbackImagePath(ethnicity, gender);
+  }, [ethnicity, gender]);
 
   useEffect(() => {
     // Cascade animations
@@ -230,33 +206,26 @@ export function VisualsDisplay({
             </div>
           </div>
 
-          {/* Art Style */}
+          {/* Art Style - Always photorealistic */}
           <div className="space-y-3">
             <h3 className="text-sm font-bold tracking-widest uppercase text-gray-500 font-display">Art Style</h3>
             <div className="flex flex-wrap gap-2">
-              {artStyles.map((style) => {
-                const isSelected = style.id === artStyle;
-                return (
-                  <motion.div
-                    key={style.id}
-                    initial={{ opacity: 0.5 }}
-                    animate={showArtStyle && isSelected ? {
-                      opacity: 1,
-                      scale: [1, 1.1, 1.05],
-                    } : { opacity: 0.6 }}
-                    transition={{ duration: 0.3 }}
-                    className={cn(
-                      'px-4 py-2 rounded-full border text-sm font-bold transition-all flex items-center gap-2',
-                      showArtStyle && isSelected
-                        ? 'border-vibes-electric bg-vibes-electric/10 text-vibes-electric shadow-[0_0_15px_rgba(59,130,246,0.3)]'
-                        : 'border-white/10 bg-white/[0.02] text-gray-400'
-                    )}
-                  >
-                    {style.id === 'anime' && <Sparkles className="h-3.5 w-3.5" />}
-                    {style.name}
-                  </motion.div>
-                );
-              })}
+              <motion.div
+                initial={{ opacity: 0.5 }}
+                animate={showArtStyle ? {
+                  opacity: 1,
+                  scale: [1, 1.1, 1.05],
+                } : { opacity: 0.6 }}
+                transition={{ duration: 0.3 }}
+                className={cn(
+                  'px-4 py-2 rounded-full border text-sm font-bold transition-all flex items-center gap-2',
+                  showArtStyle
+                    ? 'border-vibes-electric bg-vibes-electric/10 text-vibes-electric shadow-[0_0_15px_rgba(59,130,246,0.3)]'
+                    : 'border-white/10 bg-white/[0.02] text-gray-400'
+                )}
+              >
+                Photorealistic
+              </motion.div>
             </div>
           </div>
         </div>
@@ -292,7 +261,7 @@ export function VisualsDisplay({
               {ethnicity.replace('-', ' ')} · {bodyType} · {hairColor} hair
             </div>
             <div className="text-xs text-gray-600">
-              Art style: {artStyle}
+              Art style: Photorealistic
             </div>
           </div>
         </div>

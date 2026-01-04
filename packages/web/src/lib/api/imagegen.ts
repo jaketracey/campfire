@@ -68,16 +68,12 @@ export interface GalleryResponse {
   sessionId: string;
 }
 
-// Anchor image generation types
+// Import appearance types from companions
+import type { CompanionAppearance } from './companions';
+
 export interface GenerateAnchorsRequest {
   companionId: string;
-  appearance: {
-    ethnicity: string;
-    bodyType: string;
-    hairColor: string;
-    breastSize?: number;
-  };
-  style: 'realistic' | 'stylized' | 'abstract' | 'minimal' | 'anime';
+  appearance: CompanionAppearance;
   personality?: PersonalitySliders;
 }
 
@@ -223,27 +219,37 @@ export function buildPromptFromCompanion(
   // Use appearance data (from onboarding) - this is what's actually saved
   const appearance = visualStyle.appearance;
   if (appearance) {
+    // Determine gender for descriptive terms
+    const isMale = appearance.gender === 'male';
+
     // Ethnicity mapping to descriptive terms
-    const ethnicityMap: Record<string, string> = {
-      'east-asian': 'East Asian features',
-      'south-asian': 'South Asian features',
-      'black': 'Black/African features',
-      'caucasian': 'Caucasian features',
-      'latina': 'Latina features',
-      'middle-eastern': 'Middle Eastern features',
-      'mixed': 'mixed ethnicity',
+    const ethnicityMap: Record<string, { female: string; male: string }> = {
+      'east-asian': { female: 'East Asian woman', male: 'East Asian man' },
+      'south-asian': { female: 'South Asian woman', male: 'South Asian man' },
+      'black': { female: 'Black/African woman', male: 'Black/African man' },
+      'caucasian': { female: 'Caucasian woman', male: 'Caucasian man' },
+      'latina': { female: 'Latina woman', male: 'Latino man' },
+      'middle-eastern': { female: 'Middle Eastern woman', male: 'Middle Eastern man' },
+      'mixed': { female: 'mixed ethnicity woman', male: 'mixed ethnicity man' },
     };
     if (appearance.ethnicity && ethnicityMap[appearance.ethnicity]) {
-      parts.push(ethnicityMap[appearance.ethnicity]);
+      parts.push(ethnicityMap[appearance.ethnicity][isMale ? 'male' : 'female']);
     }
 
-    // Body type
-    const bodyTypeMap: Record<string, string> = {
+    // Body type (gender-specific)
+    const femaleBodyTypeMap: Record<string, string> = {
       'slim': 'slim figure',
       'athletic': 'athletic build',
       'curvy': 'curvy figure',
       'plus-size': 'plus-size figure',
     };
+    const maleBodyTypeMap: Record<string, string> = {
+      'slim': 'slim lean build',
+      'athletic': 'athletic fit build',
+      'muscular': 'muscular well-built frame',
+      'dad-bod': 'average dad-bod build',
+    };
+    const bodyTypeMap = isMale ? maleBodyTypeMap : femaleBodyTypeMap;
     if (appearance.bodyType && bodyTypeMap[appearance.bodyType]) {
       parts.push(bodyTypeMap[appearance.bodyType]);
     }
@@ -371,7 +377,6 @@ export function streamAnchorImages(
 ): () => void {
   console.log('[SSE] streamAnchorImages called with:', {
     companionId: request.companionId,
-    style: request.style,
     appearance: request.appearance,
   });
 
@@ -394,7 +399,6 @@ export function streamAnchorImages(
   const params = new URLSearchParams({
     companionId: request.companionId,
     appearance: JSON.stringify(request.appearance),
-    style: request.style,
   });
 
   if (request.personality) {

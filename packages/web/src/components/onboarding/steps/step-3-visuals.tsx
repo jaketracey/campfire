@@ -1,23 +1,21 @@
 'use client';
 
 import { useState, useMemo, useEffect, useRef } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
-import { useOnboardingStore, AppearanceEthnicity, AppearanceBodyType, AppearanceHairColor } from '@/stores/onboarding-store';
+import { motion } from 'framer-motion';
+import {
+  useOnboardingStore,
+  AppearanceEthnicity,
+  AppearanceHairColor,
+  FemaleBodyType,
+  MaleBodyType,
+  CompanionGender,
+  SizeCategory,
+  isFemaleAppearance,
+} from '@/stores/onboarding-store';
 import { Button } from '@/components/ui/button';
 import { ArrowRight, Check, Sparkles, Wand2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import Image from 'next/image';
-import { Slider } from '@/components/ui/slider';
-import { Label } from '@/components/ui/label';
-
-// Convert 0-100 breast size to label (xs, sm, md, lg, xl)
-function getBreastSizeLabel(value: number): string {
-  if (value <= 20) return 'xs';
-  if (value <= 40) return 'sm';
-  if (value <= 60) return 'md';
-  if (value <= 80) return 'lg';
-  return 'xl';
-}
 
 // Ethnicity options
 const ethnicityOptions: Array<{
@@ -25,20 +23,27 @@ const ethnicityOptions: Array<{
   name: string;
   description: string;
 }> = [
-    { id: 'east-asian', name: 'East Asian', description: 'Korean, Japanese, Chinese' },
-    { id: 'south-asian', name: 'South Asian', description: 'Indian, Pakistani, Bengali' },
-    { id: 'black', name: 'Black', description: 'African, African American' },
-    { id: 'caucasian', name: 'Caucasian', description: 'European' },
-    { id: 'latina', name: 'Latina', description: 'Hispanic, Latin American' },
-    { id: 'middle-eastern', name: 'Middle Eastern', description: 'Persian, Arab' },
-    { id: 'mixed', name: 'Mixed', description: 'Diverse heritage' },
-  ];
+  { id: 'east-asian', name: 'East Asian', description: 'Korean, Japanese, Chinese' },
+  { id: 'south-asian', name: 'South Asian', description: 'Indian, Pakistani, Bengali' },
+  { id: 'black', name: 'Black', description: 'African, African American' },
+  { id: 'caucasian', name: 'Caucasian', description: 'European' },
+  { id: 'latina', name: 'Latina', description: 'Hispanic, Latin American' },
+  { id: 'middle-eastern', name: 'Middle Eastern', description: 'Persian, Arab' },
+  { id: 'mixed', name: 'Mixed', description: 'Diverse heritage' },
+];
 
-const bodyTypeOptions: Array<{ id: AppearanceBodyType; name: string }> = [
+const femaleBodyTypes: Array<{ id: FemaleBodyType; name: string }> = [
   { id: 'slim', name: 'Slim' },
   { id: 'athletic', name: 'Athletic' },
   { id: 'curvy', name: 'Curvy' },
   { id: 'plus-size', name: 'Plus Size' },
+];
+
+const maleBodyTypes: Array<{ id: MaleBodyType; name: string }> = [
+  { id: 'slim', name: 'Slim' },
+  { id: 'athletic', name: 'Athletic' },
+  { id: 'muscular', name: 'Muscular' },
+  { id: 'dad-bod', name: 'Dad Bod' },
 ];
 
 const hairColorOptions: Array<{ id: AppearanceHairColor; name: string; color: string }> = [
@@ -49,115 +54,153 @@ const hairColorOptions: Array<{ id: AppearanceHairColor; name: string; color: st
   { id: 'fantasy', name: 'Fantasy', color: 'bg-gradient-to-r from-pink-500 via-purple-500 to-blue-500' },
 ];
 
-const artStyles = [
-  { id: 'realistic', name: 'Realistic', description: 'Lifelike rendering' },
-  { id: 'anime', name: 'Anime', description: 'Hand-drawn aesthetic' },
-  { id: 'stylized', name: 'Stylized', description: 'Artistic interpretation' },
-  { id: 'abstract', name: 'Abstract', description: 'Geometric shapes' },
-  { id: 'minimal', name: 'Minimal', description: 'Clean lines' },
-];
+const sizeOptions: SizeCategory[] = ['S', 'M', 'L'];
 
-const defaultAppearance = {
-  ethnicity: 'mixed' as AppearanceEthnicity,
-  bodyType: 'athletic' as AppearanceBodyType,
-  hairColor: 'brown' as AppearanceHairColor,
-};
-
-// Build dynamic image path based on all selections including breast size
+// Build dynamic image path based on all selections
 function getPreviewImagePath(
+  gender: CompanionGender,
   ethnicity: AppearanceEthnicity,
-  bodyType: AppearanceBodyType,
+  bodyType: string,
   hairColor: AppearanceHairColor,
-  breastSize: number
+  size: SizeCategory
 ): string {
-  const breastLabel = getBreastSizeLabel(breastSize);
-  return `/images/companions/${ethnicity}-${bodyType}-${hairColor}-b${breastLabel}.png`;
-}
-
-// Legacy path without breast size (for fallback)
-function getLegacyImagePath(
-  ethnicity: AppearanceEthnicity,
-  bodyType: AppearanceBodyType,
-  hairColor: AppearanceHairColor
-): string {
-  return `/images/companions/${ethnicity}-${bodyType}-${hairColor}.png`;
+  const sizePrefix = gender === 'female' ? 'b' : 'build';
+  return `/images/companions/${gender}/${ethnicity}-${bodyType}-${hairColor}-${sizePrefix}${size}.png`;
 }
 
 // Fallback images for each ethnicity (used when specific combo doesn't exist)
-function getFallbackImagePath(ethnicity: AppearanceEthnicity): string {
-  const fallbacks: Record<AppearanceEthnicity, string> = {
-    'east-asian': '/images/companions/east-asian-slim-black.png',
-    'south-asian': '/images/companions/south-asian-slim-black.png',
-    'black': '/images/companions/black-slim-black.png',
-    'caucasian': '/images/companions/caucasian-slim-black.png',
-    'latina': '/images/companions/latina-slim-black.png',
-    'middle-eastern': '/images/companions/middle-eastern-slim-black.png',
-    'mixed': '/images/companions/black-athletic-black.png',
-  };
-  return fallbacks[ethnicity];
+function getFallbackImagePath(ethnicity: AppearanceEthnicity, gender: CompanionGender): string {
+  return `/images/companions/${gender}/${ethnicity}-athletic-black-${gender === 'female' ? 'b' : 'build'}M.png`;
 }
 
 export function Step3Visuals() {
-  const { visualStyle, setVisualStyle, setAppearance, nextStep } = useOnboardingStore();
+  const { visualStyle, setAppearance, nextStep } = useOnboardingStore();
   const [imageError, setImageError] = useState(false);
   const [isTransitioning, setIsTransitioning] = useState(false);
   const [displayedImage, setDisplayedImage] = useState<string | null>(null);
   const [isSurprising, setIsSurprising] = useState(false);
   const transitionTimeout = useRef<NodeJS.Timeout | null>(null);
 
+  const appearance = visualStyle.appearance;
+  const isFemale = isFemaleAppearance(appearance);
+  const currentGender = appearance.gender;
+  const currentSize = isFemale ? appearance.breastSize : appearance.build;
+  const bodyTypeOptions = isFemale ? femaleBodyTypes : maleBodyTypes;
+
+  // Handle gender change - reset body type to valid option for new gender
+  const handleGenderChange = (newGender: CompanionGender) => {
+    if (newGender === 'female') {
+      setAppearance({
+        gender: 'female',
+        ethnicity: appearance.ethnicity,
+        bodyType: 'athletic',
+        hairColor: appearance.hairColor,
+        breastSize: 'M',
+      });
+    } else {
+      setAppearance({
+        gender: 'male',
+        ethnicity: appearance.ethnicity,
+        bodyType: 'athletic',
+        hairColor: appearance.hairColor,
+        build: 'M',
+      });
+    }
+  };
+
+  // Handle size change
+  const handleSizeChange = (size: SizeCategory) => {
+    if (isFemale) {
+      setAppearance({ ...appearance, breastSize: size });
+    } else {
+      setAppearance({ ...appearance, build: size });
+    }
+  };
+
+  // Handle body type change
+  const handleBodyTypeChange = (bodyType: string) => {
+    if (isFemale) {
+      setAppearance({ ...appearance, bodyType: bodyType as FemaleBodyType });
+    } else {
+      setAppearance({ ...appearance, bodyType: bodyType as MaleBodyType });
+    }
+  };
+
   // Surprise Me handler
   const handleSurpriseMe = async () => {
     setIsSurprising(true);
 
     // Pick random values
+    const targetGender = Math.random() > 0.5 ? 'male' : 'female';
+    const targetBodyTypes = targetGender === 'female' ? femaleBodyTypes : maleBodyTypes;
     const targetEthnicity = ethnicityOptions[Math.floor(Math.random() * ethnicityOptions.length)].id;
-    const targetBodyType = bodyTypeOptions[Math.floor(Math.random() * bodyTypeOptions.length)].id;
+    const targetBodyType = targetBodyTypes[Math.floor(Math.random() * targetBodyTypes.length)].id;
     const targetHairColor = hairColorOptions[Math.floor(Math.random() * hairColorOptions.length)].id;
-    const targetArtStyle = artStyles[Math.floor(Math.random() * artStyles.length)].id;
-    const targetBreastSize = Math.floor(Math.random() * 100);
+    const targetSize = sizeOptions[Math.floor(Math.random() * sizeOptions.length)];
 
     // Animate through options rapidly
     const steps = 8;
     for (let i = 0; i < steps; i++) {
-      setAppearance({
-        ethnicity: ethnicityOptions[Math.floor(Math.random() * ethnicityOptions.length)].id,
-        bodyType: bodyTypeOptions[Math.floor(Math.random() * bodyTypeOptions.length)].id,
-        hairColor: hairColorOptions[Math.floor(Math.random() * hairColorOptions.length)].id,
-      });
-      setVisualStyle({ avatarStyle: artStyles[Math.floor(Math.random() * artStyles.length)].id as any });
+      const randGender = Math.random() > 0.5 ? 'male' : 'female';
+      const randBodyTypes = randGender === 'female' ? femaleBodyTypes : maleBodyTypes;
+      if (randGender === 'female') {
+        setAppearance({
+          gender: 'female',
+          ethnicity: ethnicityOptions[Math.floor(Math.random() * ethnicityOptions.length)].id,
+          bodyType: randBodyTypes[Math.floor(Math.random() * randBodyTypes.length)].id as FemaleBodyType,
+          hairColor: hairColorOptions[Math.floor(Math.random() * hairColorOptions.length)].id,
+          breastSize: sizeOptions[Math.floor(Math.random() * sizeOptions.length)],
+        });
+      } else {
+        setAppearance({
+          gender: 'male',
+          ethnicity: ethnicityOptions[Math.floor(Math.random() * ethnicityOptions.length)].id,
+          bodyType: randBodyTypes[Math.floor(Math.random() * randBodyTypes.length)].id as MaleBodyType,
+          hairColor: hairColorOptions[Math.floor(Math.random() * hairColorOptions.length)].id,
+          build: sizeOptions[Math.floor(Math.random() * sizeOptions.length)],
+        });
+      }
       await new Promise((r) => setTimeout(r, 100 + i * 20));
     }
 
     // Land on final values
-    setAppearance({
-      ethnicity: targetEthnicity,
-      bodyType: targetBodyType,
-      hairColor: targetHairColor,
-      breastSize: targetBreastSize,
-    });
-    setVisualStyle({ avatarStyle: targetArtStyle as any });
+    if (targetGender === 'female') {
+      setAppearance({
+        gender: 'female',
+        ethnicity: targetEthnicity,
+        bodyType: targetBodyType as FemaleBodyType,
+        hairColor: targetHairColor,
+        breastSize: targetSize,
+      });
+    } else {
+      setAppearance({
+        gender: 'male',
+        ethnicity: targetEthnicity,
+        bodyType: targetBodyType as MaleBodyType,
+        hairColor: targetHairColor,
+        build: targetSize,
+      });
+    }
 
     // Wait a moment then show result
     await new Promise((r) => setTimeout(r, 500));
     setIsSurprising(false);
   };
 
-  // Handle migration from old store format without appearance
-  const appearance = visualStyle.appearance || defaultAppearance;
-
-  // Dynamic preview image based on all appearance selections including breast size
+  // Dynamic preview image based on all appearance selections
   const previewImagePath = useMemo(() => {
-    return getPreviewImagePath(appearance.ethnicity, appearance.bodyType, appearance.hairColor, appearance.breastSize);
-  }, [appearance.ethnicity, appearance.bodyType, appearance.hairColor, appearance.breastSize]);
-
-  // Legacy fallback (without breast size)
-  const legacyImagePath = useMemo(() => {
-    return getLegacyImagePath(appearance.ethnicity, appearance.bodyType, appearance.hairColor);
-  }, [appearance.ethnicity, appearance.bodyType, appearance.hairColor]);
+    return getPreviewImagePath(
+      currentGender,
+      appearance.ethnicity,
+      appearance.bodyType,
+      appearance.hairColor,
+      currentSize
+    );
+  }, [currentGender, appearance.ethnicity, appearance.bodyType, appearance.hairColor, currentSize]);
 
   const fallbackImagePath = useMemo(() => {
-    return getFallbackImagePath(appearance.ethnicity);
-  }, [appearance.ethnicity]);
+    return getFallbackImagePath(appearance.ethnicity, currentGender);
+  }, [appearance.ethnicity, currentGender]);
 
   // Initialize displayed image
   useEffect(() => {
@@ -196,18 +239,13 @@ export function Step3Visuals() {
     };
   }, [previewImagePath, displayedImage]);
 
-  // Reset error when selections change
-  const handleSelectionChange = (updates: Partial<typeof appearance>) => {
-    setAppearance(updates);
-  };
-
   return (
     <div className="space-y-8">
       {/* Header row: Title left, Surprise Me right */}
       <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-6">
         <div className="text-left space-y-2">
           <h2 className="text-4xl font-bold font-display tracking-tight text-white">Visual Identity</h2>
-          <p className="text-gray-400 max-w-md">Design your companion&apos;s physical appearance and art style.</p>
+          <p className="text-gray-400 max-w-md">Design your companion&apos;s physical appearance.</p>
         </div>
 
         <Button
@@ -236,6 +274,30 @@ export function Step3Visuals() {
       <div className="grid lg:grid-cols-3 gap-8">
         {/* Left: Appearance Options */}
         <div className="lg:col-span-2 space-y-6 order-2 lg:order-1">
+          {/* Gender Selection */}
+          <div className="space-y-3">
+            <h3 className="text-sm font-bold tracking-widest uppercase text-gray-500">Gender</h3>
+            <div className="flex gap-3">
+              {(['female', 'male'] as CompanionGender[]).map((gender) => (
+                <motion.button
+                  key={gender}
+                  whileHover={{ scale: 1.02 }}
+                  whileTap={{ scale: 0.98 }}
+                  onClick={() => handleGenderChange(gender)}
+                  className={cn(
+                    'flex-1 p-4 rounded-xl border text-center transition-all',
+                    currentGender === gender
+                      ? 'border-vibes-cyan bg-vibes-cyan/10 shadow-[0_0_20px_rgba(6,182,212,0.2)]'
+                      : 'border-white/10 bg-white/[0.02] hover:border-white/20'
+                  )}
+                >
+                  <div className="text-2xl mb-1">{gender === 'female' ? '♀' : '♂'}</div>
+                  <div className="font-medium text-white capitalize">{gender}</div>
+                </motion.button>
+              ))}
+            </div>
+          </div>
+
           {/* Ethnicity Selection */}
           <div className="space-y-3">
             <h3 className="text-sm font-bold tracking-widest uppercase text-gray-500">Ethnicity</h3>
@@ -245,7 +307,7 @@ export function Step3Visuals() {
                   key={option.id}
                   whileHover={{ scale: 1.02 }}
                   whileTap={{ scale: 0.98 }}
-                  onClick={() => handleSelectionChange({ ethnicity: option.id })}
+                  onClick={() => setAppearance({ ...appearance, ethnicity: option.id })}
                   className={cn(
                     'relative p-3 rounded-xl border text-left transition-all',
                     appearance.ethnicity === option.id
@@ -274,7 +336,7 @@ export function Step3Visuals() {
                   key={option.id}
                   whileHover={{ scale: 1.02 }}
                   whileTap={{ scale: 0.98 }}
-                  onClick={() => handleSelectionChange({ bodyType: option.id })}
+                  onClick={() => handleBodyTypeChange(option.id)}
                   className={cn(
                     'px-4 py-2 rounded-full border text-sm font-medium transition-all',
                     appearance.bodyType === option.id
@@ -297,7 +359,7 @@ export function Step3Visuals() {
                   key={option.id}
                   whileHover={{ scale: 1.05 }}
                   whileTap={{ scale: 0.95 }}
-                  onClick={() => handleSelectionChange({ hairColor: option.id })}
+                  onClick={() => setAppearance({ ...appearance, hairColor: option.id })}
                   className={cn(
                     'flex items-center gap-2 px-3 py-2 rounded-full border transition-all',
                     appearance.hairColor === option.id
@@ -317,50 +379,35 @@ export function Step3Visuals() {
             </div>
           </div>
 
-          {/* Art Style Selection */}
-          <div className="space-y-4">
-            <h3 className="text-sm font-bold tracking-widest uppercase text-gray-500 font-display">Art Style</h3>
-            <div className="flex flex-wrap gap-3">
-              {artStyles.map((style) => (
-                <motion.button
-                  key={style.id}
-                  whileHover={{ scale: 1.02 }}
-                  whileTap={{ scale: 0.98 }}
-                  onClick={() => setVisualStyle({ avatarStyle: style.id as any })}
-                  className={cn(
-                    'px-5 py-2.5 rounded-full border text-sm font-bold transition-all flex items-center gap-2',
-                    visualStyle.avatarStyle === style.id
-                      ? 'border-vibes-electric bg-vibes-electric/10 text-vibes-electric shadow-[0_0_15px_rgba(59,130,246,0.3)]'
-                      : 'border-white/10 bg-white/[0.02] text-gray-400 hover:border-white/20 hover:text-white'
-                  )}
-                >
-                  {style.id === 'anime' && <Sparkles className="h-3.5 w-3.5" />}
-                  {style.name}
-                </motion.button>
-              ))}
-            </div>
-          </div>
-
-          {/* Body Measurements */}
+          {/* Body Measurements - S/M/L buttons */}
           <div className="space-y-4 pt-4 border-t border-white/5">
-            <div className="flex items-center gap-2">
-              <h3 className="text-sm font-bold tracking-widest uppercase text-gray-500 font-display">Body Measurements</h3>
-              <span className="px-2 py-0.5 rounded text-[10px] bg-vibes-hot/10 text-vibes-hot font-bold border border-vibes-hot/20">NEW</span>
-            </div>
-            <div className="p-6 rounded-2xl bg-white/[0.01] border border-white/5 space-y-6">
-              <div className="space-y-4">
-                <div className="flex justify-between items-center">
-                  <Label className="text-xs font-bold tracking-widest uppercase text-gray-400 font-display">Breast Size</Label>
-                  <span className="text-sm font-mono text-vibes-hot font-bold">{appearance.breastSize}%</span>
-                </div>
-                <Slider
-                  value={[appearance.breastSize]}
-                  onValueChange={(val) => handleSelectionChange({ breastSize: val[0] })}
-                  max={100}
-                  step={1}
-                  className="[&_[role=slider]]:bg-vibes-hot [&_[role=slider]]:border-vibes-hot [&_.relative]:bg-white/5"
-                />
+            <h3 className="text-sm font-bold tracking-widest uppercase text-gray-500 font-display">
+              {isFemale ? 'Figure' : 'Build'}
+            </h3>
+            <div className="p-4 rounded-2xl bg-white/[0.01] border border-white/5">
+              <div className="flex gap-2">
+                {sizeOptions.map((size) => (
+                  <motion.button
+                    key={size}
+                    whileHover={{ scale: 1.02 }}
+                    whileTap={{ scale: 0.98 }}
+                    onClick={() => handleSizeChange(size)}
+                    className={cn(
+                      'flex-1 py-3 rounded-xl border text-center font-bold text-lg transition-all',
+                      currentSize === size
+                        ? 'border-vibes-hot bg-vibes-hot/10 text-vibes-hot shadow-[0_0_15px_rgba(239,68,68,0.2)]'
+                        : 'border-white/10 bg-white/[0.02] text-gray-400 hover:border-white/20 hover:text-white'
+                    )}
+                  >
+                    {size}
+                  </motion.button>
+                ))}
               </div>
+              <p className="text-xs text-gray-500 mt-3 text-center">
+                {isFemale
+                  ? 'Affects overall figure proportions'
+                  : 'Affects chest and shoulder width'}
+              </p>
             </div>
           </div>
         </div>
@@ -380,13 +427,12 @@ export function Step3Visuals() {
             >
               {displayedImage && (
                 <Image
-                  src={imageError ? (legacyImagePath || fallbackImagePath) : displayedImage}
+                  src={imageError ? fallbackImagePath : displayedImage}
                   alt="Companion preview"
                   fill
                   className="object-cover"
                   priority
                   onError={() => {
-                    // Try legacy path first, then fallback
                     if (!imageError) {
                       setImageError(true);
                     }
@@ -394,8 +440,6 @@ export function Step3Visuals() {
                 />
               )}
             </div>
-
-
           </div>
 
           {/* Mobile Surprise Me button */}

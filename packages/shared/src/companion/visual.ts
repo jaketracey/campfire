@@ -58,6 +58,12 @@ export const SizeCategorySchema = z.enum(['S', 'M', 'L']);
 export type SizeCategory = z.infer<typeof SizeCategorySchema>;
 
 /**
+ * Age category for companion appearance
+ */
+export const AgeCategorySchema = z.enum(['young', 'adult', 'mature']);
+export type AgeCategory = z.infer<typeof AgeCategorySchema>;
+
+/**
  * Female appearance schema
  */
 export const FemaleAppearanceSchema = z.object({
@@ -66,6 +72,7 @@ export const FemaleAppearanceSchema = z.object({
   bodyType: FemaleBodyTypeSchema,
   hairColor: AppearanceHairColorSchema,
   breastSize: SizeCategorySchema,
+  age: AgeCategorySchema,
 });
 export type FemaleAppearance = z.infer<typeof FemaleAppearanceSchema>;
 
@@ -78,6 +85,7 @@ export const MaleAppearanceSchema = z.object({
   bodyType: MaleBodyTypeSchema,
   hairColor: AppearanceHairColorSchema,
   build: SizeCategorySchema,
+  age: AgeCategorySchema,
 });
 export type MaleAppearance = z.infer<typeof MaleAppearanceSchema>;
 

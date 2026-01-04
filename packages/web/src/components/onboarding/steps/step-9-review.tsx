@@ -53,13 +53,7 @@ export function Step9Review() {
       streamAnchorImages(
         {
           companionId: companionId,
-          appearance: {
-            ethnicity: state.visualStyle.appearance.ethnicity,
-            bodyType: state.visualStyle.appearance.bodyType,
-            hairColor: state.visualStyle.appearance.hairColor,
-            breastSize: state.visualStyle.appearance.breastSize,
-          },
-          style: state.visualStyle.avatarStyle,
+          appearance: state.visualStyle.appearance,
           personality: {
             warmth: state.personality.warmth,
             playfulness: state.personality.playfulness,
@@ -396,8 +390,8 @@ export function Step9Review() {
                   </Button>
                   <p className="text-xs text-center text-gray-500 mt-6">
                     By igniting {state.name}, you agree to our{' '}
-                    <Link href="/terms" className="underline hover:text-gray-300 transition-colors">Terms</Link> and{' '}
-                    <Link href="/privacy" className="underline hover:text-gray-300 transition-colors">Privacy Policy</Link>.
+                    <a href="/terms" className="underline hover:text-gray-300 transition-colors">Terms</a> and{' '}
+                    <a href="/privacy" className="underline hover:text-gray-300 transition-colors">Privacy Policy</a>.
                   </p>
                 </motion.div>
               )}
