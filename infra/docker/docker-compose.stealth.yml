@@ -205,6 +205,9 @@ services:
     environment:
       NODE_ENV: production
       PORT: 3000
+      # Server-side API calls (internal Docker network)
+      GATEWAY_URL: http://gateway:4000
+      # Client-side API calls (public URL)
       NEXT_PUBLIC_GATEWAY_URL: https://${DOMAIN:-ignite.cam}
       NEXT_PUBLIC_WS_URL: wss://${DOMAIN:-ignite.cam}/ws
       NEXT_PUBLIC_POSTHOG_KEY: ${POSTHOG_API_KEY:-}
