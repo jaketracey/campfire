@@ -90,6 +90,7 @@ export const CreateModelSchema = z.object({
   inputCostPerMillion: z.number().min(0).optional().nullable(),
   outputCostPerMillion: z.number().min(0).optional().nullable(),
   capabilities: z.array(z.enum(['chat', 'vision', 'function_calling', 'streaming', 'json_mode'])).default([]),
+  metadata: z.record(z.unknown()).optional(),
 });
 
 export const UpdateModelSchema = z.object({
@@ -368,6 +369,7 @@ export class ProviderSettingsService {
       input_cost_per_million: validated.inputCostPerMillion,
       output_cost_per_million: validated.outputCostPerMillion,
       capabilities: validated.capabilities,
+      metadata: validated.metadata,
     };
 
     return this.repo.createModel(insert, tx);
@@ -993,6 +995,7 @@ export class ProviderSettingsService {
       input_cost_per_million: validated.inputCostPerMillion,
       output_cost_per_million: validated.outputCostPerMillion,
       capabilities: validated.capabilities,
+      metadata: validated.metadata,
     };
 
     return this.repo.createModel(insert, tx);
