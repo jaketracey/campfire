@@ -38,6 +38,7 @@ from orchestrator.db.pool import DatabasePool
 from orchestrator.api.test_runner import router as test_router
 from orchestrator.api.health import router as health_router
 from orchestrator.api.providers import router as providers_router
+from orchestrator.api.config import router as config_router
 
 logger = structlog.get_logger()
 
@@ -611,6 +612,7 @@ app.add_middleware(
 app.include_router(test_router)
 app.include_router(health_router)
 app.include_router(providers_router)
+app.include_router(config_router)
 
 
 @app.get("/health", response_model=HealthResponse)
