@@ -40,9 +40,9 @@ MODEL_TO_FAL_ENDPOINT: dict[str, str] = {
 
 
 class FalProvider(ImageProvider):
-    """FAL AI image generation provider."""
+    """FAL AI image generation provider using sync API."""
 
-    BASE_URL = "https://queue.fal.run"
+    BASE_URL = "https://fal.run"
 
     def __init__(self, settings: Settings):
         self.settings = settings
@@ -116,7 +116,7 @@ class FalProvider(ImageProvider):
         # Parse size
         width, height = self._parse_size(size)
 
-        # Build input parameters
+        # Build input parameters - minimal set that works across FAL models
         input_params: dict[str, Any] = {
             "prompt": prompt,
             "image_size": {
@@ -124,13 +124,15 @@ class FalProvider(ImageProvider):
                 "height": height,
             },
             "num_images": 1,
-            "enable_safety_checker": False,  # Disabled for adult companion content
-            "guidance_scale": 7.5,  # Recommended for photorealism
-            "num_inference_steps": 30 if is_anchor else 25,  # Higher quality for anchors
         }
 
-        # Use provided negative prompt or default quality enhancer
-        input_params["negative_prompt"] = negative_prompt or self.DEFAULT_NEGATIVE_PROMPT
+        # Add optional params only for models that support them
+        if "flux" in endpoint.lower() and "dreamina" not in endpoint.lower():
+            input_params["enable_safety_checker"] = False
+            input_params["guidance_scale"] = 7.5
+            input_params["num_inference_steps"] = 4  # Flux schnell uses fewer steps
+            if negative_prompt or self.DEFAULT_NEGATIVE_PROMPT:
+                input_params["negative_prompt"] = negative_prompt or self.DEFAULT_NEGATIVE_PROMPT
 
         # Style parameter is deprecated - always photorealistic now
         if style:
@@ -148,7 +150,7 @@ class FalProvider(ImageProvider):
             # TODO: Add IP-Adapter support for compatible FAL models
 
         try:
-            # Submit to queue
+            # Use sync API - POST and wait for response directly
             response = await client.post(
                 f"{self.BASE_URL}/{endpoint}",
                 json=input_params,
@@ -156,12 +158,6 @@ class FalProvider(ImageProvider):
             response.raise_for_status()
 
             result = response.json()
-            request_id = result.get("request_id")
-
-            if request_id:
-                # Poll for completion
-                result = await self._wait_for_result(request_id, endpoint=endpoint)
-
             latency_ms = (time.time() - start_time) * 1000
 
             # Extract image URL from result
@@ -169,14 +165,13 @@ class FalProvider(ImageProvider):
             image_url = images[0].get("url") if images else None
 
             logger.info(
-                "fal_generation",
-                request_id=request_id,
+                "fal_generation_success",
                 latency_ms=latency_ms,
+                has_image=image_url is not None,
             )
 
             return {
                 "image_url": image_url,
-                "request_id": request_id,
                 "status": "succeeded",
                 "latency_ms": latency_ms,
                 "width": width,

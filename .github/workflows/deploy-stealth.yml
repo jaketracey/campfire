@@ -65,6 +65,55 @@ jobs:
             -e "ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=accept-new" \
             ./ ${{ env.DEPLOY_USER }}@${{ env.DEPLOY_HOST }}:${{ env.APP_DIR }}/
 
+      - name: Update environment secrets
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AWS_REGION: ${{ secrets.AWS_REGION }}
+          S3_MEDIA_BUCKET: ${{ secrets.S3_MEDIA_BUCKET }}
+          JWT_SECRET: ${{ secrets.JWT_SECRET }}
+          SESSION_SECRET: ${{ secrets.SESSION_SECRET }}
+          INTERNAL_SERVICE_KEY: ${{ secrets.INTERNAL_SERVICE_KEY }}
+          PROVIDER_KEY_ENCRYPTION_SECRET: ${{ secrets.PROVIDER_KEY_ENCRYPTION_SECRET }}
+          GOOGLE_OAUTH_CLIENT_ID: ${{ secrets.GOOGLE_OAUTH_CLIENT_ID }}
+          GOOGLE_OAUTH_CLIENT_SECRET: ${{ secrets.GOOGLE_OAUTH_CLIENT_SECRET }}
+          FLOWGUARD_SHOP_ID: ${{ secrets.FLOWGUARD_SHOP_ID }}
+          FLOWGUARD_API_KEY: ${{ secrets.FLOWGUARD_API_KEY }}
+        run: |
+          ssh -i ~/.ssh/deploy_key ${{ env.DEPLOY_USER }}@${{ env.DEPLOY_HOST }} "
+          set -e
+          ENV_FILE=/opt/campfire/.env.stealth
+
+          # Function to update or add env var
+          update_env() {
+            local key=\$1
+            local value=\$2
+            if grep -q \"^\${key}=\" \"\$ENV_FILE\" 2>/dev/null; then
+              sed -i \"s|^\${key}=.*|\${key}=\${value}|\" \"\$ENV_FILE\"
+            else
+              echo \"\${key}=\${value}\" >> \"\$ENV_FILE\"
+            fi
+          }
+
+          # Update AWS credentials
+          update_env 'AWS_ACCESS_KEY_ID' '${AWS_ACCESS_KEY_ID}'
+          update_env 'AWS_SECRET_ACCESS_KEY' '${AWS_SECRET_ACCESS_KEY}'
+          update_env 'AWS_REGION' '${AWS_REGION}'
+          update_env 'S3_MEDIA_BUCKET' '${S3_MEDIA_BUCKET}'
+
+          # Update other secrets
+          update_env 'JWT_SECRET' '${JWT_SECRET}'
+          update_env 'SESSION_SECRET' '${SESSION_SECRET}'
+          update_env 'INTERNAL_SERVICE_KEY' '${INTERNAL_SERVICE_KEY}'
+          update_env 'PROVIDER_KEY_ENCRYPTION_SECRET' '${PROVIDER_KEY_ENCRYPTION_SECRET}'
+          update_env 'GOOGLE_OAUTH_CLIENT_ID' '${GOOGLE_OAUTH_CLIENT_ID}'
+          update_env 'GOOGLE_OAUTH_CLIENT_SECRET' '${GOOGLE_OAUTH_CLIENT_SECRET}'
+          update_env 'FLOWGUARD_SHOP_ID' '${FLOWGUARD_SHOP_ID}'
+          update_env 'FLOWGUARD_API_KEY' '${FLOWGUARD_API_KEY}'
+
+          echo 'Environment secrets updated'
+          "
+
       - name: Build and deploy
         run: |
           ssh -i ~/.ssh/deploy_key ${{ env.DEPLOY_USER }}@${{ env.DEPLOY_HOST }} << 'ENDSSH'
