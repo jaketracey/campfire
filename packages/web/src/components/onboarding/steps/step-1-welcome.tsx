@@ -166,11 +166,11 @@ export function Step1Welcome() {
   }
 
   return (
-    <div ref={containerRef} className="text-left md:text-center space-y-12 pt-12 md:pt-0">
+    <div ref={containerRef} className="text-center space-y-12 pt-12 md:pt-0">
       <div className="space-y-6">
         <h1
           ref={headingRef}
-          className="relative z-10 text-6xl sm:text-7xl md:text-8xl lg:text-9xl font-bold tracking-tighter font-display overflow-visible leading-[0.9] flex flex-col items-start md:items-center justify-center min-h-[1.2em]"
+          className="relative z-10 text-6xl sm:text-7xl md:text-8xl lg:text-9xl font-bold tracking-tighter font-display overflow-visible leading-[0.9] flex flex-col items-center justify-center min-h-[1.2em]"
         >
           {/* Main Text */}
           <div className="relative z-20">
@@ -202,7 +202,7 @@ export function Step1Welcome() {
 
         <p
           ref={subtitleRef}
-          className="text-xl md:text-2xl text-gray-400 max-w-lg md:mx-auto leading-relaxed text-left md:text-center flex flex-wrap justify-start md:justify-center gap-x-[0.3em]"
+          className="text-xl md:text-2xl text-gray-400 max-w-lg mx-auto leading-relaxed text-center flex flex-wrap justify-center gap-x-[0.3em]"
         >
           Create a unique AI personality that listens, remembers, and grows with you.{' '}
           <span className="font-semibold text-transparent bg-clip-text bg-gradient-to-r from-vibes-neon to-vibes-cyan">
