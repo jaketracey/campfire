@@ -250,18 +250,26 @@ async def _test_fal(api_key: str) -> TestProviderResponse:
 
     try:
         async with httpx.AsyncClient(timeout=15.0) as client:
-            # Test FAL API by checking account info
-            response = await client.get(
-                "https://rest.alpha.fal.ai/tokens/",
+            # Test FAL API by submitting a minimal request to flux-schnell
+            # This validates both the API key and connectivity
+            response = await client.post(
+                "https://queue.fal.run/fal-ai/flux/schnell",
                 headers={
                     "Authorization": f"Key {api_key}",
                     "Content-Type": "application/json",
+                },
+                json={
+                    "prompt": "test",
+                    "image_size": "square_hd",
+                    "num_images": 1,
+                    "sync_mode": False,  # Just queue it, don't wait
                 },
             )
 
             latency_ms = (time.time() - start_time) * 1000
 
-            if response.status_code == 200:
+            # 200 = success, 202 = queued (both valid)
+            if response.status_code in (200, 202):
                 return TestProviderResponse(
                     success=True,
                     latency_ms=latency_ms,
