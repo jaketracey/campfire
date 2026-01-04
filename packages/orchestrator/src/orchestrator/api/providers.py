@@ -14,7 +14,7 @@ logger = structlog.get_logger()
 
 router = APIRouter(prefix="/providers", tags=["providers"])
 
-ProviderName = Literal["anthropic", "openai", "together", "groq", "ollama"]
+ProviderName = Literal["anthropic", "openai", "together", "groq", "ollama", "fal", "comfyui", "openrouter"]
 
 
 class TestProviderRequest(BaseModel):
@@ -65,6 +65,24 @@ PROVIDER_CONFIGS = {
     "ollama": {
         "test_model": "qwen2.5:latest",  # Will use configured model
         "requires_api_key": False,
+    },
+    "fal": {
+        "base_url": "https://fal.run/fal-ai/flux/schnell",  # Test with a simple model
+        "test_model": "fal-ai/flux/schnell",
+        "auth_header": "Authorization",
+        "auth_prefix": "Key ",
+        "requires_api_key": True,
+    },
+    "comfyui": {
+        "test_model": "stable-diffusion",  # Will check connectivity
+        "requires_api_key": False,
+    },
+    "openrouter": {
+        "base_url": "https://openrouter.ai/api/v1/chat/completions",
+        "test_model": "meta-llama/llama-3.2-3b-instruct:free",
+        "auth_header": "Authorization",
+        "auth_prefix": "Bearer ",
+        "requires_api_key": True,
     },
 }
 
@@ -226,10 +244,107 @@ async def _test_ollama() -> TestProviderResponse:
         )
 
 
+async def _test_fal(api_key: str) -> TestProviderResponse:
+    """Test FAL.ai API connection."""
+    start_time = time.time()
+
+    try:
+        async with httpx.AsyncClient(timeout=15.0) as client:
+            # Test FAL API by checking account info
+            response = await client.get(
+                "https://rest.alpha.fal.ai/tokens/",
+                headers={
+                    "Authorization": f"Key {api_key}",
+                    "Content-Type": "application/json",
+                },
+            )
+
+            latency_ms = (time.time() - start_time) * 1000
+
+            if response.status_code == 200:
+                return TestProviderResponse(
+                    success=True,
+                    latency_ms=latency_ms,
+                    model_tested="fal-ai/flux/schnell",
+                )
+            elif response.status_code == 401 or response.status_code == 403:
+                return TestProviderResponse(
+                    success=False,
+                    latency_ms=latency_ms,
+                    error="Invalid API key",
+                )
+            else:
+                error_text = response.text[:200]
+                return TestProviderResponse(
+                    success=False,
+                    latency_ms=latency_ms,
+                    error=f"API error {response.status_code}: {error_text}",
+                )
+
+    except httpx.TimeoutException:
+        return TestProviderResponse(
+            success=False,
+            latency_ms=(time.time() - start_time) * 1000,
+            error="Connection timeout",
+        )
+    except Exception as e:
+        return TestProviderResponse(
+            success=False,
+            latency_ms=(time.time() - start_time) * 1000,
+            error=str(e),
+        )
+
+
+async def _test_comfyui() -> TestProviderResponse:
+    """Test ComfyUI local connection."""
+    settings = get_settings()
+    base_url = getattr(settings, 'comfyui_base_url', 'http://localhost:8188')
+    start_time = time.time()
+
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            # Check if ComfyUI is running by hitting the system stats endpoint
+            response = await client.get(f"{base_url}/system_stats")
+
+            latency_ms = (time.time() - start_time) * 1000
+
+            if response.status_code == 200:
+                return TestProviderResponse(
+                    success=True,
+                    latency_ms=latency_ms,
+                    model_tested="stable-diffusion",
+                )
+            else:
+                return TestProviderResponse(
+                    success=False,
+                    latency_ms=latency_ms,
+                    error=f"ComfyUI not responding (status {response.status_code})",
+                )
+
+    except httpx.ConnectError:
+        return TestProviderResponse(
+            success=False,
+            latency_ms=(time.time() - start_time) * 1000,
+            error=f"Cannot connect to ComfyUI at {base_url}",
+        )
+    except httpx.TimeoutException:
+        return TestProviderResponse(
+            success=False,
+            latency_ms=(time.time() - start_time) * 1000,
+            error="Connection timeout",
+        )
+    except Exception as e:
+        return TestProviderResponse(
+            success=False,
+            latency_ms=(time.time() - start_time) * 1000,
+            error=str(e),
+        )
+
+
 async def _test_openai_compatible(
     api_key: str, provider: str
 ) -> TestProviderResponse:
-    """Test OpenAI-compatible API connection (OpenAI, Together, Groq)."""
+    """Test OpenAI-compatible API connection (OpenAI, Together, Groq, OpenRouter)."""
     config = PROVIDER_CONFIGS[provider]
     start_time = time.time()
 
@@ -322,7 +437,12 @@ async def test_provider(provider: str, request: TestProviderRequest) -> TestProv
         result = await _test_ollama()
     elif provider == "anthropic":
         result = await _test_anthropic(request.api_key)  # type: ignore
+    elif provider == "fal":
+        result = await _test_fal(request.api_key)  # type: ignore
+    elif provider == "comfyui":
+        result = await _test_comfyui()
     else:
+        # OpenAI-compatible providers: openai, together, groq, openrouter
         result = await _test_openai_compatible(request.api_key, provider)  # type: ignore
 
     # Update provider health based on test result
@@ -351,6 +471,7 @@ async def list_supported_providers() -> dict:
     """List supported providers for testing."""
     return {
         "providers": list(PROVIDER_CONFIGS.keys()),
-        "local_providers": ["ollama"],
-        "note": "Local providers (ollama) don't require API keys. Bedrock uses AWS credentials.",
+        "local_providers": ["ollama", "comfyui"],
+        "image_providers": ["fal", "comfyui"],
+        "note": "Local providers (ollama, comfyui) don't require API keys.",
     }
