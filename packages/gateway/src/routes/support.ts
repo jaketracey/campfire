@@ -5,6 +5,7 @@
 
 import type { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
 import { z } from 'zod';
+import { nanoid } from 'nanoid';
 import { requireAuth, requireAdmin } from '../middleware/auth.js';
 import {
   getSupportService,
@@ -13,10 +14,20 @@ import {
   ListTicketsQuerySchema,
 } from '../services/support.js';
 import { logger } from '../observability/logger.js';
+import { enqueueEmailJob } from '../utils/queue.js';
+import { getUsersRepository } from '../repositories/index.js';
 
 // Params schemas
 const TicketIdParamsSchema = z.object({
   id: z.string().uuid(),
+});
+
+// Admin create ticket schema
+const AdminCreateTicketSchema = z.object({
+  userId: z.string().uuid(),
+  category: z.enum(['bug', 'feature_request', 'account', 'billing', 'other']),
+  subject: z.string().min(1).max(255),
+  message: z.string().min(10).max(10000),
 });
 
 /**
@@ -315,5 +326,122 @@ export async function adminSupportRoutes(app: FastifyInstance): Promise<void> {
       }
       throw error;
     }
+  });
+
+  /**
+   * POST /admin/support/test-email - Send test email to verify SES config
+   */
+  app.post('/test-email', async (request: FastifyRequest, reply: FastifyReply) => {
+    const adminUserId = request.user!.userId;
+    const adminEmail = request.user!.email;
+
+    const webUrl = process.env.WEB_URL || 'https://ignite.cam';
+    const emailJobId = await enqueueEmailJob({
+      type: 'transactional',
+      templateName: 'notification',
+      recipientEmail: adminEmail,
+      recipientUserId: adminUserId,
+      context: {
+        title: 'SES Configuration Test',
+        body: 'This is a test email to verify your SES configuration is working correctly. If you received this email, your email sending is properly configured.',
+        actionUrl: `${webUrl}/admin/support`,
+        actionText: 'Go to Support Dashboard',
+      },
+      metadata: {
+        traceId: nanoid(),
+      },
+      priority: 'high',
+    });
+
+    if (!emailJobId) {
+      return reply.status(503).send({
+        error: 'Service Unavailable',
+        message: 'Email queue is not available. Redis may not be running.',
+      });
+    }
+
+    logger.info({ adminUserId, emailJobId }, 'Admin triggered test email');
+
+    return reply.send({
+      success: true,
+      data: {
+        message: 'Test email queued',
+        jobId: emailJobId,
+        recipientEmail: adminEmail,
+      },
+    });
+  });
+
+  /**
+   * POST /admin/support/tickets - Create ticket on behalf of user (admin)
+   */
+  app.post('/tickets', async (request: FastifyRequest, reply: FastifyReply) => {
+    const bodyResult = AdminCreateTicketSchema.safeParse(request.body);
+    if (!bodyResult.success) {
+      return reply.status(400).send({
+        error: 'Validation Error',
+        message: 'Invalid request body',
+        details: bodyResult.error.issues,
+      });
+    }
+
+    const { userId, category, subject, message } = bodyResult.data;
+    const adminUserId = request.user!.userId;
+
+    // Verify target user exists
+    const usersRepo = getUsersRepository();
+    const targetUser = await usersRepo.findById(userId);
+    if (!targetUser) {
+      return reply.status(404).send({
+        error: 'Not Found',
+        message: 'User not found',
+      });
+    }
+
+    // Create the ticket
+    const ticket = await supportService.createTicket(userId, {
+      category,
+      subject,
+      message,
+    });
+
+    // Queue notification email to the user
+    const webUrl = process.env.WEB_URL || 'https://ignite.cam';
+    const emailQueued = await enqueueEmailJob({
+      type: 'notification',
+      templateName: 'notification',
+      recipientEmail: targetUser.email,
+      recipientUserId: userId,
+      context: {
+        title: 'Support Ticket Created',
+        body: `A support ticket has been created for your account.\n\nSubject: ${subject}\n\nOur team will review your request and get back to you soon.`,
+        actionUrl: `${webUrl}/support`,
+        actionText: 'View Support',
+      },
+      metadata: {
+        traceId: nanoid(),
+        correlationId: ticket.id,
+      },
+      priority: 'normal',
+    });
+
+    logger.info({ ticketId: ticket.id, userId, adminUserId, emailQueued: !!emailQueued }, 'Admin created support ticket for user');
+
+    return reply.status(201).send({
+      success: true,
+      data: {
+        ticket: {
+          id: ticket.id,
+          userId: ticket.user_id,
+          userEmail: targetUser.email,
+          category: ticket.category,
+          subject: ticket.subject,
+          message: ticket.message,
+          status: ticket.status,
+          createdAt: ticket.created_at.toISOString(),
+        },
+        emailQueued: !!emailQueued,
+      },
+    });
   });
 }
