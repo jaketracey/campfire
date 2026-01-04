@@ -83,7 +83,7 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
       title: page.ogTitle || page.title,
       description: page.ogDescription || page.metaDescription || undefined,
       images: page.ogImageUrl ? [{ url: page.ogImageUrl }] : undefined,
-      url: `${baseUrl}/companions/${slug}`,
+      url: `${baseUrl}/c/${slug}`,
       type: 'profile',
     },
     twitter: {
@@ -93,7 +93,7 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
       images: page.ogImageUrl ? [page.ogImageUrl] : undefined,
     },
     alternates: {
-      canonical: `${baseUrl}/companions/${slug}`,
+      canonical: `${baseUrl}/c/${slug}`,
     },
   };
 }

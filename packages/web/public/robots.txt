@@ -3,7 +3,7 @@
 
 User-agent: *
 Allow: /
-Allow: /companions/
+Allow: /c/
 Allow: /privacy
 Allow: /terms
 

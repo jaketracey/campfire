@@ -413,7 +413,7 @@ export default function AdminSeoPage() {
                     </TableCell>
                     <TableCell>
                       <code className="text-sm text-gray-400 bg-white/5 px-2 py-1 rounded">
-                        /companions/{seoPage.slug}
+                        /c/{seoPage.slug}
                       </code>
                     </TableCell>
                     <TableCell>
@@ -458,7 +458,7 @@ export default function AdminSeoPage() {
                           </DropdownMenuItem>
                           {seoPage.status === 'published' && (
                             <DropdownMenuItem
-                              onClick={() => window.open(`/companions/${seoPage.slug}`, '_blank')}
+                              onClick={() => window.open(`/c/${seoPage.slug}`, '_blank')}
                               className="cursor-pointer"
                             >
                               <ExternalLink className="h-4 w-4 mr-2" />

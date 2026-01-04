@@ -240,7 +240,7 @@ export default function AdminSeoEditPage() {
                 {page.companionName}
               </h1>
               <div className="flex items-center gap-2 text-sm text-gray-400">
-                <code className="bg-white/5 px-2 py-0.5 rounded">/companions/{page.slug}</code>
+                <code className="bg-white/5 px-2 py-0.5 rounded">/c/{page.slug}</code>
                 <Badge className={getStatusBadgeClasses(page.status)}>
                   {STATUS_LABELS[page.status]}
                 </Badge>
@@ -254,7 +254,7 @@ export default function AdminSeoEditPage() {
           {page.status === 'published' && (
             <Button
               variant="outline"
-              onClick={() => window.open(`/companions/${page.slug}`, '_blank')}
+              onClick={() => window.open(`/c/${page.slug}`, '_blank')}
               className="border-white/10"
             >
               <ExternalLink className="h-4 w-4 mr-2" />

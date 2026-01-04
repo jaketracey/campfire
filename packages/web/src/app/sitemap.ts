@@ -56,7 +56,7 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
 
   // Dynamic companion pages
   const companionPages: MetadataRoute.Sitemap = pages.map((page) => ({
-    url: `${BASE_URL}/companions/${page.slug}`,
+    url: `${BASE_URL}/c/${page.slug}`,
     lastModified: new Date(page.updatedAt),
     changeFrequency: 'weekly' as const,
     priority: 0.8,
