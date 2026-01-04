@@ -3,15 +3,31 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 
 // Flowguard SDK types based on actual SDK API
+// See: https://flowguard.yoursafe.com docs
 interface FlowguardInstance {
   remove: () => void;
   submit: () => void;
+}
+
+interface FlowguardError {
+  errorCode: number;
+  errorDescription: string;
+}
+
+interface FlowguardSubmitError extends FlowguardError {
+  elementsErrors?: Record<string, FlowguardError>;
+}
+
+interface FlowguardChangeEvent {
+  errorCode?: number;
+  errorDescription?: string;
 }
 
 interface FlowguardElementConfig {
   target: string;
   placeholder?: string;
   styles?: Record<string, unknown>;
+  onChange?: (event: FlowguardChangeEvent) => void;
 }
 
 interface FlowguardConstructorOptions {
@@ -23,9 +39,9 @@ interface FlowguardConstructorOptions {
   price?: FlowguardElementConfig;
   remember?: FlowguardElementConfig;
   styles?: Record<string, unknown>;
-  onSuccess?: () => void;
-  onDecline?: (error?: string) => void;
-  onError?: (error: string) => void;
+  // SDK callbacks (NOT onSuccess/onDecline - those use URL redirects)
+  onError?: (error: FlowguardError) => void;
+  onSubmitError?: (error: FlowguardSubmitError) => void;
 }
 
 interface FlowguardConstructor {
@@ -47,11 +63,14 @@ declare global {
 
 const FLOWGUARD_SDK_URL = 'https://flowguard.yoursafe.com/js/flowguard.js';
 
+export type { FlowguardError, FlowguardSubmitError };
+
 export interface FlowguardInitOptions {
   sessionId: string;
-  onSuccess?: () => void;
-  onDecline?: (error?: string) => void;
-  onError?: (error: string) => void;
+  /** Called on initialization errors (e.g., invalid session, target not found) */
+  onError?: (error: FlowguardError) => void;
+  /** Called on submit errors (validation failures, etc.) */
+  onSubmitError?: (error: FlowguardSubmitError) => void;
 }
 
 /**
@@ -120,6 +139,8 @@ export function useFlowguard() {
 
         // Create new Flowguard instance with target elements
         // The SDK uses constructor pattern: new Flowguard({...})
+        // NOTE: Success/decline are handled via URL redirects configured in the session,
+        // not via JavaScript callbacks. Only onError and onSubmitError are SDK callbacks.
         const instance = new window.Flowguard({
           sessionId: options.sessionId,
           cardNumber: {
@@ -137,21 +158,17 @@ export function useFlowguard() {
           price: {
             target: '#price-element',
           },
-          onSuccess: () => {
-            setState(prev => ({ ...prev, isSubmitting: false }));
-            options.onSuccess?.();
+          onError: (error) => {
+            setState(prev => ({ ...prev, isLoading: false, error: error.errorDescription }));
+            options.onError?.(error);
           },
-          onDecline: (error) => {
+          onSubmitError: (error) => {
             setState(prev => ({
               ...prev,
               isSubmitting: false,
-              error: error || 'Payment declined'
+              error: error.errorDescription
             }));
-            options.onDecline?.(error);
-          },
-          onError: (error) => {
-            setState(prev => ({ ...prev, isSubmitting: false, error }));
-            options.onError?.(error);
+            options.onSubmitError?.(error);
           },
         });
 

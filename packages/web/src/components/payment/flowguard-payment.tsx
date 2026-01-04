@@ -11,7 +11,7 @@ interface FlowguardPaymentProps {
   amount: number;
   currency?: string;
   description?: string;
-  onSuccess?: () => void;
+  /** Called on SDK errors (init or submit failures). Success/decline are handled via URL redirects. */
   onError?: (error: string) => void;
   onCancel?: () => void;
 }
@@ -21,6 +21,10 @@ interface FlowguardPaymentProps {
  *
  * Renders an inline payment form using the Flowguard SDK.
  * The SDK creates secure hosted iframes for the card input fields.
+ *
+ * NOTE: Payment success/decline are handled via URL redirects configured
+ * in the session (successUrl/declineUrl), not via JavaScript callbacks.
+ * After form submission, the browser will redirect to the appropriate URL.
  *
  * Required container IDs for Flowguard hosted fields:
  * - card-number-element: Credit card number input
@@ -34,7 +38,6 @@ export function FlowguardPayment({
   amount,
   currency = 'USD',
   description,
-  onSuccess,
   onError,
   onCancel,
 }: FlowguardPaymentProps) {
@@ -42,6 +45,8 @@ export function FlowguardPayment({
   const { isLoading, isReady, isSubmitting, error, initialize, submit, remove } = useFlowguard();
 
   // Initialize Flowguard when component mounts
+  // NOTE: Success/decline are handled via URL redirects configured in the session,
+  // not via JavaScript callbacks.
   useEffect(() => {
     if (!sessionId || isInitialized) return;
 
@@ -49,14 +54,11 @@ export function FlowguardPayment({
       try {
         await initialize({
           sessionId,
-          onSuccess: () => {
-            onSuccess?.();
+          onError: (error) => {
+            onError?.(error.errorDescription);
           },
-          onDecline: (declineError) => {
-            onError?.(declineError || 'Payment was declined');
-          },
-          onError: (errorMessage) => {
-            onError?.(errorMessage);
+          onSubmitError: (error) => {
+            onError?.(error.errorDescription);
           },
         });
         setIsInitialized(true);
@@ -72,7 +74,7 @@ export function FlowguardPayment({
       remove();
       setIsInitialized(false);
     };
-  }, [sessionId, initialize, remove, onSuccess, onError, isInitialized]);
+  }, [sessionId, initialize, remove, onError, isInitialized]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();

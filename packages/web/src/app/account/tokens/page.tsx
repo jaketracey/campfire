@@ -102,15 +102,8 @@ export default function TokensPage() {
     }
   };
 
-  const handlePaymentSuccess = async () => {
-    setShowPaymentDialog(false);
-    setPaymentSession(null);
-    toast({
-      title: 'Purchase successful!',
-      description: 'Your tokens have been added to your account.',
-    });
-    await refreshBalance();
-  };
+  // Note: Payment success is handled via URL redirect to ?success=true
+  // The useEffect at the top of this component handles showing the success toast
 
   const handlePaymentError = (error: string) => {
     toast({
@@ -317,7 +310,6 @@ export default function TokensPage() {
               sessionId={paymentSession.sessionId}
               amount={paymentSession.bundle.priceCents}
               description={`${paymentSession.bundle.name} - ${paymentSession.bundle.totalTokens.toLocaleString()} tokens`}
-              onSuccess={handlePaymentSuccess}
               onError={handlePaymentError}
               onCancel={handlePaymentCancel}
             />
