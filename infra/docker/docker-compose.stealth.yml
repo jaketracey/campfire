@@ -99,6 +99,8 @@ services:
       INTERNAL_SERVICE_KEY: ${INTERNAL_SERVICE_KEY}
       PROVIDER_KEY_ENCRYPTION_SECRET: ${PROVIDER_KEY_ENCRYPTION_SECRET}
       CORS_ORIGINS: https://ignite.cam,https://www.ignite.cam,http://localhost:3000
+      # Public-facing URL for email links
+      WEB_URL: https://ignite.cam
       # Local Ollama disabled in stealth mode
       OLLAMA_ENABLED: "false"
       # Flowguard (Verotel/YoursAfe) Payment Processing
