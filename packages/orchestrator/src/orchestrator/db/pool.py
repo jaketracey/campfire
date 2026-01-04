@@ -1,5 +1,6 @@
 """Database connection pool management for the orchestrator service."""
 
+import json
 from typing import Optional
 
 import asyncpg
@@ -8,6 +9,26 @@ import structlog
 from orchestrator.config import get_settings
 
 logger = structlog.get_logger()
+
+
+async def _init_connection(conn: asyncpg.Connection) -> None:
+    """Initialize connection with JSON type codecs.
+
+    asyncpg doesn't automatically parse JSONB columns - they come back as strings.
+    This sets up the codec to automatically parse JSON/JSONB to Python dicts.
+    """
+    await conn.set_type_codec(
+        "json",
+        encoder=json.dumps,
+        decoder=json.loads,
+        schema="pg_catalog",
+    )
+    await conn.set_type_codec(
+        "jsonb",
+        encoder=json.dumps,
+        decoder=json.loads,
+        schema="pg_catalog",
+    )
 
 
 class DatabasePool:
@@ -56,6 +77,7 @@ class DatabasePool:
                 max_size=settings.database_pool_size,
                 max_inactive_connection_lifetime=300.0,  # 5 minutes
                 command_timeout=60.0,
+                init=_init_connection,  # Set up JSON/JSONB codecs
             )
             cls._initialized = True
             logger.info("database_pool_initialized")
