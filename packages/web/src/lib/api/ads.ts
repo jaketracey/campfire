@@ -138,7 +138,58 @@ export async function syncAdAccount(id: string): Promise<{ success: boolean; dat
 export async function getAdsOverview(
   days = 30
 ): Promise<{ success: boolean; data: AdsOverview }> {
-  return get(`/admin/ads/overview?days=${days}`);
+  const response = await get<{
+    success: boolean;
+    data: {
+      period: { days: number; startDate: string; endDate: string };
+      metrics: {
+        totalSpendCents: number;
+        totalImpressions: number;
+        totalClicks: number;
+        totalSignups: number;
+        totalConversions: number;
+        totalRevenueCents: number;
+        totalLtvCents: number;
+        spendByPlatform: Record<string, number>;
+        signupsByPlatform: Record<string, number>;
+        ctr: number;
+        cpc: number;
+        cpa: number;
+        roas: number;
+      };
+    };
+  }>(`/admin/ads/overview?days=${days}`);
+
+  const { metrics, period } = response.data;
+
+  return {
+    success: response.success,
+    data: {
+      period: { days: period.days },
+      totalSpend: metrics.totalSpendCents,
+      totalSignups: metrics.totalSignups,
+      totalConversions: metrics.totalConversions,
+      totalRevenue: metrics.totalRevenueCents,
+      roas: metrics.roas,
+      cpa: metrics.cpa,
+      ltv: metrics.totalLtvCents,
+      ltvCacRatio: metrics.totalSpendCents > 0 ? metrics.totalLtvCents / metrics.totalSpendCents : 0,
+      platformBreakdown: {
+        google: {
+          spend: metrics.spendByPlatform['google_ads'] || 0,
+          signups: metrics.signupsByPlatform['google_ads'] || 0,
+          conversions: 0,
+          revenue: 0,
+        },
+        facebook: {
+          spend: metrics.spendByPlatform['facebook_ads'] || 0,
+          signups: metrics.signupsByPlatform['facebook_ads'] || 0,
+          conversions: 0,
+          revenue: 0,
+        },
+      },
+    },
+  };
 }
 
 /**
