@@ -13,6 +13,13 @@ from orchestrator.providers.base import ImageProvider
 
 logger = structlog.get_logger()
 
+# Model ID to FAL endpoint mapping
+MODEL_TO_FAL_ENDPOINT: dict[str, str] = {
+    "fal/dreamina-v3.1": "fal-ai/bytedance/dreamina/v3.1/text-to-image",
+    "fal/flux-1.1-pro": "fal-ai/flux-pro/v1.1",
+    "fal/flux-schnell": "fal-ai/flux/schnell",
+}
+
 
 class FalProvider(ImageProvider):
     """FAL AI image generation provider."""
@@ -59,20 +66,39 @@ class FalProvider(ImageProvider):
         size: str = "512x512",
         style: str | None = None,  # Deprecated - ignored, always photorealistic
         negative_prompt: str | None = None,
+        model_id: str | None = None,
+        reference_image_url: str | None = None,
+        reference_strength: float = 0.7,
+        is_anchor: bool = False,
     ) -> dict[str, Any]:
         """Generate an image from a text prompt.
 
         Uses Juggernaut XL for photorealistic portrait generation.
         Style parameter is deprecated and ignored - all output is photorealistic.
+
+        Args:
+            prompt: The text prompt for generation
+            size: Image size as "WIDTHxHEIGHT"
+            style: Optional style modifier (deprecated)
+            negative_prompt: Things to avoid in the image
+            model_id: The model ID to use (e.g., "fal/dreamina-v3.1").
+                     Maps to a FAL endpoint. If None, uses default model.
+            reference_image_url: URL of reference image (not yet supported by all FAL models)
+            reference_strength: How strongly to follow reference (0.0-1.0)
+            is_anchor: If True, use high-quality settings
         """
         start_time = time.time()
 
         client = await self._get_client()
 
+        # Select endpoint based on model_id
+        endpoint = MODEL_TO_FAL_ENDPOINT.get(model_id, self.default_model) if model_id else self.default_model
+        logger.debug("fal_endpoint_selected", model_id=model_id, endpoint=endpoint)
+
         # Parse size
         width, height = self._parse_size(size)
 
-        # Build input parameters for Juggernaut XL
+        # Build input parameters
         input_params: dict[str, Any] = {
             "prompt": prompt,
             "image_size": {
@@ -81,8 +107,8 @@ class FalProvider(ImageProvider):
             },
             "num_images": 1,
             "enable_safety_checker": False,  # Disabled for adult companion content
-            "guidance_scale": 7.5,  # Recommended for Juggernaut photorealism
-            "num_inference_steps": 30,  # Higher quality
+            "guidance_scale": 7.5,  # Recommended for photorealism
+            "num_inference_steps": 30 if is_anchor else 25,  # Higher quality for anchors
         }
 
         # Use provided negative prompt or default quality enhancer
@@ -92,10 +118,21 @@ class FalProvider(ImageProvider):
         if style:
             logger.debug("fal_style_deprecated", style=style)
 
+        # Note: reference_image_url support varies by model
+        # Flux 1.1 Pro supports IP-Adapter, others may not
+        if reference_image_url:
+            logger.debug(
+                "fal_reference_image",
+                endpoint=endpoint,
+                reference_url=reference_image_url[:50] if reference_image_url else None,
+                reference_strength=reference_strength,
+            )
+            # TODO: Add IP-Adapter support for compatible FAL models
+
         try:
             # Submit to queue
             response = await client.post(
-                f"{self.BASE_URL}/{self.default_model}",
+                f"{self.BASE_URL}/{endpoint}",
                 json=input_params,
             )
             response.raise_for_status()
@@ -105,7 +142,7 @@ class FalProvider(ImageProvider):
 
             if request_id:
                 # Poll for completion
-                result = await self._wait_for_result(request_id)
+                result = await self._wait_for_result(request_id, endpoint=endpoint)
 
             latency_ms = (time.time() - start_time) * 1000
 
@@ -160,12 +197,15 @@ class FalProvider(ImageProvider):
         request_id: str,
         max_wait_seconds: int = 120,
         poll_interval: float = 0.5,
+        endpoint: str | None = None,
     ) -> dict[str, Any]:
         """Poll for result completion."""
         client = await self._get_client()
 
-        status_url = f"https://queue.fal.run/{self.default_model}/requests/{request_id}/status"
-        result_url = f"https://queue.fal.run/{self.default_model}/requests/{request_id}"
+        # Use provided endpoint or fall back to default model
+        model_endpoint = endpoint or self.default_model
+        status_url = f"https://queue.fal.run/{model_endpoint}/requests/{request_id}/status"
+        result_url = f"https://queue.fal.run/{model_endpoint}/requests/{request_id}"
 
         elapsed = 0.0
         while elapsed < max_wait_seconds:
@@ -203,3 +243,23 @@ class FalProvider(ImageProvider):
         if self._client:
             await self._client.aclose()
             self._client = None
+
+    async def health_check(self) -> bool:
+        """Check if FAL API is reachable.
+
+        Returns:
+            True if the FAL API is accessible, False otherwise.
+        """
+        try:
+            client = await self._get_client()
+            # FAL doesn't have a dedicated health endpoint, so we just check
+            # if we can reach the API with a simple request that should fail quickly
+            # Using a HEAD request to the base URL or checking a known endpoint
+            response = await client.get(
+                "https://fal.run/",
+                timeout=5.0,
+            )
+            # Any response (even 404) means the API is reachable
+            return True
+        except Exception:
+            return False

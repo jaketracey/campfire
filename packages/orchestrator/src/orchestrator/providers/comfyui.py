@@ -13,6 +13,13 @@ from orchestrator.providers.base import ImageProvider
 
 logger = structlog.get_logger()
 
+# Model ID to checkpoint file mapping for ComfyUI
+MODEL_TO_CHECKPOINT: dict[str, str] = {
+    "comfyui/epicrealism": "epiCRealismXL_Pure_fix.safetensors",
+    "comfyui/sdxl-base": "sd_xl_base_1.0.safetensors",
+    "comfyui/sdxl-turbo": "sd_xl_turbo_1.0_fp16.safetensors",
+}
+
 
 class ComfyUIProvider(ImageProvider):
     """ComfyUI image generation provider for local/self-hosted SDXL."""
@@ -49,6 +56,7 @@ class ComfyUIProvider(ImageProvider):
         size: str = "768x1024",
         style: str | None = None,
         negative_prompt: str | None = None,
+        model_id: str | None = None,
         reference_image_url: str | None = None,
         reference_strength: float = 0.7,
         is_anchor: bool = False,
@@ -60,11 +68,17 @@ class ComfyUIProvider(ImageProvider):
             size: Image size as "WIDTHxHEIGHT"
             style: Optional style modifier
             negative_prompt: Things to avoid in the image
+            model_id: The model ID to use (e.g., "comfyui/epicrealism").
+                     Maps to a checkpoint file. If None, uses default checkpoint.
             reference_image_url: URL of reference image for IP-Adapter (character consistency)
             reference_strength: How strongly to follow reference (0.0-1.0)
             is_anchor: If True, use high-quality anchor workflow (more steps, no upscaling)
         """
         start_time = time.time()
+
+        # Select checkpoint based on model_id
+        checkpoint = MODEL_TO_CHECKPOINT.get(model_id, self.default_checkpoint) if model_id else self.default_checkpoint
+        logger.debug("comfyui_checkpoint_selected", model_id=model_id, checkpoint=checkpoint)
 
         # Parse size
         try:
@@ -137,18 +151,18 @@ class ComfyUIProvider(ImageProvider):
                         negative_prompt=negative_prompt,
                         width=width,
                         height=height,
-                        checkpoint=self.default_checkpoint,
+                        checkpoint=checkpoint,
                         reference_image_filename=reference_image_filename,
                         reference_strength=reference_strength,
                     )
-                    logger.info("using_anchor_workflow", is_anchor=is_anchor)
+                    logger.info("using_anchor_workflow", is_anchor=is_anchor, model_id=model_id)
                 else:
                     workflow = self._build_workflow(
                         prompt=prompt,
                         negative_prompt=negative_prompt,
                         width=width,
                         height=height,
-                        checkpoint=self.default_checkpoint,
+                        checkpoint=checkpoint,
                     )
 
                 # Queue the prompt
@@ -189,7 +203,7 @@ class ComfyUIProvider(ImageProvider):
                             negative_prompt=negative_prompt,
                             width=width,
                             height=height,
-                            checkpoint=self.default_checkpoint,
+                            checkpoint=checkpoint,
                         )
 
                         response = await client.post(

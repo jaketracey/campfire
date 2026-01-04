@@ -137,9 +137,9 @@ class Settings(BaseSettings):
     animatediff_default_height: int = 768
     animatediff_video_format: str = "video/h264-mp4"  # VHS output format
 
-    # FAL AI (Image Generation - cloud fallback, using Juggernaut Pro for photorealism)
+    # FAL AI (Image Generation - cloud fallback, using Dreamina for photorealism)
     fal_api_key: str = ""
-    fal_model: str = "fal-ai/juggernaut-xl-v9"  # Best photorealistic portraits, eliminates plastic look
+    fal_model: str = "fal-ai/bytedance/dreamina/v3.1/text-to-image"  # High quality photorealistic portraits
 
     # Replicate (Image Generation - fallback)
     replicate_api_key: str = ""
@@ -181,6 +181,10 @@ class Settings(BaseSettings):
     classifier_routing_threshold: float = 0.6
     prefer_local_models: bool = True
     prefer_abliterated_for_adult: bool = True
+
+    # Image Routing
+    image_routing_enabled: bool = True
+    prefer_local_image_models: bool = True
 
     # Intent Detection
     intent_embedding_model: str = "sentence-transformers/all-MiniLM-L6-v2"

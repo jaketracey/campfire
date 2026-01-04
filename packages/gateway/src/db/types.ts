@@ -984,7 +984,10 @@ export type UseCaseType =
   | 'summarization'
   | 'context_compression'
   | 'safety_check'
-  | 'content_moderation';
+  | 'content_moderation'
+  | 'image_generation'
+  | 'image_anchor'
+  | 'image_variation';
 
 export const USE_CASE_TYPES: UseCaseType[] = [
   'chat_simple',
@@ -994,6 +997,27 @@ export const USE_CASE_TYPES: UseCaseType[] = [
   'context_compression',
   'safety_check',
   'content_moderation',
+  'image_generation',
+  'image_anchor',
+  'image_variation',
+];
+
+/** Text-based use cases for LLM routing */
+export const TEXT_USE_CASE_TYPES: UseCaseType[] = [
+  'chat_simple',
+  'chat_complex',
+  'memory_extraction',
+  'summarization',
+  'context_compression',
+  'safety_check',
+  'content_moderation',
+];
+
+/** Image-based use cases for image model routing */
+export const IMAGE_USE_CASE_TYPES: UseCaseType[] = [
+  'image_generation',
+  'image_anchor',
+  'image_variation',
 ];
 
 export const USE_CASE_LABELS: Record<UseCaseType, string> = {
@@ -1004,7 +1028,28 @@ export const USE_CASE_LABELS: Record<UseCaseType, string> = {
   context_compression: 'Context Compression',
   safety_check: 'Safety Check',
   content_moderation: 'Content Moderation',
+  image_generation: 'Image Generation',
+  image_anchor: 'Identity Anchor Image',
+  image_variation: 'Image Variation',
 };
+
+/** Provider category: text for LLMs, image for image generation */
+export type ProviderCategory = 'text' | 'image';
+
+/** Image model capabilities */
+export type ImageModelCapability = 'ip_adapter' | 'inpainting' | 'controlnet' | 'nsfw';
+
+/** Extended model config for image models */
+export interface ImageModelMetadata {
+  nsfw_capable?: boolean;
+  supports_ip_adapter?: boolean;
+  supports_inpainting?: boolean;
+  supports_controlnet?: boolean;
+  max_resolution?: [number, number];
+  aspect_ratios?: string[];
+  cost_per_image?: number;
+  avg_generation_time_ms?: number;
+}
 
 export interface ProviderConfig {
   id: UUID;
@@ -1562,4 +1607,251 @@ export interface AnonymousUsageWithEngagement {
   peak_engagement_score: number;
   conversion_triggered_at: Timestamp | null;
   conversion_trigger_message: number | null;
+}
+
+// ============================================================================
+// Ad Tracking Types
+// ============================================================================
+
+export type AdPlatform = 'google_ads' | 'facebook_ads';
+export type AdAccountStatus = 'active' | 'disconnected' | 'error' | 'pending';
+export type AdConversionType = 'signup' | 'first_payment' | 'subscription' | 'purchase';
+
+/**
+ * Connected ad platform account with OAuth credentials
+ */
+export interface AdAccount {
+  id: UUID;
+  platform: AdPlatform;
+  account_id: string;
+  account_name: string | null;
+  access_token_encrypted: string | null;
+  refresh_token_encrypted: string | null;
+  token_expires_at: Timestamp | null;
+  currency: string;
+  timezone: string | null;
+  status: AdAccountStatus;
+  last_sync_at: Timestamp | null;
+  sync_error: string | null;
+  created_at: Timestamp;
+  updated_at: Timestamp;
+}
+
+export interface AdAccountInsert {
+  platform: AdPlatform;
+  account_id: string;
+  account_name?: string | null;
+  access_token_encrypted?: string | null;
+  refresh_token_encrypted?: string | null;
+  token_expires_at?: Timestamp | null;
+  currency?: string;
+  timezone?: string | null;
+  status?: AdAccountStatus;
+}
+
+export interface AdAccountUpdate {
+  account_name?: string | null;
+  access_token_encrypted?: string | null;
+  refresh_token_encrypted?: string | null;
+  token_expires_at?: Timestamp | null;
+  currency?: string;
+  timezone?: string | null;
+  status?: AdAccountStatus;
+  last_sync_at?: Timestamp | null;
+  sync_error?: string | null;
+}
+
+/**
+ * Cached campaign data from ad platforms
+ */
+export interface AdCampaign {
+  id: UUID;
+  ad_account_id: UUID;
+  platform_campaign_id: string;
+  name: string;
+  status: string | null;
+  objective: string | null;
+  created_at: Timestamp;
+  updated_at: Timestamp;
+}
+
+export interface AdCampaignInsert {
+  ad_account_id: UUID;
+  platform_campaign_id: string;
+  name: string;
+  status?: string | null;
+  objective?: string | null;
+}
+
+export interface AdCampaignUpdate {
+  name?: string;
+  status?: string | null;
+  objective?: string | null;
+}
+
+/**
+ * Daily ad spend data synced from platforms
+ */
+export interface AdSpendDaily {
+  id: UUID;
+  ad_account_id: UUID;
+  campaign_id: UUID | null;
+  platform_campaign_id: string | null;
+  date: Date;
+  spend_cents: number;
+  impressions: number;
+  clicks: number;
+  conversions: number;
+  currency: string;
+  synced_at: Timestamp;
+}
+
+export interface AdSpendDailyInsert {
+  ad_account_id: UUID;
+  campaign_id?: UUID | null;
+  platform_campaign_id?: string | null;
+  date: Date;
+  spend_cents?: number;
+  impressions?: number;
+  clicks?: number;
+  conversions?: number;
+  currency?: string;
+}
+
+export interface AdSpendDailyUpsert {
+  ad_account_id: UUID;
+  platform_campaign_id: string;
+  date: Date;
+  spend_cents: number;
+  impressions: number;
+  clicks: number;
+  conversions: number;
+  currency?: string;
+}
+
+/**
+ * User conversion linked to ad campaigns for ROAS calculation
+ */
+export interface AdConversion {
+  id: UUID;
+  user_id: UUID;
+  conversion_type: AdConversionType;
+  campaign_id: UUID | null;
+  platform_campaign_id: string | null;
+  platform: AdPlatform | null;
+  utm_source: string | null;
+  utm_medium: string | null;
+  utm_campaign: string | null;
+  revenue_cents: number;
+  ltv_cents: number;
+  conversion_date: Date;
+  created_at: Timestamp;
+}
+
+export interface AdConversionInsert {
+  user_id: UUID;
+  conversion_type: AdConversionType;
+  campaign_id?: UUID | null;
+  platform_campaign_id?: string | null;
+  platform?: AdPlatform | null;
+  utm_source?: string | null;
+  utm_medium?: string | null;
+  utm_campaign?: string | null;
+  revenue_cents?: number;
+  ltv_cents?: number;
+  conversion_date?: Date;
+}
+
+export interface AdConversionUpdate {
+  campaign_id?: UUID | null;
+  ltv_cents?: number;
+}
+
+/**
+ * Pre-calculated lifetime value per user
+ */
+export interface UserLtv {
+  user_id: UUID;
+  total_payments_cents: number;
+  subscription_revenue_cents: number;
+  token_revenue_cents: number;
+  ltv_cents: number;
+  first_payment_at: Timestamp | null;
+  last_payment_at: Timestamp | null;
+  created_at: Timestamp;
+  updated_at: Timestamp;
+}
+
+export interface UserLtvInsert {
+  user_id: UUID;
+  total_payments_cents?: number;
+  subscription_revenue_cents?: number;
+  token_revenue_cents?: number;
+  ltv_cents?: number;
+  first_payment_at?: Timestamp | null;
+  last_payment_at?: Timestamp | null;
+}
+
+export interface UserLtvUpdate {
+  total_payments_cents?: number;
+  subscription_revenue_cents?: number;
+  token_revenue_cents?: number;
+  ltv_cents?: number;
+  first_payment_at?: Timestamp | null;
+  last_payment_at?: Timestamp | null;
+}
+
+/**
+ * Campaign metrics for analytics
+ */
+export interface CampaignMetrics {
+  campaign_id: UUID;
+  campaign_name: string;
+  platform: AdPlatform;
+  total_spend_cents: number;
+  total_impressions: number;
+  total_clicks: number;
+  signup_count: number;
+  conversion_count: number;
+  total_revenue_cents: number;
+  total_ltv_cents: number;
+}
+
+/**
+ * Overview metrics for ad dashboard
+ */
+export interface AdOverviewMetrics {
+  total_spend_cents: number;
+  total_impressions: number;
+  total_clicks: number;
+  total_signups: number;
+  total_conversions: number;
+  total_revenue_cents: number;
+  total_ltv_cents: number;
+  spend_by_platform: Record<string, number>;
+  signups_by_platform: Record<string, number>;
+}
+
+/**
+ * Daily spend trend data point
+ */
+export interface SpendTrendPoint {
+  date: Date;
+  spend_cents: number;
+  impressions: number;
+  clicks: number;
+  conversions: number;
+}
+
+/**
+ * UTM attribution stats
+ */
+export interface UtmAttributionStats {
+  utm_source: string | null;
+  utm_medium: string | null;
+  utm_campaign: string | null;
+  signup_count: number;
+  conversion_count: number;
+  total_revenue_cents: number;
+  total_ltv_cents: number;
 }

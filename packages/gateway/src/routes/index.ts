@@ -32,11 +32,17 @@ import {
   adminRoutingRoutes,
   adminCompanionRoutingRoutes,
 } from './admin-providers.js';
+import {
+  adminImageProvidersRoutes,
+  adminImageModelsRoutes,
+  adminImageRoutingRoutes,
+} from './admin-image-providers.js';
 import { affiliateAuthRoutes } from './affiliate-auth.js';
 import { affiliatePortalRoutes } from './affiliate-portal.js';
 import { affiliateTrackingRoutes } from './affiliate-tracking.js';
 import { adminAffiliatesRoutes } from './admin-affiliates.js';
 import { adminAnalyticsRoutes } from './admin-analytics.js';
+import { adminAdsRoutes } from './admin-ads.js';
 import { videosRoutes, mediaRoutes } from './videos.js';
 import { logger } from '../observability/logger.js';
 
@@ -122,11 +128,16 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
       // Admin support routes
       await api.register(adminSupportRoutes, { prefix: '/admin/support' });
 
-      // Admin provider settings routes
+      // Admin provider settings routes (text/LLM)
       await api.register(adminProvidersRoutes, { prefix: '/admin/providers' });
       await api.register(adminModelsRoutes, { prefix: '/admin/models' });
       await api.register(adminRoutingRoutes, { prefix: '/admin/routing' });
       await api.register(adminCompanionRoutingRoutes, { prefix: '/admin/companions' });
+
+      // Admin image provider settings routes
+      await api.register(adminImageProvidersRoutes, { prefix: '/admin/image-providers' });
+      await api.register(adminImageModelsRoutes, { prefix: '/admin/image-models' });
+      await api.register(adminImageRoutingRoutes, { prefix: '/admin/image-routing' });
 
       // Affiliate routes
       await api.register(affiliateAuthRoutes, { prefix: '/affiliate/auth' });
@@ -138,6 +149,9 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
 
       // Admin analytics routes
       await api.register(adminAnalyticsRoutes, { prefix: '/admin/analytics' });
+
+      // Admin ads routes
+      await api.register(adminAdsRoutes, { prefix: '/admin/ads' });
     },
     { prefix: '/api/v1' }
   );

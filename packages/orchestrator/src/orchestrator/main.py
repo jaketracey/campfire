@@ -27,7 +27,9 @@ from orchestrator.providers.comfyui import ComfyUIProvider
 from orchestrator.providers.fal import FalProvider
 from orchestrator.providers.ollama import OllamaProvider
 from orchestrator.queue import JobQueue, get_job_queue
+from orchestrator.routing.image_model_router import ImageModelRouter, ImageUseCase
 from orchestrator.safety.gate import SafetyGate, SafetyLevel
+from orchestrator.services.image_routing_config_service import ImageRoutingConfigService
 from orchestrator.services.orchestrator import ConversationOrchestrator
 from orchestrator.services.prompt_enhancer import PromptEnhancer
 from orchestrator.services.routing_config_service import RoutingConfigService
@@ -35,6 +37,7 @@ from orchestrator.tools.router import ToolRouter
 from orchestrator.db.pool import DatabasePool
 from orchestrator.api.test_runner import router as test_router
 from orchestrator.api.health import router as health_router
+from orchestrator.api.providers import router as providers_router
 
 logger = structlog.get_logger()
 
@@ -218,6 +221,10 @@ class ImageGenRequest(BaseModel):
     reference_image_url: str | None = None  # Identity anchor for IP-Adapter
     reference_strength: float = 0.7  # How much to follow reference image
     is_anchor: bool = False  # Use high-quality anchor workflow (more steps, no upscaling)
+    # New routing fields
+    use_case: str = "image_generation"  # image_generation, image_anchor, image_variation
+    companion_id: str | None = None  # For per-companion routing overrides
+    require_nsfw: bool = False  # Route to NSFW-capable models only
 
 
 class ImageGenResponse(BaseModel):
@@ -399,6 +406,8 @@ class AppState:
     orchestrator: ConversationOrchestrator
     job_queue: JobQueue
     routing_config_service: RoutingConfigService | None
+    image_routing_config_service: ImageRoutingConfigService | None
+    image_router: ImageModelRouter | None
     comfyui_provider: ComfyUIProvider | None
     fal_provider: FalProvider | None
     ollama_provider: OllamaProvider | None
@@ -453,19 +462,37 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     app_state.job_queue = get_job_queue(settings)
     await app_state.job_queue.connect()
 
-    # Initialize database pool and routing config service
+    # Initialize database pool and routing config services
     app_state.routing_config_service = None
+    app_state.image_routing_config_service = None
+    app_state.image_router = None
     try:
         await DatabasePool.get_pool()
         logger.info("database_pool_initialized")
 
-        # Initialize routing config service with caching
+        # Initialize text routing config service with caching
         app_state.routing_config_service = RoutingConfigService(cache_ttl_seconds=60.0)
         await app_state.routing_config_service.initialize()
         logger.info(
             "routing_config_service_initialized",
             cache_status=app_state.routing_config_service.get_cache_status(),
         )
+
+        # Initialize image routing config service with caching
+        app_state.image_routing_config_service = ImageRoutingConfigService(cache_ttl_seconds=60.0)
+        await app_state.image_routing_config_service.initialize()
+        logger.info(
+            "image_routing_config_service_initialized",
+            cache_status=app_state.image_routing_config_service.get_cache_status(),
+        )
+
+        # Initialize image model router
+        app_state.image_router = ImageModelRouter(
+            prefer_local=True,
+            routing_config_service=app_state.image_routing_config_service,
+        )
+        logger.info("image_model_router_initialized")
+
     except Exception as e:
         logger.warning(
             "routing_config_service_initialization_failed",
@@ -473,6 +500,9 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
             message="Falling back to environment-based routing",
         )
         app_state.routing_config_service = None
+        app_state.image_routing_config_service = None
+        # Initialize image router without database routing as fallback
+        app_state.image_router = ImageModelRouter(prefer_local=True)
 
     # Initialize orchestrator
     app_state.orchestrator = ConversationOrchestrator(
@@ -540,6 +570,8 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         ollama_enabled=app_state.ollama_provider is not None,
         prompt_enhancement_enabled=app_state.prompt_enhancer is not None,
         animatediff_enabled=app_state.animatediff_provider is not None,
+        image_routing_enabled=app_state.image_router is not None,
+        image_routing_db_enabled=app_state.image_routing_config_service is not None,
     )
 
     yield
@@ -578,6 +610,7 @@ app.add_middleware(
 # Register API routers
 app.include_router(test_router)
 app.include_router(health_router)
+app.include_router(providers_router)
 
 
 @app.get("/health", response_model=HealthResponse)
@@ -916,16 +949,26 @@ async def get_safety_constraints() -> dict[str, list[str]]:
     },
 )
 async def generate_image(request: ImageGenRequest) -> ImageGenResponse:
-    """Generate a companion image using ComfyUI (preferred) or FAL (fallback).
+    """Generate a companion image using the image routing system.
 
-    Uses local ComfyUI with SDXL checkpoint for high-quality generation.
-    Falls back to FAL.ai if ComfyUI is unavailable.
+    Routes requests to ComfyUI (local) or FAL.ai (cloud) based on:
+    - Use case (image_generation, image_anchor, image_variation)
+    - NSFW requirements (routes to ComfyUI for adult content)
+    - IP-Adapter requirements (for reference image support)
+    - Provider availability and tier-based fallback
 
-    The companion LLM now provides full imagePrompt with scene, mood, style,
-    and expression details. IP-Adapter preserves identity from anchor image,
-    so the companion has full creative control over the generated scene.
+    The companion LLM provides full imagePrompt with scene, mood, style,
+    and expression details. IP-Adapter preserves identity from anchor image.
     """
     import base64
+
+    # Determine the effective use case
+    # Auto-detect from request flags if not explicitly set
+    use_case = request.use_case
+    if request.is_anchor:
+        use_case = ImageUseCase.IMAGE_ANCHOR.value
+    elif request.reference_image_url and use_case == "image_generation":
+        use_case = ImageUseCase.IMAGE_VARIATION.value
 
     # Log incoming prompt before any processing
     logger.info(
@@ -934,7 +977,39 @@ async def generate_image(request: ImageGenRequest) -> ImageGenResponse:
         prompt=request.prompt[:200] if request.prompt else None,
         emotional_state=request.emotional_state,
         style=request.style,
+        use_case=use_case,
+        companion_id=request.companion_id,
+        require_nsfw=request.require_nsfw,
     )
+
+    # Route the image request to get provider and model
+    routing_decision = None
+    if app_state.image_router:
+        routing_decision = await app_state.image_router.route_image_request(
+            use_case=use_case,
+            companion_id=request.companion_id,
+            requires_ip_adapter=request.reference_image_url is not None,
+            requires_nsfw=request.require_nsfw,
+            preferred_resolution=(request.width, request.height),
+            prefer_quality=request.is_anchor,
+        )
+
+        logger.info(
+            "image_routing_decision",
+            provider=routing_decision.provider,
+            model_id=routing_decision.model_id,
+            tier=routing_decision.tier,
+            reason=routing_decision.routing_reason,
+            fallback_used=routing_decision.fallback_used,
+            blocked=routing_decision.blocked,
+        )
+
+        # Check if routing was blocked (e.g., NSFW required but no capable models)
+        if routing_decision.blocked:
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail=routing_decision.block_reason or "Image generation blocked by routing",
+            )
 
     # Enhance the prompt if prompt enhancer is available
     prompt = request.prompt
@@ -966,15 +1041,23 @@ async def generate_image(request: ImageGenRequest) -> ImageGenResponse:
         emotional_state=request.emotional_state,
         style=request.style,
         size=f"{request.width}x{request.height}",
+        use_case=use_case,
+        routed_provider=routing_decision.provider if routing_decision else None,
+        routed_model=routing_decision.model_id if routing_decision else None,
     )
 
-    # Try ComfyUI first (preferred for NSFW-capable generation)
-    if app_state.comfyui_provider:
+    # Determine which provider to use based on routing decision
+    selected_provider = routing_decision.provider if routing_decision and routing_decision.provider else None
+    model_id = routing_decision.model_id if routing_decision else None
+
+    # Try ComfyUI if routed to it or as default/fallback
+    if (selected_provider == "comfyui" or selected_provider is None) and app_state.comfyui_provider:
         try:
             result = await app_state.comfyui_provider.generate(
                 prompt=full_prompt,
                 size=f"{request.width}x{request.height}",
                 negative_prompt=request.negative_prompt,
+                model_id=model_id,
                 reference_image_url=request.reference_image_url,
                 reference_strength=request.reference_strength,
                 is_anchor=request.is_anchor,
@@ -985,7 +1068,9 @@ async def generate_image(request: ImageGenRequest) -> ImageGenResponse:
             logger.info(
                 "imagegen_success",
                 provider="comfyui",
+                model_id=model_id,
                 latency_ms=result["latency_ms"],
+                use_case=use_case,
             )
 
             return ImageGenResponse(
@@ -999,15 +1084,26 @@ async def generate_image(request: ImageGenRequest) -> ImageGenResponse:
             )
 
         except Exception as e:
-            logger.warning("comfyui_generation_failed", error=str(e))
-            # Fall through to FAL
+            logger.warning(
+                "comfyui_generation_failed",
+                error=str(e),
+                model_id=model_id,
+                will_fallback=selected_provider is None,
+            )
+            # Fall through to FAL only if not explicitly routed to ComfyUI
+            if selected_provider == "comfyui":
+                raise HTTPException(
+                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                    detail=f"Image generation failed: {str(e)}",
+                )
 
-    # Fallback to FAL
-    if app_state.fal_provider:
+    # Try FAL if routed to it or as fallback
+    if (selected_provider == "fal" or selected_provider is None) and app_state.fal_provider:
         try:
             result = await app_state.fal_provider.generate(
                 prompt=full_prompt,
                 size=f"{request.width}x{request.height}",
+                model_id=model_id,
             )
 
             # FAL returns a URL, we need to fetch and encode it
@@ -1020,7 +1116,9 @@ async def generate_image(request: ImageGenRequest) -> ImageGenResponse:
             logger.info(
                 "imagegen_success",
                 provider="fal",
+                model_id=model_id,
                 latency_ms=result["latency_ms"],
+                use_case=use_case,
             )
 
             return ImageGenResponse(
@@ -1034,7 +1132,11 @@ async def generate_image(request: ImageGenRequest) -> ImageGenResponse:
             )
 
         except Exception as e:
-            logger.error("fal_generation_failed", error=str(e))
+            logger.error(
+                "fal_generation_failed",
+                error=str(e),
+                model_id=model_id,
+            )
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail=f"Image generation failed: {str(e)}",
@@ -1048,7 +1150,7 @@ async def generate_image(request: ImageGenRequest) -> ImageGenResponse:
 
 @app.get("/imagegen/providers")
 async def get_image_providers() -> dict[str, Any]:
-    """Get available image generation providers."""
+    """Get available image generation providers and routing status."""
     providers = []
 
     if app_state.comfyui_provider:
@@ -1067,10 +1169,50 @@ async def get_image_providers() -> dict[str, Any]:
             "model": app_state.settings.fal_model,
         })
 
+    # Include routing information if available
+    routing_info = None
+    if app_state.image_routing_config_service:
+        routing_info = app_state.image_routing_config_service.get_cache_status()
+
     return {
         "providers": providers,
         "default": "comfyui" if app_state.comfyui_provider else "fal" if app_state.fal_provider else None,
+        "routing_enabled": app_state.image_router is not None,
+        "routing_db_enabled": app_state.image_routing_config_service is not None,
+        "routing_config": routing_info,
     }
+
+
+@app.get("/imagegen/health")
+async def get_image_providers_health() -> dict[str, Any]:
+    """Get health status of image generation providers."""
+    health = {}
+
+    if app_state.comfyui_provider:
+        try:
+            is_healthy = await app_state.comfyui_provider.health_check()
+            health["comfyui"] = {
+                "available": is_healthy,
+                "url": app_state.settings.comfyui_base_url,
+            }
+        except Exception as e:
+            health["comfyui"] = {
+                "available": False,
+                "error": str(e),
+            }
+
+    if app_state.fal_provider:
+        # FAL doesn't have a health check, but we can check if API key is configured
+        health["fal"] = {
+            "available": bool(app_state.settings.fal_api_key),
+            "configured": True,
+        }
+
+    # Include routing cache status
+    if app_state.image_routing_config_service:
+        health["routing"] = app_state.image_routing_config_service.get_cache_status()
+
+    return health
 
 
 @app.post(

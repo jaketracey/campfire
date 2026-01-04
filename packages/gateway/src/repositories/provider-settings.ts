@@ -40,6 +40,7 @@ import { NotFoundError, DuplicateError, wrapDatabaseError, isUniqueViolation } f
 
 export interface ProviderListFilters {
   is_enabled?: boolean;
+  category?: 'text' | 'image';
   limit?: number;
   offset?: number;
 }
@@ -55,6 +56,7 @@ export interface RoutingRuleListFilters {
   use_case?: UseCaseType;
   tier?: number;
   is_enabled?: boolean;
+  use_case_filter?: UseCaseType[]; // Filter to only these use cases
   limit?: number;
   offset?: number;
 }
@@ -265,7 +267,7 @@ export class ProviderSettingsRepository {
     tx?: TransactionContext
   ): Promise<PaginatedResult<ProviderConfigWithHealth>> {
     const db = this.getSql(tx);
-    const { is_enabled, limit = 50, offset = 0 } = filters;
+    const { is_enabled, category, limit = 50, offset = 0 } = filters;
 
     const result = await db`
       SELECT
@@ -280,6 +282,7 @@ export class ProviderSettingsRepository {
       FROM provider_configs pc
       LEFT JOIN orchestration_provider_health oph ON oph.provider = pc.provider
       WHERE (${is_enabled ?? null}::boolean IS NULL OR pc.is_enabled = ${is_enabled ?? null})
+        AND (${category ?? null}::text IS NULL OR COALESCE(pc.metadata->>'category', 'text') = ${category ?? null})
       ORDER BY pc.priority ASC, pc.display_name ASC
       LIMIT ${limit + 1}
       OFFSET ${offset}
@@ -581,7 +584,7 @@ export class ProviderSettingsRepository {
     tx?: TransactionContext
   ): Promise<PaginatedResult<RoutingRuleWithModel>> {
     const db = this.getSql(tx);
-    const { use_case, tier, is_enabled, limit = 100, offset = 0 } = filters;
+    const { use_case, tier, is_enabled, use_case_filter, limit = 100, offset = 0 } = filters;
 
     const result = await db`
       SELECT
@@ -607,6 +610,7 @@ export class ProviderSettingsRepository {
         (${use_case ?? null}::use_case_type IS NULL OR rr.use_case = ${use_case ?? null})
         AND (${tier ?? null}::int IS NULL OR rr.tier = ${tier ?? null})
         AND (${is_enabled ?? null}::boolean IS NULL OR rr.is_enabled = ${is_enabled ?? null})
+        AND (${use_case_filter ?? null}::use_case_type[] IS NULL OR rr.use_case = ANY(${use_case_filter ?? []}::use_case_type[]))
       ORDER BY rr.use_case, rr.tier ASC, rr.weight DESC
       LIMIT ${limit + 1}
       OFFSET ${offset}
