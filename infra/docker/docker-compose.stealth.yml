@@ -99,9 +99,8 @@ services:
       INTERNAL_SERVICE_KEY: ${INTERNAL_SERVICE_KEY}
       PROVIDER_KEY_ENCRYPTION_SECRET: ${PROVIDER_KEY_ENCRYPTION_SECRET}
       CORS_ORIGINS: https://ignite.cam,https://www.ignite.cam,http://localhost:3000
-      # Ollama via SSH tunnel (host.docker.internal maps to host)
-      OLLAMA_ENABLED: ${OLLAMA_ENABLED:-true}
-      OLLAMA_BASE_URL: http://host.docker.internal:11434
+      # Local Ollama disabled in stealth mode
+      OLLAMA_ENABLED: "false"
       # Flowguard (Verotel/YoursAfe) Payment Processing
       FLOWGUARD_SHOP_ID: ${FLOWGUARD_SHOP_ID:-}
       FLOWGUARD_SIGNATURE_KEY: ${FLOWGUARD_SIGNATURE_KEY:-}
@@ -146,13 +145,11 @@ services:
       PORT: 5000
       DATABASE_URL: postgresql+asyncpg://campfire:${POSTGRES_PASSWORD:-campfire}@postgres:5432/campfire
       REDIS_URL: redis://redis:6379
-      # Self-hosted AI via SSH tunnels
-      OLLAMA_ENABLED: ${OLLAMA_ENABLED:-true}
-      OLLAMA_BASE_URL: http://host.docker.internal:11434
-      OLLAMA_MODEL: ${OLLAMA_MODEL:-goekdenizguelmez/JOSIEFIED-Qwen3:8b}
-      COMFYUI_ENABLED: ${COMFYUI_ENABLED:-true}
-      COMFYUI_BASE_URL: http://host.docker.internal:8188
-      COMFYUI_DEFAULT_CHECKPOINT: ${COMFYUI_DEFAULT_CHECKPOINT:-Juggernaut-X-RunDiffusion-NSFW.safetensors}
+      PROVIDER_KEY_ENCRYPTION_SECRET: ${PROVIDER_KEY_ENCRYPTION_SECRET}
+      # Local Ollama disabled in stealth mode
+      OLLAMA_ENABLED: "false"
+      # ComfyUI disabled in stealth mode (using FAL.ai cloud instead)
+      COMFYUI_ENABLED: "false"
       # Cloud AI (disabled for stealth, fallback only)
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}

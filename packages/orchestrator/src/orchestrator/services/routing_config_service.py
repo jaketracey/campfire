@@ -287,3 +287,19 @@ class RoutingConfigService:
     def is_initialized(self) -> bool:
         """Check if the service is initialized."""
         return self._initialized
+
+    async def get_provider_api_key(
+        self,
+        provider_name: str,
+        encryption_key: str,
+    ) -> Optional[str]:
+        """Get decrypted API key for a provider.
+
+        Args:
+            provider_name: The provider name (e.g., 'openai', 'anthropic').
+            encryption_key: The encryption key for decrypting the API key.
+
+        Returns:
+            The decrypted API key, or None if not configured.
+        """
+        return await self._repository.get_provider_api_key(provider_name, encryption_key)

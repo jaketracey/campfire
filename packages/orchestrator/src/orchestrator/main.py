@@ -1638,9 +1638,22 @@ You must respond with valid JSON in this exact format:
 
                     # Create provider based on the routed model
                     if model.provider == "openai":
-                        llm_provider = OpenAIProvider(app_state.settings, model_override=model.model_id)
-                        logger.info("identity_generation_using_openai", model=model.model_id)
-                        break
+                        # Get OpenAI API key from database
+                        openai_api_key = await app_state.routing_config_service.get_provider_api_key(
+                            "openai",
+                            app_state.settings.provider_key_encryption_secret,
+                        )
+                        if openai_api_key:
+                            llm_provider = OpenAIProvider(
+                                app_state.settings,
+                                model_override=model.model_id,
+                                api_key_override=openai_api_key,
+                            )
+                            logger.info("identity_generation_using_openai", model=model.model_id)
+                            break
+                        else:
+                            logger.warning("openai_api_key_not_found_in_database")
+                            continue
                     elif model.provider == "ollama" and app_state.ollama_provider:
                         llm_provider = app_state.ollama_provider.with_model(model.model_id)
                         logger.info("identity_generation_using_ollama", model=model.model_id)
@@ -1654,9 +1667,28 @@ You must respond with valid JSON in this exact format:
             logger.info("identity_generation_using_fallback_ollama")
 
         # If still no provider, try OpenAI directly if API key is configured
-        if llm_provider is None and app_state.settings.openai_api_key:
-            llm_provider = OpenAIProvider(app_state.settings)
-            logger.info("identity_generation_using_direct_openai")
+        if llm_provider is None:
+            # Try to get API key from database first, then fall back to settings
+            openai_api_key = None
+            if app_state.routing_config_service:
+                try:
+                    openai_api_key = await app_state.routing_config_service.get_provider_api_key(
+                        "openai",
+                        app_state.settings.provider_key_encryption_secret,
+                    )
+                except Exception as e:
+                    logger.warning("failed_to_get_openai_api_key_from_db", error=str(e))
+
+            # Fall back to settings if not in database
+            if not openai_api_key:
+                openai_api_key = app_state.settings.openai_api_key
+
+            if openai_api_key:
+                llm_provider = OpenAIProvider(
+                    app_state.settings,
+                    api_key_override=openai_api_key,
+                )
+                logger.info("identity_generation_using_direct_openai")
 
         if llm_provider is None:
             raise HTTPException(

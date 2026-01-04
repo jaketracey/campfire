@@ -36,6 +36,12 @@ class Settings(BaseSettings):
         validation_alias="INTERNAL_SERVICE_KEY"
     )
 
+    # Provider API Key Encryption (for decrypting keys stored in database)
+    provider_key_encryption_secret: str = Field(
+        default="dev-encryption-secret",
+        validation_alias="PROVIDER_KEY_ENCRYPTION_SECRET"
+    )
+
     # Database
     database_url: PostgresDsn = Field(
         default="postgresql+asyncpg://postgres:postgres@localhost:5432/campfire"

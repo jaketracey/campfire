@@ -23,16 +23,19 @@ class OpenAIProvider(LLMProvider):
         self,
         settings: Settings,
         model_override: str | None = None,
+        api_key_override: str | None = None,
     ):
         """Initialize OpenAI provider.
 
         Args:
             settings: Application settings.
             model_override: Optional model ID to use instead of the default.
+            api_key_override: Optional API key to use instead of settings.
         """
         self.settings = settings
+        self._api_key = api_key_override or settings.openai_api_key
         self.client = openai.AsyncOpenAI(
-            api_key=settings.openai_api_key,
+            api_key=self._api_key,
             timeout=settings.openai_timeout,
         )
         self._default_model = settings.openai_model
@@ -62,6 +65,7 @@ class OpenAIProvider(LLMProvider):
         return OpenAIProvider(
             settings=self.settings,
             model_override=model_id,
+            api_key_override=self._api_key,
         )
 
     @property

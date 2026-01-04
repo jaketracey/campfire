@@ -234,3 +234,32 @@ class RoutingConfigRepository:
         configs = [dict(row) for row in rows]
         logger.debug("fetched_provider_configs", count=len(configs))
         return configs
+
+    async def get_provider_api_key(
+        self,
+        provider_name: str,
+        encryption_key: str,
+    ) -> Optional[str]:
+        """Get decrypted API key for a provider.
+
+        Args:
+            provider_name: The provider name (e.g., 'openai', 'anthropic').
+            encryption_key: The encryption key for decrypting the API key.
+
+        Returns:
+            The decrypted API key, or None if not configured.
+        """
+        rows = await DatabasePool.fetch(
+            """
+            SELECT pgp_sym_decrypt(api_key_encrypted, $1) AS api_key
+            FROM provider_configs
+            WHERE provider = $2 AND api_key_encrypted IS NOT NULL
+            """,
+            encryption_key,
+            provider_name,
+        )
+
+        if rows and rows[0]["api_key"]:
+            logger.debug("fetched_provider_api_key", provider=provider_name)
+            return rows[0]["api_key"]
+        return None
