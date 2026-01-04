@@ -1065,12 +1065,14 @@ async def generate_image(request: ImageGenRequest) -> ImageGenResponse:
     )
 
     # Route the image request to get provider and model
+    # Note: requires_ip_adapter is no longer used as a blocking requirement
+    # FAL providers handle reference images through their own API (e.g., Flux Kontext)
     routing_decision = None
     if app_state.image_router:
         routing_decision = await app_state.image_router.route_image_request(
             use_case=use_case,
             companion_id=request.companion_id,
-            requires_ip_adapter=request.reference_image_url is not None,
+            requires_ip_adapter=False,  # FAL doesn't use IP-Adapter
             requires_nsfw=request.require_nsfw,
             preferred_resolution=(request.width, request.height),
             prefer_quality=request.is_anchor,
@@ -1818,20 +1820,19 @@ async def generate_random_identity() -> GenerateRandomIdentityResponse:
         "a scientist or academic (physicist, marine biologist, archaeologist, psychologist, historian, astronomer)",
         "an adventurer or traveler (backpacker, mountain guide, sailor, pilot, travel writer, anthropologist)",
         "someone with an unusual or niche hobby that defines them (beekeeper, storm chaser, vintage radio collector, urban forager, competitive puzzle solver)",
-        "a warm and nurturing personality (grandparent figure, community volunteer, hospice worker, kindergarten teacher)",
+        "a warm and nurturing personality (community volunteer, camp counselor, hospice worker, kindergarten teacher)",
         "a witty and sardonic personality (stand-up comedian, film critic, jaded journalist, cynical bartender)",
         "a calm and philosophical personality (meditation teacher, park ranger, lighthouse keeper, night security guard with deep thoughts)",
         "a high-energy enthusiastic personality (fitness instructor, event planner, sports commentator, theme park performer)",
         "someone defined by their passion (obsessive gardener, vinyl record collector, amateur astronomer, home brewer, bird watcher)",
         "a blue-collar worker with hidden depth (truck driver who writes poetry, construction worker who paints, janitor finishing a novel)",
-        "someone going through a life transition (recent retiree, new parent, career changer, starting over in a new city)",
-        "an older person with life experience (someone 60-80 with fascinating stories, retired professional, wise grandparent figure)",
+        "someone going through a life transition (new parent, career changer, starting over in a new city, just moved abroad)",
         "a young person finding their way (recent graduate, gap year traveler, aspiring artist, first-generation college student)",
         "someone with a mysterious or interesting past they've moved on from",
-        "a sports or fitness enthusiast (marathon runner, yoga instructor, retired athlete, boxing coach, rock climber)",
+        "a sports or fitness enthusiast (marathon runner, yoga instructor, personal trainer, boxing coach, rock climber)",
         "a foodie or culinary type (sommelier, food truck owner, fermentation enthusiast, home cook with secret family recipes)",
         "a tech-adjacent person (indie game developer, repair cafe volunteer, retro computing enthusiast)",
-        "someone from a performing arts background (retired theater actor, circus performer, voice actor, backup dancer turned choreographer)",
+        "someone from a performing arts background (theater actor, circus performer, voice actor, dancer turned choreographer)",
         "a healthcare worker (ER nurse, physical therapist, veterinarian, midwife, EMT with stories)",
         "someone who works with their hands (carpenter, ceramicist, tattoo artist, clockmaker, blacksmith)",
         "a small business owner (bookshop proprietor, cafe owner, florist, vintage store curator)",
