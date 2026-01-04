@@ -40,7 +40,7 @@ export function ShareCompanionDialog({
   const [isUpdating, setIsUpdating] = useState(false);
 
   // Use marketing site URL for share links
-  const marketingUrl = process.env.NEXT_PUBLIC_MARKETING_URL || 'https://campfire.dev';
+  const marketingUrl = process.env.NEXT_PUBLIC_MARKETING_URL || 'https://ignite.cam';
   // Include referral code in share URL for tracking
   const shareUrl = referralCode
     ? `${marketingUrl}/c/${companionId}?ref=${encodeURIComponent(referralCode)}`
@@ -66,7 +66,7 @@ export function ShareCompanionDialog({
   };
 
   const handleShareTwitter = () => {
-    const text = encodeURIComponent(`Check out ${companionName}, my AI companion on Campfire!`);
+    const text = encodeURIComponent(`Check out ${companionName}, my AI companion on Ignite!`);
     const url = encodeURIComponent(shareUrl);
     window.open(`https://twitter.com/intent/tweet?text=${text}&url=${url}`, '_blank');
   };

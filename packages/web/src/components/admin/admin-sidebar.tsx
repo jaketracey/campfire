@@ -112,7 +112,7 @@ export function AdminSidebar() {
       {/* Footer */}
       <div className="p-4 border-t border-white/5">
         <p className="text-xs text-gray-600 text-center">
-          Campfire Admin Panel
+          Ignite Admin Panel
         </p>
       </div>
     </aside>

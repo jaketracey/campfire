@@ -111,7 +111,7 @@ export function Step7Review() {
         <p className="text-gray-400 max-w-md mx-auto">Ready to ignite {state.name} and bring them into the digital campfire?</p>
       </div>
 
-      <Card className="bg-white/[0.02] backdrop-blur-3xl border-white/10 shadow-[0_0_50px_rgba(0,0,0,0.5)] overflow-hidden">
+      <Card className="border-0 bg-transparent shadow-none">
         <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-vibes-neon via-vibes-hot to-vibes-cyan" />
         <CardContent className="p-8 space-y-8">
           <div className="flex items-center gap-6">

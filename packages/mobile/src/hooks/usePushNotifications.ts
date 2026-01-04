@@ -86,7 +86,7 @@ export function usePushNotifications(
       // Configure Android channel
       if (Platform.OS === 'android') {
         await Notifications.setNotificationChannelAsync('default', {
-          name: 'Campfire',
+          name: 'Ignite',
           importance: Notifications.AndroidImportance.MAX,
           vibrationPattern: [0, 250, 250, 250],
           lightColor: '#FF6B00',

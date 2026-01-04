@@ -77,7 +77,7 @@ export function IdentityDisplay({ name, pronouns, backstory, onComplete }: Ident
   });
 
   return (
-    <Card className="w-full bg-white/[0.01] backdrop-blur-3xl border-white/10 shadow-[0_0_50px_rgba(0,0,0,0.5)] overflow-hidden">
+    <Card className="w-full border-0 bg-transparent shadow-none">
       <CardHeader className="space-y-2 pb-6">
         <div>
           <CardTitle className="text-3xl font-bold font-display tracking-tight text-white">Identity</CardTitle>

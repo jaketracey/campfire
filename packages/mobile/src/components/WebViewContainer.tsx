@@ -35,7 +35,7 @@ export function WebViewContainer({ initialPath }: WebViewContainerProps): React.
   const [canGoBack, setCanGoBack] = useState(false);
 
   // Get base URL from config
-  const baseUrl = Constants.expoConfig?.extra?.webAppUrl || 'https://app.campfire.app';
+  const baseUrl = Constants.expoConfig?.extra?.webAppUrl || 'https://ignite.cam';
   const initialUrl = initialPath ? `${baseUrl}${initialPath}` : baseUrl;
 
   // Push notifications
@@ -268,7 +268,7 @@ export function WebViewContainer({ initialPath }: WebViewContainerProps): React.
         bounces={false}
         overScrollMode="never"
         // User agent
-        applicationNameForUserAgent="CampfireApp/1.0"
+        applicationNameForUserAgent="IgniteApp/1.0"
       />
       {isLoading && (
         <View style={styles.loadingOverlay}>

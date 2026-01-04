@@ -187,7 +187,26 @@ MODEL_REGISTRY: dict[str, ModelSpec] = {
         cost_per_1m_output=0.6,
         tags=["fast", "cheap"],
     ),
-    # Ollama local models (abliterated)
+    # Ollama local models - SFW primary
+    "qwen2.5:latest": ModelSpec(
+        model_id="qwen2.5:latest",
+        provider="ollama",
+        display_name="Qwen 2.5 7B",
+        content_capability=ContentCapability.SUGGESTIVE,
+        tier=ModelTier.LOCAL,
+        supports_tools=True,
+        supports_vision=False,
+        context_window=32768,
+        max_output_tokens=4096,
+        avg_latency_ms=500.0,
+        tokens_per_second=100.0,
+        is_abliterated=False,
+        is_local=True,
+        cost_per_1m_input=0.0,
+        cost_per_1m_output=0.0,
+        tags=["local", "sfw", "primary", "qwen"],
+    ),
+    # Ollama local models - abliterated for NSFW
     "goekdenizguelmez/JOSIEFIED-Qwen3:8b": ModelSpec(
         model_id="goekdenizguelmez/JOSIEFIED-Qwen3:8b",
         provider="ollama",

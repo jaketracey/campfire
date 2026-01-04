@@ -4,7 +4,7 @@
 
 Campfire runs on a single AWS EC2 instance with Docker Compose, fronted by Cloudflare for SSL termination and DDoS protection.
 
-**Live URL:** https://campfire.noice.work
+**Live URL:** https://ignite.cam
 
 ## AWS Resources
 

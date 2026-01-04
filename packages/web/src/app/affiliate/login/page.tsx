@@ -115,8 +115,8 @@ export default function AffiliateLoginPage() {
 
           <p className="text-center text-xs text-gray-500 mt-6">
             Need an affiliate account? Contact us at{' '}
-            <a href="mailto:affiliates@campfire.ai" className="text-campfire-400 hover:underline">
-              affiliates@campfire.ai
+            <a href="mailto:affiliates@ignite.cam" className="text-campfire-400 hover:underline">
+              affiliates@ignite.cam
             </a>
           </p>
         </CardContent>

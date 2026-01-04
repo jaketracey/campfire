@@ -11,7 +11,7 @@
         "simulator": true
       },
       "env": {
-        "WEB_APP_URL": "https://app.campfire.app"
+        "WEB_APP_URL": "https://ignite.cam"
       }
     },
     "preview": {
@@ -23,7 +23,7 @@
         "buildType": "apk"
       },
       "env": {
-        "WEB_APP_URL": "https://app.campfire.app"
+        "WEB_APP_URL": "https://ignite.cam"
       }
     },
     "production": {
@@ -35,14 +35,14 @@
         "buildType": "app-bundle"
       },
       "env": {
-        "WEB_APP_URL": "https://app.campfire.app"
+        "WEB_APP_URL": "https://ignite.cam"
       }
     }
   },
   "submit": {
     "production": {
       "ios": {
-        "appleId": "team@campfire.app",
+        "appleId": "team@ignite.cam",
         "ascAppId": "YOUR_APP_STORE_CONNECT_APP_ID",
         "appleTeamId": "YOUR_APPLE_TEAM_ID"
       },

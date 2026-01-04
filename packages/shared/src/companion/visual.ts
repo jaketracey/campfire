@@ -1,7 +1,111 @@
 import { z } from 'zod';
 
+// ============================================================================
+// Companion Appearance Types (for onboarding image selection)
+// ============================================================================
+
+/**
+ * Companion gender
+ */
+export const CompanionGenderSchema = z.enum(['female', 'male']);
+export type CompanionGender = z.infer<typeof CompanionGenderSchema>;
+
+/**
+ * Ethnicity options (shared across genders)
+ */
+export const AppearanceEthnicitySchema = z.enum([
+  'east-asian',
+  'south-asian',
+  'black',
+  'caucasian',
+  'latina',
+  'middle-eastern',
+  'mixed',
+]);
+export type AppearanceEthnicity = z.infer<typeof AppearanceEthnicitySchema>;
+
+/**
+ * Female body types
+ */
+export const FemaleBodyTypeSchema = z.enum(['slim', 'athletic', 'curvy', 'plus-size']);
+export type FemaleBodyType = z.infer<typeof FemaleBodyTypeSchema>;
+
+/**
+ * Male body types
+ */
+export const MaleBodyTypeSchema = z.enum(['slim', 'athletic', 'muscular', 'dad-bod']);
+export type MaleBodyType = z.infer<typeof MaleBodyTypeSchema>;
+
+/**
+ * Combined body type (for storage)
+ */
+export const AppearanceBodyTypeSchema = z.enum([
+  'slim', 'athletic', 'curvy', 'plus-size', // Female
+  'muscular', 'dad-bod', // Male-specific
+]);
+export type AppearanceBodyType = z.infer<typeof AppearanceBodyTypeSchema>;
+
+/**
+ * Hair color options (shared across genders)
+ */
+export const AppearanceHairColorSchema = z.enum(['black', 'brown', 'blonde', 'red', 'fantasy']);
+export type AppearanceHairColor = z.infer<typeof AppearanceHairColorSchema>;
+
+/**
+ * Size category for body measurements (S/M/L)
+ */
+export const SizeCategorySchema = z.enum(['S', 'M', 'L']);
+export type SizeCategory = z.infer<typeof SizeCategorySchema>;
+
+/**
+ * Female appearance schema
+ */
+export const FemaleAppearanceSchema = z.object({
+  gender: z.literal('female'),
+  ethnicity: AppearanceEthnicitySchema,
+  bodyType: FemaleBodyTypeSchema,
+  hairColor: AppearanceHairColorSchema,
+  breastSize: SizeCategorySchema,
+});
+export type FemaleAppearance = z.infer<typeof FemaleAppearanceSchema>;
+
+/**
+ * Male appearance schema
+ */
+export const MaleAppearanceSchema = z.object({
+  gender: z.literal('male'),
+  ethnicity: AppearanceEthnicitySchema,
+  bodyType: MaleBodyTypeSchema,
+  hairColor: AppearanceHairColorSchema,
+  build: SizeCategorySchema,
+});
+export type MaleAppearance = z.infer<typeof MaleAppearanceSchema>;
+
+/**
+ * Combined companion appearance (discriminated union)
+ */
+export const CompanionAppearanceSchema = z.discriminatedUnion('gender', [
+  FemaleAppearanceSchema,
+  MaleAppearanceSchema,
+]);
+export type CompanionAppearance = z.infer<typeof CompanionAppearanceSchema>;
+
+// Type guards
+export function isFemaleAppearance(appearance: CompanionAppearance): appearance is FemaleAppearance {
+  return appearance.gender === 'female';
+}
+
+export function isMaleAppearance(appearance: CompanionAppearance): appearance is MaleAppearance {
+  return appearance.gender === 'male';
+}
+
+// ============================================================================
+// Visual Style Types
+// ============================================================================
+
 /**
  * Visual style type
+ * @deprecated Style selection removed - always photorealistic
  */
 export const VisualStyleTypeSchema = z.enum([
   'realistic',          // Photorealistic

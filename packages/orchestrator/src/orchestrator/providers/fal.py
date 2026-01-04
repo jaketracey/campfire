@@ -41,6 +41,14 @@ class FalProvider(ImageProvider):
             )
         return self._client
 
+    # Default negative prompt for quality photorealistic generation
+    DEFAULT_NEGATIVE_PROMPT = (
+        "ugly, deformed, disfigured, low quality, blurry, pixelated, "
+        "bad anatomy, extra limbs, missing limbs, floating limbs, disconnected limbs, "
+        "mutation, mutated, extra fingers, fewer fingers, bad hands, "
+        "watermark, text, signature, logo"
+    )
+
     @retry(
         stop=stop_after_attempt(3),
         wait=wait_exponential(multiplier=1, min=1, max=10),
@@ -49,10 +57,14 @@ class FalProvider(ImageProvider):
         self,
         prompt: str,
         size: str = "512x512",
-        style: str | None = None,
+        style: str | None = None,  # Deprecated - ignored, always photorealistic
         negative_prompt: str | None = None,
     ) -> dict[str, Any]:
-        """Generate an image from a text prompt."""
+        """Generate an image from a text prompt.
+
+        Uses Juggernaut XL for photorealistic portrait generation.
+        Style parameter is deprecated and ignored - all output is photorealistic.
+        """
         start_time = time.time()
 
         client = await self._get_client()
@@ -60,7 +72,7 @@ class FalProvider(ImageProvider):
         # Parse size
         width, height = self._parse_size(size)
 
-        # Build input parameters for Flux
+        # Build input parameters for Juggernaut XL
         input_params: dict[str, Any] = {
             "prompt": prompt,
             "image_size": {
@@ -68,22 +80,17 @@ class FalProvider(ImageProvider):
                 "height": height,
             },
             "num_images": 1,
-            "enable_safety_checker": True,
+            "enable_safety_checker": False,  # Disabled for adult companion content
+            "guidance_scale": 7.5,  # Recommended for Juggernaut photorealism
+            "num_inference_steps": 30,  # Higher quality
         }
 
-        if negative_prompt:
-            input_params["negative_prompt"] = negative_prompt
+        # Use provided negative prompt or default quality enhancer
+        input_params["negative_prompt"] = negative_prompt or self.DEFAULT_NEGATIVE_PROMPT
 
+        # Style parameter is deprecated - always photorealistic now
         if style:
-            # Append style to prompt
-            style_prompts = {
-                "realistic": "photorealistic, highly detailed, 8k",
-                "artistic": "artistic, painting style, creative",
-                "cartoon": "cartoon style, animated, colorful",
-                "abstract": "abstract art, surreal, modern art",
-            }
-            if style in style_prompts:
-                input_params["prompt"] = f"{prompt}, {style_prompts[style]}"
+            logger.debug("fal_style_deprecated", style=style)
 
         try:
             # Submit to queue

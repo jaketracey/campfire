@@ -65,10 +65,10 @@ class Settings(BaseSettings):
     openai_max_tokens: int = 4096
     openai_timeout: float = 60.0
 
-    # Ollama (local/self-hosted - abliterated models)
+    # Ollama (local/self-hosted - SFW default, abliterated for NSFW via router)
     ollama_base_url: str = "http://localhost:11434"
-    ollama_model: str = "goekdenizguelmez/JOSIEFIED-Qwen3:8b"
-    ollama_fallback_model: str = "goekdenizguelmez/JOSIEFIED-Qwen3:8b"
+    ollama_model: str = "qwen2.5:latest"  # SFW primary
+    ollama_fallback_model: str = "goekdenizguelmez/JOSIEFIED-Qwen3:8b"  # abliterated fallback
     ollama_max_tokens: int = 4096
     ollama_timeout: float = 120.0
     ollama_enabled: bool = True  # Prefer Ollama over OpenAI when available
@@ -137,9 +137,9 @@ class Settings(BaseSettings):
     animatediff_default_height: int = 768
     animatediff_video_format: str = "video/h264-mp4"  # VHS output format
 
-    # FAL AI (Image Generation - cloud fallback)
+    # FAL AI (Image Generation - cloud fallback, using Juggernaut Pro for photorealism)
     fal_api_key: str = ""
-    fal_model: str = "fal-ai/flux/schnell"
+    fal_model: str = "fal-ai/juggernaut-xl-v9"  # Best photorealistic portraits, eliminates plastic look
 
     # Replicate (Image Generation - fallback)
     replicate_api_key: str = ""

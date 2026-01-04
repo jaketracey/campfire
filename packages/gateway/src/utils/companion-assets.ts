@@ -4,17 +4,42 @@
  *
  * These images serve as identity anchors for IP-Adapter based generation,
  * ensuring consistent character appearance across all generated images.
+ *
+ * Image structure:
+ * - Female: /images/companions/female/{ethnicity}-{bodyType}-{hairColor}-b{S|M|L}.png
+ * - Male: /images/companions/male/{ethnicity}-{bodyType}-{hairColor}-build{S|M|L}.png
  */
 
-import type { CompanionAppearance } from '../db/types.js';
+import type {
+  CompanionAppearance,
+  CompanionGender,
+  FemaleAppearance,
+  MaleAppearance,
+  FemaleBodyType,
+  MaleBodyType,
+  AppearanceEthnicity,
+  AppearanceHairColor,
+  SizeCategory,
+} from '../db/types.js';
+
+import {
+  isFemaleAppearance,
+  isMaleAppearance,
+} from '../db/types.js';
 
 // Re-export types for convenience
-export type { CompanionAppearance };
-
-// Type aliases for component types
-export type AppearanceEthnicity = CompanionAppearance['ethnicity'];
-export type AppearanceBodyType = CompanionAppearance['bodyType'];
-export type AppearanceHairColor = CompanionAppearance['hairColor'];
+export type {
+  CompanionAppearance,
+  CompanionGender,
+  FemaleAppearance,
+  MaleAppearance,
+  FemaleBodyType,
+  MaleBodyType,
+  AppearanceEthnicity,
+  AppearanceHairColor,
+  SizeCategory,
+};
+export { isFemaleAppearance, isMaleAppearance };
 
 // Alias for backwards compatibility
 export type PhysicalAppearance = CompanionAppearance;
@@ -30,26 +55,54 @@ const getS3Url = (key: string): string => {
   return `https://${S3_MEDIA_BUCKET}.s3.${S3_REGION}.amazonaws.com/${key}`;
 };
 
+// Valid options
+const VALID_ETHNICITIES: AppearanceEthnicity[] = [
+  'east-asian', 'south-asian', 'black', 'caucasian',
+  'latina', 'middle-eastern', 'mixed'
+];
+const VALID_FEMALE_BODY_TYPES: FemaleBodyType[] = [
+  'slim', 'athletic', 'curvy', 'plus-size'
+];
+const VALID_MALE_BODY_TYPES: MaleBodyType[] = [
+  'slim', 'athletic', 'muscular', 'dad-bod'
+];
+const VALID_HAIR_COLORS: AppearanceHairColor[] = [
+  'black', 'brown', 'blonde', 'red', 'fantasy'
+];
+const VALID_SIZE_CATEGORIES: SizeCategory[] = ['S', 'M', 'L'];
+
 /**
  * Get the variation image filename for a given appearance combination.
- * Format: {ethnicity}-{bodyType}-{hairColor}.png
  *
- * Example: "east-asian-slim-blonde.png"
+ * Female format: {ethnicity}-{bodyType}-{hairColor}-b{S|M|L}.png
+ * Male format: {ethnicity}-{bodyType}-{hairColor}-build{S|M|L}.png
+ *
+ * Example: "female/east-asian-slim-blonde-bM.png"
  */
 export function getVariationFilename(appearance: PhysicalAppearance): string {
-  const { ethnicity, bodyType, hairColor } = appearance;
-  return `${ethnicity}-${bodyType}-${hairColor}.png`;
+  const { gender, ethnicity, bodyType, hairColor } = appearance;
+
+  if (gender === 'female') {
+    const femaleAppearance = appearance as FemaleAppearance;
+    return `female/${ethnicity}-${bodyType}-${hairColor}-b${femaleAppearance.breastSize}.png`;
+  } else {
+    const maleAppearance = appearance as MaleAppearance;
+    return `male/${ethnicity}-${bodyType}-${hairColor}-build${maleAppearance.build}.png`;
+  }
 }
 
 /**
- * Get the anchor image filename for a given ethnicity.
+ * Get the anchor image filename for a given ethnicity and gender.
  * These are the base faces used to generate variations.
- * Format: {ethnicity}.png
+ * Format: {gender}/{ethnicity}.png
  *
- * Example: "east-asian.png"
+ * Example: "female/east-asian.png"
  */
-export function getAnchorFilename(ethnicity: AppearanceEthnicity): string {
-  return `${ethnicity}.png`;
+export function getAnchorFilename(
+  ethnicity: AppearanceEthnicity,
+  gender: CompanionGender = 'female'
+): string {
+  return `${gender}/${ethnicity}.png`;
 }
 
 /**
@@ -63,8 +116,11 @@ export function getVariationS3Key(appearance: PhysicalAppearance): string {
 /**
  * Get the S3 key for an anchor image.
  */
-export function getAnchorS3Key(ethnicity: AppearanceEthnicity): string {
-  return `${S3_ANCHORS_PREFIX}/${getAnchorFilename(ethnicity)}`;
+export function getAnchorS3Key(
+  ethnicity: AppearanceEthnicity,
+  gender: CompanionGender = 'female'
+): string {
+  return `${S3_ANCHORS_PREFIX}/${getAnchorFilename(ethnicity, gender)}`;
 }
 
 /**
@@ -77,32 +133,38 @@ export function getVariationUrl(appearance: PhysicalAppearance): string {
 /**
  * Get the full S3 URL for an anchor image.
  */
-export function getAnchorUrl(ethnicity: AppearanceEthnicity): string {
-  return getS3Url(getAnchorS3Key(ethnicity));
+export function getAnchorUrl(
+  ethnicity: AppearanceEthnicity,
+  gender: CompanionGender = 'female'
+): string {
+  return getS3Url(getAnchorS3Key(ethnicity, gender));
 }
-
-// Valid options
-const VALID_ETHNICITIES: AppearanceEthnicity[] = [
-  'east-asian', 'south-asian', 'black', 'caucasian',
-  'latina', 'middle-eastern', 'mixed'
-];
-const VALID_BODY_TYPES: AppearanceBodyType[] = [
-  'slim', 'athletic', 'curvy', 'plus-size'
-];
-const VALID_HAIR_COLORS: AppearanceHairColor[] = [
-  'black', 'brown', 'blonde', 'red', 'fantasy'
-];
 
 /**
  * Validate that an appearance combination is valid.
  * All valid combinations should have pre-generated images.
  */
 export function isValidAppearance(appearance: CompanionAppearance): boolean {
-  return (
-    VALID_ETHNICITIES.includes(appearance.ethnicity) &&
-    VALID_BODY_TYPES.includes(appearance.bodyType) &&
-    VALID_HAIR_COLORS.includes(appearance.hairColor)
-  );
+  const { gender, ethnicity, hairColor } = appearance;
+
+  // Check common fields
+  if (!VALID_ETHNICITIES.includes(ethnicity)) return false;
+  if (!VALID_HAIR_COLORS.includes(hairColor)) return false;
+
+  // Check gender-specific fields
+  if (gender === 'female') {
+    const femaleAppearance = appearance as FemaleAppearance;
+    if (!VALID_FEMALE_BODY_TYPES.includes(femaleAppearance.bodyType)) return false;
+    if (!VALID_SIZE_CATEGORIES.includes(femaleAppearance.breastSize)) return false;
+  } else if (gender === 'male') {
+    const maleAppearance = appearance as MaleAppearance;
+    if (!VALID_MALE_BODY_TYPES.includes(maleAppearance.bodyType)) return false;
+    if (!VALID_SIZE_CATEGORIES.includes(maleAppearance.build)) return false;
+  } else {
+    return false; // Invalid gender
+  }
+
+  return true;
 }
 
 /**
@@ -118,6 +180,34 @@ export function getAppearanceFromSpec(spec: {
 
   if (!appearance) {
     return null;
+  }
+
+  // Handle legacy specs without gender (default to female)
+  if (!('gender' in appearance)) {
+    const legacyAppearance = appearance as unknown as {
+      ethnicity: AppearanceEthnicity;
+      bodyType: string;
+      hairColor: AppearanceHairColor;
+      breastSize?: number | SizeCategory;
+    };
+
+    // Convert legacy breastSize to SizeCategory
+    let breastSize: SizeCategory = 'M';
+    if (typeof legacyAppearance.breastSize === 'number') {
+      if (legacyAppearance.breastSize <= 33) breastSize = 'S';
+      else if (legacyAppearance.breastSize <= 66) breastSize = 'M';
+      else breastSize = 'L';
+    } else if (legacyAppearance.breastSize) {
+      breastSize = legacyAppearance.breastSize;
+    }
+
+    return {
+      gender: 'female',
+      ethnicity: legacyAppearance.ethnicity,
+      bodyType: legacyAppearance.bodyType as FemaleBodyType,
+      hairColor: legacyAppearance.hairColor,
+      breastSize,
+    } as FemaleAppearance;
   }
 
   if (!isValidAppearance(appearance)) {
@@ -140,16 +230,39 @@ export function buildIdentityAnchorUrl(appearance: PhysicalAppearance): string {
 }
 
 /**
- * Get all valid appearance combinations.
+ * Get all valid appearance combinations for a given gender.
  * Useful for validation and preloading.
  */
-export function getAllAppearanceCombinations(): CompanionAppearance[] {
+export function getAllAppearanceCombinations(gender?: CompanionGender): CompanionAppearance[] {
   const combinations: CompanionAppearance[] = [];
+  const genders: CompanionGender[] = gender ? [gender] : ['female', 'male'];
 
-  for (const ethnicity of VALID_ETHNICITIES) {
-    for (const bodyType of VALID_BODY_TYPES) {
-      for (const hairColor of VALID_HAIR_COLORS) {
-        combinations.push({ ethnicity, bodyType, hairColor });
+  for (const g of genders) {
+    const bodyTypes = g === 'female' ? VALID_FEMALE_BODY_TYPES : VALID_MALE_BODY_TYPES;
+
+    for (const ethnicity of VALID_ETHNICITIES) {
+      for (const bodyType of bodyTypes) {
+        for (const hairColor of VALID_HAIR_COLORS) {
+          for (const size of VALID_SIZE_CATEGORIES) {
+            if (g === 'female') {
+              combinations.push({
+                gender: 'female',
+                ethnicity,
+                bodyType: bodyType as FemaleBodyType,
+                hairColor,
+                breastSize: size,
+              } as FemaleAppearance);
+            } else {
+              combinations.push({
+                gender: 'male',
+                ethnicity,
+                bodyType: bodyType as MaleBodyType,
+                hairColor,
+                build: size,
+              } as MaleAppearance);
+            }
+          }
+        }
       }
     }
   }
@@ -158,7 +271,13 @@ export function getAllAppearanceCombinations(): CompanionAppearance[] {
 }
 
 /**
- * Total number of pre-generated variation images.
- * 7 ethnicities × 4 body types × 5 hair colors = 140
+ * Total number of pre-generated variation images per gender.
+ * 7 ethnicities × 4 body types × 5 hair colors × 3 sizes = 420 per gender
  */
-export const TOTAL_VARIATIONS = 7 * 4 * 5; // 140
+export const VARIATIONS_PER_GENDER = 7 * 4 * 5 * 3; // 420
+
+/**
+ * Total number of pre-generated variation images (both genders).
+ * 420 female + 420 male = 840 total
+ */
+export const TOTAL_VARIATIONS = VARIATIONS_PER_GENDER * 2; // 840

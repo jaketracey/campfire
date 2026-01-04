@@ -379,7 +379,7 @@ export default function DashboardPage() {
                   <Sparkles className="h-12 w-12 text-campfire-500 animate-pulse" />
                 </div>
                 <div className="space-y-4">
-                  <h2 className="text-3xl font-bold font-display text-white">The campfire is cold...</h2>
+                  <h2 className="text-3xl font-bold font-display text-white">Your sanctuary awaits...</h2>
                   <p className="text-gray-400 text-lg max-w-md mx-auto">
                     Every great journey begins with a single spark. Create your first AI companion and bring your digital sanctuary to life.
                   </p>

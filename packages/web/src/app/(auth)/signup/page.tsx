@@ -68,7 +68,7 @@ export default function SignupPage() {
         await loginWithGoogle({ idToken }, true);
         toast({
           title: 'Account created!',
-          description: 'Welcome to Campfire.',
+          description: 'Welcome to Ignite.',
         });
       } catch (error) {
         const message =
@@ -123,7 +123,7 @@ export default function SignupPage() {
 
       toast({
         title: 'Account created!',
-        description: 'Welcome to Campfire.',
+        description: 'Welcome to Ignite.',
       });
     } catch (error) {
       const message =
@@ -299,7 +299,7 @@ export default function SignupPage() {
             >
               I agree to the{' '}
               <a
-                href="https://campfire.app/terms"
+                href="https://ignite.cam/terms"
                 className="text-campfire-400 hover:text-campfire-300 hover:underline"
                 target="_blank"
                 rel="noopener noreferrer"
@@ -308,7 +308,7 @@ export default function SignupPage() {
               </a>{' '}
               and{' '}
               <a
-                href="https://campfire.app/privacy"
+                href="https://ignite.cam/privacy"
                 className="text-campfire-400 hover:text-campfire-300 hover:underline"
                 target="_blank"
                 rel="noopener noreferrer"

@@ -177,10 +177,10 @@ export async function up(sql: postgres.Sql): Promise<void> {
          32768, 4096, 0, 0,
          '["chat", "streaming"]'::jsonb,
          '{"content_capability": "SFW_ONLY", "is_abliterated": false, "tier": "LOCAL", "tags": ["local", "sfw", "moe"]}'::jsonb),
-        (${ollamaId}, 'qwen2.5', 'Qwen 2.5', TRUE,
-         131072, 4096, 0, 0,
-         '["chat", "streaming"]'::jsonb,
-         '{"content_capability": "SFW_ONLY", "is_abliterated": false, "tier": "LOCAL", "tags": ["local", "sfw"]}'::jsonb),
+        (${ollamaId}, 'qwen2.5:latest', 'Qwen 2.5 7B', TRUE,
+         32768, 4096, 0, 0,
+         '["chat", "function_calling", "streaming"]'::jsonb,
+         '{"content_capability": "SUGGESTIVE", "is_abliterated": false, "tier": "LOCAL", "tags": ["local", "sfw", "primary", "qwen"]}'::jsonb),
         -- Abliterated model for NSFW/adult content
         (${ollamaId}, 'goekdenizguelmez/JOSIEFIED-Qwen3:8b', 'JOSIEFIED Qwen3 8B', TRUE,
          32768, 4096, 0, 0,
@@ -223,7 +223,7 @@ export async function down(sql: postgres.Sql): Promise<void> {
     'llama3.1',
     'mistral',
     'mixtral',
-    'qwen2.5',
+    'qwen2.5:latest',
     'goekdenizguelmez/JOSIEFIED-Qwen3:8b',
   ];
 

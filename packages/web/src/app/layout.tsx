@@ -23,7 +23,7 @@ const dmSans = DM_Sans({
 });
 
 export const metadata: Metadata = {
-  title: 'Campfire - Your AI Companion',
+  title: 'Ignite - Your AI Companion',
   description: 'Create and connect with your personalized AI companion',
   icons: {
     icon: [

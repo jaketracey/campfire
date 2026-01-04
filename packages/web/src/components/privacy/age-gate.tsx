@@ -266,7 +266,7 @@ export function AgeVerificationModal({ open, onVerified, onDecline }: AgeVerific
                         : "bg-muted text-muted-foreground"
                     )}
                   >
-                    Enter Campfire
+                    Enter Ignite
                   </Button>
 
                   <Button

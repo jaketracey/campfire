@@ -1,8 +1,9 @@
 import { ExpoConfig, ConfigContext } from 'expo/config';
 
 export default ({ config }: ConfigContext): ExpoConfig => ({
-  name: 'Campfire',
-  slug: 'campfire',
+  name: 'Ignite',
+  slug: 'ignite',
+  owner: 'jaketracey',
   version: '1.0.0',
   orientation: 'portrait',
   icon: './assets/icon.png',
@@ -16,17 +17,20 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
   assetBundlePatterns: ['**/*'],
   ios: {
     supportsTablet: true,
-    bundleIdentifier: 'app.campfire.mobile',
+    bundleIdentifier: 'cam.ignite.app',
     buildNumber: '1',
     infoPlist: {
       NSMicrophoneUsageDescription:
-        'Campfire needs microphone access for voice messages and calls with your companion.',
+        'Ignite needs microphone access for voice messages and calls with your companion.',
       UIBackgroundModes: ['audio', 'remote-notification'],
     },
     entitlements: {
       'aps-environment': 'production',
     },
-    associatedDomains: ['applinks:campfire.noice.work'],
+    config: {
+      usesNonExemptEncryption: false,
+    },
+    associatedDomains: ['applinks:ignite.cam'],
     privacyManifests: {
       NSPrivacyAccessedAPITypes: [
         {
@@ -41,7 +45,7 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
       foregroundImage: './assets/adaptive-icon.png',
       backgroundColor: '#000000',
     },
-    package: 'app.campfire.mobile',
+    package: 'cam.ignite.app',
     versionCode: 1,
     permissions: [
       'android.permission.RECORD_AUDIO',
@@ -55,17 +59,17 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
         data: [
           {
             scheme: 'https',
-            host: 'campfire.noice.work',
+            host: 'ignite.cam',
             pathPrefix: '/chat',
           },
           {
             scheme: 'https',
-            host: 'campfire.noice.work',
+            host: 'ignite.cam',
             pathPrefix: '/onboard',
           },
           {
             scheme: 'https',
-            host: 'campfire.noice.work',
+            host: 'ignite.cam',
             pathPrefix: '/account',
           },
         ],
@@ -87,15 +91,15 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
       'expo-av',
       {
         microphonePermission:
-          'Allow Campfire to access your microphone for voice messages and calls.',
+          'Allow Ignite to access your microphone for voice messages and calls.',
       },
     ],
     'expo-secure-store',
     'expo-web-browser',
   ],
-  scheme: 'campfire',
+  scheme: 'ignite',
   extra: {
-    webAppUrl: process.env.WEB_APP_URL || 'https://campfire.noice.work',
+    webAppUrl: process.env.WEB_APP_URL || 'https://ignite.cam',
     // Google OAuth - Web Client ID is used to get ID token for backend verification
     googleWebClientId:
       process.env.GOOGLE_WEB_CLIENT_ID ||
@@ -105,13 +109,11 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
     // Android Client ID (optional - uses web client ID if not set)
     googleAndroidClientId: process.env.GOOGLE_ANDROID_CLIENT_ID,
     eas: {
-      projectId: process.env.EAS_PROJECT_ID,
+      projectId: '244a43e2-87cc-4a23-b7f4-c50cf922f055',
     },
   },
   updates: {
-    url: process.env.EAS_PROJECT_ID
-      ? `https://u.expo.dev/${process.env.EAS_PROJECT_ID}`
-      : undefined,
+    url: 'https://u.expo.dev/244a43e2-87cc-4a23-b7f4-c50cf922f055',
   },
   runtimeVersion: {
     policy: 'sdkVersion',

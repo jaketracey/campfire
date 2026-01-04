@@ -57,7 +57,7 @@ export function Step3Personality() {
     <div className="space-y-8">
       <div className="text-center space-y-3">
         <h2 className="text-4xl font-bold font-display tracking-tight text-white">Personality</h2>
-        <p className="text-gray-400 max-w-md mx-auto">Define how your companion thinks and behaves in this digital campfire.</p>
+        <p className="text-gray-400 max-w-md mx-auto">Define how your companion thinks and behaves.</p>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">

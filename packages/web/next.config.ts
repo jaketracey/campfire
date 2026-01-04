@@ -41,6 +41,10 @@ const nextConfig: NextConfig = {
       },
       {
         protocol: 'https',
+        hostname: '**.ignite.cam',
+      },
+      {
+        protocol: 'https',
         hostname: 'campfire-dev-media.s3.us-east-1.amazonaws.com',
       },
       {

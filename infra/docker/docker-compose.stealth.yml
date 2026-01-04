@@ -98,7 +98,7 @@ services:
       SESSION_SECRET: ${SESSION_SECRET}
       INTERNAL_SERVICE_KEY: ${INTERNAL_SERVICE_KEY}
       PROVIDER_KEY_ENCRYPTION_SECRET: ${PROVIDER_KEY_ENCRYPTION_SECRET}
-      CORS_ORIGINS: https://${DOMAIN:-campfire.noice.work},http://localhost:3000
+      CORS_ORIGINS: https://ignite.cam,https://www.ignite.cam,http://localhost:3000
       # Ollama via SSH tunnel (host.docker.internal maps to host)
       OLLAMA_ENABLED: ${OLLAMA_ENABLED:-true}
       OLLAMA_BASE_URL: http://host.docker.internal:11434

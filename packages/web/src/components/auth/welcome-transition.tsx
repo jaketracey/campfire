@@ -82,7 +82,7 @@ export function WelcomeTransition({ children }: WelcomeTransitionProps) {
 
     if (transitionData.type === 'signup') {
       return {
-        title: 'Welcome to Campfire',
+        title: 'Welcome to Ignite',
         subtitle: 'Your sanctuary awaits',
       };
     }

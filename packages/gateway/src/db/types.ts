@@ -205,15 +205,58 @@ export interface Companion {
 
 export type CompanionStatus = 'draft' | 'active' | 'archived';
 
+// ============================================================================
+// Companion Appearance Types
+// ============================================================================
+
+export type CompanionGender = 'male' | 'female';
+export type FemaleBodyType = 'slim' | 'athletic' | 'curvy' | 'plus-size';
+export type MaleBodyType = 'slim' | 'athletic' | 'muscular' | 'dad-bod';
+export type AppearanceBodyType = FemaleBodyType | MaleBodyType;
+export type AppearanceEthnicity = 'east-asian' | 'south-asian' | 'black' | 'caucasian' | 'latina' | 'middle-eastern' | 'mixed';
+export type AppearanceHairColor = 'black' | 'brown' | 'blonde' | 'red' | 'fantasy';
+export type SizeCategory = 'S' | 'M' | 'L';
+
+/**
+ * Base appearance fields shared by both genders
+ */
+interface BaseCompanionAppearance {
+  ethnicity: AppearanceEthnicity;
+  hairColor: AppearanceHairColor;
+}
+
+/**
+ * Female-specific appearance settings
+ */
+export interface FemaleAppearance extends BaseCompanionAppearance {
+  gender: 'female';
+  bodyType: FemaleBodyType;
+  breastSize: SizeCategory;
+}
+
+/**
+ * Male-specific appearance settings
+ */
+export interface MaleAppearance extends BaseCompanionAppearance {
+  gender: 'male';
+  bodyType: MaleBodyType;
+  build: SizeCategory;
+}
+
 /**
  * Physical appearance settings for companion image generation.
  * These map directly to pre-generated variation images.
+ * Discriminated union based on gender.
  */
-export interface CompanionAppearance {
-  ethnicity: 'east-asian' | 'south-asian' | 'black' | 'caucasian' | 'latina' | 'middle-eastern' | 'mixed';
-  bodyType: 'slim' | 'athletic' | 'curvy' | 'plus-size';
-  hairColor: 'black' | 'brown' | 'blonde' | 'red' | 'fantasy';
-  breastSize?: number; // 0-100
+export type CompanionAppearance = FemaleAppearance | MaleAppearance;
+
+// Type guards
+export function isFemaleAppearance(appearance: CompanionAppearance): appearance is FemaleAppearance {
+  return appearance.gender === 'female';
+}
+
+export function isMaleAppearance(appearance: CompanionAppearance): appearance is MaleAppearance {
+  return appearance.gender === 'male';
 }
 
 export interface CompanionSpec {

@@ -281,7 +281,7 @@ const triggerContent: Record<SignupTrigger, TriggerContent> = {
     ],
   },
   general: {
-    title: 'Join Campfire',
+    title: 'Join Ignite',
     description: 'Create an account to unlock all features and premium content',
     features: [
       'Unlimited conversations',
@@ -624,7 +624,7 @@ export function SignupModal({
             <div className="hidden lg:flex lg:w-1/2 flex-col justify-center border-l border-border/30 px-8 py-10 bg-gradient-to-br from-campfire-500/5 to-campfire-600/10">
               <h3 className="text-lg font-bold mb-2">What you'll get</h3>
               <p className="text-sm text-muted-foreground mb-6">
-                Unlock the full Campfire experience
+                Unlock the full Ignite experience
               </p>
               <div className="space-y-3">
                 {allFeatures.map((feature) => (

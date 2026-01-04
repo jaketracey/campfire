@@ -50,6 +50,12 @@ export interface VoiceOption {
   gender: 'masculine' | 'feminine' | 'neutral';
 }
 
+// ============================================================================
+// Appearance Types
+// ============================================================================
+
+export type CompanionGender = 'female' | 'male';
+
 export type AppearanceEthnicity =
   | 'east-asian'
   | 'south-asian'
@@ -59,19 +65,59 @@ export type AppearanceEthnicity =
   | 'middle-eastern'
   | 'mixed';
 
-export type AppearanceBodyType = 'slim' | 'athletic' | 'curvy' | 'plus-size';
+export type FemaleBodyType = 'slim' | 'athletic' | 'curvy' | 'plus-size';
+export type MaleBodyType = 'slim' | 'athletic' | 'muscular' | 'dad-bod';
+export type AppearanceBodyType = FemaleBodyType | MaleBodyType;
 
 export type AppearanceHairColor = 'black' | 'brown' | 'blonde' | 'red' | 'fantasy';
 
-export interface PhysicalAppearance {
+export type SizeCategory = 'S' | 'M' | 'L';
+
+/**
+ * Base appearance fields shared by both genders
+ */
+interface BasePhysicalAppearance {
   ethnicity: AppearanceEthnicity;
-  bodyType: AppearanceBodyType;
   hairColor: AppearanceHairColor;
-  breastSize: number; // 0 to 100
 }
 
+/**
+ * Female-specific appearance
+ */
+export interface FemalePhysicalAppearance extends BasePhysicalAppearance {
+  gender: 'female';
+  bodyType: FemaleBodyType;
+  breastSize: SizeCategory;
+}
+
+/**
+ * Male-specific appearance
+ */
+export interface MalePhysicalAppearance extends BasePhysicalAppearance {
+  gender: 'male';
+  bodyType: MaleBodyType;
+  build: SizeCategory;
+}
+
+/**
+ * Physical appearance - discriminated union based on gender
+ */
+export type PhysicalAppearance = FemalePhysicalAppearance | MalePhysicalAppearance;
+
+// Type guards
+export function isFemaleAppearance(appearance: PhysicalAppearance): appearance is FemalePhysicalAppearance {
+  return appearance.gender === 'female';
+}
+
+export function isMaleAppearance(appearance: PhysicalAppearance): appearance is MalePhysicalAppearance {
+  return appearance.gender === 'male';
+}
+
+/**
+ * Visual style configuration
+ * Note: avatarStyle removed - always photorealistic now
+ */
 export interface VisualStyle {
-  avatarStyle: 'realistic' | 'stylized' | 'abstract' | 'minimal' | 'anime';
   appearance: PhysicalAppearance;
   colorTheme: string;
   animationLevel: 'minimal' | 'moderate' | 'expressive';
@@ -154,15 +200,15 @@ const initialPersonality: PersonalitySliders = {
   directness: 50,
 };
 
-const initialAppearance: PhysicalAppearance = {
+const initialAppearance: FemalePhysicalAppearance = {
+  gender: 'female',
   ethnicity: 'mixed',
   bodyType: 'athletic',
   hairColor: 'brown',
-  breastSize: 50,
+  breastSize: 'M',
 };
 
 const initialVisualStyle: VisualStyle = {
-  avatarStyle: 'stylized',
   appearance: initialAppearance,
   colorTheme: 'campfire',
   animationLevel: 'moderate',
@@ -274,7 +320,10 @@ export const useOnboardingStore = create<OnboardingState>()(
             backstory: '',
           },
           voice: null,
-          visualStyle: { ...initialVisualStyle, appearance: { ...initialAppearance } },
+          visualStyle: {
+            ...initialVisualStyle,
+            appearance: { ...initialAppearance } as PhysicalAppearance,
+          },
           boundaries: initialBoundaries,
           companionId: null,
           sessionId: null,
