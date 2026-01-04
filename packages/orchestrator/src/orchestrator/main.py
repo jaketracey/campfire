@@ -1592,11 +1592,54 @@ Personality: {personality_summary}
 Generate a rich, intimate backstory that explains how {request.companion_name} became who {request.pronouns.split('/')[0]} {('is' if request.pronouns.split('/')[0] in ['she', 'he'] else 'are')}."""
 
     try:
-        # Use Ollama provider for backstory generation
-        if not app_state.ollama_provider:
+        # Get LLM provider - try routing first, then fallbacks
+        llm_provider = None
+
+        # Try to get provider from routing config
+        if app_state.routing_config_service:
+            try:
+                models = await app_state.routing_config_service.get_models_for_use_case("chat_simple")
+                for model in models:
+                    if model.provider == "openai":
+                        openai_api_key = await app_state.routing_config_service.get_provider_api_key("openai")
+                        if openai_api_key:
+                            llm_provider = OpenAIProvider(
+                                app_state.settings,
+                                model_override=model.model_id,
+                                api_key_override=openai_api_key,
+                            )
+                            logger.info("backstory_generation_using_openai", model=model.model_id)
+                            break
+                    elif model.provider == "ollama" and app_state.ollama_provider:
+                        llm_provider = app_state.ollama_provider.with_model(model.model_id)
+                        logger.info("backstory_generation_using_ollama", model=model.model_id)
+                        break
+            except Exception as routing_error:
+                logger.warning("backstory_routing_failed", error=str(routing_error))
+
+        # Fall back to Ollama if available
+        if llm_provider is None and app_state.ollama_provider:
+            llm_provider = app_state.ollama_provider
+            logger.info("backstory_generation_using_fallback_ollama")
+
+        # Fall back to OpenAI if Ollama not available
+        if llm_provider is None and app_state.routing_config_service:
+            try:
+                openai_api_key = await app_state.routing_config_service.get_provider_api_key("openai")
+                if openai_api_key:
+                    llm_provider = OpenAIProvider(
+                        app_state.settings,
+                        model_override="gpt-4o-mini",
+                        api_key_override=openai_api_key,
+                    )
+                    logger.info("backstory_generation_using_fallback_openai")
+            except Exception as e:
+                logger.warning("backstory_openai_fallback_failed", error=str(e))
+
+        if llm_provider is None:
             raise HTTPException(
                 status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-                detail="Ollama provider not available",
+                detail="No LLM provider available for backstory generation",
             )
 
         # Retry logic for JSON parsing failures
@@ -1607,7 +1650,7 @@ Generate a rich, intimate backstory that explains how {request.companion_name} b
         for attempt in range(max_retries):
             try:
                 # Generate backstory
-                response = await app_state.ollama_provider.generate(
+                response = await llm_provider.generate(
                     messages=[
                         {"role": "system", "content": system_prompt},
                         {"role": "user", "content": user_prompt},
