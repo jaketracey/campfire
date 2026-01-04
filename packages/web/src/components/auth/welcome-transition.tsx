@@ -148,9 +148,7 @@ export function WelcomeTransition({ children }: WelcomeTransitionProps) {
               >
                 <div className="relative">
                   <div className="absolute inset-0 blur-xl bg-campfire-500/30 rounded-full" />
-                  <div className="relative h-16 w-16 rounded-2xl bg-gradient-to-br from-campfire-500 to-campfire-600 flex items-center justify-center shadow-[0_0_40px_rgba(234,88,12,0.4)]">
-                    <Sparkles className="h-8 w-8 text-white" />
-                  </div>
+                  <Sparkles className="relative h-12 w-12 text-campfire-500 drop-shadow-[0_0_20px_rgba(234,88,12,0.6)]" />
                 </div>
               </motion.div>
 
