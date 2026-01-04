@@ -303,14 +303,26 @@ export default function DashboardPage() {
           <div className="flex flex-col lg:flex-row gap-3 md:pt-6">
             <motion.button
               onClick={() => router.push('/onboard')}
-              className="h-14 md:h-11 px-8 md:px-6 rounded-full bg-campfire-600 hover:bg-campfire-500 text-white font-bold text-lg md:text-base shadow-[0_0_20px_rgba(234,88,12,0.3)] transition-colors"
+              className="relative h-14 md:h-11 px-8 md:px-6 rounded-full bg-gradient-to-r from-vibes-hot via-vibes-neon to-vibes-cyan text-white font-bold text-lg md:text-base shadow-[0_0_20px_rgba(168,85,247,0.3)] transition-all overflow-hidden"
               whileHover={{
                 scale: 1.05,
-                boxShadow: '0 0 30px rgba(234,88,12,0.5)'
+                boxShadow: '0 0 30px rgba(168,85,247,0.5)'
               }}
               whileTap={{ scale: 0.95 }}
             >
-              Design new companion
+              <motion.div
+                className="absolute inset-0 bg-gradient-to-r from-transparent via-white/20 to-transparent -skew-x-12"
+                animate={{
+                  x: ['-100%', '200%'],
+                }}
+                transition={{
+                  duration: 2.5,
+                  repeat: Infinity,
+                  repeatDelay: 3,
+                  ease: 'easeInOut',
+                }}
+              />
+              <span className="relative z-10">Design new companion</span>
             </motion.button>
             {inviteCode && (
               <motion.button
