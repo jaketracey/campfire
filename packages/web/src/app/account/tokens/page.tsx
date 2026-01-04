@@ -2,11 +2,9 @@
 
 import { useState, useEffect } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
-import Link from 'next/link';
 import type { Route } from 'next';
-import { Coins, ArrowLeft, Sparkles, Check, Loader2, X } from 'lucide-react';
-import { Button } from '@/components/ui/button';
-import { AnimatedFlame } from '@/components/ui/animated-flame';
+import { motion } from 'framer-motion';
+import { Coins, Check, Loader2 } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { useToast } from '@/hooks/use-toast';
@@ -147,25 +145,7 @@ export default function TokensPage() {
   }
 
   return (
-    <div className="min-h-screen bg-background">
-      {/* Header */}
-      <header className="border-b px-6 py-4">
-        <div className="max-w-4xl mx-auto flex items-center gap-4">
-          <Link href="/dashboard" className="hover:opacity-80 transition-opacity">
-            <AnimatedFlame size="sm" />
-          </Link>
-          <div className="flex-1" />
-          <Link href="/dashboard">
-            <Button variant="ghost" size="sm" className="gap-2">
-              <ArrowLeft className="h-4 w-4" />
-              Back to Dashboard
-            </Button>
-          </Link>
-        </div>
-      </header>
-
-      {/* Content */}
-      <main className="max-w-4xl mx-auto px-6 py-8">
+    <div className="max-w-4xl mx-auto px-6 py-8">
         <div className="mb-8">
           <h1 className="text-3xl font-bold mb-2">Token Balance</h1>
           <p className="text-muted-foreground">
@@ -245,23 +225,45 @@ export default function TokensPage() {
                           {((bundle.priceCents / 100) / (bundle.tokens + bundle.bonusTokens) * 100).toFixed(2)}c per token
                         </p>
                       </div>
-                      <Button
+                      <motion.button
                         onClick={() => handlePurchase(bundle)}
                         disabled={purchasingId !== null}
-                        className={bundle.isPopular ? 'bg-campfire-500 hover:bg-campfire-600' : ''}
+                        whileHover={{ scale: 1.02 }}
+                        whileTap={{ scale: 0.98 }}
+                        className={`
+                          relative px-6 py-2.5 rounded-lg font-medium text-white
+                          overflow-hidden transition-shadow duration-300
+                          disabled:opacity-50 disabled:cursor-not-allowed
+                          ${bundle.isPopular
+                            ? 'bg-gradient-to-r from-amber-500 via-orange-500 to-rose-500 shadow-lg shadow-orange-500/25 hover:shadow-xl hover:shadow-orange-500/30'
+                            : 'bg-gradient-to-r from-slate-600 to-slate-700 hover:from-slate-500 hover:to-slate-600 shadow-md hover:shadow-lg'
+                          }
+                        `}
                       >
-                        {purchasingId === bundle.id ? (
-                          <>
-                            <Loader2 className="h-4 w-4 animate-spin mr-2" />
-                            Processing...
-                          </>
-                        ) : (
-                          <>
-                            <Sparkles className="h-4 w-4 mr-2" />
-                            Purchase
-                          </>
+                        <span className="relative z-10 flex items-center justify-center gap-2">
+                          {purchasingId === bundle.id ? (
+                            <>
+                              <Loader2 className="h-4 w-4 animate-spin" />
+                              Processing...
+                            </>
+                          ) : (
+                            'Purchase'
+                          )}
+                        </span>
+                        {bundle.isPopular && (
+                          <motion.div
+                            className="absolute inset-0 bg-gradient-to-r from-amber-400/20 via-transparent to-rose-400/20"
+                            animate={{
+                              x: ['-100%', '100%'],
+                            }}
+                            transition={{
+                              duration: 2,
+                              repeat: Infinity,
+                              ease: 'linear',
+                            }}
+                          />
                         )}
-                      </Button>
+                      </motion.button>
                     </div>
 
                     {/* Features list */}
@@ -300,7 +302,6 @@ export default function TokensPage() {
             </div>
           </>
         )}
-      </main>
 
       {/* Payment Dialog */}
       <Dialog open={showPaymentDialog} onOpenChange={setShowPaymentDialog}>

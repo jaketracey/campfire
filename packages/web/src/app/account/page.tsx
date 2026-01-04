@@ -7,7 +7,6 @@ import { motion, AnimatePresence } from 'framer-motion';
 import {
   User,
   Coins,
-  ArrowLeft,
   Mail,
   Calendar,
   Shield,
@@ -31,7 +30,6 @@ import { Label } from '@/components/ui/label';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { useRequireAuth, useAuth } from '@/hooks/use-auth';
 import { useAuthStore } from '@/stores/auth-store';
-import { AnimatedFlame } from '@/components/ui/animated-flame';
 import { getTokenBalance, type TokenBalance } from '@/lib/api/tokens';
 import { updateProfile } from '@/lib/api/users';
 
@@ -499,26 +497,7 @@ export default function AccountPage() {
   };
 
   return (
-    <div className="min-h-screen bg-background">
-      {/* Header */}
-      <header className="border-b border-white/5 px-4 sm:px-6 py-3 sm:py-4 bg-black/20 backdrop-blur-lg">
-        <div className="max-w-6xl mx-auto flex items-center gap-3 sm:gap-4">
-          <Link href="/dashboard" className="hover:opacity-80 transition-opacity">
-            <AnimatedFlame size="sm" />
-          </Link>
-          <div className="flex-1" />
-          <Link href="/dashboard">
-            <Button variant="ghost" size="sm" className="gap-1 sm:gap-2 text-gray-400 hover:text-white text-xs sm:text-sm">
-              <ArrowLeft className="h-4 w-4" />
-              <span className="hidden sm:inline">Back to Dashboard</span>
-              <span className="sm:hidden">Back</span>
-            </Button>
-          </Link>
-        </div>
-      </header>
-
-      {/* Content */}
-      <main className="max-w-6xl mx-auto px-4 sm:px-6 py-6 sm:py-8">
+    <div className="max-w-6xl mx-auto px-4 sm:px-6 py-6 sm:py-8">
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
@@ -669,7 +648,6 @@ export default function AccountPage() {
             </div>
           </div>
         </motion.div>
-      </main>
     </div>
   );
 }
