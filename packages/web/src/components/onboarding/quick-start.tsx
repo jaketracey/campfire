@@ -646,7 +646,7 @@ export function QuickStart({ onBack }: QuickStartProps) {
             animate={{ opacity: 1 }}
             exit={{ opacity: 0, scale: 1.2 }}
             transition={{ duration: 0.3 }}
-            className="flex items-center justify-center min-h-[300px]"
+            className="flex items-center justify-center min-h-[60vh] md:min-h-[300px]"
           >
             <IgnitingFlame size={120} />
           </motion.div>
