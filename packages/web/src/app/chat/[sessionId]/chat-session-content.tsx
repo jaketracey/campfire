@@ -108,7 +108,10 @@ export function ChatSessionContent({
       />
 
       {/* Main Chat Area */}
-      <div className="flex flex-col flex-1 min-w-0 overflow-x-hidden">
+      <div
+        className="flex flex-col flex-1 min-w-0 overflow-x-hidden"
+        style={chat.keyboardHeight > 0 ? { paddingBottom: `${chat.inputHeight}px` } : undefined}
+      >
         {/* Header */}
         <ChatHeader
           userRole={chat.user?.role}

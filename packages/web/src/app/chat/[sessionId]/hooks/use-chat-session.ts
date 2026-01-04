@@ -148,6 +148,7 @@ export function useChatSession({
   const inputRef = useRef<HTMLInputElement>(null);
   const inputContainerRef = useRef<HTMLDivElement>(null);
   const [keyboardHeight, setKeyboardHeight] = useState(0);
+  const [inputHeight, setInputHeight] = useState(0);
   const [hasShownPulse, setHasShownPulse] = useState(false);
 
   // Voice recording hook
@@ -295,6 +296,10 @@ export function useChatSession({
         setKeyboardHeight(kbHeight);
 
         if (inputContainerRef.current) {
+          // Measure input height before changing position
+          const height = inputContainerRef.current.offsetHeight;
+          setInputHeight(height);
+
           if (kbHeight > 0) {
             inputContainerRef.current.style.position = 'fixed';
             inputContainerRef.current.style.bottom = `${kbHeight}px`;
@@ -1201,6 +1206,7 @@ export function useChatSession({
     inputRef,
     inputContainerRef,
     keyboardHeight,
+    inputHeight,
     hasShownPulse,
     scrollToBottom,
 
