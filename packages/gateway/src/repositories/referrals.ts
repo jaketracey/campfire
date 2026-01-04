@@ -256,6 +256,9 @@ export class ReferralsRepository {
   async createPendingInvite(data: PendingInviteInsert, tx?: TransactionContext): Promise<PendingInvite> {
     const db = this.getSql(tx);
 
+    // Default to 7 days from now if expires_at not provided
+    const expiresAt = data.expires_at ?? new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
+
     try {
       const result = await db`
         INSERT INTO pending_invites (email, token, invited_by_user_id, message, expires_at)
@@ -264,7 +267,7 @@ export class ReferralsRepository {
           ${data.token},
           ${data.invited_by_user_id ?? null},
           ${data.message ?? null},
-          ${data.expires_at ?? null}
+          ${expiresAt}
         )
         RETURNING id, email, email_normalized, token, invited_by_user_id, status,
                   message, created_at, expires_at, accepted_at, accepted_by_user_id
