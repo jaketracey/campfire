@@ -69,10 +69,7 @@ export async function personalityProfilesRoutes(app: FastifyInstance): Promise<v
       const profile = await profileRepo.findByUserId(userId);
 
       if (!profile) {
-        return reply.status(404).send({
-          error: 'Not Found',
-          message: 'Personality profile not found. Chat more to generate one!',
-        });
+        return reply.send(null);
       }
 
       return reply.send({

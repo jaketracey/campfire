@@ -41,17 +41,10 @@ export interface UserPersonalityProfile {
 
 /**
  * Get user's personality profile
+ * Returns null if the user doesn't have a profile yet (expected for new users)
  */
 export async function getPersonalityProfile(userId: string): Promise<UserPersonalityProfile | null> {
-  try {
-    return await get<UserPersonalityProfile>(`/users/${userId}/personality-profile`);
-  } catch (error) {
-    // Profile not found is expected for new users
-    if ((error as { status?: number }).status === 404) {
-      return null;
-    }
-    throw error;
-  }
+  return get<UserPersonalityProfile | null>(`/users/${userId}/personality-profile`);
 }
 
 /**
