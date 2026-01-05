@@ -30,15 +30,23 @@ export default function OnboardingPage() {
   }, [reset, searchParams]);
 
   // Sync URL to step state on mount and popstate (browser back/forward)
+  // Note: We intentionally exclude currentStep from deps to avoid a feedback loop.
+  // This effect should only run when the URL changes (browser back/forward/direct navigation),
+  // not when the store changes (which is handled by the next effect).
   useEffect(() => {
     const stepParam = searchParams.get('step');
     if (stepParam) {
       const stepNum = parseInt(stepParam, 10);
-      if (!isNaN(stepNum) && stepNum >= 1 && stepNum <= 6 && stepNum !== currentStep) {
-        setStep(stepNum);
+      if (!isNaN(stepNum) && stepNum >= 1 && stepNum <= 6) {
+        // Use getState() to get current value without adding dependency
+        const current = useOnboardingStore.getState().currentStep;
+        if (stepNum !== current) {
+          setStep(stepNum);
+        }
       }
     }
-  }, [searchParams, currentStep, setStep]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchParams, setStep]);
 
   // Update URL when step changes (push to history for back/forward support)
   useEffect(() => {
