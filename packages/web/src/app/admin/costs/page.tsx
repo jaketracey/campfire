@@ -113,7 +113,7 @@ export default function CostsDashboardPage() {
     return (
       <div className="space-y-6">
         <div className="flex items-center justify-between">
-          <h1 className="text-2xl font-bold text-white">LLM Costs</h1>
+          <h1 className="text-2xl font-bold text-white">Compute Costs</h1>
         </div>
         <div className="grid gap-4 md:grid-cols-4">
           {[1, 2, 3, 4].map((i) => (
@@ -133,9 +133,9 @@ export default function CostsDashboardPage() {
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-white">LLM Costs</h1>
+          <h1 className="text-2xl font-bold text-white">Compute Costs</h1>
           <p className="text-gray-400 text-sm mt-1">
-            Track LLM usage, costs, and budget management
+            Track compute usage, costs, and budget management
           </p>
         </div>
         <div className="flex gap-2">

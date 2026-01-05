@@ -73,12 +73,17 @@ const inferenceGroup: NavGroup = {
   icon: Cpu,
   items: [
     {
-      label: 'Providers',
+      label: 'Costs',
+      href: '/admin/costs' as Route,
+      icon: DollarSign,
+    },
+    {
+      label: 'Text Providers',
       href: '/admin/providers' as Route,
       icon: Server,
     },
     {
-      label: 'Routing',
+      label: 'Text Routing',
       href: '/admin/routing' as Route,
       icon: GitBranch,
     },
@@ -91,11 +96,6 @@ const inferenceGroup: NavGroup = {
       label: 'Image Routing',
       href: '/admin/image-routing' as Route,
       icon: Palette,
-    },
-    {
-      label: 'Costs',
-      href: '/admin/costs' as Route,
-      icon: DollarSign,
     },
   ],
 };
