@@ -12,9 +12,10 @@ interface IdentityDisplayProps {
   pronouns: string;
   backstory: string;
   onComplete: () => void;
+  autoAdvance?: boolean;
 }
 
-export function IdentityDisplay({ name, pronouns, backstory, onComplete }: IdentityDisplayProps) {
+export function IdentityDisplay({ name, pronouns, backstory, onComplete, autoAdvance = true }: IdentityDisplayProps) {
   const [displayedName, setDisplayedName] = useState('');
   const [displayedPronouns, setDisplayedPronouns] = useState('');
   const [displayedBackstory, setDisplayedBackstory] = useState('');
@@ -58,8 +59,10 @@ export function IdentityDisplay({ name, pronouns, backstory, onComplete }: Ident
       setDisplayedBackstory(backstory);
       setTimeout(() => {
         setBackstoryHighlight(false);
-        // Complete after all animations
-        setTimeout(onComplete, 400);
+        // Complete after all animations (only if auto-advance enabled)
+        if (autoAdvance) {
+          setTimeout(onComplete, 400);
+        }
       }, 600);
     }, name.length * 60 + pronouns.length * 50 + 500);
 
@@ -68,7 +71,7 @@ export function IdentityDisplay({ name, pronouns, backstory, onComplete }: Ident
       clearTimeout(pronounsTimeout);
       clearTimeout(backstoryTimeout);
     };
-  }, [name, pronouns, backstory, onComplete]);
+  }, [name, pronouns, backstory, onComplete, autoAdvance]);
 
   const getHighlightStyle = (isHighlighted: boolean) => ({
     background: isHighlighted

@@ -25,9 +25,10 @@ const voices: VoiceOption[] = [
 interface VoiceDisplayProps {
   voiceId: string;
   onComplete: () => void;
+  autoAdvance?: boolean;
 }
 
-export function VoiceDisplay({ voiceId, onComplete }: VoiceDisplayProps) {
+export function VoiceDisplay({ voiceId, onComplete, autoAdvance = true }: VoiceDisplayProps) {
   const [showHighlight, setShowHighlight] = useState(false);
   const [showWaveform, setShowWaveform] = useState(false);
 
@@ -37,11 +38,14 @@ export function VoiceDisplay({ voiceId, onComplete }: VoiceDisplayProps) {
     const timers = [
       setTimeout(() => setShowHighlight(true), 200),
       setTimeout(() => setShowWaveform(true), 400),
-      setTimeout(onComplete, 1000),
     ];
+    // Only auto-advance if enabled (not when user navigated back)
+    if (autoAdvance) {
+      timers.push(setTimeout(onComplete, 1000));
+    }
 
     return () => timers.forEach(clearTimeout);
-  }, [onComplete]);
+  }, [onComplete, autoAdvance]);
 
   return (
     <div className="space-y-6">

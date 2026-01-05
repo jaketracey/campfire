@@ -98,12 +98,14 @@ interface ArchetypeDisplayProps {
   primaryArchetypeId: string;
   secondaryArchetypeId: string | null;
   onComplete: () => void;
+  autoAdvance?: boolean;
 }
 
 export function ArchetypeDisplay({
   primaryArchetypeId,
   secondaryArchetypeId,
   onComplete,
+  autoAdvance = true,
 }: ArchetypeDisplayProps) {
   const [showPrimary, setShowPrimary] = useState(false);
   const [showSecondary, setShowSecondary] = useState(false);
@@ -117,11 +119,14 @@ export function ArchetypeDisplay({
     const timers = [
       setTimeout(() => setShowPrimary(true), 300),
       setTimeout(() => setShowSecondary(true), 800),
-      setTimeout(onComplete, 1400),
     ];
+    // Only auto-advance if enabled (not when user navigated back)
+    if (autoAdvance) {
+      timers.push(setTimeout(onComplete, 1400));
+    }
 
     return () => timers.forEach(clearTimeout);
-  }, [onComplete]);
+  }, [onComplete, autoAdvance]);
 
   return (
     <div className="space-y-6">

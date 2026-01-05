@@ -62,11 +62,13 @@ function getFallbackImagePath(ethnicity: AppearanceEthnicity, gender: CompanionG
 interface VisualsDisplayProps {
   appearance: CompanionAppearance;
   onComplete: () => void;
+  autoAdvance?: boolean;
 }
 
 export function VisualsDisplay({
   appearance,
   onComplete,
+  autoAdvance = true,
 }: VisualsDisplayProps) {
   const { ethnicity, bodyType, hairColor, gender } = appearance;
   const [showEthnicity, setShowEthnicity] = useState(false);
@@ -90,11 +92,14 @@ export function VisualsDisplay({
       setTimeout(() => setShowBodyType(true), 500),
       setTimeout(() => setShowHairColor(true), 800),
       setTimeout(() => setShowArtStyle(true), 1100),
-      setTimeout(onComplete, 1800),
     ];
+    // Only auto-advance if enabled (not when user navigated back)
+    if (autoAdvance) {
+      timers.push(setTimeout(onComplete, 1800));
+    }
 
     return () => timers.forEach(clearTimeout);
-  }, [onComplete]);
+  }, [onComplete, autoAdvance]);
 
   return (
     <div className="space-y-6">

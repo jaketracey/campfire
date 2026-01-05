@@ -202,55 +202,38 @@ export function QuickStart({ onBack }: QuickStartProps) {
   const { toast } = useToast();
   const { isAuthenticated } = useAuth();
   const { reset: resetOnboarding, setQuickStartActive } = useOnboardingStore();
-  const [step, setStep] = useState<'name' | 'transition' | 'carousel' | 'creating'>('name');
-  const isNavigatingRef = useRef(false);
 
-  // Map step to URL param value
-  const stepToParam = (s: typeof step): string | null => {
-    switch (s) {
-      case 'name': return null; // No param for initial step
-      case 'carousel': return 'carousel';
-      case 'creating': return 'creating';
-      default: return null;
+  // Transient local state for flame animation (not URL-persisted)
+  const [isTransitioning, setIsTransitioning] = useState(false);
+
+  // Derive step from URL - URL is the single source of truth
+  const phaseParam = searchParams.get('phase');
+  const step: 'name' | 'transition' | 'carousel' | 'creating' = isTransitioning
+    ? 'transition'
+    : phaseParam === 'carousel'
+      ? 'carousel'
+      : phaseParam === 'creating'
+        ? 'creating'
+        : 'name';
+
+  // Track if carousel was ever completed (survives carousel remount on back navigation)
+  const carouselCompletedRef = useRef(false);
+  if (phaseParam === 'creating') {
+    carouselCompletedRef.current = true;
+  }
+
+  // Helper to navigate to a phase
+  const navigateToPhase = useCallback((phase: 'carousel' | 'creating' | null) => {
+    const newParams = new URLSearchParams(searchParams.toString());
+    if (phase) {
+      newParams.set('phase', phase);
+    } else {
+      newParams.delete('phase');
+      newParams.delete('qs');
     }
-  };
-
-  // Sync URL to step state on popstate (browser back/forward)
-  useEffect(() => {
-    const qsPhase = searchParams.get('phase');
-    if (!isNavigatingRef.current) {
-      if (qsPhase === 'carousel' && step !== 'carousel' && step !== 'transition') {
-        setStep('carousel');
-      } else if (qsPhase === 'creating' && step !== 'creating') {
-        setStep('creating');
-      } else if (!qsPhase && step !== 'name' && step !== 'transition') {
-        // Going back to name step
-        setStep('name');
-      }
-    }
-    isNavigatingRef.current = false;
-  }, [searchParams, step]);
-
-  // Update URL when step changes
-  useEffect(() => {
-    const currentPhase = searchParams.get('phase');
-    const targetPhase = stepToParam(step);
-
-    if (step === 'transition') return; // Don't update URL during transition
-
-    if (currentPhase !== targetPhase) {
-      isNavigatingRef.current = true;
-      const newParams = new URLSearchParams(searchParams.toString());
-      if (targetPhase) {
-        newParams.set('phase', targetPhase);
-      } else {
-        newParams.delete('phase');
-        newParams.delete('qs'); // Also clean up carousel step param
-      }
-      const queryString = newParams.toString();
-      router.push(queryString ? `/onboard?${queryString}` : '/onboard', { scroll: false });
-    }
-  }, [step, searchParams, router]);
+    const queryString = newParams.toString();
+    router.push(queryString ? `/onboard?${queryString}` : '/onboard', { scroll: false });
+  }, [searchParams, router]);
 
   const [isCreating, setIsCreating] = useState(false);
   const [generatedCompanion, setGeneratedCompanion] = useState<GeneratedCompanionData | null>(null);
@@ -263,13 +246,14 @@ export function QuickStart({ onBack }: QuickStartProps) {
 
   // Auto-advance from transition to carousel after flame animation
   useEffect(() => {
-    if (step === 'transition' && generatedCompanion) {
+    if (isTransitioning && generatedCompanion) {
       const timer = setTimeout(() => {
-        setStep('carousel');
+        setIsTransitioning(false);
+        navigateToPhase('carousel');
       }, 1200); // Duration of flame animation
       return () => clearTimeout(timer);
     }
-  }, [step, generatedCompanion]);
+  }, [isTransitioning, generatedCompanion, navigateToPhase]);
   const [apiPromise, setApiPromise] = useState<Promise<{ companionId: string; sessionId: string }> | null>(null);
   const nameInputRef = useRef<HTMLInputElement>(null);
 
@@ -455,7 +439,7 @@ export function QuickStart({ onBack }: QuickStartProps) {
     trackOnboardingStep(1, 'quick-name', 'quick');
 
     // Immediately show the flame transition
-    setStep('transition');
+    setIsTransitioning(true);
 
     try {
       let randomCompanion: GeneratedCompanionData;
@@ -541,15 +525,16 @@ export function QuickStart({ onBack }: QuickStartProps) {
         variant: 'destructive',
       });
       // Go back to name step on error
-      setStep('name');
+      setIsTransitioning(false);
+      navigateToPhase(null);
     }
-  }, [isValid, companionName, isAuthenticated, startApiCalls, toast]);
+  }, [isValid, companionName, isAuthenticated, startApiCalls, toast, navigateToPhase]);
 
   // Handle carousel completion - wait for API and show review screen
   const onCarouselComplete = useCallback(async () => {
     if (!generatedCompanion) return;
 
-    setStep('creating');
+    navigateToPhase('creating');
     setRevealPhase('loading');
 
     if (isAuthenticated && apiPromise) {
@@ -567,7 +552,7 @@ export function QuickStart({ onBack }: QuickStartProps) {
           variant: 'destructive',
         });
         setIsCreating(false);
-        setStep('name');
+        navigateToPhase(null);
         setApiPromise(null);
       }
     } else {
@@ -584,7 +569,7 @@ export function QuickStart({ onBack }: QuickStartProps) {
       // Skip directly to ready phase (no images to show)
       setRevealPhase('ready');
     }
-  }, [apiPromise, generatedCompanion, isAuthenticated, toast]);
+  }, [apiPromise, generatedCompanion, isAuthenticated, toast, navigateToPhase]);
 
   // Phase transitions - loading → backstory → images → ready
   useEffect(() => {
@@ -731,6 +716,7 @@ export function QuickStart({ onBack }: QuickStartProps) {
               companionName={companionName}
               generatedData={generatedCompanion}
               onComplete={onCarouselComplete}
+              autoAdvance={!carouselCompletedRef.current}
             />
           </motion.div>
         )}

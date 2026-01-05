@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useCallback, useEffect, useRef } from 'react';
+import { useCallback, useEffect } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
 import { motion, AnimatePresence } from 'framer-motion';
 import { IdentityDisplay } from './quick-start/identity-display';
@@ -64,6 +64,8 @@ interface QuickStartCarouselProps {
   companionName: string;
   generatedData: GeneratedCompanionData;
   onComplete: () => void;
+  /** When false, display components won't auto-advance (for back navigation) */
+  autoAdvance?: boolean;
 }
 
 // Generate a random backstory snippet
@@ -127,13 +129,17 @@ export function QuickStartCarousel({
   companionName,
   generatedData,
   onComplete,
+  autoAdvance = true,
 }: QuickStartCarouselProps) {
   const searchParams = useSearchParams();
   const router = useRouter();
-  const [currentSection, setCurrentSection] = useState<CarouselSection>('identity');
-  const currentIndex = SECTIONS.indexOf(currentSection);
   const { setQuickStartStep } = useOnboardingStore();
-  const isNavigatingRef = useRef(false);
+
+  // Derive current section from URL - URL is the source of truth
+  const qsParam = searchParams.get('qs');
+  const qsIndex = qsParam ? parseInt(qsParam, 10) : 0;
+  const currentIndex = (!isNaN(qsIndex) && qsIndex >= 0 && qsIndex < SECTIONS.length) ? qsIndex : 0;
+  const currentSection = SECTIONS[currentIndex];
 
   const backstory = generateBackstorySnippet(generatedData.primaryArchetype.id);
 
@@ -142,35 +148,22 @@ export function QuickStartCarousel({
     setQuickStartStep(currentIndex);
   }, [currentIndex, setQuickStartStep]);
 
-  // Sync URL to section state on mount and popstate (browser back/forward)
+  // Ensure URL has qs param on mount (for initial state)
   useEffect(() => {
-    const qsParam = searchParams.get('qs');
-    if (qsParam && !isNavigatingRef.current) {
-      const qsIndex = parseInt(qsParam, 10);
-      if (!isNaN(qsIndex) && qsIndex >= 0 && qsIndex < SECTIONS.length && qsIndex !== currentIndex) {
-        setCurrentSection(SECTIONS[qsIndex]);
-      }
-    }
-    isNavigatingRef.current = false;
-  }, [searchParams, currentIndex]);
-
-  // Update URL when section changes (push to history for back/forward support)
-  useEffect(() => {
-    const qsParam = searchParams.get('qs');
-    const currentIndexStr = currentIndex.toString();
-
-    if (qsParam !== currentIndexStr) {
-      isNavigatingRef.current = true;
+    if (qsParam === null) {
       const newParams = new URLSearchParams(searchParams.toString());
-      newParams.set('qs', currentIndexStr);
-      router.push(`/onboard?${newParams.toString()}`, { scroll: false });
+      newParams.set('qs', '0');
+      router.replace(`/onboard?${newParams.toString()}`, { scroll: false });
     }
-  }, [currentIndex, searchParams, router]);
+  }, [qsParam, searchParams, router]);
 
+  // Handle section completion - advance to next step via URL
   const handleSectionComplete = useCallback(() => {
     const nextIndex = currentIndex + 1;
     if (nextIndex < SECTIONS.length) {
-      setCurrentSection(SECTIONS[nextIndex]);
+      const newParams = new URLSearchParams(searchParams.toString());
+      newParams.set('qs', nextIndex.toString());
+      router.push(`/onboard?${newParams.toString()}`, { scroll: false });
     } else {
       // Clean up qs param when completing carousel
       const newParams = new URLSearchParams(searchParams.toString());
@@ -191,6 +184,7 @@ export function QuickStartCarousel({
             pronouns="they/them"
             backstory={backstory}
             onComplete={handleSectionComplete}
+            autoAdvance={autoAdvance}
           />
         );
       case 'visuals':
@@ -199,6 +193,7 @@ export function QuickStartCarousel({
             key="visuals"
             appearance={generatedData.visualStyle.appearance}
             onComplete={handleSectionComplete}
+            autoAdvance={autoAdvance}
           />
         );
       case 'archetype':
@@ -208,6 +203,7 @@ export function QuickStartCarousel({
             primaryArchetypeId={generatedData.primaryArchetype.id}
             secondaryArchetypeId={generatedData.secondaryArchetype?.id || null}
             onComplete={handleSectionComplete}
+            autoAdvance={autoAdvance}
           />
         );
       case 'voice':
@@ -216,6 +212,7 @@ export function QuickStartCarousel({
             key="voice"
             voiceId={generatedData.voice.id}
             onComplete={handleSectionComplete}
+            autoAdvance={autoAdvance}
           />
         );
     }
