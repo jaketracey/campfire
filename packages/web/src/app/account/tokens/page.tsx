@@ -18,6 +18,7 @@ import {
   type TokenBundle,
   type PaymentSessionResponse,
 } from '@/lib/api/tokens';
+import { trackViewTokenBundles, trackInitiateCheckout, trackPurchase } from '@/lib/analytics/meta-pixel';
 
 export default function TokensPage() {
   const router = useRouter();
@@ -35,6 +36,17 @@ export default function TokensPage() {
   // Check for success query param (for redirect-based flows)
   useEffect(() => {
     if (searchParams.get('success') === 'true') {
+      // Fire Purchase event with stored bundle info
+      const storedBundle = sessionStorage.getItem('pending_purchase_bundle');
+      if (storedBundle) {
+        try {
+          const bundle = JSON.parse(storedBundle);
+          trackPurchase(bundle.id, bundle.name, bundle.priceCents);
+          sessionStorage.removeItem('pending_purchase_bundle');
+        } catch (e) {
+          console.error('Failed to parse stored bundle:', e);
+        }
+      }
       toast({
         title: 'Purchase successful!',
         description: 'Your tokens have been added to your account.',
@@ -57,6 +69,10 @@ export default function TokensPage() {
         ]);
         setBalance(balanceData);
         setBundles(bundlesData);
+        // Track ViewContent when bundles are loaded
+        if (bundlesData.length > 0) {
+          trackViewTokenBundles(bundlesData.map(b => b.id));
+        }
       } catch (err) {
         console.error('Failed to fetch token data:', err);
         toast({
@@ -84,6 +100,14 @@ export default function TokensPage() {
 
   const handlePurchase = async (bundle: TokenBundle) => {
     setPurchasingId(bundle.id);
+    // Track InitiateCheckout
+    trackInitiateCheckout(bundle.id, bundle.name, bundle.priceCents);
+    // Store bundle info for Purchase event after redirect
+    sessionStorage.setItem('pending_purchase_bundle', JSON.stringify({
+      id: bundle.id,
+      name: bundle.name,
+      priceCents: bundle.priceCents,
+    }));
     try {
       const successUrl = `${window.location.origin}/account/tokens?success=true`;
       const cancelUrl = `${window.location.origin}/account/tokens`;
