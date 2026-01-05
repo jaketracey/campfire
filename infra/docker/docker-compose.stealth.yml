@@ -76,10 +76,7 @@ services:
   # Gateway Service - API Gateway and WebSocket server
   # ---------------------------------------------------------------------------
   gateway:
-    build:
-      context: ../../
-      dockerfile: infra/docker/Dockerfile.gateway
-      target: production
+    image: ${ECR_REGISTRY}/campfire-gateway:latest
     container_name: campfire-gateway
     restart: unless-stopped
     environment:
@@ -141,10 +138,7 @@ services:
   # Orchestrator Service - AI/ML pipeline orchestration
   # ---------------------------------------------------------------------------
   orchestrator:
-    build:
-      context: ../../
-      dockerfile: infra/docker/Dockerfile.orchestrator
-      target: production
+    image: ${ECR_REGISTRY}/campfire-orchestrator:latest
     container_name: campfire-orchestrator
     restart: unless-stopped
     environment:
@@ -193,15 +187,7 @@ services:
   # Web Application - Main user-facing application
   # ---------------------------------------------------------------------------
   web:
-    build:
-      context: ../../
-      dockerfile: infra/docker/Dockerfile.web
-      target: production
-      args:
-        NEXT_PUBLIC_GATEWAY_URL: https://${DOMAIN:-ignite.cam}
-        NEXT_PUBLIC_WS_URL: wss://${DOMAIN:-ignite.cam}/ws
-        NEXT_PUBLIC_GOOGLE_OAUTH_CLIENT_ID: ${GOOGLE_OAUTH_CLIENT_ID:-}
-        NEXT_PUBLIC_FLOWGUARD_SHOP_ID: ${FLOWGUARD_SHOP_ID:-}
+    image: ${ECR_REGISTRY}/campfire-web:latest
     container_name: campfire-web
     restart: unless-stopped
     environment:
@@ -249,10 +235,7 @@ services:
   # Workers - Background job processing
   # ---------------------------------------------------------------------------
   workers:
-    build:
-      context: ../../
-      dockerfile: infra/docker/Dockerfile.workers
-      target: production
+    image: ${ECR_REGISTRY}/campfire-workers:latest
     container_name: campfire-workers
     restart: unless-stopped
     environment:

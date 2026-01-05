@@ -1,27 +1,15 @@
 # =============================================================================
 # GitHub Actions: Deploy to Stealth (Single EC2 Instance)
 # =============================================================================
-# Triggers on push to main branch or manual dispatch
-# Syncs code via rsync, builds Docker images on EC2, restarts services
+# Pulls pre-built images from ECR and restarts services
+# Triggered by build-images workflow or manual dispatch
 # =============================================================================
 
 name: Deploy to Stealth
 
 on:
-  push:
-    branches:
-      - main
-    paths-ignore:
-      - '**.md'
-      - 'docs/**'
-      - '.vscode/**'
   workflow_dispatch:
-    inputs:
-      force_rebuild:
-        description: 'Force rebuild all containers (no cache)'
-        required: false
-        default: 'false'
-        type: boolean
+  # Can also be triggered by build-images workflow
 
 env:
   DEPLOY_HOST: ${{ secrets.STEALTH_HOST }}
@@ -29,12 +17,14 @@ env:
   APP_DIR: /opt/campfire
   COMPOSE_FILE: infra/docker/docker-compose.stealth.yml
   ENV_FILE: /opt/campfire/.env.stealth
+  AWS_REGION: us-east-1
+  ECR_REGISTRY: 932630290000.dkr.ecr.us-east-1.amazonaws.com
 
 jobs:
   deploy:
     name: Deploy to Stealth
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 15
 
     steps:
       - name: Checkout code
@@ -47,21 +37,13 @@ jobs:
           chmod 600 ~/.ssh/deploy_key
           ssh-keyscan -H ${{ secrets.STEALTH_HOST }} >> ~/.ssh/known_hosts 2>/dev/null || true
 
-      - name: Sync code to server
+      - name: Sync config files to server
         run: |
-          rsync -avz --delete \
-            --exclude '.git' \
-            --exclude 'node_modules' \
-            --exclude '.next' \
-            --exclude 'dist' \
-            --exclude '.env*' \
-            --exclude '*.log' \
-            --exclude '.venv' \
-            --exclude '__pycache__' \
-            --exclude '.pytest_cache' \
-            --exclude 'infra/docker/nginx/ssl' \
-            --exclude 'infra/aws-cli/stealth/*.pem' \
-            --exclude '*.pem' \
+          rsync -avz \
+            --include='infra/***' \
+            --include='pnpm-lock.yaml' \
+            --include='package.json' \
+            --exclude='*' \
             -e "ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=accept-new" \
             ./ ${{ env.DEPLOY_USER }}@${{ env.DEPLOY_HOST }}:${{ env.APP_DIR }}/
 
@@ -111,24 +93,24 @@ jobs:
           update_env 'FLOWGUARD_SHOP_ID' '${FLOWGUARD_SHOP_ID}'
           update_env 'FLOWGUARD_SIGNATURE_KEY' '${FLOWGUARD_SIGNATURE_KEY}'
 
+          # Set ECR registry for pulling images
+          update_env 'ECR_REGISTRY' '932630290000.dkr.ecr.us-east-1.amazonaws.com'
+
           echo 'Environment secrets updated'
           "
 
-      - name: Build and deploy
+      - name: Pull images and deploy
         run: |
           ssh -i ~/.ssh/deploy_key ${{ env.DEPLOY_USER }}@${{ env.DEPLOY_HOST }} << 'ENDSSH'
           set -e
           cd /opt/campfire/infra/docker
 
-          echo "=== Building containers ==="
-          BUILD_FLAGS=""
-          if [ "${{ inputs.force_rebuild }}" = "true" ]; then
-            echo "Force rebuild requested - clearing Docker caches..."
-            docker builder prune -af || true
-            docker system prune -af || true
-            BUILD_FLAGS="--no-cache"
-          fi
-          docker compose -f docker-compose.stealth.yml --env-file /opt/campfire/.env.stealth build $BUILD_FLAGS
+          echo "=== Logging into ECR ==="
+          aws ecr get-login-password --region us-east-1 | docker login --username AWS --password-stdin 932630290000.dkr.ecr.us-east-1.amazonaws.com
+
+          echo "=== Pulling latest images ==="
+          export ECR_REGISTRY=932630290000.dkr.ecr.us-east-1.amazonaws.com
+          docker compose -f docker-compose.stealth.yml --env-file /opt/campfire/.env.stealth pull gateway web workers orchestrator
 
           echo "=== Restarting services ==="
           docker compose -f docker-compose.stealth.yml --env-file /opt/campfire/.env.stealth up -d
@@ -140,9 +122,8 @@ jobs:
           docker compose -f docker-compose.stealth.yml --env-file /opt/campfire/.env.stealth restart nginx
           sleep 5
 
-          echo "=== Cleaning up Docker to prevent disk fill ==="
+          echo "=== Cleaning up old images ==="
           docker image prune -f
-          docker builder prune -f --keep-storage 5GB
 
           echo "=== Deployment complete ==="
           docker compose -f docker-compose.stealth.yml ps
