@@ -110,17 +110,83 @@ interface SpendTrendDay {
  * Register admin ads routes
  */
 export async function adminAdsRoutes(app: FastifyInstance): Promise<void> {
-  // All routes require admin role
-  app.addHook('preHandler', requireAdmin);
+  // ===========================================================================
+  // OAuth Callback Endpoints (no auth required - these are redirects from OAuth providers)
+  // ===========================================================================
 
-  // ===========================================================================
-  // OAuth Endpoints
-  // ===========================================================================
+  const webBaseUrl = process.env.WEB_BASE_URL || 'http://localhost:3000';
 
   /**
-   * POST /connect/google - Initiate Google Ads OAuth flow
+   * GET /callback/google - Handle Google Ads OAuth callback
    */
-  app.post('/connect/google', async (_request: FastifyRequest, reply: FastifyReply) => {
+  app.get('/callback/google', async (request: FastifyRequest, reply: FastifyReply) => {
+    const query = request.query as { code?: string; error?: string; state?: string };
+
+    if (query.error) {
+      logger.warn({ error: query.error }, 'Google Ads OAuth error');
+      return reply.redirect(`${webBaseUrl}/admin/ads?error=oauth_denied`);
+    }
+
+    if (!query.code) {
+      return reply.redirect(`${webBaseUrl}/admin/ads?error=missing_code`);
+    }
+
+    try {
+      // TODO: Exchange code for tokens and create ad account
+      // For now, log and redirect with success
+      logger.info({ state: query.state }, 'Google Ads OAuth callback received');
+
+      return reply.redirect(`${webBaseUrl}/admin/ads?success=google_connected`);
+    } catch (error) {
+      logger.error({ error }, 'Failed to complete Google Ads OAuth');
+      return reply.redirect(`${webBaseUrl}/admin/ads?error=oauth_failed`);
+    }
+  });
+
+  /**
+   * GET /callback/facebook - Handle Facebook Ads OAuth callback
+   */
+  app.get('/callback/facebook', async (request: FastifyRequest, reply: FastifyReply) => {
+    const query = request.query as { code?: string; error?: string; state?: string };
+
+    if (query.error) {
+      logger.warn({ error: query.error }, 'Facebook Ads OAuth error');
+      return reply.redirect(`${webBaseUrl}/admin/ads?error=oauth_denied`);
+    }
+
+    if (!query.code) {
+      return reply.redirect(`${webBaseUrl}/admin/ads?error=missing_code`);
+    }
+
+    try {
+      const facebookAdsService = getFacebookAdsService();
+      const account = await facebookAdsService.handleCallback(query.code);
+
+      logger.info({ accountId: account.id }, 'Facebook Ads account connected');
+      return reply.redirect(`${webBaseUrl}/admin/ads?success=facebook_connected`);
+    } catch (error) {
+      logger.error({ error }, 'Failed to complete Facebook Ads OAuth');
+      return reply.redirect(`${webBaseUrl}/admin/ads?error=oauth_failed`);
+    }
+  });
+
+  // ===========================================================================
+  // Protected Routes (require admin auth)
+  // ===========================================================================
+
+  // Register protected routes in a separate encapsulated scope
+  await app.register(async (protectedApp) => {
+    // All routes in this scope require admin role
+    protectedApp.addHook('preHandler', requireAdmin);
+
+    // ===========================================================================
+    // OAuth Initiation Endpoints
+    // ===========================================================================
+
+    /**
+     * POST /connect/google - Initiate Google Ads OAuth flow
+     */
+    protectedApp.post('/connect/google', async (_request: FastifyRequest, reply: FastifyReply) => {
     try {
       // TODO: Implement Google Ads OAuth flow
       // For now, return a placeholder URL
@@ -160,10 +226,10 @@ export async function adminAdsRoutes(app: FastifyInstance): Promise<void> {
     }
   });
 
-  /**
-   * POST /connect/facebook - Initiate Facebook Ads OAuth flow
-   */
-  app.post('/connect/facebook', async (_request: FastifyRequest, reply: FastifyReply) => {
+    /**
+     * POST /connect/facebook - Initiate Facebook Ads OAuth flow
+     */
+    protectedApp.post('/connect/facebook', async (_request: FastifyRequest, reply: FastifyReply) => {
     try {
       const facebookAdsService = getFacebookAdsService();
       const state = crypto.randomUUID();
@@ -184,68 +250,14 @@ export async function adminAdsRoutes(app: FastifyInstance): Promise<void> {
     }
   });
 
-  /**
-   * GET /callback/google - Handle Google Ads OAuth callback
-   */
-  app.get('/callback/google', async (request: FastifyRequest, reply: FastifyReply) => {
-    const query = request.query as { code?: string; error?: string; state?: string };
+    // ===========================================================================
+    // Account Management Endpoints
+    // ===========================================================================
 
-    if (query.error) {
-      logger.warn({ error: query.error }, 'Google Ads OAuth error');
-      return reply.redirect(`${process.env.WEB_BASE_URL}/admin/ads?error=oauth_denied`);
-    }
-
-    if (!query.code) {
-      return reply.redirect(`${process.env.WEB_BASE_URL}/admin/ads?error=missing_code`);
-    }
-
-    try {
-      // TODO: Exchange code for tokens and create ad account
-      // For now, log and redirect with success
-      logger.info({ state: query.state }, 'Google Ads OAuth callback received');
-
-      return reply.redirect(`${process.env.WEB_BASE_URL}/admin/ads?success=google_connected`);
-    } catch (error) {
-      logger.error({ error }, 'Failed to complete Google Ads OAuth');
-      return reply.redirect(`${process.env.WEB_BASE_URL}/admin/ads?error=oauth_failed`);
-    }
-  });
-
-  /**
-   * GET /callback/facebook - Handle Facebook Ads OAuth callback
-   */
-  app.get('/callback/facebook', async (request: FastifyRequest, reply: FastifyReply) => {
-    const query = request.query as { code?: string; error?: string; state?: string };
-
-    if (query.error) {
-      logger.warn({ error: query.error }, 'Facebook Ads OAuth error');
-      return reply.redirect(`${process.env.WEB_BASE_URL}/admin/ads?error=oauth_denied`);
-    }
-
-    if (!query.code) {
-      return reply.redirect(`${process.env.WEB_BASE_URL}/admin/ads?error=missing_code`);
-    }
-
-    try {
-      const facebookAdsService = getFacebookAdsService();
-      const account = await facebookAdsService.handleCallback(query.code);
-
-      logger.info({ accountId: account.id }, 'Facebook Ads account connected');
-      return reply.redirect(`${process.env.WEB_BASE_URL}/admin/ads?success=facebook_connected`);
-    } catch (error) {
-      logger.error({ error }, 'Failed to complete Facebook Ads OAuth');
-      return reply.redirect(`${process.env.WEB_BASE_URL}/admin/ads?error=oauth_failed`);
-    }
-  });
-
-  // ===========================================================================
-  // Account Management Endpoints
-  // ===========================================================================
-
-  /**
-   * GET /accounts - List connected ad accounts
-   */
-  app.get('/accounts', async (_request: FastifyRequest, reply: FastifyReply) => {
+    /**
+     * GET /accounts - List connected ad accounts
+     */
+    protectedApp.get('/accounts', async (_request: FastifyRequest, reply: FastifyReply) => {
     try {
       const db = sql();
       const result = await db`
@@ -292,10 +304,10 @@ export async function adminAdsRoutes(app: FastifyInstance): Promise<void> {
     }
   });
 
-  /**
-   * DELETE /accounts/:id - Disconnect an ad account
-   */
-  app.delete('/accounts/:id', async (request: FastifyRequest, reply: FastifyReply) => {
+    /**
+     * DELETE /accounts/:id - Disconnect an ad account
+     */
+    protectedApp.delete('/accounts/:id', async (request: FastifyRequest, reply: FastifyReply) => {
     const paramResult = AccountIdParamSchema.safeParse(request.params);
     if (!paramResult.success) {
       return reply.status(400).send({
@@ -342,10 +354,10 @@ export async function adminAdsRoutes(app: FastifyInstance): Promise<void> {
     }
   });
 
-  /**
-   * POST /accounts/:id/sync - Trigger manual sync for an account
-   */
-  app.post('/accounts/:id/sync', async (request: FastifyRequest, reply: FastifyReply) => {
+    /**
+     * POST /accounts/:id/sync - Trigger manual sync for an account
+     */
+    protectedApp.post('/accounts/:id/sync', async (request: FastifyRequest, reply: FastifyReply) => {
     const paramResult = AccountIdParamSchema.safeParse(request.params);
     if (!paramResult.success) {
       return reply.status(400).send({
@@ -407,14 +419,14 @@ export async function adminAdsRoutes(app: FastifyInstance): Promise<void> {
     }
   });
 
-  // ===========================================================================
-  // Analytics Endpoints
-  // ===========================================================================
+    // ===========================================================================
+    // Analytics Endpoints
+    // ===========================================================================
 
-  /**
-   * GET /overview - Get overview metrics for all ad platforms
-   */
-  app.get('/overview', async (request: FastifyRequest, reply: FastifyReply) => {
+    /**
+     * GET /overview - Get overview metrics for all ad platforms
+     */
+    protectedApp.get('/overview', async (request: FastifyRequest, reply: FastifyReply) => {
     const queryResult = DaysQuerySchema.safeParse(request.query);
     if (!queryResult.success) {
       return reply.status(400).send({
@@ -483,10 +495,10 @@ export async function adminAdsRoutes(app: FastifyInstance): Promise<void> {
     }
   });
 
-  /**
-   * GET /campaigns - Get campaign-level metrics
-   */
-  app.get('/campaigns', async (request: FastifyRequest, reply: FastifyReply) => {
+    /**
+     * GET /campaigns - Get campaign-level metrics
+     */
+    protectedApp.get('/campaigns', async (request: FastifyRequest, reply: FastifyReply) => {
     const queryResult = CampaignsQuerySchema.safeParse(request.query);
     if (!queryResult.success) {
       return reply.status(400).send({
@@ -577,10 +589,10 @@ export async function adminAdsRoutes(app: FastifyInstance): Promise<void> {
     }
   });
 
-  /**
-   * GET /utm-stats - Get UTM attribution breakdown
-   */
-  app.get('/utm-stats', async (request: FastifyRequest, reply: FastifyReply) => {
+    /**
+     * GET /utm-stats - Get UTM attribution breakdown
+     */
+    protectedApp.get('/utm-stats', async (request: FastifyRequest, reply: FastifyReply) => {
     const queryResult = DaysQuerySchema.safeParse(request.query);
     if (!queryResult.success) {
       return reply.status(400).send({
@@ -642,10 +654,10 @@ export async function adminAdsRoutes(app: FastifyInstance): Promise<void> {
     }
   });
 
-  /**
-   * GET /spend-trend - Get daily spend trend
-   */
-  app.get('/spend-trend', async (request: FastifyRequest, reply: FastifyReply) => {
+    /**
+     * GET /spend-trend - Get daily spend trend
+     */
+    protectedApp.get('/spend-trend', async (request: FastifyRequest, reply: FastifyReply) => {
     const queryResult = DaysQuerySchema.safeParse(request.query);
     if (!queryResult.success) {
       return reply.status(400).send({
@@ -730,5 +742,6 @@ export async function adminAdsRoutes(app: FastifyInstance): Promise<void> {
         message: 'Failed to retrieve spend trend',
       });
     }
-  });
+    });
+  }); // end of app.register for protected routes
 }
