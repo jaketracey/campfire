@@ -121,6 +121,8 @@ const ListTemplatesQuerySchema = z.object({
   sort: z.enum(['popular', 'trending', 'recent']).optional(),
   limit: z.string().regex(/^\d+$/).transform(Number).optional(),
   offset: z.string().regex(/^\d+$/).transform(Number).optional(),
+  /** Filter templates to those generated for this companion or marked as public */
+  companionId: z.string().uuid().optional(),
 });
 
 const SendFromTemplateSchema = z.object({
@@ -1523,17 +1525,19 @@ export async function giftsRoutes(app: FastifyInstance): Promise<void> {
         });
       }
 
-      const { category, tier, sort = 'popular', limit = 20, offset = 0 } = parseResult.data;
+      const { category, tier, sort = 'popular', limit = 20, offset = 0, companionId } = parseResult.data;
       span.setAttributes({
         'templates.category': category ?? 'all',
         'templates.tier': tier ?? 'all',
         'templates.sort': sort,
+        'templates.companionId': companionId ?? 'all',
       });
 
       const result = await templatesRepo.listTemplates({
         category: category as import('../db/types.js').GiftTemplateCategory | undefined,
         tier,
         sort,
+        companionId,
         limit: Math.min(limit, 50),
         offset,
       });

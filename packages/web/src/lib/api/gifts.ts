@@ -249,6 +249,8 @@ export interface GetTemplatesParams {
   sort?: 'popular' | 'trending' | 'recent';
   limit?: number;
   offset?: number;
+  /** Filter templates to those generated for this companion or marked as public */
+  companionId?: string;
 }
 
 /**

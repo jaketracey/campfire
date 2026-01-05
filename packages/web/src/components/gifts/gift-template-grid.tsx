@@ -11,9 +11,11 @@ import type { GiftTemplate } from '@/lib/api/gifts';
 interface GiftTemplateGridProps {
   onSelect: (template: GiftTemplate) => void;
   selectedId?: string;
+  /** Filter templates to those generated for this companion or marked as public */
+  companionId?: string;
 }
 
-export function GiftTemplateGrid({ onSelect, selectedId }: GiftTemplateGridProps) {
+export function GiftTemplateGrid({ onSelect, selectedId, companionId }: GiftTemplateGridProps) {
   const {
     templates,
     isLoadingTemplates,
@@ -33,6 +35,7 @@ export function GiftTemplateGrid({ onSelect, selectedId }: GiftTemplateGridProps
       const result = await getGiftTemplates({
         category: templateCategory ?? undefined,
         sort: templateSort,
+        companionId,
         limit: 12,
         offset,
       });
@@ -47,12 +50,12 @@ export function GiftTemplateGrid({ onSelect, selectedId }: GiftTemplateGridProps
     } finally {
       setIsLoadingTemplates(false);
     }
-  }, [templateCategory, templateSort, templates.length, setTemplates, appendTemplates, setIsLoadingTemplates, setError]);
+  }, [templateCategory, templateSort, companionId, templates.length, setTemplates, appendTemplates, setIsLoadingTemplates, setError]);
 
   // Load templates on mount and when filters change
   useEffect(() => {
     loadTemplates(false);
-  }, [templateCategory, templateSort]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [templateCategory, templateSort, companionId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   if (isLoadingTemplates && templates.length === 0) {
     return (

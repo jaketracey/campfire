@@ -26,6 +26,8 @@ export interface GiftTemplateListFilters extends PaginationOptions {
   tier?: string;
   sort?: GiftTemplateSortBy;
   status?: GiftTemplateStatus;
+  /** Filter by companion - shows templates for this companion OR public templates */
+  companionId?: string;
 }
 
 // ============================================================================
@@ -50,6 +52,7 @@ export class GiftTemplatesRepository {
       tier,
       sort = 'popular',
       status = 'active',
+      companionId,
       limit = 20,
       offset = 0,
     } = filters;
@@ -68,6 +71,13 @@ export class GiftTemplatesRepository {
     if (tier) {
       conditions.push(`tier = $${paramIndex}`);
       params.push(tier);
+      paramIndex++;
+    }
+
+    // Filter by companion visibility: show templates for this companion OR public templates
+    if (companionId) {
+      conditions.push(`(source_companion_id = $${paramIndex} OR is_public = true)`);
+      params.push(companionId);
       paramIndex++;
     }
 
@@ -103,7 +113,7 @@ export class GiftTemplatesRepository {
           image_url, s3_bucket, s3_key,
           category, token_cost, tier, status,
           total_sends, sends_last_7_days, sends_last_30_days, last_sent_at,
-          source_gift_id, content_hash,
+          source_gift_id, source_companion_id, is_public, content_hash,
           created_at, updated_at
         FROM gift_templates
         WHERE ${whereClause}
@@ -136,7 +146,7 @@ export class GiftTemplatesRepository {
           image_url, s3_bucket, s3_key,
           category, token_cost, tier, status,
           total_sends, sends_last_7_days, sends_last_30_days, last_sent_at,
-          source_gift_id, content_hash,
+          source_gift_id, source_companion_id, is_public, content_hash,
           created_at, updated_at
         FROM gift_templates
         WHERE id = ${id}
@@ -161,7 +171,7 @@ export class GiftTemplatesRepository {
           image_url, s3_bucket, s3_key,
           category, token_cost, tier, status,
           total_sends, sends_last_7_days, sends_last_30_days, last_sent_at,
-          source_gift_id, content_hash,
+          source_gift_id, source_companion_id, is_public, content_hash,
           created_at, updated_at
         FROM gift_templates
         WHERE content_hash = ${hash}
@@ -189,7 +199,7 @@ export class GiftTemplatesRepository {
           name, description, visual_prompt, emotional_meaning,
           image_url, s3_bucket, s3_key,
           category, token_cost, tier,
-          source_gift_id, content_hash
+          source_gift_id, source_companion_id, is_public, content_hash
         ) VALUES (
           ${data.name},
           ${data.description ?? null},
@@ -202,6 +212,8 @@ export class GiftTemplatesRepository {
           ${data.token_cost},
           ${data.tier ?? 'medium'},
           ${data.source_gift_id ?? null},
+          ${data.source_companion_id ?? null},
+          ${data.is_public ?? false},
           ${data.content_hash}
         )
         ON CONFLICT (content_hash) DO NOTHING
@@ -210,7 +222,7 @@ export class GiftTemplatesRepository {
           image_url, s3_bucket, s3_key,
           category, token_cost, tier, status,
           total_sends, sends_last_7_days, sends_last_30_days, last_sent_at,
-          source_gift_id, content_hash,
+          source_gift_id, source_companion_id, is_public, content_hash,
           created_at, updated_at
       `;
 
@@ -270,7 +282,7 @@ export class GiftTemplatesRepository {
           image_url, s3_bucket, s3_key,
           category, token_cost, tier, status,
           total_sends, sends_last_7_days, sends_last_30_days, last_sent_at,
-          source_gift_id, content_hash,
+          source_gift_id, source_companion_id, is_public, content_hash,
           created_at, updated_at
       `;
 
@@ -327,6 +339,8 @@ export class GiftTemplatesRepository {
       sends_last_30_days: row.sends_last_30_days,
       last_sent_at: row.last_sent_at,
       source_gift_id: row.source_gift_id,
+      source_companion_id: row.source_companion_id,
+      is_public: row.is_public,
       content_hash: row.content_hash,
       created_at: row.created_at,
       updated_at: row.updated_at,

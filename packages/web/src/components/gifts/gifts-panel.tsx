@@ -416,6 +416,7 @@ export function GiftsPanel({
               <GiftTemplateGrid
                 onSelect={handleSelectTemplate}
                 selectedId={undefined}
+                companionId={companionId}
               />
             </ScrollArea>
           </div>

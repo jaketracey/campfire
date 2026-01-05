@@ -158,7 +158,7 @@ export class GiftGenerationWorker {
       await this.updateGiftComplete(giftId, giftContent, imageResult);
 
       // Step 4: Save to template library for reuse
-      await this.saveToTemplateLibrary(giftId, giftContent, imageResult, data.tokenCost, data.tier);
+      await this.saveToTemplateLibrary(giftId, companionId, giftContent, imageResult, data.tokenCost, data.tier);
 
       this.config.logger.info(
         {
@@ -389,9 +389,11 @@ Generate a unique and creative gift idea.`;
   /**
    * Save generated gift to the template library for reuse.
    * Uses content hash for deduplication - duplicate gifts are silently skipped.
+   * Templates are by default only visible to the companion they were generated for.
    */
   private async saveToTemplateLibrary(
     giftId: string,
+    companionId: string,
     content: GiftContent,
     image: { imageUrl: string; s3Bucket: string; s3Key: string },
     tokenCost: number,
@@ -405,12 +407,13 @@ Generate a unique and creative gift idea.`;
       const category = this.classifyGiftCategory(content);
 
       // Insert into gift_templates (ON CONFLICT DO NOTHING for deduplication)
+      // Templates start as private (is_public = false), only visible to source_companion_id
       const result = await this.config.db.sql`
         INSERT INTO gift_templates (
           name, description, visual_prompt, emotional_meaning,
           image_url, s3_bucket, s3_key,
           category, token_cost, tier,
-          source_gift_id, content_hash
+          source_gift_id, source_companion_id, is_public, content_hash
         ) VALUES (
           ${content.name},
           ${content.description},
@@ -423,6 +426,8 @@ Generate a unique and creative gift idea.`;
           ${tokenCost},
           ${tier},
           ${giftId},
+          ${companionId},
+          ${false},
           ${contentHash}
         )
         ON CONFLICT (content_hash) DO NOTHING

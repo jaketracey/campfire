@@ -915,6 +915,8 @@ export interface GiftTemplate {
   sends_last_30_days: number;
   last_sent_at: Timestamp | null;
   source_gift_id: UUID | null;
+  source_companion_id: UUID | null;
+  is_public: boolean;
   content_hash: string;
   created_at: Timestamp;
   updated_at: Timestamp;
@@ -932,6 +934,8 @@ export interface GiftTemplateInsert {
   token_cost: number;
   tier?: string;
   source_gift_id?: UUID | null;
+  source_companion_id?: UUID | null;
+  is_public?: boolean;
   content_hash: string;
 }
 
