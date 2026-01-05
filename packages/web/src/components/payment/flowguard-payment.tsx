@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, useRef } from 'react';
+import { useEffect, useRef } from 'react';
 import { useFlowguard } from '@/hooks/use-flowguard';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
@@ -31,7 +31,7 @@ interface FlowguardPaymentProps {
  * - cvv-element: CVV/CVC input
  * - cardholder-element: Cardholder name input
  * - exp-date-element: Expiration date input
- * - price-element: Price display (optional)
+ * - price-element: Price display (required by Flowguard SDK)
  */
 export function FlowguardPayment({
   sessionId,
@@ -41,18 +41,24 @@ export function FlowguardPayment({
   onError,
   onCancel,
 }: FlowguardPaymentProps) {
-  const [isInitialized, setIsInitialized] = useState(false);
   const { isLoading, isReady, isSubmitting, error, initialize, submit, remove } = useFlowguard();
 
-  // Use ref for callback to avoid infinite re-render loop
+  // Use refs to avoid infinite re-render loops
   const onErrorRef = useRef(onError);
+  const initializingRef = useRef(false);
+  const initializedSessionRef = useRef<string | null>(null);
   onErrorRef.current = onError;
 
-  // Initialize Flowguard when component mounts
+  // Initialize Flowguard AFTER form elements are mounted in the DOM
   // NOTE: Success/decline are handled via URL redirects configured in the session,
   // not via JavaScript callbacks.
   useEffect(() => {
-    if (!sessionId || isInitialized) return;
+    // Skip if already initialized for this session or currently initializing
+    if (!sessionId || initializingRef.current || initializedSessionRef.current === sessionId) {
+      return;
+    }
+
+    initializingRef.current = true;
 
     const init = async () => {
       try {
@@ -65,10 +71,12 @@ export function FlowguardPayment({
             onErrorRef.current?.(error.errorDescription);
           },
         });
-        setIsInitialized(true);
+        initializedSessionRef.current = sessionId;
       } catch (err) {
         const message = err instanceof Error ? err.message : 'Failed to initialize payment';
         onErrorRef.current?.(message);
+      } finally {
+        initializingRef.current = false;
       }
     };
 
@@ -76,9 +84,10 @@ export function FlowguardPayment({
 
     return () => {
       remove();
-      setIsInitialized(false);
+      initializedSessionRef.current = null;
+      initializingRef.current = false;
     };
-  }, [sessionId, initialize, remove, isInitialized]);
+  }, [sessionId, initialize, remove]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -96,22 +105,21 @@ export function FlowguardPayment({
     }).format(cents / 100);
   };
 
-  if (isLoading) {
-    return (
-      <Card className="w-full">
-        <CardContent className="flex items-center justify-center py-12">
-          <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
-          <span className="ml-3 text-muted-foreground">Loading payment form...</span>
-        </CardContent>
-      </Card>
-    );
-  }
-
   return (
     <Card className="w-full">
-      <CardContent className="pt-6">
+      <CardContent className="pt-6 relative">
+        {/* Loading overlay - shown while SDK is loading */}
+        {isLoading && (
+          <div className="absolute inset-0 bg-background/80 flex items-center justify-center z-10 rounded-lg">
+            <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+            <span className="ml-3 text-muted-foreground">Loading payment form...</span>
+          </div>
+        )}
         <form onSubmit={handleSubmit} className="space-y-6">
-          {/* Price Display */}
+          {/* Flowguard Price Element - required by SDK */}
+          <div id="price-element" className="min-h-[1px]" />
+
+          {/* Price Display - our own display as fallback/supplement */}
           {description && (
             <div className="text-center mb-6">
               <p className="text-sm text-muted-foreground">{description}</p>
@@ -119,8 +127,6 @@ export function FlowguardPayment({
             </div>
           )}
 
-          {/* Flowguard Price Element (shows full breakdown) */}
-          <div id="price-element" className="mb-4" />
 
           {/* Card Details Grid */}
           <div className="space-y-4">

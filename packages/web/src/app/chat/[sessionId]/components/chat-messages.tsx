@@ -8,6 +8,7 @@ import type { ActiveGame } from '@campfire/shared';
 import type { Message } from '../types';
 import { parseMessageSegments } from '../utils';
 import { AnimatedMessageSegments } from './animated-message-segments';
+import { GiftMessage } from './gift-message';
 
 interface ChatMessagesProps {
   messages: Message[];
@@ -62,6 +63,17 @@ export function ChatMessages({
       )}
 
       {messages.map((message) => {
+        // Handle gift messages specially
+        if (message.giftData) {
+          return (
+            <GiftMessage
+              key={message.id}
+              giftData={message.giftData}
+              isNew={message.isNew}
+            />
+          );
+        }
+
         const isUser = message.role === 'user';
         const segments = isUser ? null : parseMessageSegments(message.content);
         const hasMultipleSegments = segments && segments.length > 1;

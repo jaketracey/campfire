@@ -6,7 +6,7 @@ import type { Route } from 'next';
 import { motion } from 'framer-motion';
 import { Coins, Check, Loader2 } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { useToast } from '@/hooks/use-toast';
 import { useRequireAuth } from '@/hooks/use-auth';
 import { FlowguardPayment } from '@/components/payment/flowguard-payment';
@@ -340,6 +340,9 @@ export default function TokensPage() {
               <Coins className="h-5 w-5 text-amber-500" />
               Purchase Tokens
             </DialogTitle>
+            <DialogDescription>
+              Enter your payment details to complete the purchase.
+            </DialogDescription>
           </DialogHeader>
           {paymentSession && (
             <FlowguardPayment

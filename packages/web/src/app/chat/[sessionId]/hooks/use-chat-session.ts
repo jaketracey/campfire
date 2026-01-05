@@ -13,6 +13,7 @@ import { useAudioPlayer } from '@/hooks/use-audio-player';
 import { useWebcamCapture } from '@/hooks/use-webcam-capture';
 import { useVoiceCall } from '@/hooks/use-voice-call';
 import { getTokenBalance } from '@/lib/api/tokens';
+import type { Gift } from '@/lib/api/gifts';
 import { toast } from 'sonner';
 import { trackChatStarted, trackFirstMessage } from '@/lib/analytics/meta-pixel';
 import type { ActiveGame } from '@campfire/shared';
@@ -1082,6 +1083,36 @@ export function useChatSession({
     toast.success('Video request submitted! Check your Media Gallery for updates.');
   }, []);
 
+  // Handler for when a gift is sent - adds gift message to chat and triggers companion reaction
+  const handleGiftSent = useCallback((gift: Gift) => {
+    // Create gift message for display
+    const giftMessage: Message = {
+      id: `gift-${gift.id}`,
+      role: 'user',
+      content: `I'm giving you a ${gift.name}`,
+      timestamp: new Date(),
+      isNew: true,
+      giftData: {
+        id: gift.id,
+        name: gift.name,
+        description: gift.description,
+        imageUrl: gift.imageUrl,
+        emotionalMeaning: gift.emotionalMeaning,
+        tokenCost: gift.tokenCost,
+      },
+    };
+
+    // Add gift message to chat
+    setMessages((prev) => [...prev, giftMessage]);
+
+    // Send structured message for companion reaction
+    if (wsRef.current?.isConnected) {
+      const giftNotification = `[Gift: ${gift.name}] I'm giving you this ${gift.name}. ${gift.emotionalMeaning}`;
+      wsRef.current.sendMessage(giftNotification);
+      setIsLoading(true);
+    }
+  }, []);
+
   return {
     // Auth state
     isAuthenticated,
@@ -1232,6 +1263,7 @@ export function useChatSession({
     handleInviteFriend,
     handlePersonalitySave,
     handleVideoRequestSuccess,
+    handleGiftSent,
 
     // Router
     router,
