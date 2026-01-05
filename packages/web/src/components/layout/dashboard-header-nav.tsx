@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import { motion } from 'framer-motion';
 import { User, LogOut, Coins } from 'lucide-react';
 import Link from 'next/link';
@@ -12,13 +12,31 @@ export function DashboardHeaderNav() {
   const { logout, isAuthenticated } = useAuth();
   const [tokenBalance, setTokenBalance] = useState<number | null>(null);
 
-  useEffect(() => {
+  // Fetch token balance
+  const fetchBalance = useCallback(() => {
     if (isAuthenticated) {
       getTokenBalance()
         .then((data) => setTokenBalance(data?.balance ?? 0))
         .catch(() => setTokenBalance(0));
     }
   }, [isAuthenticated]);
+
+  // Initial fetch
+  useEffect(() => {
+    fetchBalance();
+  }, [fetchBalance]);
+
+  // Refresh when page becomes visible (e.g., after admin grants tokens or switching tabs)
+  useEffect(() => {
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        fetchBalance();
+      }
+    };
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
+  }, [fetchBalance]);
 
   return (
     <div className="flex items-center gap-2">

@@ -60,7 +60,8 @@ export interface PaymentSessionResponse {
  * Get current user's token balance
  */
 export async function getTokenBalance(): Promise<TokenBalance> {
-  return get<TokenBalance>('/gifts/tokens/balance');
+  const response = await get<{ success: boolean; data: TokenBalance }>('/gifts/tokens/balance');
+  return response.data;
 }
 
 /**

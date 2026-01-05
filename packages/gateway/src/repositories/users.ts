@@ -513,7 +513,7 @@ export class UsersRepository {
         u.created_at,
         COALESCE(c.companion_count, 0)::int as companion_count,
         COALESCE(i.image_count, 0)::int as image_count,
-        COALESCE(s.total_tokens, 0)::bigint as total_tokens
+        COALESCE(tb.total_tokens, 0)::bigint as total_tokens
       FROM users u
       LEFT JOIN (
         SELECT user_id, COUNT(*)::int as companion_count
@@ -527,10 +527,9 @@ export class UsersRepository {
         GROUP BY user_id
       ) i ON i.user_id = u.id::text
       LEFT JOIN (
-        SELECT user_id, SUM(total_tokens_input + total_tokens_output)::bigint as total_tokens
-        FROM sessions
-        GROUP BY user_id
-      ) s ON s.user_id = u.id
+        SELECT user_id, balance as total_tokens
+        FROM token_balances
+      ) tb ON tb.user_id = u.id
       ${whereClause}
       ${orderByClause}
       LIMIT ${limit + 1}
