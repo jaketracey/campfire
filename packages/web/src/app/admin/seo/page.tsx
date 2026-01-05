@@ -66,6 +66,7 @@ import {
   listSeoPages,
   listAvailableCompanions,
   createSeoPage,
+  bulkCreateSeoPages,
   deleteSeoPage,
   regenerateSeoPage,
   publishSeoPage,
@@ -73,6 +74,7 @@ import {
   type SeoPageListItem,
   type SeoPageStatus,
   type AvailableCompanion,
+  type BulkCreateResult,
 } from '@/lib/api/admin-seo';
 import { formatDistanceToNow, format } from 'date-fns';
 import { useToast } from '@/hooks/use-toast';
@@ -120,6 +122,12 @@ export default function AdminSeoPage() {
   const [isLoadingCompanions, setIsLoadingCompanions] = useState(false);
   const [selectedCompanionId, setSelectedCompanionId] = useState<string>('');
   const [isCreating, setIsCreating] = useState(false);
+
+  // Bulk create dialog state
+  const [isBulkDialogOpen, setIsBulkDialogOpen] = useState(false);
+  const [selectedCompanionIds, setSelectedCompanionIds] = useState<Set<string>>(new Set());
+  const [isBulkCreating, setIsBulkCreating] = useState(false);
+  const [bulkResult, setBulkResult] = useState<BulkCreateResult | null>(null);
 
   // Delete dialog state
   const [deletePageId, setDeletePageId] = useState<string | null>(null);
@@ -206,6 +214,57 @@ export default function AdminSeoPage() {
       });
     } finally {
       setIsCreating(false);
+    }
+  };
+
+  const handleOpenBulkDialog = () => {
+    setIsBulkDialogOpen(true);
+    setBulkResult(null);
+    setSelectedCompanionIds(new Set());
+    fetchAvailableCompanions();
+  };
+
+  const handleToggleCompanion = (companionId: string) => {
+    setSelectedCompanionIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(companionId)) {
+        next.delete(companionId);
+      } else {
+        next.add(companionId);
+      }
+      return next;
+    });
+  };
+
+  const handleSelectAll = () => {
+    if (selectedCompanionIds.size === availableCompanions.length) {
+      setSelectedCompanionIds(new Set());
+    } else {
+      setSelectedCompanionIds(new Set(availableCompanions.map((c) => c.id)));
+    }
+  };
+
+  const handleBulkCreate = async () => {
+    if (selectedCompanionIds.size === 0) return;
+
+    setIsBulkCreating(true);
+    try {
+      const result = await bulkCreateSeoPages(Array.from(selectedCompanionIds), true);
+      setBulkResult(result);
+      toast({
+        title: 'Bulk Generation Complete',
+        description: `Created ${result.summary.created} pages, skipped ${result.summary.skipped}, failed ${result.summary.failed}`,
+      });
+      fetchPages();
+    } catch (error) {
+      console.error('Failed to bulk create:', error);
+      toast({
+        title: 'Error',
+        description: 'Failed to bulk create SEO pages',
+        variant: 'destructive',
+      });
+    } finally {
+      setIsBulkCreating(false);
     }
   };
 
@@ -305,13 +364,23 @@ export default function AdminSeoPage() {
           <h1 className="text-3xl font-bold font-display text-white">SEO Pages</h1>
           <p className="text-gray-400 mt-1">Generate and manage companion profile pages for search engines</p>
         </div>
-        <Button
-          onClick={handleOpenCreateDialog}
-          className="bg-campfire-500 hover:bg-campfire-600"
-        >
-          <Plus className="h-4 w-4 mr-2" />
-          Create SEO Page
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button
+            variant="outline"
+            onClick={handleOpenBulkDialog}
+            className="border-white/10 hover:bg-white/10"
+          >
+            <Sparkles className="h-4 w-4 mr-2" />
+            Bulk Generate
+          </Button>
+          <Button
+            onClick={handleOpenCreateDialog}
+            className="bg-campfire-500 hover:bg-campfire-600"
+          >
+            <Plus className="h-4 w-4 mr-2" />
+            Create SEO Page
+          </Button>
+        </div>
       </div>
 
       {/* Main Card */}
@@ -607,6 +676,128 @@ export default function AdminSeoPage() {
                 </>
               )}
             </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Bulk Generate Dialog */}
+      <Dialog open={isBulkDialogOpen} onOpenChange={setIsBulkDialogOpen}>
+        <DialogContent className="bg-zinc-900 border-white/10 max-w-lg">
+          <DialogHeader>
+            <DialogTitle className="text-white">Bulk Generate SEO Pages</DialogTitle>
+            <DialogDescription>
+              Select companions to generate SEO pages for. Pages will be created and AI content generation will start automatically.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="py-4">
+            {isLoadingCompanions ? (
+              <div className="text-center py-8 text-gray-500">Loading companions...</div>
+            ) : availableCompanions.length === 0 ? (
+              <div className="text-center py-8 text-gray-500">
+                No companions available. All companions already have SEO pages.
+              </div>
+            ) : bulkResult ? (
+              <div className="space-y-4">
+                <div className="grid grid-cols-3 gap-4 text-center">
+                  <div className="p-3 rounded-lg bg-green-500/10">
+                    <div className="text-2xl font-bold text-green-400">{bulkResult.summary.created}</div>
+                    <div className="text-xs text-gray-400">Created</div>
+                  </div>
+                  <div className="p-3 rounded-lg bg-amber-500/10">
+                    <div className="text-2xl font-bold text-amber-400">{bulkResult.summary.skipped}</div>
+                    <div className="text-xs text-gray-400">Skipped</div>
+                  </div>
+                  <div className="p-3 rounded-lg bg-red-500/10">
+                    <div className="text-2xl font-bold text-red-400">{bulkResult.summary.failed}</div>
+                    <div className="text-xs text-gray-400">Failed</div>
+                  </div>
+                </div>
+                {bulkResult.skipped.length > 0 && (
+                  <div className="text-sm text-gray-400">
+                    <p className="font-medium text-amber-400 mb-1">Skipped:</p>
+                    <ul className="list-disc list-inside space-y-0.5">
+                      {bulkResult.skipped.slice(0, 5).map((s) => (
+                        <li key={s.companionId} className="truncate">{s.reason}</li>
+                      ))}
+                      {bulkResult.skipped.length > 5 && (
+                        <li>...and {bulkResult.skipped.length - 5} more</li>
+                      )}
+                    </ul>
+                  </div>
+                )}
+              </div>
+            ) : (
+              <div className="space-y-3">
+                <div className="flex items-center justify-between">
+                  <span className="text-sm text-gray-400">
+                    {selectedCompanionIds.size} of {availableCompanions.length} selected
+                  </span>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={handleSelectAll}
+                    className="text-campfire-400 hover:text-campfire-300"
+                  >
+                    {selectedCompanionIds.size === availableCompanions.length ? 'Deselect All' : 'Select All'}
+                  </Button>
+                </div>
+                <div className="max-h-64 overflow-y-auto space-y-1 border border-white/10 rounded-lg p-2">
+                  {availableCompanions.map((companion) => (
+                    <label
+                      key={companion.id}
+                      className={cn(
+                        'flex items-center gap-3 p-2 rounded-lg cursor-pointer transition-colors',
+                        selectedCompanionIds.has(companion.id)
+                          ? 'bg-campfire-500/20'
+                          : 'hover:bg-white/5'
+                      )}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={selectedCompanionIds.has(companion.id)}
+                        onChange={() => handleToggleCompanion(companion.id)}
+                        className="h-4 w-4 rounded border-white/20 bg-white/5 text-campfire-500 focus:ring-campfire-500"
+                      />
+                      <Avatar className="h-6 w-6">
+                        <AvatarImage src={companion.avatarUrl ?? undefined} />
+                        <AvatarFallback className="bg-campfire-500/20 text-campfire-400 text-xs">
+                          {companion.name.charAt(0)}
+                        </AvatarFallback>
+                      </Avatar>
+                      <span className="text-sm text-white">{companion.name}</span>
+                    </label>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setIsBulkDialogOpen(false)}
+              className="border-white/10"
+            >
+              {bulkResult ? 'Close' : 'Cancel'}
+            </Button>
+            {!bulkResult && (
+              <Button
+                onClick={handleBulkCreate}
+                disabled={selectedCompanionIds.size === 0 || isBulkCreating}
+                className="bg-campfire-500 hover:bg-campfire-600"
+              >
+                {isBulkCreating ? (
+                  <>
+                    <RefreshCw className="h-4 w-4 mr-2 animate-spin" />
+                    Creating...
+                  </>
+                ) : (
+                  <>
+                    <Sparkles className="h-4 w-4 mr-2" />
+                    Generate {selectedCompanionIds.size} Pages
+                  </>
+                )}
+              </Button>
+            )}
           </DialogFooter>
         </DialogContent>
       </Dialog>

@@ -14,7 +14,7 @@ logger = structlog.get_logger()
 
 router = APIRouter(prefix="/providers", tags=["providers"])
 
-ProviderName = Literal["anthropic", "openai", "together", "groq", "ollama", "fal", "comfyui", "openrouter"]
+ProviderName = Literal["anthropic", "openai", "together", "groq", "ollama", "fal", "fal_video", "comfyui", "openrouter"]
 
 
 class TestProviderRequest(BaseModel):
@@ -69,6 +69,13 @@ PROVIDER_CONFIGS = {
     "fal": {
         "base_url": "https://fal.run/fal-ai/flux/schnell",  # Test with a simple model
         "test_model": "fal-ai/flux/schnell",
+        "auth_header": "Authorization",
+        "auth_prefix": "Key ",
+        "requires_api_key": True,
+    },
+    "fal_video": {
+        "base_url": "https://fal.run/fal-ai/kling-video/v1.6/pro/text-to-video",  # Test with video model
+        "test_model": "fal-ai/kling-video/v1.6/pro/text-to-video",
         "auth_header": "Authorization",
         "auth_prefix": "Key ",
         "requires_api_key": True,
@@ -463,7 +470,7 @@ async def test_provider(provider: str, request: TestProviderRequest) -> TestProv
         result = await _test_ollama()
     elif provider == "anthropic":
         result = await _test_anthropic(request.api_key)  # type: ignore
-    elif provider == "fal":
+    elif provider in ("fal", "fal_video"):
         result = await _test_fal(request.api_key)  # type: ignore
     elif provider == "comfyui":
         result = await _test_comfyui()
@@ -499,5 +506,6 @@ async def list_supported_providers() -> dict:
         "providers": list(PROVIDER_CONFIGS.keys()),
         "local_providers": ["ollama", "comfyui"],
         "image_providers": ["fal", "comfyui"],
+        "video_providers": ["fal_video"],
         "note": "Local providers (ollama, comfyui) don't require API keys.",
     }

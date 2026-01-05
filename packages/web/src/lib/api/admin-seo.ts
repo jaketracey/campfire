@@ -110,6 +110,26 @@ export async function createSeoPage(companionId: string, generateNow = true): Pr
   return response.data;
 }
 
+export interface BulkCreateResult {
+  created: Array<{ companionId: string; pageId: string; slug: string }>;
+  skipped: Array<{ companionId: string; reason: string }>;
+  failed: Array<{ companionId: string; error: string }>;
+  summary: {
+    total: number;
+    created: number;
+    skipped: number;
+    failed: number;
+  };
+}
+
+export async function bulkCreateSeoPages(companionIds: string[], generateNow = true): Promise<BulkCreateResult> {
+  const response = await post<{ data: BulkCreateResult }>(
+    '/admin/seo/pages/bulk',
+    { companionIds, generateNow }
+  );
+  return response.data;
+}
+
 export async function updateSeoPage(
   pageId: string,
   data: {

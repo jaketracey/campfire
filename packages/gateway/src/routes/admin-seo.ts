@@ -35,6 +35,11 @@ const CreateSeoPageBodySchema = z.object({
   generateNow: z.boolean().default(true),
 });
 
+const BulkCreateSeoPageBodySchema = z.object({
+  companionIds: z.array(z.string().uuid()).min(1).max(100),
+  generateNow: z.boolean().default(true),
+});
+
 const UpdateSeoPageBodySchema = z.object({
   title: z.string().min(1).max(200).optional(),
   metaDescription: z.string().max(320).optional(),
@@ -282,6 +287,102 @@ export async function adminSeoRoutes(app: FastifyInstance): Promise<void> {
   });
 
   /**
+   * POST /admin/seo/pages/bulk - Create SEO pages for multiple companions
+   */
+  app.post('/pages/bulk', async (request: FastifyRequest, reply: FastifyReply) => {
+    const bodyResult = BulkCreateSeoPageBodySchema.safeParse(request.body);
+    if (!bodyResult.success) {
+      return reply.status(400).send({
+        success: false,
+        error: {
+          code: 'VALIDATION_ERROR',
+          message: 'Invalid request body',
+          details: bodyResult.error.issues,
+        },
+      });
+    }
+
+    const { companionIds, generateNow } = bodyResult.data;
+    const userId = request.user!.userId;
+
+    const results: {
+      created: Array<{ companionId: string; pageId: string; slug: string }>;
+      skipped: Array<{ companionId: string; reason: string }>;
+      failed: Array<{ companionId: string; error: string }>;
+    } = {
+      created: [],
+      skipped: [],
+      failed: [],
+    };
+
+    for (const companionId of companionIds) {
+      try {
+        // Check if companion exists
+        const companion = await companionsRepo.findByIdWithAvatar(companionId);
+        if (!companion) {
+          results.skipped.push({ companionId, reason: 'Companion not found' });
+          continue;
+        }
+
+        // Check if SEO page already exists
+        const existing = await seoPagesRepo.findByCompanionId(companionId);
+        if (existing) {
+          results.skipped.push({ companionId, reason: 'SEO page already exists' });
+          continue;
+        }
+
+        // Generate slug
+        const slug = await seoPagesRepo.generateSlug(companion.name);
+
+        // Create the page
+        const page = await seoPagesRepo.create({
+          companion_id: companionId,
+          slug,
+          title: `Meet ${companion.name} - Your AI Companion`,
+          meta_description: `Chat with ${companion.name}, your personalized AI companion.`,
+          og_title: companion.name,
+          og_description: null,
+          og_image_url: companion.activeAvatar?.asset_url ?? null,
+          status: generateNow ? 'generating' : 'draft',
+          created_by: userId,
+        });
+
+        // Trigger generation if requested
+        if (generateNow) {
+          generateSeoContent(page.id, companion).catch((error) => {
+            logger.error({ error, pageId: page.id }, 'Background SEO generation failed');
+          });
+        }
+
+        results.created.push({
+          companionId,
+          pageId: page.id,
+          slug: page.slug,
+        });
+      } catch (error) {
+        const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+        logger.error({ error, companionId }, 'Error creating SEO page in bulk');
+        results.failed.push({ companionId, error: errorMessage });
+      }
+    }
+
+    return reply.status(201).send({
+      success: true,
+      data: {
+        created: results.created,
+        skipped: results.skipped,
+        failed: results.failed,
+        summary: {
+          total: companionIds.length,
+          created: results.created.length,
+          skipped: results.skipped.length,
+          failed: results.failed.length,
+        },
+      },
+    });
+  });
+
+  /**
    * PATCH /admin/seo/pages/:pageId - Update SEO page metadata
    */
   app.patch('/pages/:pageId', async (request: FastifyRequest, reply: FastifyReply) => {
@@ -509,7 +610,9 @@ export async function adminSeoRoutes(app: FastifyInstance): Promise<void> {
         });
       }
 
-      if (!page.content_html || page.content_html.trim() === '') {
+      // Check if content has been generated (contentJson has structured data)
+      const contentJson = page.content_json as { headline?: string; personalitySummary?: string } | null;
+      if (!contentJson || !contentJson.headline || !contentJson.personalitySummary) {
         return reply.status(400).send({
           success: false,
           error: {

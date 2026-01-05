@@ -991,7 +991,11 @@ export type UseCaseType =
   | 'image_generation'
   | 'image_anchor'
   | 'image_variation'
-  | 'gift_image';
+  | 'gift_image'
+  | 'video_generation'
+  | 'video_from_image'
+  | 'video_lip_sync'
+  | 'video_motion_brush';
 
 export const USE_CASE_TYPES: UseCaseType[] = [
   'chat_simple',
@@ -1006,6 +1010,10 @@ export const USE_CASE_TYPES: UseCaseType[] = [
   'image_anchor',
   'image_variation',
   'gift_image',
+  'video_generation',
+  'video_from_image',
+  'video_lip_sync',
+  'video_motion_brush',
 ];
 
 /** Text-based use cases for LLM routing */
@@ -1028,6 +1036,14 @@ export const IMAGE_USE_CASE_TYPES: UseCaseType[] = [
   'gift_image',
 ];
 
+/** Video-based use cases for video model routing */
+export const VIDEO_USE_CASE_TYPES: UseCaseType[] = [
+  'video_generation',
+  'video_from_image',
+  'video_lip_sync',
+  'video_motion_brush',
+];
+
 export const USE_CASE_LABELS: Record<UseCaseType, string> = {
   chat_simple: 'Simple Chat',
   chat_complex: 'Complex Chat',
@@ -1041,10 +1057,14 @@ export const USE_CASE_LABELS: Record<UseCaseType, string> = {
   image_anchor: 'Identity Anchor Image',
   image_variation: 'Image Variation',
   gift_image: 'Gift Image',
+  video_generation: 'Video Generation',
+  video_from_image: 'Image-to-Video',
+  video_lip_sync: 'Lip Sync Video',
+  video_motion_brush: 'Motion Brush',
 };
 
-/** Provider category: text for LLMs, image for image generation */
-export type ProviderCategory = 'text' | 'image';
+/** Provider category: text for LLMs, image for image generation, video for video generation */
+export type ProviderCategory = 'text' | 'image' | 'video';
 
 /** Image model capabilities */
 export type ImageModelCapability = 'ip_adapter' | 'inpainting' | 'controlnet' | 'nsfw';
@@ -1059,6 +1079,23 @@ export interface ImageModelMetadata {
   aspect_ratios?: string[];
   cost_per_image?: number;
   avg_generation_time_ms?: number;
+}
+
+/** Video model capabilities */
+export type VideoModelCapability = 'image_to_video' | 'lip_sync' | 'motion_brush' | 'camera_control';
+
+/** Extended model config for video models */
+export interface VideoModelMetadata {
+  description?: string;
+  max_duration_seconds?: number;
+  supports_image_to_video?: boolean;
+  supports_lip_sync?: boolean;
+  supports_motion_brush?: boolean;
+  supports_camera_control?: boolean;
+  tier?: 'FAST' | 'STANDARD' | 'QUALITY';
+  cost_per_second_cents?: number;
+  supported_resolutions?: Array<{ width: number; height: number }>;
+  default_fps?: number;
 }
 
 export interface ProviderConfig {

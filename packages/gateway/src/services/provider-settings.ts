@@ -17,6 +17,7 @@ import type { TransactionContext, PaginatedResult } from '../repositories/types.
 import {
   USE_CASE_TYPES,
   IMAGE_USE_CASE_TYPES,
+  VIDEO_USE_CASE_TYPES,
   type UUID,
   type UseCaseType,
   type ProviderConfig,
@@ -1176,6 +1177,403 @@ export class ProviderSettingsService {
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Unknown error';
       logger.error({ error: message }, 'Failed to sync image configuration to orchestrator');
+      return {
+        success: false,
+        synced: { providers: 0, models: 0, rules: 0 },
+        error: message,
+      };
+    }
+  }
+
+  // ===========================================================================
+  // Video Providers
+  // ===========================================================================
+
+  /**
+   * List video providers (category='video')
+   */
+  async listVideoProviders(query: ProviderListQuery, tx?: TransactionContext): Promise<PaginatedResult<ProviderConfigWithHealth>> {
+    const validated = ProviderListQuerySchema.parse(query);
+
+    const filters: ProviderListFilters = {
+      is_enabled: validated.isEnabled,
+      category: 'video',
+      limit: validated.limit,
+      offset: validated.offset,
+    };
+
+    return this.repo.listProviders(filters, tx);
+  }
+
+  /**
+   * Get a video provider by ID
+   */
+  async getVideoProvider(id: UUID, tx?: TransactionContext): Promise<ProviderConfigWithHealth | null> {
+    const provider = await this.repo.getProviderWithHealth(id, tx);
+    if (!provider) return null;
+
+    // Verify it's a video provider by checking metadata category
+    const category = (provider.metadata?.category as ProviderCategory) ?? 'text';
+    if (category !== 'video') {
+      return null;
+    }
+
+    return provider;
+  }
+
+  /**
+   * Get a video provider with all its models
+   */
+  async getVideoProviderWithModels(id: UUID, tx?: TransactionContext): Promise<ProviderConfigWithModels | null> {
+    const provider = await this.repo.getProviderWithModels(id, tx);
+    if (!provider) return null;
+
+    // Verify it's a video provider
+    const category = (provider.metadata?.category as ProviderCategory) ?? 'text';
+    if (category !== 'video') {
+      return null;
+    }
+
+    return provider;
+  }
+
+  /**
+   * Create a new video provider configuration
+   */
+  async createVideoProvider(input: CreateProviderInput, tx?: TransactionContext): Promise<ProviderConfig> {
+    const validated = CreateProviderSchema.parse(input);
+
+    const insert: ProviderConfigInsert = {
+      provider: validated.provider,
+      display_name: validated.displayName,
+      is_enabled: validated.isEnabled,
+      api_key: validated.apiKey,
+      api_base_url: validated.apiBaseUrl,
+      rate_limit_rpm: validated.rateLimitRpm,
+      rate_limit_tpm: validated.rateLimitTpm,
+      max_concurrent_requests: validated.maxConcurrentRequests,
+      priority: validated.priority,
+      metadata: { category: 'video' as ProviderCategory },
+    };
+
+    return this.repo.createProvider(insert, PROVIDER_KEY_ENCRYPTION_SECRET, tx);
+  }
+
+  /**
+   * Update a video provider configuration
+   */
+  async updateVideoProvider(id: UUID, input: UpdateProviderInput, tx?: TransactionContext): Promise<ProviderConfig> {
+    // Verify it's a video provider first
+    const existing = await this.getVideoProvider(id, tx);
+    if (!existing) {
+      throw new Error('Video provider not found');
+    }
+
+    const validated = UpdateProviderSchema.parse(input);
+
+    const update: ProviderConfigUpdate = {};
+    if (validated.displayName !== undefined) update.display_name = validated.displayName;
+    if (validated.isEnabled !== undefined) update.is_enabled = validated.isEnabled;
+    if (validated.apiKey !== undefined) update.api_key = validated.apiKey;
+    if (validated.apiBaseUrl !== undefined) update.api_base_url = validated.apiBaseUrl;
+    if (validated.rateLimitRpm !== undefined) update.rate_limit_rpm = validated.rateLimitRpm;
+    if (validated.rateLimitTpm !== undefined) update.rate_limit_tpm = validated.rateLimitTpm;
+    if (validated.maxConcurrentRequests !== undefined) update.max_concurrent_requests = validated.maxConcurrentRequests;
+    if (validated.priority !== undefined) update.priority = validated.priority;
+
+    return this.repo.updateProvider(id, update, PROVIDER_KEY_ENCRYPTION_SECRET, tx);
+  }
+
+  /**
+   * Delete a video provider configuration
+   */
+  async deleteVideoProvider(id: UUID, tx?: TransactionContext): Promise<void> {
+    // Verify it's a video provider first
+    const existing = await this.getVideoProvider(id, tx);
+    if (!existing) {
+      throw new Error('Video provider not found');
+    }
+
+    return this.repo.deleteProvider(id, tx);
+  }
+
+  /**
+   * Test video provider connection
+   */
+  async testVideoProviderConnection(id: UUID): Promise<ConnectionTestResult> {
+    try {
+      const provider = await this.repo.getProviderById(id);
+      if (!provider) {
+        return { success: false, latencyMs: null, error: 'Provider not found' };
+      }
+
+      // Verify it's a video provider
+      const category = (provider.metadata?.category as ProviderCategory) ?? 'text';
+      if (category !== 'video') {
+        return { success: false, latencyMs: null, error: 'Not a video provider' };
+      }
+
+      const apiKey = await this.repo.getProviderApiKey(id, PROVIDER_KEY_ENCRYPTION_SECRET);
+
+      // Video providers always require an API key (no local providers)
+      if (!apiKey) {
+        return { success: false, latencyMs: null, error: 'No API key configured' };
+      }
+
+      // Try to call orchestrator to test the video provider
+      const startTime = Date.now();
+      const response = await fetch(`${ORCHESTRATOR_URL}/providers/${provider.provider}/test`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ api_key: apiKey }),
+        signal: AbortSignal.timeout(30000),
+      });
+
+      const latencyMs = Date.now() - startTime;
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        return { success: false, latencyMs, error: `API returned ${response.status}: ${errorText}` };
+      }
+
+      const result = (await response.json()) as {
+        success?: boolean;
+        latency_ms?: number;
+        error?: string | null;
+      };
+      return {
+        success: result.success ?? true,
+        latencyMs: result.latency_ms ?? latencyMs,
+        error: result.error ?? null,
+      };
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Unknown error';
+      return { success: false, latencyMs: null, error: message };
+    }
+  }
+
+  // ===========================================================================
+  // Video Models
+  // ===========================================================================
+
+  /**
+   * List all video models across all video providers
+   */
+  async listAllVideoModels(query: ModelListQuery, tx?: TransactionContext): Promise<PaginatedResult<ModelConfigWithProvider>> {
+    const validated = ModelListQuerySchema.parse(query);
+
+    const filters: ModelListFilters = {
+      provider_config_id: validated.providerConfigId,
+      is_enabled: validated.isEnabled,
+      category: 'video',
+      limit: validated.limit,
+      offset: validated.offset,
+    };
+
+    return this.repo.listModels(filters, tx);
+  }
+
+  /**
+   * List video models for a specific video provider
+   */
+  async listVideoModels(providerConfigId: UUID, query: ModelListQuery, tx?: TransactionContext): Promise<PaginatedResult<ModelConfigWithProvider>> {
+    const validated = ModelListQuerySchema.parse(query);
+
+    const filters: ModelListFilters = {
+      provider_config_id: providerConfigId,
+      is_enabled: validated.isEnabled,
+      limit: validated.limit,
+      offset: validated.offset,
+    };
+
+    return this.repo.listModels(filters, tx);
+  }
+
+  /**
+   * Create a new video model configuration
+   */
+  async createVideoModel(input: CreateModelInput, tx?: TransactionContext): Promise<ModelConfig> {
+    const validated = CreateModelSchema.parse(input);
+
+    // Verify the provider is a video provider
+    const provider = await this.getVideoProvider(validated.providerConfigId, tx);
+    if (!provider) {
+      throw new Error('Video provider not found');
+    }
+
+    const insert: ModelConfigInsert = {
+      provider_config_id: validated.providerConfigId,
+      model_id: validated.modelId,
+      display_name: validated.displayName,
+      is_enabled: validated.isEnabled,
+      context_window: validated.contextWindow,
+      max_output_tokens: validated.maxOutputTokens,
+      input_cost_per_million: validated.inputCostPerMillion,
+      output_cost_per_million: validated.outputCostPerMillion,
+      capabilities: validated.capabilities,
+      metadata: validated.metadata,
+    };
+
+    return this.repo.createModel(insert, tx);
+  }
+
+  // ===========================================================================
+  // Video Routing Rules
+  // ===========================================================================
+
+  /**
+   * List video routing rules (filter by video use cases)
+   */
+  async listVideoRoutingRules(query: RoutingRuleListQuery, tx?: TransactionContext): Promise<PaginatedResult<RoutingRuleWithModel>> {
+    const validated = RoutingRuleListQuerySchema.parse(query);
+
+    // If a specific use case is provided, validate it's a video use case
+    if (validated.useCase && !VIDEO_USE_CASE_TYPES.includes(validated.useCase as UseCaseType)) {
+      return { data: [], hasMore: false };
+    }
+
+    const filters: RoutingRuleListFilters = {
+      use_case: validated.useCase as UseCaseType | undefined,
+      tier: validated.tier,
+      is_enabled: validated.isEnabled,
+      limit: validated.limit,
+      offset: validated.offset,
+      use_case_filter: VIDEO_USE_CASE_TYPES, // Filter to only video use cases
+    };
+
+    return this.repo.listRoutingRules(filters, tx);
+  }
+
+  /**
+   * Create a video routing rule
+   */
+  async createVideoRoutingRule(input: CreateRoutingRuleInput, tx?: TransactionContext): Promise<RoutingRule> {
+    const validated = CreateRoutingRuleSchema.parse(input);
+
+    // Validate it's a video use case
+    if (!VIDEO_USE_CASE_TYPES.includes(validated.useCase as UseCaseType)) {
+      throw new Error(`Invalid video use case: ${validated.useCase}. Valid options: ${VIDEO_USE_CASE_TYPES.join(', ')}`);
+    }
+
+    const insert: RoutingRuleInsert = {
+      use_case: validated.useCase as UseCaseType,
+      tier: validated.tier,
+      model_config_id: validated.modelConfigId,
+      weight: validated.weight,
+      is_enabled: validated.isEnabled,
+      max_retries: validated.maxRetries,
+      timeout_ms: validated.timeoutMs,
+    };
+
+    return this.repo.createRoutingRule(insert, tx);
+  }
+
+  /**
+   * Get video routing rules for a specific use case
+   */
+  async getVideoRoutingRulesForUseCase(useCase: UseCaseType, tx?: TransactionContext): Promise<RoutingRuleWithModel[]> {
+    // Validate it's a video use case
+    if (!VIDEO_USE_CASE_TYPES.includes(useCase)) {
+      return [];
+    }
+
+    return this.repo.getRoutingRulesForUseCase(useCase, tx);
+  }
+
+  /**
+   * Sync video configuration to orchestrator
+   */
+  async syncVideoConfigWithOrchestrator(tx?: TransactionContext): Promise<SyncResult> {
+    try {
+      // Get only video providers
+      const { data: providers } = await this.listVideoProviders({ limit: 100, offset: 0 }, tx);
+      const { data: rules } = await this.listVideoRoutingRules({ limit: 100, offset: 0 }, tx);
+
+      // Get models for video providers
+      const models: ModelConfig[] = [];
+      for (const provider of providers) {
+        const providerWithModels = await this.getVideoProviderWithModels(provider.id, tx);
+        if (providerWithModels) {
+          models.push(...providerWithModels.models);
+        }
+      }
+
+      const config = {
+        version: '1.0',
+        exportedAt: new Date().toISOString(),
+        type: 'video',
+        providers: providers.map(p => ({
+          id: p.id,
+          provider: p.provider,
+          display_name: p.display_name,
+          is_enabled: p.is_enabled,
+          api_base_url: p.api_base_url,
+          rate_limit_rpm: p.rate_limit_rpm,
+          rate_limit_tpm: p.rate_limit_tpm,
+          max_concurrent_requests: p.max_concurrent_requests,
+          priority: p.priority,
+          metadata: p.metadata,
+          has_api_key: p.has_api_key,
+        })),
+        models: models.map(m => ({
+          id: m.id,
+          provider_config_id: m.provider_config_id,
+          model_id: m.model_id,
+          display_name: m.display_name,
+          is_enabled: m.is_enabled,
+          context_window: m.context_window,
+          max_output_tokens: m.max_output_tokens,
+          input_cost_per_million: m.input_cost_per_million,
+          output_cost_per_million: m.output_cost_per_million,
+          capabilities: m.capabilities,
+          metadata: m.metadata,
+        })),
+        routingRules: rules.map(r => ({
+          id: r.id,
+          use_case: r.use_case,
+          tier: r.tier,
+          model_config_id: r.model_config_id,
+          weight: r.weight,
+          is_enabled: r.is_enabled,
+          max_retries: r.max_retries,
+          timeout_ms: r.timeout_ms,
+          metadata: r.metadata,
+        })),
+      };
+
+      const response = await fetch(`${ORCHESTRATOR_URL}/config/video-routing`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(config),
+        signal: AbortSignal.timeout(10000),
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(`Orchestrator returned ${response.status}: ${errorText}`);
+      }
+
+      logger.info(
+        {
+          providers: providers.length,
+          models: models.length,
+          rules: rules.length,
+        },
+        'Video configuration synced to orchestrator'
+      );
+
+      return {
+        success: true,
+        synced: {
+          providers: providers.length,
+          models: models.length,
+          rules: rules.length,
+        },
+        error: null,
+      };
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Unknown error';
+      logger.error({ error: message }, 'Failed to sync video configuration to orchestrator');
       return {
         success: false,
         synced: { providers: 0, models: 0, rules: 0 },

@@ -37,6 +37,11 @@ import {
   adminImageModelsRoutes,
   adminImageRoutingRoutes,
 } from './admin-image-providers.js';
+import {
+  adminVideoProvidersRoutes,
+  adminVideoModelsRoutes,
+  adminVideoRoutingRoutes,
+} from './admin-video-providers.js';
 import { affiliateAuthRoutes } from './affiliate-auth.js';
 import { affiliatePortalRoutes } from './affiliate-portal.js';
 import { affiliateTrackingRoutes } from './affiliate-tracking.js';
@@ -141,6 +146,11 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
       await api.register(adminImageProvidersRoutes, { prefix: '/admin/image-providers' });
       await api.register(adminImageModelsRoutes, { prefix: '/admin/image-models' });
       await api.register(adminImageRoutingRoutes, { prefix: '/admin/image-routing' });
+
+      // Admin video provider settings routes
+      await api.register(adminVideoProvidersRoutes, { prefix: '/admin/video-providers' });
+      await api.register(adminVideoModelsRoutes, { prefix: '/admin/video-models' });
+      await api.register(adminVideoRoutingRoutes, { prefix: '/admin/video-routing' });
 
       // Affiliate routes
       await api.register(affiliateAuthRoutes, { prefix: '/affiliate/auth' });

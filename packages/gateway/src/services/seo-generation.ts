@@ -180,46 +180,11 @@ function generateTemplateContent(companion: CompanionWithAvatar): {
   const title = `Meet ${name} - Your AI Companion | Ignite`;
   const meta_description = `Chat with ${name}, ${tagline.toLowerCase()}. ${keyTraits.slice(0, 3).join(', ')} AI companion ready to connect with you.`;
 
-  const avatarUrl = companion.activeAvatar?.asset_url;
-  const avatarHtml = avatarUrl
-    ? `<img src="${avatarUrl}" alt="${name}" class="companion-avatar" />`
-    : '';
-
-  const content_html = `
-<article class="companion-profile">
-  <header class="companion-header">
-    ${avatarHtml}
-    <div class="companion-intro">
-      <h1>Meet ${name}</h1>
-      <p class="tagline">${tagline}</p>
-    </div>
-  </header>
-
-  <section class="companion-about">
-    <h2>About ${name}</h2>
-    <p>${personalitySummary}</p>
-  </section>
-
-  <section class="companion-traits">
-    <h2>Personality</h2>
-    <ul class="trait-list">
-      ${keyTraits.map((trait) => `<li>${trait}</li>`).join('\n      ')}
-    </ul>
-  </section>
-
-  <section class="companion-starters">
-    <h2>Start a Conversation</h2>
-    <ul class="starter-list">
-      ${conversationStarters.map((starter) => `<li>"${starter}"</li>`).join('\n      ')}
-    </ul>
-  </section>
-
-  <section class="companion-cta">
-    <p>Ready to connect with ${name}?</p>
-    <a href="/signup" class="cta-button">Start Chatting</a>
-  </section>
-</article>
-`.trim();
+  // content_html is empty for template generation because the frontend
+  // renders all structured content from contentJson (headline, tagline,
+  // personalitySummary, keyTraits, conversationStarters).
+  // content_html is only used for additional custom body content.
+  const content_html = '';
 
   return {
     title,

@@ -40,7 +40,7 @@ import { NotFoundError, DuplicateError, wrapDatabaseError, isUniqueViolation } f
 
 export interface ProviderListFilters {
   is_enabled?: boolean;
-  category?: 'text' | 'image';
+  category?: 'text' | 'image' | 'video';
   limit?: number;
   offset?: number;
 }
@@ -48,7 +48,7 @@ export interface ProviderListFilters {
 export interface ModelListFilters {
   provider_config_id?: UUID;
   is_enabled?: boolean;
-  category?: 'text' | 'image';
+  category?: 'text' | 'image' | 'video';
   limit?: number;
   offset?: number;
 }

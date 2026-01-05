@@ -4,7 +4,7 @@ import { useState } from 'react';
 import Link from 'next/link';
 import type { Route } from 'next';
 import { usePathname } from 'next/navigation';
-import { Users, Mail, BarChart3, Flame, LayoutDashboard, DollarSign, LifeBuoy, Server, GitBranch, Handshake, Target, Search, Image, Palette, ChevronDown, Cpu, Terminal } from 'lucide-react';
+import { Users, Mail, BarChart3, Flame, LayoutDashboard, DollarSign, LifeBuoy, Server, GitBranch, Handshake, Target, Search, Image, Palette, ChevronDown, Cpu, Terminal, Video, Clapperboard } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 interface NavItem {
@@ -96,6 +96,16 @@ const inferenceGroup: NavGroup = {
       label: 'Image Routing',
       href: '/admin/image-routing' as Route,
       icon: Palette,
+    },
+    {
+      label: 'Video Providers',
+      href: '/admin/video-providers' as Route,
+      icon: Video,
+    },
+    {
+      label: 'Video Routing',
+      href: '/admin/video-routing' as Route,
+      icon: Clapperboard,
     },
   ],
 };
