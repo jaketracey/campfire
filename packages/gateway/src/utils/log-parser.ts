@@ -188,31 +188,71 @@ export function parseNextLog(line: string): NormalizedLogEntry | null {
 }
 
 /**
+ * Strip Docker timestamp prefix from log line
+ * Format: 2026-01-05T04:37:18.331913565Z message...
+ */
+function stripDockerTimestamp(line: string): { timestamp: Date | null; content: string } {
+  // Docker timestamp format: YYYY-MM-DDTHH:MM:SS.nnnnnnnnnZ (with 9 fractional digits)
+  const dockerTimestampRegex = /^(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{1,9}Z)\s+/;
+  const match = line.match(dockerTimestampRegex);
+
+  if (match) {
+    const timestamp = new Date(match[1]);
+    const content = line.slice(match[0].length);
+    return { timestamp: isNaN(timestamp.getTime()) ? null : timestamp, content };
+  }
+
+  return { timestamp: null, content: line };
+}
+
+/**
  * Auto-detect and parse a log line based on service
  */
 export function parseLogLine(line: string, service: ServiceName): NormalizedLogEntry | null {
   const trimmed = line.trim();
   if (!trimmed) return null;
 
+  // Strip Docker timestamp prefix first
+  const { timestamp: dockerTimestamp, content: withoutTimestamp } = stripDockerTimestamp(trimmed);
+
   // Skip common Docker/container prefixes and ANSI codes
-  const cleaned = trimmed
+  const cleaned = withoutTimestamp
     .replace(/^\x1b\[[0-9;]*m/g, '') // Remove leading ANSI codes
     .replace(/\x1b\[[0-9;]*m/g, ''); // Remove all ANSI codes
+
+  let entry: NormalizedLogEntry | null = null;
 
   switch (service) {
     case 'gateway':
     case 'workers':
-      return parsePinoLog(cleaned, service);
+      entry = parsePinoLog(cleaned, service);
+      break;
     case 'orchestrator':
-      return parseStructLog(cleaned, service);
+      entry = parseStructLog(cleaned, service);
+      break;
     case 'web':
-      return parseNextLog(cleaned);
+      entry = parseNextLog(cleaned);
+      break;
     default:
       // Try JSON first, fall back to plain text
-      const jsonResult = parsePinoLog(cleaned, service);
-      if (jsonResult) return jsonResult;
-      return parseNextLog(cleaned);
+      entry = parsePinoLog(cleaned, service);
+      if (!entry) {
+        entry = parseNextLog(cleaned);
+      }
   }
+
+  // Use Docker timestamp if the parser didn't extract a valid timestamp
+  if (entry && dockerTimestamp) {
+    // If entry's timestamp is very recent (within last second), use Docker's timestamp instead
+    // This handles cases where JSON logs have their own timestamp
+    const entryTime = entry.timestamp.getTime();
+    const now = Date.now();
+    if (Math.abs(entryTime - now) < 1000) {
+      entry.timestamp = dockerTimestamp;
+    }
+  }
+
+  return entry;
 }
 
 /**
