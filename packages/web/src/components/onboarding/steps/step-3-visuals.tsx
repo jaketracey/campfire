@@ -77,10 +77,10 @@ function getFallbackImagePath(ethnicity: AppearanceEthnicity, gender: CompanionG
 export function Step3Visuals() {
   const { visualStyle, setAppearance, nextStep } = useOnboardingStore();
   const [imageError, setImageError] = useState(false);
-  const [isTransitioning, setIsTransitioning] = useState(false);
   const [displayedImage, setDisplayedImage] = useState<string | null>(null);
+  const [nextImage, setNextImage] = useState<string | null>(null);
+  const [isNextImageReady, setIsNextImageReady] = useState(false);
   const [isSurprising, setIsSurprising] = useState(false);
-  const transitionTimeout = useRef<NodeJS.Timeout | null>(null);
   const hasTrackedRef = useRef(false);
 
   // Track step on mount
@@ -219,35 +219,25 @@ export function Step3Visuals() {
     }
   }, [displayedImage, previewImagePath]);
 
-  // Handle image transitions with blur effect
+  // Preload new image when selection changes
   useEffect(() => {
     if (displayedImage && displayedImage !== previewImagePath) {
-      // Start blur transition
-      setIsTransitioning(true);
-
-      // Clear any existing timeout
-      if (transitionTimeout.current) {
-        clearTimeout(transitionTimeout.current);
-      }
-
-      // After blur kicks in, swap the image
-      transitionTimeout.current = setTimeout(() => {
-        setDisplayedImage(previewImagePath);
-        setImageError(false);
-
-        // Remove blur after image loads
-        setTimeout(() => {
-          setIsTransitioning(false);
-        }, 150);
-      }, 200);
+      // Reset ready state and set the next image to preload
+      setIsNextImageReady(false);
+      setNextImage(previewImagePath);
+      setImageError(false);
     }
-
-    return () => {
-      if (transitionTimeout.current) {
-        clearTimeout(transitionTimeout.current);
-      }
-    };
   }, [previewImagePath, displayedImage]);
+
+  // When next image is loaded, swap it in
+  const handleNextImageLoad = () => {
+    setIsNextImageReady(true);
+    // Small delay to ensure the opacity transition starts from 0
+    requestAnimationFrame(() => {
+      setDisplayedImage(nextImage);
+      setNextImage(null);
+    });
+  };
 
   return (
     <div className="space-y-8">
@@ -428,28 +418,41 @@ export function Step3Visuals() {
             {/* Gradient overlay */}
             <div className="absolute inset-0 bg-gradient-to-br from-vibes-cyan/5 via-transparent to-vibes-neon/5 z-10 pointer-events-none" />
 
-            {/* Main image with blur transition */}
-            <div
-              className={cn(
-                "absolute inset-0 transition-all duration-300 ease-out",
-                isTransitioning ? "blur-md scale-105" : "blur-0 scale-100"
-              )}
-            >
-              {displayedImage && (
-                <Image
-                  src={imageError ? fallbackImagePath : displayedImage}
-                  alt="Companion preview"
-                  fill
-                  className="object-cover"
-                  priority
-                  onError={() => {
-                    if (!imageError) {
-                      setImageError(true);
-                    }
-                  }}
-                />
-              )}
-            </div>
+            {/* Current displayed image */}
+            {displayedImage && (
+              <Image
+                src={imageError ? fallbackImagePath : displayedImage}
+                alt="Companion preview"
+                fill
+                className="object-cover"
+                priority
+                onError={() => {
+                  if (!imageError) {
+                    setImageError(true);
+                  }
+                }}
+              />
+            )}
+
+            {/* Preloading next image - fades in on top when ready */}
+            {nextImage && (
+              <Image
+                src={nextImage}
+                alt="Companion preview loading"
+                fill
+                className={cn(
+                  "object-cover transition-opacity duration-200 ease-out",
+                  isNextImageReady ? "opacity-100" : "opacity-0"
+                )}
+                onLoad={handleNextImageLoad}
+                onError={() => {
+                  // If next image fails, use fallback
+                  setImageError(true);
+                  setDisplayedImage(fallbackImagePath);
+                  setNextImage(null);
+                }}
+              />
+            )}
           </div>
 
           {/* Mobile Surprise Me button */}
