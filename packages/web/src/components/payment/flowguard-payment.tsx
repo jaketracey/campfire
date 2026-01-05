@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import { useFlowguard } from '@/hooks/use-flowguard';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
@@ -44,6 +44,10 @@ export function FlowguardPayment({
   const [isInitialized, setIsInitialized] = useState(false);
   const { isLoading, isReady, isSubmitting, error, initialize, submit, remove } = useFlowguard();
 
+  // Use ref for callback to avoid infinite re-render loop
+  const onErrorRef = useRef(onError);
+  onErrorRef.current = onError;
+
   // Initialize Flowguard when component mounts
   // NOTE: Success/decline are handled via URL redirects configured in the session,
   // not via JavaScript callbacks.
@@ -55,16 +59,16 @@ export function FlowguardPayment({
         await initialize({
           sessionId,
           onError: (error) => {
-            onError?.(error.errorDescription);
+            onErrorRef.current?.(error.errorDescription);
           },
           onSubmitError: (error) => {
-            onError?.(error.errorDescription);
+            onErrorRef.current?.(error.errorDescription);
           },
         });
         setIsInitialized(true);
       } catch (err) {
         const message = err instanceof Error ? err.message : 'Failed to initialize payment';
-        onError?.(message);
+        onErrorRef.current?.(message);
       }
     };
 
@@ -74,7 +78,7 @@ export function FlowguardPayment({
       remove();
       setIsInitialized(false);
     };
-  }, [sessionId, initialize, remove, onError, isInitialized]);
+  }, [sessionId, initialize, remove, isInitialized]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();

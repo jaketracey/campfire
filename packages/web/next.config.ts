@@ -22,6 +22,17 @@ const nextConfig: NextConfig = {
   // Using 'same-origin-allow-popups' to allow OAuth popups while enabling SharedArrayBuffer
   // Using 'credentialless' instead of 'require-corp' to allow S3 images without CORS headers
   async headers() {
+    // CSP for Flowguard payment + Meta Pixel
+    const flowguardCSP = [
+      "default-src 'self'",
+      "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://flowguard.yoursafe.com https://connect.facebook.net",
+      "style-src 'self' 'unsafe-inline'",
+      "frame-src https://flowguard.yoursafe.com https://www.facebook.com",
+      "connect-src 'self' https://flowguard.yoursafe.com https://www.facebook.com http://localhost:* ws://localhost:*",
+      "img-src 'self' data: blob: https:",
+      "font-src 'self' data:",
+    ].join('; ');
+
     return [
       {
         // Apply to chat pages where voice calls are used
@@ -29,6 +40,13 @@ const nextConfig: NextConfig = {
         headers: [
           { key: 'Cross-Origin-Opener-Policy', value: 'same-origin-allow-popups' },
           { key: 'Cross-Origin-Embedder-Policy', value: 'credentialless' },
+        ],
+      },
+      {
+        // Apply to account pages with Flowguard payment integration
+        source: '/account/:path*',
+        headers: [
+          { key: 'Content-Security-Policy', value: flowguardCSP },
         ],
       },
     ];
