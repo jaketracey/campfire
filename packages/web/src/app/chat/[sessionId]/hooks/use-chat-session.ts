@@ -398,6 +398,11 @@ export function useChatSession({
         const session = await getSession(sessionId);
         console.log('[ChatSession] Session loaded:', { sessionId: session.id, companionId: session.companionId });
 
+        // Load total likes from session metadata
+        if (session.metadata?.totalLikes !== undefined) {
+          setSessionTotalLikes(session.metadata.totalLikes as number);
+        }
+
         if (session.companionId) {
           try {
             const companionData = await getCompanion(session.companionId);
