@@ -68,6 +68,8 @@ type WSSubscribeMessage = z.infer<typeof WSSubscribeSchema>;
 export async function adminLogsRoutes(app: FastifyInstance): Promise<void> {
   const dockerLogsService = getDockerLogsService();
 
+  logger.info('Registering admin logs routes');
+
   // All routes require admin role
   app.addHook('preHandler', requireAdmin);
 
