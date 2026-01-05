@@ -10,6 +10,7 @@ import { useToast } from '@/hooks/use-toast';
 import { createSession, streamAnchorImages, generateBackstory, type AnchorImage, type GenerateBackstoryResult } from '@/lib/api';
 import Image from 'next/image';
 import { motion, AnimatePresence } from 'framer-motion';
+import { trackOnboardingStep, trackOnboardingComplete, trackEvent } from '@/lib/analytics/meta-pixel';
 
 type RevealPhase = 'loading' | 'backstory' | 'images' | 'ready';
 
@@ -37,6 +38,15 @@ export function Step9Review() {
   const [localSessionId, setLocalSessionId] = useState<string | null>(storedSessionId);
   const [visibleImageCount, setVisibleImageCount] = useState(0);
   const hasConnectedRef = useRef(false);
+  const hasTrackedRef = useRef(false);
+
+  // Track step on mount
+  useEffect(() => {
+    if (!hasTrackedRef.current) {
+      trackOnboardingStep(6, 'review', 'full');
+      hasTrackedRef.current = true;
+    }
+  }, []);
 
   // Auto-connect to generation stream on mount (skip if we already have images from Surprise Me)
   useEffect(() => {
@@ -174,6 +184,8 @@ export function Step9Review() {
   // Handle ignite
   const handleIgnite = useCallback(() => {
     if (!localSessionId) return;
+    // Track onboarding completion
+    trackOnboardingComplete('full', 6);
     state.reset();
     router.push(`/chat/${localSessionId}`);
   }, [localSessionId, state, router]);

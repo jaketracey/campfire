@@ -14,6 +14,7 @@ import { useWebcamCapture } from '@/hooks/use-webcam-capture';
 import { useVoiceCall } from '@/hooks/use-voice-call';
 import { getTokenBalance } from '@/lib/api/tokens';
 import { toast } from 'sonner';
+import { trackChatStarted, trackFirstMessage } from '@/lib/analytics/meta-pixel';
 import type { ActiveGame } from '@campfire/shared';
 import type { Message, ChatEvent, DemoCompanionData, ChatSessionContentProps } from '../types';
 import { detectEmotionalState, extractSceneDescription } from '../utils';
@@ -98,6 +99,8 @@ export function useChatSession({
   const [galleryImages, setGalleryImages] = useState<GalleryImage[]>([]);
   const [sceneDescription, setSceneDescription] = useState<string | undefined>(undefined);
   const prevAvatarUrlRef = useRef<string | null>(null);
+  const hasFiredChatStarted = useRef(false);
+  const hasFiredFirstMessage = useRef(false);
   const [mobileAvatarPop, setMobileAvatarPop] = useState(false);
 
   // Mobile gallery state
@@ -399,6 +402,11 @@ export function useChatSession({
             const companionData = await getCompanion(session.companionId);
             console.log('[ChatSession] Companion loaded:', { companionId: companionData.id, name: companionData.name });
             setCompanion(companionData);
+            // Track ChatStarted event
+            if (!hasFiredChatStarted.current) {
+              trackChatStarted(sessionId, companionData.id);
+              hasFiredChatStarted.current = true;
+            }
 
             try {
               const backstory = await getCompanionBackstory(session.companionId);
@@ -862,6 +870,11 @@ export function useChatSession({
 
     if (wsRef.current) {
       wsRef.current.sendMessageWithRetry(input.trim());
+      // Track FirstMessage event (only once per session)
+      if (!hasFiredFirstMessage.current) {
+        trackFirstMessage(sessionId);
+        hasFiredFirstMessage.current = true;
+      }
     } else {
       console.error('WebSocket not initialized');
       setIsLoading(false);
@@ -870,7 +883,7 @@ export function useChatSession({
     setTimeout(() => {
       inputRef.current?.focus();
     }, 10);
-  }, [input, isLoading]);
+  }, [input, isLoading, sessionId]);
 
   const handleLikeMessage = useCallback((messageId: string) => {
     if (!wsRef.current?.isConnected) return;

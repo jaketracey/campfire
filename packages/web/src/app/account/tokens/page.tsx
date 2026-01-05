@@ -98,6 +98,18 @@ export default function TokensPage() {
     }
   };
 
+  // Refresh balance when page becomes visible (e.g., after admin grants tokens)
+  useEffect(() => {
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible' && isAuthenticated && !loading) {
+        refreshBalance();
+      }
+    };
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
+  }, [isAuthenticated, loading]);
+
   const handlePurchase = async (bundle: TokenBundle) => {
     setPurchasingId(bundle.id);
     // Track InitiateCheckout

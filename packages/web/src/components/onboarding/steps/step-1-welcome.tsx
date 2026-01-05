@@ -8,6 +8,7 @@ import { ArrowRight, Zap } from 'lucide-react';
 import gsap from 'gsap';
 import { SplitText } from 'gsap/SplitText';
 import { QuickStart } from '@/components/onboarding/quick-start';
+import { trackStartOnboarding, trackOnboardingStep } from '@/lib/analytics/meta-pixel';
 
 // Register SplitText plugin
 gsap.registerPlugin(SplitText);
@@ -19,6 +20,25 @@ export function Step1Welcome() {
   const headingRef = useRef<HTMLHeadingElement>(null);
   const subtitleRef = useRef<HTMLParagraphElement>(null);
   const buttonRef = useRef<HTMLDivElement>(null);
+  const hasTrackedRef = useRef(false);
+
+  // Track onboarding welcome step on mount
+  useEffect(() => {
+    if (!hasTrackedRef.current) {
+      trackOnboardingStep(1, 'welcome');
+      hasTrackedRef.current = true;
+    }
+  }, []);
+
+  const handleStartDesigning = () => {
+    trackStartOnboarding('full');
+    nextStep();
+  };
+
+  const handleQuickStart = () => {
+    trackStartOnboarding('quick');
+    setShowQuickStart(true);
+  };
 
   useEffect(() => {
     if (!headingRef.current || !subtitleRef.current || !buttonRef.current) return;
@@ -215,7 +235,7 @@ export function Step1Welcome() {
         {/* Primary CTA - Full Designer */}
         <Button
           size="lg"
-          onClick={nextStep}
+          onClick={handleStartDesigning}
           className="group text-xl px-12 py-8 rounded-full bg-gradient-to-r from-vibes-hot via-vibes-neon to-vibes-electric hover:shadow-[0_0_50px_rgba(168,85,247,0.5)] transition-all duration-300 hover:scale-105 active:scale-95"
         >
           Start Designing
@@ -234,7 +254,7 @@ export function Step1Welcome() {
           <Button
             variant="ghost"
             size="lg"
-            onClick={() => setShowQuickStart(true)}
+            onClick={handleQuickStart}
             className="group text-base px-8 py-6 rounded-full border border-vibes-cyan/30 hover:border-vibes-cyan/60 hover:bg-vibes-cyan/10 hover:shadow-[0_0_30px_rgba(6,182,212,0.2)] transition-all duration-300"
           >
             <Zap className="mr-2 h-5 w-5 text-vibes-cyan group-hover:animate-pulse" />

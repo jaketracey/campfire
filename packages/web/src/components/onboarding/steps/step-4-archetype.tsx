@@ -1,12 +1,13 @@
 'use client';
 
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect, useRef } from 'react';
 import { useOnboardingStore } from '@/stores/onboarding-store';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardTitle } from '@/components/ui/card';
 import { ArrowRight, Sparkles, Wand2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { motion, AnimatePresence } from 'framer-motion';
+import { trackOnboardingStep } from '@/lib/analytics/meta-pixel';
 
 /**
  * All 12 archetypes from the shared personality schema
@@ -104,6 +105,15 @@ export function Step4Archetype() {
   const [isSurprising, setIsSurprising] = useState(false);
   const [highlightedPrimary, setHighlightedPrimary] = useState<string | null>(null);
   const [highlightedSecondary, setHighlightedSecondary] = useState<string | null>(null);
+  const hasTrackedRef = useRef(false);
+
+  // Track step on mount
+  useEffect(() => {
+    if (!hasTrackedRef.current) {
+      trackOnboardingStep(4, 'archetype', 'full');
+      hasTrackedRef.current = true;
+    }
+  }, []);
 
   const handleSurpriseMe = useCallback(async () => {
     setIsSurprising(true);

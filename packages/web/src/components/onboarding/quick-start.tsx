@@ -21,6 +21,7 @@ import { useToast } from '@/hooks/use-toast';
 import { useAuth } from '@/hooks/use-auth';
 import { useOnboardingStore, type VoiceOption } from '@/stores/onboarding-store';
 import { QuickStartCarousel } from './quick-start-carousel';
+import { trackOnboardingStep, trackOnboardingComplete, trackCompanionCreated } from '@/lib/analytics/meta-pixel';
 
 // All 12 archetypes from the personality schema
 const ARCHETYPES = [
@@ -440,12 +441,18 @@ export function QuickStart({ onBack }: QuickStartProps) {
     // Store session ID in state
     setSessionId(session.id);
 
+    // Track companion creation
+    trackCompanionCreated(companion.id);
+
     return { companionId: companion.id, sessionId: session.id };
   }, []);
 
   // Handle name submission - generate companion data and optionally start API calls
   const onNameSubmit = useCallback(async () => {
     if (!isValid || !companionName) return;
+
+    // Track quick start name step
+    trackOnboardingStep(1, 'quick-name', 'quick');
 
     // Immediately show the flame transition
     setStep('transition');
@@ -622,6 +629,9 @@ export function QuickStart({ onBack }: QuickStartProps) {
 
   // Handle ignite - redirect to chat or signup
   const handleIgnite = useCallback(() => {
+    // Track onboarding completion
+    trackOnboardingComplete('quick', 4);
+
     if (!isAuthenticated) {
       // Store companion data for after signup and redirect to signup
       if (generatedCompanion && companionName) {

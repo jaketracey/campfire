@@ -16,6 +16,7 @@ import { Button } from '@/components/ui/button';
 import { ArrowRight, Check, Sparkles, Wand2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import Image from 'next/image';
+import { trackOnboardingStep } from '@/lib/analytics/meta-pixel';
 
 // Ethnicity options
 const ethnicityOptions: Array<{
@@ -80,6 +81,15 @@ export function Step3Visuals() {
   const [displayedImage, setDisplayedImage] = useState<string | null>(null);
   const [isSurprising, setIsSurprising] = useState(false);
   const transitionTimeout = useRef<NodeJS.Timeout | null>(null);
+  const hasTrackedRef = useRef(false);
+
+  // Track step on mount
+  useEffect(() => {
+    if (!hasTrackedRef.current) {
+      trackOnboardingStep(3, 'visuals', 'full');
+      hasTrackedRef.current = true;
+    }
+  }, []);
 
   const appearance = visualStyle.appearance;
   const isFemale = isFemaleAppearance(appearance);

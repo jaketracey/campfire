@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
@@ -16,6 +16,7 @@ import { cn } from '@/lib/utils';
 import { generateRandomIdentity, createCompanion } from '@/lib/api/companions';
 import { streamAnchorImages } from '@/lib/api/imagegen';
 import { useAuth } from '@/hooks/use-auth';
+import { trackOnboardingStep, trackSurpriseMe, trackCompanionCreated } from '@/lib/analytics/meta-pixel';
 
 // All 12 archetypes for random selection
 const ARCHETYPES: CompanionArchetype[] = [
@@ -79,6 +80,15 @@ export function Step2Identity() {
   const [isGenerating, setIsGenerating] = useState(false);
   const [justGenerated, setJustGenerated] = useState(false);
   const [hasGenerated, setHasGenerated] = useState(false);
+  const hasTrackedRef = useRef(false);
+
+  // Track step on mount
+  useEffect(() => {
+    if (!hasTrackedRef.current) {
+      trackOnboardingStep(2, 'identity', 'full');
+      hasTrackedRef.current = true;
+    }
+  }, []);
 
   const {
     register,
@@ -107,6 +117,7 @@ export function Step2Identity() {
   const handleSurpriseMe = async () => {
     setIsGenerating(true);
     setJustGenerated(false);
+    trackSurpriseMe();
     try {
       // Generate full companion via LLM (identity + personality + appearance)
       const generated = await generateRandomIdentity();
@@ -224,6 +235,7 @@ export function Step2Identity() {
         // Store companion ID and mark generation as started
         setCompanionId(companion.id);
         setGenerationStarted(true);
+        trackCompanionCreated(companion.id);
 
         // Clear any previous anchor images before starting new generation
         clearAnchorImages();

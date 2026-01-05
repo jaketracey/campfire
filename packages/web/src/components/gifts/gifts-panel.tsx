@@ -25,6 +25,7 @@ import {
   type GiftTemplate,
 } from '@/lib/api/gifts';
 import { getTokenBalance } from '@/lib/api/tokens';
+import { trackGiftSent } from '@/lib/analytics/meta-pixel';
 
 interface GiftsPanelProps {
   sessionId: string;
@@ -231,6 +232,9 @@ export function GiftsPanel({
       const result = await giveGift(selectedGift.id);
       setTokenBalance(result.newBalance);
 
+      // Track gift sent event
+      trackGiftSent('custom', selectedGift.tokenCost, companionId);
+
       // Close confirmation and trigger animation
       setShowConfirmation(false);
 
@@ -273,6 +277,9 @@ export function GiftsPanel({
     try {
       const result = await sendGiftFromTemplate(selectedTemplate.id, companionId);
       setTokenBalance(result.newBalance);
+
+      // Track gift sent event (template gift)
+      trackGiftSent('template', selectedTemplate.tokenCost, companionId);
 
       // Trigger animation
       const animations: GiftAnimationType[] = ['hearts', 'sparkles', 'confetti', 'glow'];

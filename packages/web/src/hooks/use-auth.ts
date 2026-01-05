@@ -7,6 +7,7 @@ import { useAuthStore } from '@/stores/auth-store';
 import * as authApi from '@/lib/api/auth';
 import type { LoginCredentials, SignupCredentials, GoogleAuthCredentials, User, AuthTokens } from '@/lib/auth/types';
 import { setWelcomeTransition } from '@/components/auth/welcome-transition';
+import { trackSignup } from '@/lib/analytics/meta-pixel';
 
 /**
  * Main auth hook providing auth state and actions
@@ -118,6 +119,9 @@ export function useAuth() {
         // Update Zustand state and set cookie
         setSession(user, tokens);
 
+        // Track signup conversion
+        trackSignup('email');
+
         // Set welcome transition flag for the destination page
         setWelcomeTransition({ type: 'signup', provider: 'email' });
 
@@ -209,6 +213,11 @@ export function useAuth() {
         // We determine if it's a new user by checking if they have a displayName
         const isNewUser = isSignup || !user.displayName;
         const redirectPath = isNewUser ? '/onboard' : '/dashboard';
+
+        // Track signup conversion for new users
+        if (isNewUser) {
+          trackSignup('google');
+        }
 
         // Set welcome transition flag for the destination page
         setWelcomeTransition({

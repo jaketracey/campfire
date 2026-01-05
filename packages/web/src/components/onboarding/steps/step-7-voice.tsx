@@ -10,6 +10,7 @@ import { cn } from '@/lib/utils';
 import { createCompanion, streamAnchorImages, generateBackstory } from '@/lib/api';
 import { useToast } from '@/hooks/use-toast';
 import { useAuth } from '@/hooks/use-auth';
+import { trackOnboardingStep, trackCompanionCreated } from '@/lib/analytics/meta-pixel';
 
 // ElevenLabs voices for companion creation
 const voices: VoiceOption[] = [
@@ -51,6 +52,15 @@ export function Step7Voice() {
   const [isSurprising, setIsSurprising] = useState(false);
   const [highlightedVoice, setHighlightedVoice] = useState<string | null>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
+  const hasTrackedRef = useRef(false);
+
+  // Track step on mount
+  useEffect(() => {
+    if (!hasTrackedRef.current) {
+      trackOnboardingStep(5, 'voice', 'full');
+      hasTrackedRef.current = true;
+    }
+  }, []);
 
   // Cleanup audio on unmount
   useEffect(() => {
@@ -149,6 +159,7 @@ export function Step7Voice() {
       // Store companion ID in the store for the review step
       setCompanionId(companion.id);
       setGenerationStarted(true);
+      trackCompanionCreated(companion.id);
 
       // Fire off image generation (don't await - runs in background)
       streamAnchorImages(
@@ -324,6 +335,7 @@ export function Step7Voice() {
 
       setCompanionId(companion.id);
       setGenerationStarted(true);
+      trackCompanionCreated(companion.id);
 
       streamAnchorImages(
         {
