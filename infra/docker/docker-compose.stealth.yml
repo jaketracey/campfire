@@ -122,6 +122,8 @@ services:
       - "host.docker.internal:host-gateway"
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro  # Read-only access for admin logs
+    group_add:
+      - "992"  # Docker group GID on host - allows container to access docker.sock
     depends_on:
       postgres:
         condition: service_healthy
