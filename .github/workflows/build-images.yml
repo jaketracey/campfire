@@ -54,6 +54,9 @@ jobs:
         id: login-ecr
         uses: aws-actions/amazon-ecr-login@v2
 
+      - name: Set up QEMU for ARM64
+        uses: docker/setup-qemu-action@v3
+
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
@@ -63,6 +66,7 @@ jobs:
           context: .
           file: ${{ matrix.dockerfile }}
           target: production
+          platforms: linux/arm64
           push: true
           tags: |
             ${{ env.ECR_REGISTRY }}/campfire-${{ matrix.service }}:latest
@@ -75,19 +79,5 @@ jobs:
             NEXT_PUBLIC_GOOGLE_OAUTH_CLIENT_ID=${{ secrets.GOOGLE_OAUTH_CLIENT_ID }}
             NEXT_PUBLIC_FLOWGUARD_SHOP_ID=${{ secrets.FLOWGUARD_SHOP_ID }}
 
-  # Trigger deploy after all images are built
-  trigger-deploy:
-    name: Trigger Deploy
-    needs: build-and-push
-    runs-on: ubuntu-latest
-    steps:
-      - name: Trigger deploy workflow
-        uses: actions/github-script@v7
-        with:
-          script: |
-            github.rest.actions.createWorkflowDispatch({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              workflow_id: 'deploy-stealth.yml',
-              ref: 'main'
-            })
+  # Note: Deploy must be triggered manually or via workflow_run
+  # The GITHUB_TOKEN doesn't have permission to trigger other workflows

@@ -9,7 +9,12 @@ name: Deploy to Stealth
 
 on:
   workflow_dispatch:
-  # Can also be triggered by build-images workflow
+  workflow_run:
+    workflows: ["Build Images"]
+    types:
+      - completed
+    branches:
+      - main
 
 env:
   DEPLOY_HOST: ${{ secrets.STEALTH_HOST }}
@@ -25,6 +30,8 @@ jobs:
     name: Deploy to Stealth
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    # Only run if triggered manually or if build-images succeeded
+    if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
 
     steps:
       - name: Checkout code
