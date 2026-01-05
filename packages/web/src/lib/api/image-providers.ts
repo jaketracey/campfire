@@ -29,7 +29,7 @@ export const IMAGE_USE_CASE_LABELS: Record<ImageUseCaseType, string> = {
 export const IMAGE_USE_CASE_DESCRIPTIONS: Record<ImageUseCaseType, string> = {
   image_generation: 'Standard image generation for chat messages',
   image_anchor: 'High-quality identity anchor images',
-  image_variation: 'Variations using IP-Adapter reference images',
+  image_variation: 'Creating image variations from reference images',
 };
 
 export type ImageModelCapability = 'nsfw' | 'ip_adapter' | 'inpainting' | 'controlnet';

@@ -377,8 +377,8 @@ class AnchorGenerationService:
             f"{lighting}.",
             "Warm genuine smile, confident and approachable.",
             "Looking directly at camera with friendly expressive eyes.",
-            "Waist-up framing, sharp focus on face.",
-            "8K resolution, photorealistic, flawless natural skin.",
+            "Waist-up framing, shallow depth of field, shot on 85mm lens.",
+            "Photorealistic, natural skin texture, high resolution.",
             "Professional portrait photography, soft bokeh background.",
         ]
 
@@ -420,8 +420,8 @@ class AnchorGenerationService:
             f"Wearing a {outfit}.",
             "Warm genuine smile, confident and approachable.",
             "Looking at camera with friendly eyes.",
-            "Waist-up framing, 8K resolution, photorealistic.",
-            "Professional photography, natural lighting.",
+            "Waist-up framing, shallow depth of field, shot on 85mm lens.",
+            "Photorealistic, natural skin texture, high resolution.",
         ]
 
         return " ".join(prompt_parts)

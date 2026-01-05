@@ -1174,16 +1174,18 @@ export async function imagegenRoutes(app: FastifyInstance): Promise<void> {
         }
       };
 
-      // Build base prompt from appearance
-      const basePromptParts: string[] = ['Beautiful woman'];
+      // Build base prompt from appearance using Seedream 4.5 best practices
+      // Subject description FIRST (most important), then photography terms
+      const isMale = (appearance as { gender?: string }).gender === 'male';
+      const basePromptParts: string[] = [isMale ? 'Handsome man' : 'Beautiful woman'];
 
       const ethnicityMap: Record<string, string> = {
-        'east-asian': 'East Asian features',
-        'south-asian': 'South Asian features',
-        'black': 'Black/African features',
-        'caucasian': 'Caucasian features',
-        'latina': 'Latina features',
-        'middle-eastern': 'Middle Eastern features',
+        'east-asian': 'East Asian',
+        'south-asian': 'South Asian',
+        'black': 'Black',
+        'caucasian': 'Caucasian',
+        'latina': isMale ? 'Latino' : 'Latina',
+        'middle-eastern': 'Middle Eastern',
         'mixed': 'mixed ethnicity',
       };
       const ethnicityDesc = appearance.ethnicity ? ethnicityMap[appearance.ethnicity] : undefined;
@@ -1192,10 +1194,12 @@ export async function imagegenRoutes(app: FastifyInstance): Promise<void> {
       }
 
       const bodyTypeMap: Record<string, string> = {
-        'slim': 'slim figure',
-        'athletic': 'athletic build',
-        'curvy': 'curvy figure',
-        'plus-size': 'plus-size figure',
+        'slim': 'with a slim build',
+        'athletic': 'with an athletic build',
+        'curvy': 'with a curvy figure',
+        'plus-size': 'with a full figure',
+        'muscular': 'with a muscular build',
+        'dad-bod': 'with an average build',
       };
       const bodyTypeDesc = appearance.bodyType ? bodyTypeMap[appearance.bodyType] : undefined;
       if (bodyTypeDesc) {
@@ -1207,14 +1211,16 @@ export async function imagegenRoutes(app: FastifyInstance): Promise<void> {
         'brown': 'brown hair',
         'blonde': 'blonde hair',
         'red': 'red hair',
-        'fantasy': 'vibrant fantasy-colored hair',
+        'fantasy': 'colorful hair',
       };
       const hairColorDesc = appearance.hairColor ? hairColorMap[appearance.hairColor] : undefined;
       if (hairColorDesc) {
         basePromptParts.push(hairColorDesc);
       }
 
-      const basePrompt = basePromptParts.join(', ');
+      // Build subject description, then add photography terms
+      const subjectDesc = basePromptParts.join(', ');
+      const basePrompt = `${subjectDesc}. Portrait photography, natural expression, soft diffused lighting, shallow depth of field, shot on 85mm lens, photorealistic, high resolution`;
       const anchorStates = ['neutral', 'happy', 'thoughtful'] as const;
       const generatedAnchors: AnchorImage[] = [];
       let primaryAnchorId: string | null = null;

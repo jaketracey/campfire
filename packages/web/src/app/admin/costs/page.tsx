@@ -397,6 +397,7 @@ export default function CostsDashboardPage() {
                     <th className="pb-3 font-medium">User ID</th>
                     <th className="pb-3 font-medium text-right">Requests</th>
                     <th className="pb-3 font-medium text-right">Cost</th>
+                    <th className="pb-3 font-medium text-right">Revenue</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -414,6 +415,11 @@ export default function CostsDashboardPage() {
                       <td className="py-3 text-right">
                         <span className="text-white font-medium">
                           {formatCost(user.totalCostUsd)}
+                        </span>
+                      </td>
+                      <td className="py-3 text-right">
+                        <span className="text-green-400 font-medium">
+                          {formatCost(user.revenueUsd)}
                         </span>
                       </td>
                     </tr>

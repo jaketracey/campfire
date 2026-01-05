@@ -246,6 +246,7 @@ export async function adminCostsRoutes(app: FastifyInstance): Promise<void> {
           userId: u.user_id,
           totalCostUsd: u.total_cost,
           requestCount: u.request_count,
+          revenueUsd: u.revenue_cents / 100,
         })),
       },
     });

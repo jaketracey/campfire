@@ -177,29 +177,37 @@ import type { CompanionVisualStyle } from './companions';
 
 /**
  * Generate a base companion prompt based on style
- * For adult companion app - prompts are sensual/intimate by default
+ * Optimized for photorealistic portrait generation with Seedream 4.5
  */
-export function getBasePrompt(style: ImageGenRequest['style']): string {
+export function getBasePrompt(style: ImageGenRequest['style'], isMale = false): string {
+  const subject = isMale ? 'Handsome man' : 'Beautiful woman';
+
   const basePrompts: Record<string, string> = {
-    realistic: 'Beautiful woman, sensual portrait, intimate boudoir photography, soft lighting, alluring gaze',
-    stylized: 'Beautiful stylized woman, sensual expression, soft romantic lighting, intimate mood, alluring',
-    abstract: 'Ethereal feminine form, sensual abstract art, flowing curves, romantic lighting',
-    minimal: 'Elegant minimalist portrait, sensual lines, tasteful intimate aesthetic',
-    anime: 'Beautiful anime woman, sensual expression, romantic illustration, alluring eyes',
+    realistic: `Portrait photography of a ${subject.toLowerCase()}, natural expression, soft diffused lighting, shallow depth of field, shot on 85mm lens, high resolution`,
+    stylized: `${subject}, portrait photography, warm natural lighting, shallow depth of field, photorealistic style`,
+    abstract: `Artistic portrait of a ${subject.toLowerCase()}, creative lighting, contemporary photography style`,
+    minimal: `Clean portrait of a ${subject.toLowerCase()}, minimalist composition, soft natural light, professional photography`,
+    anime: `${subject}, anime art style, expressive features, detailed illustration`,
   };
 
-  return basePrompts[style || 'stylized'] || basePrompts.stylized;
+  return basePrompts[style || 'realistic'] || basePrompts.realistic;
 }
 
 /**
  * Build a detailed prompt from companion visual data
- * This creates a consistent character prompt based on the companion's spec
+ * Optimized for photorealistic portrait generation with Seedream 4.5
+ *
+ * Follows Seedream best practices:
+ * - Subject description FIRST (most important, Seedream weights earlier terms higher)
+ * - Natural language descriptions, not keyword stacking
+ * - Photography terminology (lens, lighting, depth of field)
+ * - 30-100 words, focused and clear
  *
  * @throws Error if visualStyle is undefined - we want to debug missing visual data
  */
 export function buildPromptFromCompanion(
   visualStyle: CompanionVisualStyle,
-  style: ImageGenRequest['style'] = 'stylized'
+  style: ImageGenRequest['style'] = 'realistic'
 ): string {
   if (!visualStyle) {
     throw new Error(
@@ -208,133 +216,93 @@ export function buildPromptFromCompanion(
     );
   }
 
-  const parts: string[] = [];
+  // Determine gender first - this affects all descriptions
+  const appearance = visualStyle.appearance;
+  const isMale = appearance?.gender === 'male';
 
-  // Base description
+  // Build subject description (FIRST and most important for Seedream)
+  const subjectParts: string[] = [];
+
+  // Gender-appropriate base term
   if (visualStyle.custom_style_description) {
-    parts.push(visualStyle.custom_style_description);
+    subjectParts.push(visualStyle.custom_style_description);
   } else {
-    parts.push('Beautiful woman');
+    subjectParts.push(isMale ? 'Handsome man' : 'Beautiful woman');
   }
 
-  // Use appearance data (from onboarding) - this is what's actually saved
-  const appearance = visualStyle.appearance;
+  // Physical characteristics in natural order
   if (appearance) {
-    // Determine gender for descriptive terms
-    const isMale = appearance.gender === 'male';
-
-    // Ethnicity mapping to descriptive terms
-    const ethnicityMap: Record<string, { female: string; male: string }> = {
-      'east-asian': { female: 'East Asian woman', male: 'East Asian man' },
-      'south-asian': { female: 'South Asian woman', male: 'South Asian man' },
-      'black': { female: 'Black/African woman', male: 'Black/African man' },
-      'caucasian': { female: 'Caucasian woman', male: 'Caucasian man' },
-      'latina': { female: 'Latina woman', male: 'Latino man' },
-      'middle-eastern': { female: 'Middle Eastern woman', male: 'Middle Eastern man' },
-      'mixed': { female: 'mixed ethnicity woman', male: 'mixed ethnicity man' },
+    // Ethnicity
+    const ethnicityMap: Record<string, string> = {
+      'east-asian': 'East Asian',
+      'south-asian': 'South Asian',
+      'black': 'Black',
+      'caucasian': 'Caucasian',
+      'latina': isMale ? 'Latino' : 'Latina',
+      'middle-eastern': 'Middle Eastern',
+      'mixed': 'mixed ethnicity',
     };
     if (appearance.ethnicity && ethnicityMap[appearance.ethnicity]) {
-      parts.push(ethnicityMap[appearance.ethnicity][isMale ? 'male' : 'female']);
+      subjectParts.push(ethnicityMap[appearance.ethnicity]);
     }
 
-    // Body type (gender-specific)
-    const femaleBodyTypeMap: Record<string, string> = {
-      'slim': 'slim figure',
-      'athletic': 'athletic build',
-      'curvy': 'curvy figure',
-      'plus-size': 'plus-size figure',
+    // Body type with natural phrasing
+    const bodyTypeMap: Record<string, string> = {
+      'slim': 'with a slim build',
+      'athletic': 'with an athletic build',
+      'curvy': 'with a curvy figure',
+      'plus-size': 'with a full figure',
+      'muscular': 'with a muscular build',
+      'dad-bod': 'with an average build',
     };
-    const maleBodyTypeMap: Record<string, string> = {
-      'slim': 'slim lean build',
-      'athletic': 'athletic fit build',
-      'muscular': 'muscular well-built frame',
-      'dad-bod': 'average dad-bod build',
-    };
-    const bodyTypeMap = isMale ? maleBodyTypeMap : femaleBodyTypeMap;
     if (appearance.bodyType && bodyTypeMap[appearance.bodyType]) {
-      parts.push(bodyTypeMap[appearance.bodyType]);
+      subjectParts.push(bodyTypeMap[appearance.bodyType]);
     }
 
-    // Hair color
+    // Hair - natural phrasing
     const hairColorMap: Record<string, string> = {
       'black': 'black hair',
       'brown': 'brown hair',
       'blonde': 'blonde hair',
       'red': 'red hair',
-      'fantasy': 'vibrant fantasy-colored hair',
+      'fantasy': 'colorful hair',
     };
     if (appearance.hairColor && hairColorMap[appearance.hairColor]) {
-      parts.push(hairColorMap[appearance.hairColor]);
+      subjectParts.push(hairColorMap[appearance.hairColor]);
     }
   }
 
-  // Fallback to physical_attributes if available (legacy/detailed specs)
+  // Add physical attributes if available (eye color, skin tone, etc.)
   const attrs = visualStyle.physical_attributes;
   if (attrs) {
-    // Age
-    if (attrs.apparent_age) {
-      const ageMap: Record<string, string> = {
-        'young_adult': 'young adult woman in her 20s',
-        'adult': 'woman in her 30s',
-        'middle_aged': 'mature woman',
-      };
-      if (ageMap[attrs.apparent_age]) {
-        parts.push(ageMap[attrs.apparent_age]);
-      }
-    }
-
-    // Hair (only if not already added from appearance)
-    if (!appearance?.hairColor && (attrs.hair_color || attrs.hair_style)) {
-      const hairDesc = [attrs.hair_color, attrs.hair_style].filter(Boolean).join(' ');
-      if (hairDesc) {
-        parts.push(`${hairDesc} hair`);
-      }
-    }
-
-    // Eyes
     if (attrs.eye_color) {
-      parts.push(`${attrs.eye_color} eyes`);
+      subjectParts.push(`${attrs.eye_color} eyes`);
     }
-
-    // Skin
     if (attrs.skin_tone) {
-      parts.push(`${attrs.skin_tone} skin`);
+      subjectParts.push(`${attrs.skin_tone} skin`);
     }
-
-    // Build/body (only if not already added from appearance)
-    if (!appearance?.bodyType && attrs.build) {
-      parts.push(attrs.build);
-    }
-
-    // Notable features
     if (attrs.notable_features?.length) {
-      parts.push(attrs.notable_features.join(', '));
-    }
-
-    // Clothing
-    if (attrs.clothing_style) {
-      parts.push(attrs.clothing_style);
+      subjectParts.push(attrs.notable_features.slice(0, 2).join(' and '));
     }
   }
 
-  // Style modifiers from spec
-  if (visualStyle.style_modifiers?.length) {
-    parts.push(visualStyle.style_modifiers.join(', '));
-  }
+  // Build the subject description as a coherent sentence
+  const subjectDesc = subjectParts.join(', ');
 
-  // Add style-specific quality terms
-  const styleQuality: Record<string, string> = {
-    realistic: 'photorealistic, highly detailed, 8k, professional boudoir photography, intimate lighting',
-    stylized: 'beautiful stylized render, soft romantic lighting, sensual artistic style',
-    abstract: 'ethereal sensual art, soft flowing forms, romantic abstract lighting',
-    minimal: 'elegant minimalist, tasteful intimate, soft clean aesthetic',
-    anime: 'beautiful anime style, expressive sensual, romantic illustration, detailed',
+  // Photography and technical terms based on style
+  const photoTerms: Record<string, string> = {
+    realistic: 'portrait photography, natural relaxed expression, soft diffused studio lighting, shallow depth of field, shot on 85mm lens, photorealistic, high resolution',
+    stylized: 'portrait photography, warm natural lighting, shallow depth of field, cinematic style, photorealistic',
+    abstract: 'artistic portrait, creative studio lighting, contemporary photography, high detail',
+    minimal: 'clean portrait, minimalist composition, soft natural light, professional photography, high resolution',
+    anime: 'anime art style, detailed illustration, expressive features, high quality artwork',
   };
 
-  parts.push(styleQuality[style || 'stylized'] || styleQuality.stylized);
-  parts.push('high quality, detailed, beautiful lighting, alluring');
+  const selectedStyle = style || 'realistic';
+  const photography = photoTerms[selectedStyle] || photoTerms.realistic;
 
-  return parts.join(', ');
+  // Combine into final prompt: Subject first, then photography terms
+  return `${subjectDesc}. ${photography}`;
 }
 
 /**

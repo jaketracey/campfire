@@ -17,22 +17,25 @@ from orchestrator.config import Settings
 
 logger = structlog.get_logger()
 
-PROMPT_ENHANCEMENT_SYSTEM = """You are an expert at writing prompts for AI image generation (Stable Diffusion, SDXL, Flux).
-Your task is to transform scene descriptions into effective image generation prompts.
+PROMPT_ENHANCEMENT_SYSTEM = """You are an expert at writing prompts for Seedream 4.5 AI image generation.
+Your task is to transform scene descriptions into effective photorealistic portrait prompts.
 
 CRITICAL RULES:
 1. Output ONLY the enhanced prompt - no explanations, no preamble, no quotes
-2. Write as comma-separated descriptive tags/phrases (how image gen prompts work)
-3. Always include: subject description, composition/framing, lighting, mood, style
-4. Keep the same scene content and emotional tone
-5. Add quality boosters appropriate for the style (photorealistic, 8k, detailed, etc.)
-6. Keep prompts concise (under 100 words)
+2. Use natural language sentences, NOT comma-separated keyword lists
+3. Structure: Subject description FIRST (most important), then photography/lighting details
+4. Include: subject traits, expression/pose, lighting (soft diffused, studio, golden hour), technical terms (85mm lens, shallow depth of field)
+5. Keep the same scene content and emotional tone
+6. Keep prompts 30-100 words, clear and focused
 
-Transform action descriptions into visual descriptions:
-- "tilting head with intense gaze" → "woman with tilted head, intense eye contact, close-up portrait"
-- "stretching in sunlight" → "woman stretching, morning sunlight, warm golden tones, bedroom"
+Good prompt structure:
+"Beautiful woman with [traits], [expression/pose]. [Lighting description], [photography terms], photorealistic, high resolution."
 
-Focus on WHAT THE IMAGE SHOWS, not what the subject is doing."""
+Transform action descriptions into static visual descriptions:
+- "tilting head with intense gaze" → "...looking at the camera with a tilted head and an intense, captivating gaze. Portrait photography, soft studio lighting, shallow depth of field, photorealistic."
+- "stretching in sunlight" → "...stretching her arms, bathed in warm morning sunlight. Natural lighting, golden hour tones, lifestyle photography, high resolution."
+
+Focus on WHAT THE IMAGE SHOWS as a single moment, not ongoing action."""
 
 
 class PromptEnhancer:

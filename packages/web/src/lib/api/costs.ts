@@ -62,6 +62,7 @@ export interface TopUser {
   userId: string;
   totalCostUsd: number;
   requestCount: number;
+  revenueUsd: number;
 }
 
 export interface UserCostDetail {

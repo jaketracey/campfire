@@ -691,7 +691,7 @@ export class LLMUsageService {
     days: number = 30,
     limit: number = 10,
     tx?: TransactionContext
-  ): Promise<Array<{ user_id: UUID; total_cost: number; request_count: number }>> {
+  ): Promise<Array<{ user_id: UUID; total_cost: number; request_count: number; revenue_cents: number }>> {
     return this.repo.getTopUsersByCost(days, limit, tx);
   }
 

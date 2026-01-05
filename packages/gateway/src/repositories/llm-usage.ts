@@ -348,18 +348,26 @@ export class LLMUsageRepository {
     days: number = 30,
     limit: number = 10,
     tx?: TransactionContext
-  ): Promise<Array<{ user_id: UUID; total_cost: number; request_count: number }>> {
+  ): Promise<Array<{ user_id: UUID; total_cost: number; request_count: number; revenue_cents: number }>> {
     const db = this.getSql(tx);
 
     const result = await db`
       SELECT
-        user_id,
-        SUM(cost_usd) AS total_cost,
-        COUNT(*) AS request_count
-      FROM llm_usage_events
-      WHERE created_at >= NOW() - (${days} || ' days')::interval
-      GROUP BY user_id
-      ORDER BY total_cost DESC
+        u.user_id,
+        u.total_cost,
+        u.request_count,
+        COALESCE(ltv.ltv_cents, 0) AS revenue_cents
+      FROM (
+        SELECT
+          user_id,
+          SUM(cost_usd) AS total_cost,
+          COUNT(*) AS request_count
+        FROM llm_usage_events
+        WHERE created_at >= NOW() - (${days} || ' days')::interval
+        GROUP BY user_id
+      ) u
+      LEFT JOIN user_ltv ltv ON ltv.user_id = u.user_id
+      ORDER BY u.total_cost DESC
       LIMIT ${limit}
     `;
 
@@ -367,6 +375,7 @@ export class LLMUsageRepository {
       user_id: row.user_id as UUID,
       total_cost: Number(row.total_cost) || 0,
       request_count: Number(row.request_count) || 0,
+      revenue_cents: Number(row.revenue_cents) || 0,
     }));
   }
 
