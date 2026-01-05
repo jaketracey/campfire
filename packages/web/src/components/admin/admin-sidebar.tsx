@@ -4,7 +4,7 @@ import { useState } from 'react';
 import Link from 'next/link';
 import type { Route } from 'next';
 import { usePathname } from 'next/navigation';
-import { Users, Mail, Settings, BarChart3, Flame, LayoutDashboard, DollarSign, LifeBuoy, Server, GitBranch, Handshake, Target, Search, Image, Palette, ChevronDown, Cpu } from 'lucide-react';
+import { Users, Mail, BarChart3, Flame, LayoutDashboard, DollarSign, LifeBuoy, Server, GitBranch, Handshake, Target, Search, Image, Palette, ChevronDown, Cpu } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 interface NavItem {
@@ -60,12 +60,6 @@ const navItems: NavItem[] = [
     label: 'SEO Pages',
     href: '/admin/seo' as Route,
     icon: Search,
-  },
-  {
-    label: 'Settings',
-    href: '/admin/settings' as Route,
-    icon: Settings,
-    disabled: true,
   },
 ];
 
