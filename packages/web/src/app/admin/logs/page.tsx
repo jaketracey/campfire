@@ -101,7 +101,8 @@ export default function AdminLogsPage() {
       ]);
 
       setDockerAvailable(statusRes.data.dockerAvailable);
-      setLogs(logsRes.data.logs);
+      // Reverse to show oldest first (newest at bottom, like a terminal)
+      setLogs(logsRes.data.logs.reverse());
     } catch (error) {
       console.error('Failed to fetch logs:', error);
     } finally {
