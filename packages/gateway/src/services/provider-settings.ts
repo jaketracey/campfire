@@ -281,13 +281,14 @@ export class ProviderSettingsService {
   }
 
   /**
-   * List providers with health status
+   * List providers with health status (text/LLM providers only, excludes image providers)
    */
   async listProviders(query: ProviderListQuery, tx?: TransactionContext): Promise<PaginatedResult<ProviderConfigWithHealth>> {
     const validated = ProviderListQuerySchema.parse(query);
 
     const filters: ProviderListFilters = {
       is_enabled: validated.isEnabled,
+      category: 'text', // Exclude image providers - they have their own endpoint
       limit: validated.limit,
       offset: validated.offset,
     };
