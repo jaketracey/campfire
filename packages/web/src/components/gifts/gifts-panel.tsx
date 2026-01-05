@@ -12,6 +12,7 @@ import { GiftAnimation, type GiftAnimationType } from './gift-animation';
 import { GiftTemplateGrid } from './gift-template-grid';
 import { GiftCategoryFilter } from './gift-category-filter';
 import { GiftSortDropdown } from './gift-sort-dropdown';
+import { GiftPurchaseModal } from './gift-purchase-modal';
 import { useGiftsStore } from '@/stores/gifts-store';
 import { useAuthStore } from '@/stores/auth-store';
 import {
@@ -46,6 +47,7 @@ export function GiftsPanel({
   const [giftHistory, setGiftHistory] = useState<GiftHistoryItem[]>([]);
   const [loadingHistory, setLoadingHistory] = useState(false);
   const [showConfirmation, setShowConfirmation] = useState(false);
+  const [showPurchaseModal, setShowPurchaseModal] = useState(false);
   const [animationType, setAnimationType] = useState<GiftAnimationType | null>(null);
   const [isAnimating, setIsAnimating] = useState(false);
 
@@ -262,9 +264,10 @@ export function GiftsPanel({
     }
   }, [selectedGift, setIsSendingGift, setError, setTokenBalance, selectGift, onGiftSent]);
 
-  // Handler for selecting a template
+  // Handler for selecting a template - opens the purchase modal
   const handleSelectTemplate = useCallback((template: GiftTemplate) => {
     selectTemplate(template);
+    setShowPurchaseModal(true);
   }, [selectTemplate]);
 
   // Handler for sending from a template
@@ -280,6 +283,9 @@ export function GiftsPanel({
 
       // Track gift sent event (template gift)
       trackGiftSent('template', selectedTemplate.tokenCost, companionId);
+
+      // Close modal first
+      setShowPurchaseModal(false);
 
       // Trigger animation
       const animations: GiftAnimationType[] = ['hearts', 'sparkles', 'confetti', 'glow'];
@@ -309,6 +315,7 @@ export function GiftsPanel({
       }, 2500);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to send gift');
+      setShowPurchaseModal(false);
     } finally {
       setIsSendingGift(false);
     }
@@ -405,39 +412,12 @@ export function GiftsPanel({
               </div>
             )}
 
-            <ScrollArea className="h-[280px]">
+            <ScrollArea className="h-[320px]">
               <GiftTemplateGrid
                 onSelect={handleSelectTemplate}
-                selectedId={selectedTemplate?.id}
+                selectedId={undefined}
               />
             </ScrollArea>
-
-            {/* Selected template action */}
-            {selectedTemplate && (
-              <div className="pt-2 border-t space-y-2">
-                <div className="flex items-center justify-between text-sm">
-                  <span className="font-medium truncate">{selectedTemplate.name}</span>
-                  <span className="text-muted-foreground">{selectedTemplate.tokenCost} tokens</span>
-                </div>
-                {!canAffordTemplate && (
-                  <div className="text-xs text-amber-600 dark:text-amber-400">
-                    You need {selectedTemplate.tokenCost - tokenBalance} more tokens
-                  </div>
-                )}
-                <Button
-                  className="w-full gap-2"
-                  onClick={handleSendFromTemplate}
-                  disabled={!canAffordTemplate || isSendingGift}
-                >
-                  {isSendingGift ? (
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                  ) : (
-                    <Gift className="h-4 w-4" />
-                  )}
-                  Send Gift
-                </Button>
-              </div>
-            )}
           </div>
         </TabsContent>
 
@@ -563,6 +543,19 @@ export function GiftsPanel({
         isOpen={showConfirmation}
         onConfirm={handleSendGift}
         onCancel={() => setShowConfirmation(false)}
+        isSending={isSendingGift}
+      />
+
+      {/* Gift Purchase Modal */}
+      <GiftPurchaseModal
+        template={selectedTemplate}
+        isOpen={showPurchaseModal}
+        tokenBalance={tokenBalance}
+        onSendGift={handleSendFromTemplate}
+        onCancel={() => {
+          setShowPurchaseModal(false);
+          selectTemplate(null);
+        }}
         isSending={isSendingGift}
       />
     </div>

@@ -85,13 +85,14 @@ async function seed(sql: postgres.Sql): Promise<SeedData> {
   // =========================================================================
   console.log('[Seed] Creating admin user...');
 
-  const adminPasswordHash = '$2b$12$aK7XfxiF4WIlFrOWivrZBe7lW.NbbtLIrj0JnwDXa1HfNAlc/PdAu';
+  // Password: admin1234
+  const adminPasswordHash = '$2b$12$OYsKLLAS2zf9qm4zzFlwv.eG.KwhzNqEWv44tQ6o0divse3U8aDtu';
 
   await sql`
     INSERT INTO users (id, email, password_hash, email_verified, status, role)
     VALUES (
       '00000000-0000-0000-0000-000000000100',
-      'jaketracey@gmail.com',
+      'admin@example.com',
       ${adminPasswordHash},
       TRUE,
       'active',
@@ -106,7 +107,7 @@ async function seed(sql: postgres.Sql): Promise<SeedData> {
     INSERT INTO user_profiles (user_id, display_name, timezone, locale, preferences)
     VALUES (
       '00000000-0000-0000-0000-000000000100',
-      'Jake Tracey',
+      'Admin User',
       'America/New_York',
       'en-US',
       '{"theme": "dark", "notifications": true}'
@@ -114,7 +115,7 @@ async function seed(sql: postgres.Sql): Promise<SeedData> {
     ON CONFLICT (user_id) DO UPDATE SET display_name = EXCLUDED.display_name
   `;
 
-  console.log('[Seed] Created admin user: jaketracey@gmail.com');
+  console.log('[Seed] Created admin user: admin@example.com / admin1234');
 
   // =========================================================================
   // Companions
@@ -708,6 +709,109 @@ async function seed(sql: postgres.Sql): Promise<SeedData> {
   }
 
   console.log(`[Seed] Created ${tokenBalances.length} token balances`);
+
+  // =========================================================================
+  // Provider Configs (LLM + Image)
+  // =========================================================================
+  console.log('[Seed] Creating provider configs...');
+
+  await sql`
+    INSERT INTO provider_configs (id, provider, display_name, is_enabled, priority, category, metadata)
+    VALUES
+      -- Text/LLM Providers
+      ('00000000-0000-0000-0004-000000000001', 'openai', 'OpenAI', true, 1, 'text', '{}'),
+      ('00000000-0000-0000-0004-000000000002', 'anthropic', 'Anthropic', false, 2, 'text', '{}'),
+      -- Image Provider
+      ('00000000-0000-0000-0004-000000000003', 'fal', 'FAL.ai', true, 0, 'image', '{"category": "image"}')
+    ON CONFLICT (provider) DO UPDATE SET
+      display_name = EXCLUDED.display_name,
+      is_enabled = EXCLUDED.is_enabled,
+      category = EXCLUDED.category
+  `;
+
+  console.log('[Seed] Created provider configs');
+
+  // =========================================================================
+  // Model Configs (LLM + Image)
+  // =========================================================================
+  console.log('[Seed] Creating model configs...');
+
+  // LLM Models
+  await sql`
+    INSERT INTO model_configs (id, provider_config_id, model_id, display_name, is_enabled, capabilities, metadata)
+    VALUES
+      ('00000000-0000-0000-0005-000000000001', '00000000-0000-0000-0004-000000000001', 'gpt-4o', 'GPT-4o', true, '[]', '{}'),
+      ('00000000-0000-0000-0005-000000000002', '00000000-0000-0000-0004-000000000001', 'gpt-4o-mini', 'GPT-4o Mini', true, '[]', '{}'),
+      ('00000000-0000-0000-0005-000000000003', '00000000-0000-0000-0004-000000000002', 'claude-sonnet-4-20250514', 'Claude Sonnet 4', true, '[]', '{}'),
+      ('00000000-0000-0000-0005-000000000004', '00000000-0000-0000-0004-000000000002', 'claude-3-5-haiku-20241022', 'Claude 3.5 Haiku', true, '[]', '{}')
+    ON CONFLICT (provider_config_id, model_id) DO UPDATE SET display_name = EXCLUDED.display_name
+  `;
+
+  // Image Models (FAL.ai)
+  await sql`
+    INSERT INTO model_configs (id, provider_config_id, model_id, display_name, is_enabled, capabilities, metadata)
+    VALUES
+      -- State of the Art
+      ('00000000-0000-0000-0005-000000000010', '00000000-0000-0000-0004-000000000003', 'fal/dreamina-v3.1', 'Bytedance Dreamina 3.1', true, '[]', '{"tier": "quality", "fal_endpoint": "fal-ai/bytedance/dreamina/v3.1/text-to-image"}'),
+      ('00000000-0000-0000-0005-000000000011', '00000000-0000-0000-0004-000000000003', 'fal/seedream-v4', 'Seedream V4 (Bytedance)', true, '[]', '{"tier": "quality", "fal_endpoint": "fal-ai/bytedance/seedream/v4/text-to-image"}'),
+      ('00000000-0000-0000-0005-000000000012', '00000000-0000-0000-0004-000000000003', 'fal/seedream-4.5', 'Seedream 4.5 (Bytedance)', true, '[]', '{"tier": "quality", "fal_endpoint": "fal-ai/bytedance/seedream/v4.5/text-to-image"}'),
+      ('00000000-0000-0000-0005-000000000013', '00000000-0000-0000-0004-000000000003', 'fal/reve', 'Reve Text-to-Image', true, '[]', '{"tier": "quality", "fal_endpoint": "fal-ai/reve/text-to-image"}'),
+      ('00000000-0000-0000-0005-000000000014', '00000000-0000-0000-0004-000000000003', 'fal/nano-banana-pro', 'Nano Banana Pro', true, '[]', '{"tier": "quality", "fal_endpoint": "fal-ai/nano-banana-pro"}'),
+      ('00000000-0000-0000-0005-000000000015', '00000000-0000-0000-0004-000000000003', 'fal/flux-2', 'Flux 2', true, '[]', '{"tier": "quality", "fal_endpoint": "fal-ai/flux-2"}'),
+      ('00000000-0000-0000-0005-000000000016', '00000000-0000-0000-0004-000000000003', 'fal/flux-2-pro', 'Flux 2 Pro', true, '[]', '{"tier": "quality", "fal_endpoint": "fal-ai/flux-2-pro"}'),
+      -- Fast Open Source
+      ('00000000-0000-0000-0005-000000000020', '00000000-0000-0000-0004-000000000003', 'fal/flux-krea', 'Flux Krea', true, '[]', '{"tier": "fast", "fal_endpoint": "fal-ai/flux/krea"}'),
+      ('00000000-0000-0000-0005-000000000021', '00000000-0000-0000-0004-000000000003', 'fal/flux-1-krea', 'Flux 1 Krea', true, '[]', '{"tier": "fast", "fal_endpoint": "fal-ai/flux-1/krea"}'),
+      ('00000000-0000-0000-0005-000000000022', '00000000-0000-0000-0004-000000000003', 'fal/flux-schnell', 'Flux Schnell (Fast)', true, '[]', '{"tier": "fast", "fal_endpoint": "fal-ai/flux/schnell"}'),
+      ('00000000-0000-0000-0005-000000000023', '00000000-0000-0000-0004-000000000003', 'fal/flux-dev', 'Flux Dev', true, '[]', '{"tier": "standard", "fal_endpoint": "fal-ai/flux/dev"}'),
+      -- Flux 2 Series
+      ('00000000-0000-0000-0005-000000000030', '00000000-0000-0000-0004-000000000003', 'fal/flux-2-max', 'Flux 2 Max (Premium)', true, '[]', '{"tier": "quality", "fal_endpoint": "fal-ai/flux-2-max"}'),
+      ('00000000-0000-0000-0005-000000000031', '00000000-0000-0000-0004-000000000003', 'fal/flux-2-turbo', 'Flux 2 Turbo (Fast)', true, '[]', '{"tier": "fast", "fal_endpoint": "fal-ai/flux-2/turbo"}'),
+      ('00000000-0000-0000-0005-000000000032', '00000000-0000-0000-0004-000000000003', 'fal/flux-2-flash', 'Flux 2 Flash (Ultra-Fast)', true, '[]', '{"tier": "fast", "fal_endpoint": "fal-ai/flux-2/flash"}'),
+      ('00000000-0000-0000-0005-000000000033', '00000000-0000-0000-0004-000000000003', 'fal/flux-2-flex', 'Flux 2 Flex (Configurable)', true, '[]', '{"tier": "standard", "fal_endpoint": "fal-ai/flux-2-flex"}'),
+      -- Identity/Editing
+      ('00000000-0000-0000-0005-000000000040', '00000000-0000-0000-0004-000000000003', 'fal/flux-pulid', 'Flux PuLID (Face Identity)', true, '["ip_adapter", "img2img", "identity_preservation"]', '{"tier": "quality", "requires_reference_image": true, "fal_endpoint": "fal-ai/flux-pulid"}'),
+      ('00000000-0000-0000-0005-000000000041', '00000000-0000-0000-0004-000000000003', 'fal/flux-kontext-pro', 'Flux Kontext Pro (Edit)', true, '[]', '{"tier": "quality", "fal_endpoint": "fal-ai/flux-pro/kontext"}'),
+      ('00000000-0000-0000-0005-000000000042', '00000000-0000-0000-0004-000000000003', 'fal/flux-kontext-max', 'Flux Kontext Max (Premium Edit)', true, '[]', '{"tier": "quality", "fal_endpoint": "fal-ai/flux-pro/kontext/max"}'),
+      ('00000000-0000-0000-0005-000000000043', '00000000-0000-0000-0004-000000000003', 'fal/flux-kontext-lora', 'Flux Kontext LoRA', true, '[]', '{"tier": "standard", "fal_endpoint": "fal-ai/flux-kontext-lora"}'),
+      ('00000000-0000-0000-0005-000000000044', '00000000-0000-0000-0004-000000000003', 'fal/flux-lora', 'Flux Dev LoRA', true, '[]', '{"tier": "standard", "fal_endpoint": "fal-ai/flux-lora"}'),
+      -- Other Quality Models
+      ('00000000-0000-0000-0005-000000000050', '00000000-0000-0000-0004-000000000003', 'fal/flux-1.1-pro', 'Flux 1.1 Pro', true, '[]', '{"tier": "quality", "fal_endpoint": "fal-ai/flux-pro/v1.1"}'),
+      ('00000000-0000-0000-0005-000000000051', '00000000-0000-0000-0004-000000000003', 'fal/recraft-v3', 'Recraft V3', true, '[]', '{"tier": "quality", "fal_endpoint": "fal-ai/recraft/v3/text-to-image"}'),
+      ('00000000-0000-0000-0005-000000000052', '00000000-0000-0000-0004-000000000003', 'fal/qwen-image-2512', 'Qwen Image 2512', true, '[]', '{"tier": "quality", "fal_endpoint": "fal-ai/qwen-image-2512"}'),
+      ('00000000-0000-0000-0005-000000000053', '00000000-0000-0000-0004-000000000003', 'fal/longcat-image', 'LongCat Image', true, '[]', '{"tier": "standard", "fal_endpoint": "fal-ai/longcat-image"}'),
+      ('00000000-0000-0000-0005-000000000054', '00000000-0000-0000-0004-000000000003', 'fal/z-image-turbo', 'Z-Image Turbo (Super Fast)', true, '[]', '{"tier": "fast", "fal_endpoint": "fal-ai/z-image/turbo"}')
+    ON CONFLICT (provider_config_id, model_id) DO UPDATE SET display_name = EXCLUDED.display_name
+  `;
+
+  console.log('[Seed] Created model configs (4 LLM + 25 image models)');
+
+  // =========================================================================
+  // Routing Rules
+  // =========================================================================
+  console.log('[Seed] Creating routing rules...');
+
+  await sql`
+    INSERT INTO routing_rules (id, use_case, tier, model_config_id, weight, is_enabled, max_retries, timeout_ms, metadata)
+    VALUES
+      -- LLM Routing
+      ('00000000-0000-0000-0006-000000000001', 'chat_simple', 1, '00000000-0000-0000-0005-000000000002', 100, true, 2, 30000, '{}'),
+      ('00000000-0000-0000-0006-000000000002', 'chat_complex', 1, '00000000-0000-0000-0005-000000000001', 100, true, 2, 60000, '{}'),
+      ('00000000-0000-0000-0006-000000000003', 'memory_extraction', 1, '00000000-0000-0000-0005-000000000002', 100, true, 2, 30000, '{}'),
+      ('00000000-0000-0000-0006-000000000004', 'summarization', 1, '00000000-0000-0000-0005-000000000002', 100, true, 2, 30000, '{}'),
+      ('00000000-0000-0000-0006-000000000005', 'safety_check', 1, '00000000-0000-0000-0005-000000000002', 100, true, 2, 15000, '{}'),
+      ('00000000-0000-0000-0006-000000000006', 'content_moderation', 1, '00000000-0000-0000-0005-000000000002', 100, true, 2, 15000, '{}'),
+      -- Image Routing (different models for each use case)
+      ('00000000-0000-0000-0006-000000000010', 'image_generation', 1, '00000000-0000-0000-0005-000000000016', 100, true, 2, 60000, '{"description": "flux-2-pro for general image generation"}'),
+      ('00000000-0000-0000-0006-000000000011', 'image_anchor', 1, '00000000-0000-0000-0005-000000000012', 100, true, 2, 30000, '{"description": "seedream-4.5 for anchor/portrait creation"}'),
+      ('00000000-0000-0000-0006-000000000012', 'image_variation', 1, '00000000-0000-0000-0005-000000000040', 100, true, 2, 60000, '{"description": "flux-pulid for identity-preserving variations"}')
+    ON CONFLICT (use_case, tier, model_config_id) DO UPDATE SET
+      weight = EXCLUDED.weight,
+      is_enabled = EXCLUDED.is_enabled,
+      metadata = EXCLUDED.metadata
+  `;
+
+  console.log('[Seed] Created routing rules (6 LLM + 3 image)');
 
   console.log('[Seed] Database seed completed successfully!');
 

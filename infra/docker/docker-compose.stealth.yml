@@ -249,7 +249,9 @@ services:
       LOG_LEVEL: info
       DATABASE_URL: postgresql://campfire:${POSTGRES_PASSWORD:-campfire}@postgres:5432/campfire
       REDIS_URL: redis://redis:6379
+      ORCHESTRATOR_URL: http://orchestrator:5000
       S3_MEDIA_BUCKET: ${S3_MEDIA_BUCKET}
+      S3_BUCKET_MEDIA: ${S3_MEDIA_BUCKET}
       AWS_REGION: ${AWS_REGION:-us-east-1}
       AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID}
       AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY}

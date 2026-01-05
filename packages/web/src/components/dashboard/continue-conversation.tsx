@@ -1,12 +1,18 @@
 'use client';
 
-import { useRef, useState } from 'react';
-import { motion } from 'framer-motion';
+import { useRef, useState, useEffect } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
 import { ArrowRight, Clock, MessageCircle, RotateCcw } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Avatar, AvatarImage, AvatarFallback } from '@/components/ui/avatar';
+import { getSessionTurns } from '@/lib/api';
+
+interface ChatMessage {
+  role: 'user' | 'companion';
+  content: string;
+}
 
 interface RecentSession {
   id: string;
@@ -51,9 +57,100 @@ function formatRelativeTime(dateString: string): string {
   }
 }
 
+/**
+ * Animated chat bubbles showing recent conversation messages
+ */
+function ChatBubbles({ messages, isVisible }: { messages: ChatMessage[]; isVisible: boolean }) {
+  if (messages.length === 0) return null;
+
+  // Show last 3-4 messages
+  const displayMessages = messages.slice(-4);
+
+  return (
+    <div className="flex flex-col gap-2 px-4 py-3">
+      <AnimatePresence mode="wait">
+        {isVisible && displayMessages.map((message, idx) => {
+          const isUser = message.role === 'user';
+          // Truncate long messages
+          const truncatedContent = message.content.length > 60
+            ? message.content.slice(0, 57) + '...'
+            : message.content;
+
+          return (
+            <motion.div
+              key={`${message.role}-${idx}`}
+              initial={{ opacity: 0, y: 10, scale: 0.95 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              exit={{ opacity: 0, y: -5, scale: 0.95 }}
+              transition={{
+                delay: idx * 0.15,
+                duration: 0.3,
+                ease: [0.25, 0.46, 0.45, 0.94],
+              }}
+              className={`flex ${isUser ? 'justify-end' : 'justify-start'}`}
+            >
+              <div
+                className={`max-w-[85%] px-3 py-2 rounded-2xl text-xs leading-relaxed ${
+                  isUser
+                    ? 'bg-campfire-600/90 text-white rounded-br-md'
+                    : 'bg-white/10 text-white/90 rounded-bl-md backdrop-blur-sm'
+                }`}
+              >
+                {truncatedContent}
+              </div>
+            </motion.div>
+          );
+        })}
+      </AnimatePresence>
+    </div>
+  );
+}
+
 export function ContinueConversation({ sessions, maxSessions = 3 }: ContinueConversationProps) {
   const router = useRouter();
-  const recentSessions = sessions.slice(0, maxSessions);
+
+  // Only show sessions where user has actually had a conversation (has turns)
+  const sessionsWithTurns = sessions.filter(s => s.lastMessage !== 'Start chatting...');
+  const recentSessions = sessionsWithTurns.slice(0, maxSessions);
+
+  // State for recent messages per session
+  const [sessionMessages, setSessionMessages] = useState<Record<string, ChatMessage[]>>({});
+  const [messagesLoaded, setMessagesLoaded] = useState(false);
+
+  // Stable reference for primary session ID
+  const primarySessionId = recentSessions[0]?.id;
+  const primarySessionHasMessages = recentSessions[0]?.lastMessage !== 'Start chatting...';
+
+  // Fetch recent messages for primary session
+  useEffect(() => {
+    if (!primarySessionId || !primarySessionHasMessages) return;
+
+    const fetchMessages = async () => {
+      try {
+        const turnsResponse = await getSessionTurns(primarySessionId, { limit: 3 });
+        const messages: ChatMessage[] = [];
+
+        // Convert turns to messages (each turn has user + agent message)
+        for (const turn of turnsResponse.turns) {
+          if (turn.userMessage) {
+            messages.push({ role: 'user', content: turn.userMessage });
+          }
+          if (turn.agentMessage) {
+            messages.push({ role: 'companion', content: turn.agentMessage });
+          }
+        }
+
+        setSessionMessages({ [primarySessionId]: messages });
+        // Slight delay before showing messages for smoother animation
+        setTimeout(() => setMessagesLoaded(true), 300);
+      } catch (error) {
+        console.error('Failed to fetch session messages:', error);
+        setMessagesLoaded(true);
+      }
+    };
+
+    fetchMessages();
+  }, [primarySessionId, primarySessionHasMessages]);
 
   // Mobile slider state for drag scrolling
   const scrollContainerRef = useRef<HTMLDivElement>(null);
@@ -159,12 +256,37 @@ export function ContinueConversation({ sessions, maxSessions = 3 }: ContinueConv
                       </span>
                     </div>
 
-                    {/* Companion name - hidden on hover */}
+                    {/* Companion name and chat preview - hidden on hover */}
                     <div className="absolute bottom-4 left-4 right-4 z-10 group-hover:opacity-0 transition-opacity duration-200">
-                      <h3 className="text-xl font-bold text-white truncate">{session.companionName}</h3>
-                      <p className={`text-white/60 text-sm truncate ${session.lastMessage !== 'Start chatting...' ? 'italic' : ''}`}>
-                        {session.lastMessage !== 'Start chatting...' ? `"${session.lastMessage}"` : session.lastMessage}
-                      </p>
+                      <h3 className="text-xl font-bold text-white truncate mb-2">{session.companionName}</h3>
+                      {/* Show chat bubbles for primary session on mobile, fallback text for others */}
+                      {idx === 0 && sessionMessages[session.id]?.length > 0 ? (
+                        <div className="space-y-1.5">
+                          {sessionMessages[session.id].slice(-2).map((msg, msgIdx) => (
+                            <motion.div
+                              key={`mobile-${msg.role}-${msgIdx}`}
+                              initial={{ opacity: 0, y: 5 }}
+                              animate={{ opacity: messagesLoaded ? 1 : 0, y: messagesLoaded ? 0 : 5 }}
+                              transition={{ delay: msgIdx * 0.1 + 0.2, duration: 0.25 }}
+                              className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}
+                            >
+                              <div
+                                className={`max-w-[80%] px-2.5 py-1.5 rounded-xl text-[11px] leading-snug ${
+                                  msg.role === 'user'
+                                    ? 'bg-campfire-600/80 text-white rounded-br-sm'
+                                    : 'bg-white/15 text-white/90 rounded-bl-sm'
+                                }`}
+                              >
+                                {msg.content.length > 40 ? msg.content.slice(0, 37) + '...' : msg.content}
+                              </div>
+                            </motion.div>
+                          ))}
+                        </div>
+                      ) : (
+                        <p className={`text-white/60 text-sm truncate ${session.lastMessage !== 'Start chatting...' ? 'italic' : ''}`}>
+                          {session.lastMessage !== 'Start chatting...' ? `"${session.lastMessage}"` : session.lastMessage}
+                        </p>
+                      )}
                     </div>
 
                     {/* Hover action button */}
@@ -215,8 +337,8 @@ export function ContinueConversation({ sessions, maxSessions = 3 }: ContinueConv
               </div>
 
               {/* Content section */}
-              <div className="flex-1 p-6 flex flex-col justify-center gap-4">
-                <div className="space-y-2">
+              <div className="flex-1 p-4 flex flex-col justify-between min-h-48">
+                <div className="space-y-1">
                   <div className="flex items-center gap-3">
                     <h3 className="text-2xl font-bold font-display text-white group-hover:text-campfire-400 transition-colors">
                       {primarySession.companionName}
@@ -226,10 +348,21 @@ export function ContinueConversation({ sessions, maxSessions = 3 }: ContinueConv
                       {formatRelativeTime(primarySession.updatedAt)}
                     </span>
                   </div>
-                  <p className={`text-gray-400 text-base line-clamp-2 leading-relaxed ${primarySession.lastMessage !== 'Start chatting...' ? 'italic' : ''}`}>
+                </div>
+
+                {/* Animated chat bubbles showing recent conversation */}
+                {sessionMessages[primarySession.id]?.length > 0 ? (
+                  <div className="flex-1 py-2 overflow-hidden">
+                    <ChatBubbles
+                      messages={sessionMessages[primarySession.id]}
+                      isVisible={messagesLoaded}
+                    />
+                  </div>
+                ) : (
+                  <p className={`text-gray-400 text-base line-clamp-2 leading-relaxed py-2 ${primarySession.lastMessage !== 'Start chatting...' ? 'italic' : ''}`}>
                     {primarySession.lastMessage !== 'Start chatting...' ? `"${primarySession.lastMessage}"` : primarySession.lastMessage}
                   </p>
-                </div>
+                )}
 
                 <div className="flex items-center gap-4">
                   <Button
