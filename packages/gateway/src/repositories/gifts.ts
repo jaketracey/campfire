@@ -182,7 +182,7 @@ export class GiftsRepository {
   async deductTokens(
     userId: string,
     amount: number,
-    giftId: string,
+    giftId: string | null,
     description?: string,
     tx?: TransactionContext
   ): Promise<DeductTokensResult> {

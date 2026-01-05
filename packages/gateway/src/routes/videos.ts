@@ -106,11 +106,11 @@ export async function videosRoutes(app: FastifyInstance): Promise<void> {
         token_cost: VIDEO_TOKEN_COST,
       });
 
-      // 4. Deduct tokens atomically
+      // 4. Deduct tokens atomically (pass null for gift_id since video requests aren't gifts)
       const deductResult = await giftsRepo.deductTokens(
         user.userId,
         VIDEO_TOKEN_COST,
-        videoRequest.id,
+        null,
         `Video request: ${prompt.slice(0, 50)}...`
       );
 
