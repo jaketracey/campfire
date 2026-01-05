@@ -203,6 +203,8 @@ class CompleteRequest(BaseModel):
     user_prompt: str
     max_tokens: int = 1000
     temperature: float = 0.7
+    use_case: str | None = None  # Optional: use routing config (e.g., 'gift_generation')
+    companion_id: str | None = None  # Optional: for per-companion routing overrides
 
 
 class CompleteResponse(BaseModel):
@@ -777,18 +779,98 @@ async def readiness_check() -> dict[str, str]:
 async def complete(request: CompleteRequest) -> CompleteResponse:
     """Simple text completion endpoint for worker services.
 
-    Uses the configured LLM provider (Ollama) for one-off text generation tasks
-    like gift content generation, without the full conversation orchestration.
+    Supports routing via use_case parameter for different workloads:
+    - If use_case is provided, routes to configured model via routing_config_service
+    - If no use_case, falls back to Ollama (backward compatible)
+
+    Used for one-off text generation tasks like gift content generation,
+    without the full conversation orchestration.
     """
     import time
+    from uuid import UUID
 
     start_time = time.time()
+    llm_provider = None
+    provider_name = "unknown"
+    model_id = None
 
-    if not app_state.ollama_provider:
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="LLM provider not available",
-        )
+    # If use_case is provided, try routing first
+    if request.use_case and app_state.routing_config_service:
+        try:
+            companion_uuid = UUID(request.companion_id) if request.companion_id else None
+            model = await app_state.routing_config_service.get_model_for_use_case(
+                request.use_case,
+                companion_id=companion_uuid,
+            )
+
+            if model:
+                encryption_key = app_state.settings.provider_key_encryption_secret
+                model_id = model.model_id
+
+                if model.provider == "openai":
+                    api_key = await app_state.routing_config_service.get_provider_api_key(
+                        "openai", encryption_key
+                    )
+                    if api_key:
+                        llm_provider = OpenAIProvider(
+                            app_state.settings,
+                            model_override=model.model_id,
+                            api_key_override=api_key,
+                        )
+                        provider_name = "openai"
+                        logger.info(
+                            "complete_routing",
+                            use_case=request.use_case,
+                            provider="openai",
+                            model=model.model_id,
+                        )
+
+                elif model.provider == "anthropic":
+                    api_key = await app_state.routing_config_service.get_provider_api_key(
+                        "anthropic", encryption_key
+                    )
+                    if api_key:
+                        from orchestrator.providers.anthropic import AnthropicProvider
+                        llm_provider = AnthropicProvider(
+                            app_state.settings,
+                            api_key_override=api_key,
+                            model_override=model.model_id,
+                        )
+                        provider_name = "anthropic"
+                        logger.info(
+                            "complete_routing",
+                            use_case=request.use_case,
+                            provider="anthropic",
+                            model=model.model_id,
+                        )
+
+                elif model.provider == "ollama" and app_state.ollama_provider:
+                    llm_provider = app_state.ollama_provider.with_model(model.model_id)
+                    provider_name = "ollama"
+                    logger.info(
+                        "complete_routing",
+                        use_case=request.use_case,
+                        provider="ollama",
+                        model=model.model_id,
+                    )
+
+        except Exception as routing_error:
+            logger.warning(
+                "complete_routing_failed",
+                use_case=request.use_case,
+                error=str(routing_error),
+            )
+
+    # Fall back to Ollama if no routing or routing failed
+    if llm_provider is None:
+        if not app_state.ollama_provider:
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="LLM provider not available",
+            )
+        llm_provider = app_state.ollama_provider
+        provider_name = "ollama"
+        logger.info("complete_using_fallback_ollama")
 
     try:
         messages = []
@@ -796,7 +878,7 @@ async def complete(request: CompleteRequest) -> CompleteResponse:
             messages.append({"role": "system", "content": request.system_prompt})
         messages.append({"role": "user", "content": request.user_prompt})
 
-        response = await app_state.ollama_provider.generate(
+        response = await llm_provider.generate(
             messages=messages,
             max_tokens=request.max_tokens,
             temperature=request.temperature,
@@ -806,6 +888,9 @@ async def complete(request: CompleteRequest) -> CompleteResponse:
 
         logger.info(
             "complete_request",
+            use_case=request.use_case,
+            provider=provider_name,
+            model=model_id,
             latency_ms=latency_ms,
             content_length=len(response.content),
         )
@@ -813,11 +898,16 @@ async def complete(request: CompleteRequest) -> CompleteResponse:
         return CompleteResponse(
             content=response.content,
             latency_ms=latency_ms,
-            provider="ollama",
+            provider=provider_name,
         )
 
     except Exception as e:
-        logger.exception("complete_failed", error=str(e))
+        logger.exception(
+            "complete_failed",
+            use_case=request.use_case,
+            provider=provider_name,
+            error=str(e),
+        )
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Completion failed: {str(e)}",

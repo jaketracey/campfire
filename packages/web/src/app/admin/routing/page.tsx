@@ -246,6 +246,7 @@ export default function RoutingPage() {
     if (useCase.startsWith('chat')) return '💬';
     if (useCase.includes('memory') || useCase.includes('summarization') || useCase.includes('compression')) return '🧠';
     if (useCase.includes('safety') || useCase.includes('moderation')) return '🛡️';
+    if (useCase.startsWith('gift')) return '🎁';
     return '⚡';
   };
 

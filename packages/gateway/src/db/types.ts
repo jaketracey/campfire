@@ -987,9 +987,11 @@ export type UseCaseType =
   | 'context_compression'
   | 'safety_check'
   | 'content_moderation'
+  | 'gift_generation'
   | 'image_generation'
   | 'image_anchor'
-  | 'image_variation';
+  | 'image_variation'
+  | 'gift_image';
 
 export const USE_CASE_TYPES: UseCaseType[] = [
   'chat_simple',
@@ -999,9 +1001,11 @@ export const USE_CASE_TYPES: UseCaseType[] = [
   'context_compression',
   'safety_check',
   'content_moderation',
+  'gift_generation',
   'image_generation',
   'image_anchor',
   'image_variation',
+  'gift_image',
 ];
 
 /** Text-based use cases for LLM routing */
@@ -1013,6 +1017,7 @@ export const TEXT_USE_CASE_TYPES: UseCaseType[] = [
   'context_compression',
   'safety_check',
   'content_moderation',
+  'gift_generation',
 ];
 
 /** Image-based use cases for image model routing */
@@ -1020,6 +1025,7 @@ export const IMAGE_USE_CASE_TYPES: UseCaseType[] = [
   'image_generation',
   'image_anchor',
   'image_variation',
+  'gift_image',
 ];
 
 export const USE_CASE_LABELS: Record<UseCaseType, string> = {
@@ -1030,9 +1036,11 @@ export const USE_CASE_LABELS: Record<UseCaseType, string> = {
   context_compression: 'Context Compression',
   safety_check: 'Safety Check',
   content_moderation: 'Content Moderation',
+  gift_generation: 'Gift Generation',
   image_generation: 'Image Generation',
   image_anchor: 'Identity Anchor Image',
   image_variation: 'Image Variation',
+  gift_image: 'Gift Image',
 };
 
 /** Provider category: text for LLMs, image for image generation */

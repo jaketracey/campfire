@@ -33,6 +33,7 @@ class ImageUseCase(str, Enum):
     IMAGE_ANCHOR = "image_anchor"  # Identity anchor images (high quality)
     IMAGE_VARIATION = "image_variation"  # Variations with IP-Adapter reference
     IMAGE_EDITING = "image_editing"  # Inpainting/outpainting
+    GIFT_IMAGE = "gift_image"  # Gift image generation (stylized, 512x512)
 
 
 @dataclass
@@ -417,6 +418,13 @@ class ImageModelRouter:
             if model.supports_inpainting:
                 score += 50.0
 
+        elif use_case == ImageUseCase.GIFT_IMAGE:
+            # Gift images - prefer quality stylized output
+            if model.tier == ImageModelTier.STANDARD:
+                score += 30.0
+            elif model.tier == ImageModelTier.QUALITY:
+                score += 25.0
+
         else:  # IMAGE_GENERATION
             # Standard generation - balance quality and speed
             if model.tier == ImageModelTier.STANDARD:
@@ -467,6 +475,8 @@ class ImageModelRouter:
             reasons.append("variation with reference support")
         elif use_case == ImageUseCase.IMAGE_EDITING:
             reasons.append("image editing capability")
+        elif use_case == ImageUseCase.GIFT_IMAGE:
+            reasons.append("gift image generation")
         else:
             reasons.append("standard image generation")
 

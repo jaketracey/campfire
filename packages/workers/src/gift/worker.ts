@@ -232,7 +232,7 @@ Personality traits: ${personalityDescription}
 
 Generate a unique and creative gift idea.`;
 
-    // Call orchestrator's /complete endpoint
+    // Call orchestrator's /complete endpoint with gift_generation routing
     const response = await fetch(`${this.orchestratorUrl}/complete`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -241,6 +241,7 @@ Generate a unique and creative gift idea.`;
         user_prompt: userPrompt,
         max_tokens: 500,
         temperature: 0.9,
+        use_case: 'gift_generation',
       }),
     });
 
@@ -299,7 +300,7 @@ Generate a unique and creative gift idea.`;
     companionId: string,
     giftId: string
   ): Promise<{ imageUrl: string; s3Bucket: string; s3Key: string }> {
-    // Call orchestrator for image generation
+    // Call orchestrator for image generation with gift_image routing
     const response = await fetch(`${this.orchestratorUrl}/imagegen/generate`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -309,6 +310,7 @@ Generate a unique and creative gift idea.`;
         width: 512,
         height: 512,
         save_to_s3: false, // We'll upload ourselves for better key control
+        use_case: 'gift_image',
       }),
     });
 

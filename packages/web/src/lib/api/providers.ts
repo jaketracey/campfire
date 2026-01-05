@@ -16,7 +16,8 @@ export type UseCaseType =
   | 'summarization'
   | 'context_compression'
   | 'safety_check'
-  | 'content_moderation';
+  | 'content_moderation'
+  | 'gift_generation';
 
 export const USE_CASE_TYPES: UseCaseType[] = [
   'chat_simple',
@@ -26,6 +27,7 @@ export const USE_CASE_TYPES: UseCaseType[] = [
   'context_compression',
   'safety_check',
   'content_moderation',
+  'gift_generation',
 ];
 
 export const USE_CASE_LABELS: Record<UseCaseType, string> = {
@@ -36,6 +38,7 @@ export const USE_CASE_LABELS: Record<UseCaseType, string> = {
   context_compression: 'Context Compression',
   safety_check: 'Safety Check',
   content_moderation: 'Content Moderation',
+  gift_generation: 'Gift Generation',
 };
 
 export type ModelCapability = 'chat' | 'vision' | 'function_calling' | 'streaming' | 'json_mode';

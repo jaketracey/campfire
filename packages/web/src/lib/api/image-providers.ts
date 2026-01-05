@@ -12,24 +12,28 @@ import { get, post, patch, del } from './client';
 export type ImageUseCaseType =
   | 'image_generation'
   | 'image_anchor'
-  | 'image_variation';
+  | 'image_variation'
+  | 'gift_image';
 
 export const IMAGE_USE_CASE_TYPES: ImageUseCaseType[] = [
   'image_generation',
   'image_anchor',
   'image_variation',
+  'gift_image',
 ];
 
 export const IMAGE_USE_CASE_LABELS: Record<ImageUseCaseType, string> = {
   image_generation: 'Image Generation',
   image_anchor: 'Identity Anchors',
   image_variation: 'Image Variations',
+  gift_image: 'Gift Images',
 };
 
 export const IMAGE_USE_CASE_DESCRIPTIONS: Record<ImageUseCaseType, string> = {
   image_generation: 'Standard image generation for chat messages',
   image_anchor: 'High-quality identity anchor images',
   image_variation: 'Creating image variations from reference images',
+  gift_image: 'Stylized gift images (512x512)',
 };
 
 export type ImageModelCapability = 'nsfw' | 'ip_adapter' | 'inpainting' | 'controlnet';

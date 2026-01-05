@@ -241,6 +241,8 @@ export default function ImageRoutingPage() {
         return '🎯';
       case 'image_variation':
         return '🔄';
+      case 'gift_image':
+        return '🎁';
       default:
         return '📷';
     }
