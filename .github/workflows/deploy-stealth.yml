@@ -68,6 +68,8 @@ jobs:
           GOOGLE_OAUTH_CLIENT_SECRET: ${{ secrets.GOOGLE_OAUTH_CLIENT_SECRET }}
           FLOWGUARD_SHOP_ID: ${{ secrets.FLOWGUARD_SHOP_ID }}
           FLOWGUARD_SIGNATURE_KEY: ${{ secrets.FLOWGUARD_SIGNATURE_KEY }}
+          FACEBOOK_APP_ID: ${{ secrets.FACEBOOK_APP_ID }}
+          FACEBOOK_APP_SECRET: ${{ secrets.FACEBOOK_APP_SECRET }}
         run: |
           ssh -i ~/.ssh/deploy_key ${{ env.DEPLOY_USER }}@${{ env.DEPLOY_HOST }} "
           set -e
@@ -99,6 +101,8 @@ jobs:
           update_env 'GOOGLE_OAUTH_CLIENT_SECRET' '${GOOGLE_OAUTH_CLIENT_SECRET}'
           update_env 'FLOWGUARD_SHOP_ID' '${FLOWGUARD_SHOP_ID}'
           update_env 'FLOWGUARD_SIGNATURE_KEY' '${FLOWGUARD_SIGNATURE_KEY}'
+          update_env 'FACEBOOK_APP_ID' '${FACEBOOK_APP_ID}'
+          update_env 'FACEBOOK_APP_SECRET' '${FACEBOOK_APP_SECRET}'
 
           # Set ECR registry for pulling images
           update_env 'ECR_REGISTRY' '932630290000.dkr.ecr.us-east-1.amazonaws.com'

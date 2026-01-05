@@ -8,6 +8,7 @@ import { z } from 'zod';
 import { requireAdmin } from '../middleware/auth.js';
 import { sql } from '../db/pool.js';
 import { logger } from '../observability/logger.js';
+import { getFacebookAdsService } from '../services/facebook-ads.js';
 
 // ===========================================================================
 // Request Schemas
@@ -164,35 +165,21 @@ export async function adminAdsRoutes(app: FastifyInstance): Promise<void> {
    */
   app.post('/connect/facebook', async (_request: FastifyRequest, reply: FastifyReply) => {
     try {
-      const appId = process.env.FACEBOOK_ADS_APP_ID;
-      if (!appId) {
-        return reply.status(503).send({
-          error: 'Service Unavailable',
-          message: 'Facebook Ads integration is not configured',
-        });
-      }
-
-      const redirectUri = `${process.env.API_BASE_URL}/api/v1/admin/ads/callback/facebook`;
-      const scope = 'ads_read,ads_management';
+      const facebookAdsService = getFacebookAdsService();
       const state = crypto.randomUUID();
-
-      const authUrl = new URL('https://www.facebook.com/v18.0/dialog/oauth');
-      authUrl.searchParams.set('client_id', appId);
-      authUrl.searchParams.set('redirect_uri', redirectUri);
-      authUrl.searchParams.set('scope', scope);
-      authUrl.searchParams.set('state', state);
+      // TODO: Store state in session/redis for CSRF validation
+      const authUrl = facebookAdsService.getAuthUrl(state);
 
       return reply.send({
         success: true,
-        data: {
-          authUrl: authUrl.toString(),
-        },
+        data: { authUrl },
       });
     } catch (error) {
-      logger.error({ error }, 'Failed to generate Facebook Ads auth URL');
-      return reply.status(500).send({
-        error: 'Internal Server Error',
-        message: 'Failed to initiate Facebook Ads connection',
+      // Config error (missing env vars) will throw here
+      logger.error({ error }, 'Facebook Ads not configured');
+      return reply.status(503).send({
+        error: 'Service Unavailable',
+        message: 'Facebook Ads integration is not configured',
       });
     }
   });
@@ -240,9 +227,10 @@ export async function adminAdsRoutes(app: FastifyInstance): Promise<void> {
     }
 
     try {
-      // TODO: Exchange code for tokens and create ad account
-      logger.info({ state: query.state }, 'Facebook Ads OAuth callback received');
+      const facebookAdsService = getFacebookAdsService();
+      const account = await facebookAdsService.handleCallback(query.code);
 
+      logger.info({ accountId: account.id }, 'Facebook Ads account connected');
       return reply.redirect(`${process.env.WEB_BASE_URL}/admin/ads?success=facebook_connected`);
     } catch (error) {
       logger.error({ error }, 'Failed to complete Facebook Ads OAuth');

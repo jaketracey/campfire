@@ -21,7 +21,7 @@ interface FacebookAdsConfig {
 function getConfig(): FacebookAdsConfig {
   const appId = process.env['FACEBOOK_APP_ID'];
   const appSecret = process.env['FACEBOOK_APP_SECRET'];
-  const redirectUri = process.env['FACEBOOK_ADS_REDIRECT_URI'] || 'http://localhost:3000/api/admin/ads/facebook/callback';
+  const redirectUri = process.env['FACEBOOK_ADS_REDIRECT_URI'] || 'http://localhost:3000/api/v1/admin/ads/callback/facebook';
 
   if (!appId || !appSecret) {
     throw new Error('Missing Facebook Ads configuration. Set FACEBOOK_APP_ID and FACEBOOK_APP_SECRET');

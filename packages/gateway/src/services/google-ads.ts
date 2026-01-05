@@ -23,7 +23,7 @@ function getConfig(): GoogleAdsConfig {
   const clientId = process.env['GOOGLE_ADS_CLIENT_ID'];
   const clientSecret = process.env['GOOGLE_ADS_CLIENT_SECRET'];
   const developerToken = process.env['GOOGLE_ADS_DEVELOPER_TOKEN'];
-  const redirectUri = process.env['GOOGLE_ADS_REDIRECT_URI'] || 'http://localhost:3000/api/admin/ads/google/callback';
+  const redirectUri = process.env['GOOGLE_ADS_REDIRECT_URI'] || 'http://localhost:3000/api/v1/admin/ads/callback/google';
 
   if (!clientId || !clientSecret || !developerToken) {
     throw new Error('Missing Google Ads configuration. Set GOOGLE_ADS_CLIENT_ID, GOOGLE_ADS_CLIENT_SECRET, and GOOGLE_ADS_DEVELOPER_TOKEN');
