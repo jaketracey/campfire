@@ -49,13 +49,14 @@ WORKDIR /app
 # Install uv and copy dependencies from builder
 RUN pip install --no-cache-dir uv
 
-# Copy pyproject and source
+# Copy pyproject, source, and tests
 COPY packages/orchestrator/pyproject.toml ./
 COPY packages/orchestrator/README.md ./
 COPY packages/orchestrator/src ./src
+COPY packages/orchestrator/tests ./tests
 
-# Install production dependencies only
-RUN uv pip install --system --no-cache -e .
+# Install dependencies including pytest for test runner API
+RUN uv pip install --system --no-cache -e ".[dev]"
 
 # Set ownership
 RUN chown -R campfire:python /app
