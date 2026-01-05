@@ -484,6 +484,29 @@ class ConversationOrchestrator:
             self._current_routing_decision = None
             raise
 
+    def get_last_model_info(self) -> dict[str, str | int | None]:
+        """Get information about the last model used for LLM generation.
+
+        Returns dict with provider, model, prompt_tokens, completion_tokens.
+        Returns empty values if no routing decision is available.
+        """
+        if not self._current_routing_decision or not self._current_routing_decision.model_spec:
+            # Fall back to primary provider info
+            return {
+                "provider": self.primary_provider.name if self.primary_provider else None,
+                "model": self._get_model_for_provider(self.primary_provider.name) if self.primary_provider else None,
+                "prompt_tokens": None,
+                "completion_tokens": None,
+            }
+
+        model_spec = self._current_routing_decision.model_spec
+        return {
+            "provider": model_spec.provider,
+            "model": model_spec.model_id,
+            "prompt_tokens": None,  # Will be filled in by caller if available
+            "completion_tokens": None,
+        }
+
     async def _generate_with_tools(
         self,
         messages: list[dict[str, Any]],

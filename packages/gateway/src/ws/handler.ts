@@ -1239,6 +1239,7 @@ async function handleUserMessage(
     let currentSpeakerName: string | undefined;
     let currentSpeakerContent = ''; // Accumulate content per speaker
     let isGroupChatResponse = isGroupChat;
+    let usageInfo: { provider?: string; model?: string } = {}; // Track actual LLM used
     const reader = response.body?.getReader();
     const decoder = new TextDecoder();
 
@@ -1302,6 +1303,24 @@ async function handleUserMessage(
                 }
               } catch (e) {
                 logger.warn({ error: e, data }, 'Failed to parse metadata');
+              }
+              continue;
+            }
+
+            if (data.startsWith('[USAGE]')) {
+              // Parse usage info (contains provider/model used)
+              try {
+                const usageJson = data.slice(7); // Remove [USAGE] prefix
+                const usage = JSON.parse(usageJson);
+                if (usage.provider || usage.model) {
+                  usageInfo = { provider: usage.provider, model: usage.model };
+                  logger.debug(
+                    { sessionId, provider: usage.provider, model: usage.model },
+                    'Received usage info from orchestrator'
+                  );
+                }
+              } catch (e) {
+                logger.warn({ error: e, data }, 'Failed to parse usage info');
               }
               continue;
             }
@@ -1498,27 +1517,39 @@ async function handleUserMessage(
       }
     );
 
-    // 10b. Record LLM usage for cost tracking (uses estimates for now)
+    // 10b. Record LLM usage for cost tracking
+    // Uses actual provider/model from orchestrator if available, falls back to defaults
     // Skip recording for anonymous users to avoid foreign key issues
     if (!client.isAnonymous && !userId.startsWith(ANONYMOUS_USER_ID_PREFIX)) {
       try {
         const llmUsageService = getLLMUsageService();
+        const provider = usageInfo.provider || 'anthropic';
+        const model = usageInfo.model || 'claude-3-5-sonnet-20241022';
+
+        // Recalculate cost based on actual model used
+        const actualCostUsd = llmUsageService.calculateCost(model, estimatedInputTokens, estimatedOutputTokens);
+
         await llmUsageService.recordUsage({
           user_id: userId,
           session_id: sessionId,
           companion_id: companionId,
           turn_id: turn.id,
-          provider: 'anthropic', // TODO: Get actual provider from orchestrator
-          model: 'claude-3-5-sonnet-20241022', // TODO: Get actual model from orchestrator
+          provider,
+          model,
           input_tokens: estimatedInputTokens,
           output_tokens: estimatedOutputTokens,
-          cost_usd: estimatedCostUsd,
+          cost_usd: actualCostUsd,
           latency_ms: latencyMs,
           request_type: 'chat',
           stream_mode: true,
           request_started_at: new Date(startTime),
           request_completed_at: new Date(),
         });
+
+        logger.debug(
+          { sessionId, provider, model, costUsd: actualCostUsd },
+          'LLM usage recorded'
+        );
       } catch (err) {
         // Don't fail the request if usage recording fails
         logger.warn({ err, sessionId, turnId: turn.id }, 'Failed to record LLM usage');

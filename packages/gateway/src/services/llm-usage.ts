@@ -379,9 +379,11 @@ export class LLMUsageService {
       // Find matching model
       const model = models.find(m => m.model_id === modelId);
       if (model?.metadata && typeof model.metadata === 'object') {
-        const metadata = model.metadata as { cost_per_image?: number };
-        if (typeof metadata.cost_per_image === 'number') {
-          return metadata.cost_per_image;
+        // Check both camelCase (costPerImage) and snake_case (cost_per_image) for compatibility
+        const metadata = model.metadata as { costPerImage?: number; cost_per_image?: number };
+        const cost = metadata.costPerImage ?? metadata.cost_per_image;
+        if (typeof cost === 'number') {
+          return cost;
         }
       }
     } catch (error) {

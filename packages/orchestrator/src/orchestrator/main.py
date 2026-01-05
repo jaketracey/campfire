@@ -988,6 +988,15 @@ async def stream_message(request: StreamMessageRequest) -> StreamingResponse:
                         )
                         yield f"data: [METADATA]{json.dumps(metadata)}\n\n"
 
+                # Send model/usage info before DONE
+                model_info = app_state.orchestrator.get_last_model_info()
+                if model_info.get("provider") or model_info.get("model"):
+                    usage_metadata = {
+                        "provider": model_info.get("provider"),
+                        "model": model_info.get("model"),
+                    }
+                    yield f"data: [USAGE]{json.dumps(usage_metadata)}\n\n"
+
                 yield "data: [DONE]\n\n"
 
             elif isinstance(result, ConversationTurn):
@@ -1020,6 +1029,15 @@ async def stream_message(request: StreamMessageRequest) -> StreamingResponse:
                     if image_prompt:
                         metadata = {"image_prompt": image_prompt}
                         yield f"data: [METADATA]{json.dumps(metadata)}\n\n"
+
+                # Send model/usage info before DONE
+                model_info = app_state.orchestrator.get_last_model_info()
+                if model_info.get("provider") or model_info.get("model"):
+                    usage_metadata = {
+                        "provider": model_info.get("provider"),
+                        "model": model_info.get("model"),
+                    }
+                    yield f"data: [USAGE]{json.dumps(usage_metadata)}\n\n"
 
                 yield "data: [DONE]\n\n"
 
