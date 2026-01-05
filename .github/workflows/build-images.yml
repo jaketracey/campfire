@@ -24,8 +24,8 @@ env:
 jobs:
   build-and-push:
     name: Build and Push Images
-    runs-on: ubuntu-latest
-    timeout-minutes: 30
+    runs-on: ubuntu-24.04-arm  # Native ARM64 runner - much faster than QEMU
+    timeout-minutes: 15
 
     strategy:
       matrix:
@@ -54,9 +54,6 @@ jobs:
         id: login-ecr
         uses: aws-actions/amazon-ecr-login@v2
 
-      - name: Set up QEMU for ARM64
-        uses: docker/setup-qemu-action@v3
-
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
@@ -66,7 +63,6 @@ jobs:
           context: .
           file: ${{ matrix.dockerfile }}
           target: production
-          platforms: linux/arm64
           push: true
           tags: |
             ${{ env.ECR_REGISTRY }}/campfire-${{ matrix.service }}:latest
