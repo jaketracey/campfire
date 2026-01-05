@@ -114,7 +114,7 @@ export async function adminAdsRoutes(app: FastifyInstance): Promise<void> {
   // OAuth Callback Endpoints (no auth required - these are redirects from OAuth providers)
   // ===========================================================================
 
-  const webBaseUrl = process.env.WEB_BASE_URL || 'http://localhost:3000';
+  const webBaseUrl = process.env.WEB_URL || process.env.WEB_BASE_URL || 'http://localhost:3000';
 
   /**
    * GET /callback/google - Handle Google Ads OAuth callback

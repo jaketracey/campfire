@@ -110,6 +110,9 @@ services:
       # Facebook Ads
       FACEBOOK_APP_ID: ${FACEBOOK_APP_ID:-}
       FACEBOOK_APP_SECRET: ${FACEBOOK_APP_SECRET:-}
+      FACEBOOK_ADS_REDIRECT_URI: https://${DOMAIN:-ignite.cam}/api/v1/admin/ads/callback/facebook
+      # Web base URL for OAuth redirects
+      WEB_BASE_URL: https://${DOMAIN:-ignite.cam}
       # AWS S3 for image uploads
       S3_MEDIA_BUCKET: ${S3_MEDIA_BUCKET}
       AWS_REGION: ${AWS_REGION:-us-east-1}
