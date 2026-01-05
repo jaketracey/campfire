@@ -41,6 +41,7 @@ class ImageModelSpec:
     supports_inpainting: bool = False
     supports_controlnet: bool = False
     supports_img2img: bool = False
+    requires_reference_image: bool = False  # True for models like PuLID that REQUIRE a reference
 
     # Content capabilities
     nsfw_capable: bool = False
@@ -489,6 +490,7 @@ IMAGE_MODEL_REGISTRY: dict[str, ImageModelSpec] = {
         tags=["customizable", "lora", "editing", "cloud"],
     ),
     # Flux PuLID (Identity-Preserving, 88-93% Face Similarity)
+    # NOTE: This model REQUIRES a reference_image_url - it cannot do text-to-image
     "fal/flux-pulid": ImageModelSpec(
         model_id="fal/flux-pulid",
         provider="fal",
@@ -499,6 +501,7 @@ IMAGE_MODEL_REGISTRY: dict[str, ImageModelSpec] = {
         supports_inpainting=False,
         supports_controlnet=False,
         supports_img2img=True,
+        requires_reference_image=True,  # REQUIRED - cannot generate without reference
         nsfw_capable=False,
         avg_generation_time=8.0,
         cost_per_image=0.033,
@@ -506,7 +509,7 @@ IMAGE_MODEL_REGISTRY: dict[str, ImageModelSpec] = {
         default_cfg_scale=4.0,
         fal_endpoint="fal-ai/flux-pulid",
         is_local=False,
-        tags=["identity-aware", "face-consistency", "photorealistic", "cloud", "anchor"],
+        tags=["identity-aware", "face-consistency", "photorealistic", "cloud", "variation"],
     ),
 }
 
