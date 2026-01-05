@@ -66,6 +66,8 @@ interface ChatSidebarProps {
   // Demo mode
   isDemo?: boolean;
   onRequireAuth?: (trigger: SignupTrigger) => void;
+  onSwitchDemoCompanion?: () => Promise<void>;
+  isSwitchingDemoCompanion?: boolean;
 
   // Resize
   sidebarRef: React.RefObject<HTMLDivElement | null>;
@@ -116,6 +118,8 @@ export function ChatSidebar({
   onShowVideoRequest,
   isDemo,
   onRequireAuth,
+  onSwitchDemoCompanion,
+  isSwitchingDemoCompanion,
   sidebarRef,
   sidebarWidth,
   isResizing,
@@ -166,9 +170,9 @@ export function ChatSidebar({
           {/* Only render CompanionAvatar once we have companion data with anchor image */}
           {companion?.avatarUrl ? (
             <CompanionAvatarSwitcher
-              onSwitch={onSwitchCompanion}
-              isGenerating={isGeneratingNewCompanion}
-              disabled={isDemo}
+              onSwitch={isDemo && onSwitchDemoCompanion ? onSwitchDemoCompanion : onSwitchCompanion}
+              isGenerating={isGeneratingNewCompanion || Boolean(isDemo && isSwitchingDemoCompanion)}
+              disabled={Boolean(isDemo && !onSwitchDemoCompanion)}
             >
               <button
                 onClick={() => handleDemoGuard('gallery', onShowGallery)}
@@ -204,7 +208,7 @@ export function ChatSidebar({
           )}
 
           <div className="mt-3 h-6 flex items-center justify-center">
-            {companion && !isGeneratingNewCompanion ? (
+            {companion && !isGeneratingNewCompanion && !(isDemo && isSwitchingDemoCompanion) ? (
               <p className="text-base font-semibold text-foreground">{companion.name}</p>
             ) : (
               <div className="w-32 h-5 bg-muted animate-pulse rounded" />
@@ -212,7 +216,7 @@ export function ChatSidebar({
           </div>
 
           <div className="flex items-center justify-center gap-1 mt-1 h-5">
-            {!isGeneratingNewCompanion ? (
+            {!isGeneratingNewCompanion && !(isDemo && isSwitchingDemoCompanion) ? (
               <>
                 <Heart className="h-3.5 w-3.5 text-red-500 fill-red-500" />
                 <span className="text-sm font-medium text-foreground">{sessionTotalLikes}</span>
@@ -223,7 +227,7 @@ export function ChatSidebar({
           </div>
 
           <div className="mt-1 h-5 flex items-center justify-center">
-            {!isGeneratingNewCompanion ? (
+            {!isGeneratingNewCompanion && !(isDemo && isSwitchingDemoCompanion) ? (
               <p className="text-sm text-muted-foreground">
                 Feeling: <span className="font-medium text-foreground capitalize">{currentEmotionalState}</span>
               </p>
@@ -233,7 +237,7 @@ export function ChatSidebar({
           </div>
 
           {/* Buttons section - fade out during companion switch */}
-          <div className={`w-full transition-opacity duration-300 ${isGeneratingNewCompanion ? 'opacity-0 pointer-events-none' : 'opacity-100'}`}>
+          <div className={`w-full transition-opacity duration-300 ${isGeneratingNewCompanion || (isDemo && isSwitchingDemoCompanion) ? 'opacity-0 pointer-events-none' : 'opacity-100'}`}>
             {/* Voice Call Button */}
             <div className="w-full px-2 mt-3">
               <CallButton onClick={onCallClick} disabled={isCallActive} />
