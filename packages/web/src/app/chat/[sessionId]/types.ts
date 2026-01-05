@@ -14,6 +14,18 @@ export interface Message {
   isReaction?: boolean;
   // Animation control
   isNew?: boolean;
+  // Gift message data
+  giftData?: GiftData;
+}
+
+// Gift data for gift messages
+export interface GiftData {
+  id: string;
+  name: string;
+  description: string;
+  imageUrl: string | null;
+  emotionalMeaning: string;
+  tokenCost: number;
 }
 
 // Segment type for parsed message content
@@ -56,4 +68,10 @@ export interface ChatSessionContentProps {
   onLimitReached?: () => void;
   /** Callback when user tries to access a feature requiring auth (demo mode only) */
   onRequireAuth?: (trigger: SignupTrigger) => void;
+  /** Callback to switch to a new random demo companion (demo mode only) */
+  onSwitchDemoCompanion?: () => Promise<void>;
+  /** Whether a demo companion switch is in progress (demo mode only) */
+  isSwitchingDemoCompanion?: boolean;
+  /** Whether to show the mobile avatar in the top-right corner (demo mode only) */
+  demoAvatarTopRight?: boolean;
 }

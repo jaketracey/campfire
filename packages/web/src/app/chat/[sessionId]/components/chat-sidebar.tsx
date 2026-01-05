@@ -308,10 +308,9 @@ export function ChatSidebar({
           <div className="w-full px-2 mb-4">
             <Button
               variant="default"
-              className="w-full justify-center gap-2 py-5 text-base bg-gradient-to-r from-campfire-500 to-campfire-600 hover:from-campfire-600 hover:to-campfire-700 shadow-lg"
+              className="w-full justify-center py-5 text-base bg-gradient-to-r from-campfire-500 via-rose-500 to-orange-500 hover:from-campfire-600 hover:via-rose-600 hover:to-orange-600 shadow-[0_0_20px_rgba(249,115,22,0.3)] hover:shadow-[0_0_40px_rgba(249,115,22,0.5)] transition-all duration-300"
               onClick={onDesignCompanion}
             >
-              <Sparkles className="h-5 w-5" />
               Design Companion
             </Button>
           </div>

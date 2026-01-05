@@ -28,6 +28,9 @@ export function ChatSessionContent({
   demoCompanion,
   onLimitReached,
   onRequireAuth,
+  onSwitchDemoCompanion,
+  isSwitchingDemoCompanion,
+  demoAvatarTopRight,
 }: ChatSessionContentProps) {
   const chat = useChatSession({
     sessionId,
@@ -97,6 +100,8 @@ export function ChatSessionContent({
         onShowVideoRequest={() => chat.setShowVideoRequest(true)}
         isDemo={isDemo}
         onRequireAuth={onRequireAuth}
+        onSwitchDemoCompanion={onSwitchDemoCompanion}
+        isSwitchingDemoCompanion={isSwitchingDemoCompanion}
         sidebarRef={chat.sidebarRef}
         sidebarWidth={chat.sidebarWidth}
         isResizing={chat.isResizing}
@@ -226,6 +231,7 @@ export function ChatSessionContent({
           mobileGalleryLoading={chat.mobileGalleryLoading}
           isDemo={isDemo}
           onRequireAuth={onRequireAuth}
+          demoAvatarTopRight={demoAvatarTopRight}
         />
       </div>
 
@@ -289,9 +295,7 @@ export function ChatSessionContent({
           companionId={chat.companion.id}
           isOpen={chat.showGiftsPanel}
           onClose={() => chat.setShowGiftsPanel(false)}
-          onGiftSent={(gift) => {
-            console.log('Gift sent:', gift.name);
-          }}
+          onGiftSent={chat.handleGiftSent}
         />
       )}
 

@@ -2,7 +2,9 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
+import { motion, AnimatePresence } from 'framer-motion';
 import { AnimatedFlame } from '@/components/ui/animated-flame';
+import { Button } from '@/components/ui/button';
 import { ChatSessionContent } from '../[sessionId]/chat-session-content';
 import { SignupModal, type SignupTrigger } from '@/components/demo/signup-modal';
 import { getDemoCompanion, createDemoSession, type DemoCompanion } from '@/lib/api/demo';
@@ -23,6 +25,8 @@ export default function DemoChatPage() {
   const [companion, setCompanion] = useState<DemoCompanion | null>(null);
   const [showSignupModal, setShowSignupModal] = useState(false);
   const [signupTrigger, setSignupTrigger] = useState<SignupTrigger>('general');
+  const [isSwitchingCompanion, setIsSwitchingCompanion] = useState(false);
+  const [showDesignCTA, setShowDesignCTA] = useState(false);
 
   // Redirect authenticated users to dashboard
   useEffect(() => {
@@ -30,6 +34,17 @@ export default function DemoChatPage() {
       router.replace('/dashboard');
     }
   }, [isInitialized, user, router]);
+
+  // Show Design Your Companion CTA after 12 seconds
+  useEffect(() => {
+    if (!sessionId || isLoading) return;
+
+    const timer = setTimeout(() => {
+      setShowDesignCTA(true);
+    }, 12000);
+
+    return () => clearTimeout(timer);
+  }, [sessionId, isLoading]);
 
   // Initialize demo session
   useEffect(() => {
@@ -82,6 +97,41 @@ export default function DemoChatPage() {
     setSignupTrigger(trigger);
     setShowSignupModal(true);
   }, []);
+
+  // Handle switching to a new random demo companion
+  const handleSwitchDemoCompanion = useCallback(async () => {
+    if (isSwitchingCompanion || !fingerprint) return;
+
+    setIsSwitchingCompanion(true);
+    try {
+      // Get a new random demo companion
+      const newCompanion = await getDemoCompanion();
+
+      // Create a new demo session with the new companion
+      const newSession = await createDemoSession({
+        companionId: newCompanion.id,
+        fingerprint,
+      });
+
+      // Update state - this will trigger a re-render with new companion
+      setCompanion(newCompanion);
+      setSessionId(newSession.id);
+    } catch (err) {
+      console.error('[DemoChat] Switch companion error:', err);
+      toast({
+        title: 'Failed to switch companion',
+        description: 'Please try again.',
+        variant: 'destructive',
+      });
+    } finally {
+      setIsSwitchingCompanion(false);
+    }
+  }, [isSwitchingCompanion, fingerprint, toast]);
+
+  // Handle Design Your Companion click
+  const handleDesignCompanion = useCallback(() => {
+    router.push('/onboard');
+  }, [router]);
 
   // Handle Google sign-in success
   const handleGoogleSuccess = useCallback(
@@ -207,6 +257,9 @@ export default function DemoChatPage() {
         demoCompanion={companion}
         onLimitReached={handleLimitReached}
         onRequireAuth={handleRequireAuth}
+        onSwitchDemoCompanion={handleSwitchDemoCompanion}
+        isSwitchingDemoCompanion={isSwitchingCompanion}
+        demoAvatarTopRight={showDesignCTA}
       />
       <SignupModal
         open={showSignupModal}
@@ -217,6 +270,37 @@ export default function DemoChatPage() {
         onEmailSignup={handleEmailSignup}
         trigger={signupTrigger}
       />
+
+      {/* Design Your Companion CTA - appears after 12 seconds */}
+      <AnimatePresence>
+        {showDesignCTA && (
+          <motion.div
+            initial={{ y: 100, opacity: 0 }}
+            animate={{ y: 0, opacity: 1 }}
+            exit={{ y: 100, opacity: 0 }}
+            transition={{ type: 'spring', stiffness: 200, damping: 20 }}
+            className="fixed bottom-6 left-4 right-4 lg:bottom-32 lg:left-1/2 lg:-translate-x-1/2 lg:right-auto lg:w-auto z-50 flex flex-col items-center gap-3"
+          >
+            {/* Desktop-only feature list */}
+            <motion.p
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: 0.3, duration: 0.4 }}
+              className="hidden lg:block text-center text-sm text-muted-foreground max-w-md"
+            >
+              Choose their appearance, personality, voice, and more
+            </motion.p>
+
+            <Button
+              onClick={handleDesignCompanion}
+              size="lg"
+              className="w-full lg:w-auto h-14 lg:h-16 px-8 lg:px-12 rounded-2xl bg-gradient-to-r from-campfire-500 via-rose-500 to-orange-500 hover:from-campfire-600 hover:via-rose-600 hover:to-orange-600 shadow-[0_0_30px_rgba(249,115,22,0.4)] hover:shadow-[0_0_50px_rgba(249,115,22,0.6)] transition-all duration-300 text-lg lg:text-xl font-bold"
+            >
+              Design Your Own Companion
+            </Button>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </>
   );
 }

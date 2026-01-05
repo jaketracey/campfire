@@ -24,6 +24,7 @@ interface MobileAvatarProps {
   // Demo mode
   isDemo?: boolean;
   onRequireAuth?: (trigger: SignupTrigger) => void;
+  demoAvatarTopRight?: boolean;
 }
 
 export function MobileAvatar({
@@ -40,6 +41,7 @@ export function MobileAvatar({
   mobileGalleryLoading,
   isDemo,
   onRequireAuth,
+  demoAvatarTopRight,
 }: MobileAvatarProps) {
   if (!currentAvatarUrl) {
     return null;
@@ -81,9 +83,11 @@ export function MobileAvatar({
         className={`lg:hidden fixed z-50 rounded-xl overflow-hidden border-2 border-campfire-500 shadow-xl bg-muted cursor-pointer ${
           showMobileAvatar
             ? 'inset-4 top-16 bottom-auto max-h-[70vh]'
-            : 'right-4 w-[120px] h-[144px]'
+            : demoAvatarTopRight
+              ? 'right-4 top-20 w-[80px] h-[96px]'
+              : 'right-4 w-[120px] h-[144px]'
         }`}
-        style={!showMobileAvatar ? { bottom: keyboardHeight > 0 ? `${keyboardHeight + 150}px` : '150px' } : undefined}
+        style={!showMobileAvatar && !demoAvatarTopRight ? { bottom: keyboardHeight > 0 ? `${keyboardHeight + 150}px` : '150px' } : undefined}
         animate={!showMobileAvatar ? { scale: mobileAvatarPop ? 1.15 : 1 } : undefined}
         transition={{ type: 'spring', stiffness: 400, damping: 20 }}
       >
