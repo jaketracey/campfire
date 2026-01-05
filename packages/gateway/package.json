@@ -42,6 +42,7 @@
     "@opentelemetry/semantic-conventions": "^1.28.0",
     "bcrypt": "^6.0.0",
     "bullmq": "^5.30.0",
+    "dockerode": "^4.0.9",
     "fastify": "^5.1.0",
     "ioredis": "^5.4.2",
     "jose": "^5.9.6",
@@ -54,6 +55,7 @@
   },
   "devDependencies": {
     "@types/bcrypt": "^6.0.0",
+    "@types/dockerode": "^3.3.47",
     "@types/node": "^22.10.2",
     "@types/ws": "^8.5.13",
     "@vitest/coverage-v8": "^2.1.8",

@@ -63,6 +63,8 @@ services:
     ports:
       - "4000:4000"
       - "4001:4001"  # WebSocket port
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro  # Read-only access to Docker logs
     environment:
       NODE_ENV: development
       LOG_LEVEL: debug
