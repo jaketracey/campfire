@@ -21,7 +21,7 @@ source "${SCRIPT_DIR}/../vpc-outputs.env"
 if [[ $# -lt 1 ]]; then
     echo "Usage: $0 <service_name> [command]"
     echo ""
-    echo "Services: gateway, orchestrator, web, marketing, workers"
+    echo "Services: gateway, orchestrator, web, workers"
     echo ""
     echo "Examples:"
     echo "  $0 gateway                    # Opens /bin/sh shell"

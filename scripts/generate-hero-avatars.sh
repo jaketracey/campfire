@@ -110,8 +110,10 @@ generate_avatar "avatar-3" "masterpiece, best quality, portrait of a stunning bl
 generate_avatar "avatar-4" "masterpiece, best quality, portrait of an attractive latina woman, long dark wavy hair, olive skin, sultry expression, glamorous, wearing stylish top, dramatic lighting, looking at viewer, passionate, alluring smile, professional photography, 8k"
 
 echo ""
-echo "=== Copying to marketing folder ==="
-cp "$OUTPUT_DIR"/*.png /Users/jake/Projects/campfire/packages/marketing/public/avatars/
+echo "=== Copying to web app folder ==="
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
+cp "$OUTPUT_DIR"/*.png "${PROJECT_ROOT}/packages/web/public/avatars/"
 
 echo "=== Done ==="
 ls -la "$OUTPUT_DIR"

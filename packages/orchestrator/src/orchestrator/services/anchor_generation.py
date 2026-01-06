@@ -12,6 +12,7 @@ from typing import Any
 import structlog
 
 from orchestrator.providers.fal import FalProvider
+from orchestrator.prompts.manager import PromptManager
 
 logger = structlog.get_logger()
 
@@ -195,13 +196,14 @@ class AnchorGenerationService:
     2. VARIATIONS: Generate scene anchors with PuLID Flux for 88-93% face similarity
     """
 
-    def __init__(self, fal_provider: FalProvider):
+    def __init__(self, fal_provider: FalProvider, prompt_manager: PromptManager):
         """Initialize the anchor generation service.
 
         Args:
             fal_provider: FAL provider for image generation
         """
         self.fal_provider = fal_provider
+        self.prompt_manager = prompt_manager
 
     async def generate_companion_anchors(
         self,
@@ -211,6 +213,7 @@ class AnchorGenerationService:
         variation_count: int = 3,
         width: int = 768,
         height: int = 1024,
+        negative_prompt: str | None = None,
     ) -> AnchorGenerationResult:
         """Generate a complete set of anchor images for a companion.
 
@@ -238,7 +241,7 @@ class AnchorGenerationService:
         total_start_time = 0.0
 
         # Phase 1: Generate SEED image with Dreamina v3.1
-        seed_prompt = self._build_seed_prompt(appearance, random_seed)
+        seed_prompt = self._build_seed_prompt(companion_id, appearance, random_seed)
         seed_result = await self.fal_provider.generate_dreamina_seed(
             prompt=seed_prompt,
             width=width,
@@ -276,13 +279,14 @@ class AnchorGenerationService:
         variation_anchors: list[AnchorResult] = []
 
         for scene_config in selected_scenes:
-            variation_prompt = self._build_variation_prompt(appearance, scene_config)
+            variation_prompt = self._build_variation_prompt(companion_id, appearance, scene_config)
 
             variation_result = await self.fal_provider.generate_pulid_variation(
                 prompt=variation_prompt,
                 reference_image_url=seed_result["image_url"],
                 width=width,
                 height=height,
+                negative_prompt=negative_prompt,
                 id_weight=1.0,  # Maximum identity preservation
             )
 
@@ -324,6 +328,7 @@ class AnchorGenerationService:
 
     def _build_seed_prompt(
         self,
+        companion_id: str,
         appearance: dict[str, Any],
         random_seed: int,
     ) -> str:
@@ -367,25 +372,25 @@ class AnchorGenerationService:
         age_range = "25-35" if gender == "female" else "28-40"
         pronoun = "She" if gender == "female" else "He"
 
-        prompt_parts = [
-            f"Portrait of an attractive {age_range} year old {ethnicity_text}",
-            f"with {hair_desc}, styled beautifully.",
-            f"{pronoun} has a {body_desc}.",
-            f"{pronoun} has a {size_desc}.",
-            studio_scene.setting,
-            f"Wearing a {outfit_color} {outfit}.",
-            f"{lighting}.",
-            "Warm genuine smile, confident and approachable.",
-            "Looking directly at camera with friendly expressive eyes.",
-            "Waist-up framing, shallow depth of field, shot on 85mm lens.",
-            "Photorealistic, natural skin texture, high resolution.",
-            "Professional portrait photography, soft bokeh background.",
-        ]
-
-        return " ".join(prompt_parts)
+        return self.prompt_manager.get_prompt_effective(
+            "orchestrator.anchor_seed_prompt",
+            version=self.prompt_manager.current_version,
+            companion_id=companion_id,
+            age_range=age_range,
+            ethnicity_text=ethnicity_text,
+            hair_desc=hair_desc,
+            pronoun=pronoun,
+            body_desc=body_desc,
+            size_desc=size_desc,
+            scene_setting=f"{studio_scene.setting}.",
+            outfit_color=outfit_color,
+            outfit=outfit,
+            lighting=lighting,
+        )
 
     def _build_variation_prompt(
         self,
+        companion_id: str,
         appearance: dict[str, Any],
         scene_config: SceneConfig,
     ) -> str:
@@ -413,15 +418,14 @@ class AnchorGenerationService:
 
         age_range = "25-35" if gender == "female" else "28-40"
 
-        prompt_parts = [
-            f"{age_range} year old {ethnicity_text}",
-            f"with {hair_desc}, {body_desc}.",
-            scene_config.setting + ".",
-            f"Wearing a {outfit}.",
-            "Warm genuine smile, confident and approachable.",
-            "Looking at camera with friendly eyes.",
-            "Waist-up framing, shallow depth of field, shot on 85mm lens.",
-            "Photorealistic, natural skin texture, high resolution.",
-        ]
-
-        return " ".join(prompt_parts)
+        return self.prompt_manager.get_prompt_effective(
+            "orchestrator.anchor_variation_prompt",
+            version=self.prompt_manager.current_version,
+            companion_id=companion_id,
+            age_range=age_range,
+            ethnicity_text=ethnicity_text,
+            hair_desc=hair_desc,
+            body_desc=body_desc,
+            scene_setting=scene_config.setting,
+            outfit=outfit,
+        )

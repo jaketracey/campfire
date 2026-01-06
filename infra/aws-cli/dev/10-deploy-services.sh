@@ -117,10 +117,6 @@ if [[ "${SERVICE_TO_DEPLOY}" == "all" || "${SERVICE_TO_DEPLOY}" == "web" ]]; the
     deploy_service "web" "${RESOURCE_PREFIX}-web" "${WEB_TG_ARN}" "web" "3000" "${WEB_DESIRED_COUNT}" "web"
 fi
 
-if [[ "${SERVICE_TO_DEPLOY}" == "all" || "${SERVICE_TO_DEPLOY}" == "marketing" ]]; then
-    deploy_service "marketing" "${RESOURCE_PREFIX}-marketing" "${MARKETING_TG_ARN}" "marketing" "3001" "${MARKETING_DESIRED_COUNT}" "marketing"
-fi
-
 if [[ "${SERVICE_TO_DEPLOY}" == "all" || "${SERVICE_TO_DEPLOY}" == "workers" ]]; then
     # Workers don't need ALB
     deploy_service "workers" "${RESOURCE_PREFIX}-workers" "" "workers" "8080" "${WORKERS_DESIRED_COUNT}" "workers"
@@ -132,7 +128,7 @@ fi
 log "Waiting for services to stabilize..."
 
 if [[ "${SERVICE_TO_DEPLOY}" == "all" ]]; then
-    SERVICES_TO_WAIT="${RESOURCE_PREFIX}-gateway ${RESOURCE_PREFIX}-orchestrator ${RESOURCE_PREFIX}-web ${RESOURCE_PREFIX}-marketing ${RESOURCE_PREFIX}-workers"
+    SERVICES_TO_WAIT="${RESOURCE_PREFIX}-gateway ${RESOURCE_PREFIX}-orchestrator ${RESOURCE_PREFIX}-web ${RESOURCE_PREFIX}-workers"
 else
     SERVICES_TO_WAIT="${RESOURCE_PREFIX}-${SERVICE_TO_DEPLOY}"
 fi

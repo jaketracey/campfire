@@ -175,7 +175,7 @@ export default function ImageProviderDetailPage() {
   const handleDelete = async () => {
     try {
       await deleteImageProvider(providerId);
-      router.push('/admin/image-providers' as Route);
+      router.push('/admin/providers?tab=image' as Route);
     } catch (error) {
       console.error('Failed to delete image provider:', error);
     }
@@ -288,7 +288,7 @@ export default function ImageProviderDetailPage() {
     return (
       <div className="space-y-6">
         <div className="flex items-center gap-4">
-          <Link href={'/admin/image-providers' as Route}>
+          <Link href={'/admin/providers?tab=image' as Route}>
             <Button variant="ghost" size="sm">
               <ArrowLeft className="h-4 w-4 mr-2" />
               Back
@@ -309,7 +309,7 @@ export default function ImageProviderDetailPage() {
     return (
       <div className="space-y-6">
         <div className="flex items-center gap-4">
-          <Link href={'/admin/image-providers' as Route}>
+          <Link href={'/admin/providers?tab=image' as Route}>
             <Button variant="ghost" size="sm">
               <ArrowLeft className="h-4 w-4 mr-2" />
               Back
@@ -328,7 +328,7 @@ export default function ImageProviderDetailPage() {
       {/* Header */}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-4">
-          <Link href={'/admin/image-providers' as Route}>
+          <Link href={'/admin/providers?tab=image' as Route}>
             <Button variant="ghost" size="sm">
               <ArrowLeft className="h-4 w-4 mr-2" />
               Back

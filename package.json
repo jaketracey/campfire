@@ -16,6 +16,7 @@
     "test:e2e": "turbo run test:e2e",
     "lint": "turbo run lint",
     "typecheck": "turbo run typecheck",
+    "audit:prompts": "bash scripts/audit-prompts.sh",
     "db:migrate": "pnpm --filter gateway db:migrate",
     "db:seed": "pnpm --filter gateway db:seed",
     "docker:build": "docker-compose -f infra/docker/docker-compose.yml build",

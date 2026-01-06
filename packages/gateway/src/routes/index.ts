@@ -52,6 +52,7 @@ import { adminSeoRoutes } from './admin-seo.js';
 import { seoPublicRoutes } from './seo-public.js';
 import { videosRoutes, mediaRoutes } from './videos.js';
 import { adminLogsRoutes } from './admin-logs.js';
+import { adminPromptsRoutes } from './admin-prompts.js';
 import { logger } from '../observability/logger.js';
 
 /**
@@ -171,6 +172,9 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
 
       // Admin logs routes (Docker container logs)
       await api.register(adminLogsRoutes, { prefix: '/admin/logs' });
+
+      // Admin prompt templates routes
+      await api.register(adminPromptsRoutes, { prefix: '/admin/prompts' });
 
       // Public SEO routes (for SSR/sitemap)
       await api.register(seoPublicRoutes, { prefix: '/public' });

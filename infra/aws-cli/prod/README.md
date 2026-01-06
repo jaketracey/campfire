@@ -419,7 +419,7 @@ aws ecs update-service \
 
 ### Cost Optimization Tips
 1. Use ARM64 (Graviton) - 20% savings (already configured)
-2. FARGATE_SPOT for marketing/workers - up to 70% savings
+2. FARGATE_SPOT for workers - up to 70% savings
 3. Reserved Capacity for RDS - up to 40% savings
 4. S3 Intelligent-Tiering - automatic cost optimization
 5. VPC Endpoints - reduce NAT data transfer costs
@@ -467,7 +467,7 @@ aws s3api copy-object \
 
 ```bash
 # Scale down all services first
-for service in gateway orchestrator web marketing workers; do
+for service in gateway orchestrator web workers; do
     aws ecs update-service \
         --cluster campfire-prod-cluster \
         --service campfire-prod-${service} \
@@ -475,7 +475,7 @@ for service in gateway orchestrator web marketing workers; do
 done
 
 # Wait and delete services
-for service in gateway orchestrator web marketing workers; do
+for service in gateway orchestrator web workers; do
     aws ecs delete-service \
         --cluster campfire-prod-cluster \
         --service campfire-prod-${service} \

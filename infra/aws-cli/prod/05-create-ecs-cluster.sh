@@ -131,7 +131,6 @@ create_discovery_service() {
 create_discovery_service "gateway" "4000"
 create_discovery_service "orchestrator" "5000"
 create_discovery_service "web" "3000"
-create_discovery_service "marketing" "3001"
 create_discovery_service "workers" "8080"
 
 # -----------------------------------------------------------------------------
@@ -178,7 +177,6 @@ echo "Services can communicate using DNS:"
 echo "  - gateway.${NAMESPACE_NAME}:4000"
 echo "  - orchestrator.${NAMESPACE_NAME}:5000"
 echo "  - web.${NAMESPACE_NAME}:3000"
-echo "  - marketing.${NAMESPACE_NAME}:3001"
 echo "  - workers.${NAMESPACE_NAME}:8080"
 echo ""
 echo "Next step: ./06-create-task-definitions.sh"

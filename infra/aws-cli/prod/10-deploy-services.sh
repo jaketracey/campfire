@@ -182,12 +182,6 @@ if [[ "${SERVICE_TO_DEPLOY}" == "all" || "${SERVICE_TO_DEPLOY}" == "web" ]]; the
         "${WEB_DESIRED_COUNT}" "${WEB_MIN_COUNT}" "${WEB_MAX_COUNT}" "web" "false"
 fi
 
-if [[ "${SERVICE_TO_DEPLOY}" == "all" || "${SERVICE_TO_DEPLOY}" == "marketing" ]]; then
-    # Marketing can use SPOT for cost savings (less critical)
-    deploy_service "marketing" "${RESOURCE_PREFIX}-marketing" "${MARKETING_TG_ARN}" "marketing" "3001" \
-        "${MARKETING_DESIRED_COUNT}" "${MARKETING_MIN_COUNT}" "${MARKETING_MAX_COUNT}" "marketing" "true"
-fi
-
 if [[ "${SERVICE_TO_DEPLOY}" == "all" || "${SERVICE_TO_DEPLOY}" == "workers" ]]; then
     # Workers can use SPOT for cost savings
     deploy_service "workers" "${RESOURCE_PREFIX}-workers" "" "workers" "8080" \
@@ -200,7 +194,7 @@ fi
 log "Waiting for services to stabilize (this may take several minutes)..."
 
 if [[ "${SERVICE_TO_DEPLOY}" == "all" ]]; then
-    SERVICES_TO_WAIT="${RESOURCE_PREFIX}-gateway ${RESOURCE_PREFIX}-orchestrator ${RESOURCE_PREFIX}-web ${RESOURCE_PREFIX}-marketing ${RESOURCE_PREFIX}-workers"
+    SERVICES_TO_WAIT="${RESOURCE_PREFIX}-gateway ${RESOURCE_PREFIX}-orchestrator ${RESOURCE_PREFIX}-web ${RESOURCE_PREFIX}-workers"
 else
     SERVICES_TO_WAIT="${RESOURCE_PREFIX}-${SERVICE_TO_DEPLOY}"
 fi
@@ -259,7 +253,6 @@ echo "Service Limits:"
 echo "  Gateway:      min=${GATEWAY_MIN_COUNT}, max=${GATEWAY_MAX_COUNT}"
 echo "  Orchestrator: min=${ORCHESTRATOR_MIN_COUNT}, max=${ORCHESTRATOR_MAX_COUNT}"
 echo "  Web:          min=${WEB_MIN_COUNT}, max=${WEB_MAX_COUNT}"
-echo "  Marketing:    min=${MARKETING_MIN_COUNT}, max=${MARKETING_MAX_COUNT} (SPOT enabled)"
 echo "  Workers:      min=${WORKERS_MIN_COUNT}, max=${WORKERS_MAX_COUNT} (SPOT enabled)"
 echo ""
 if [[ -n "${HTTPS_LISTENER_ARN:-}" ]]; then

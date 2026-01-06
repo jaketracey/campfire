@@ -1,8 +1,8 @@
 /**
- * Generate Base Images for Marketing and Onboarding
+ * Generate Base Images for Web and Onboarding
  *
  * This script generates companion avatar images for various emotional states
- * and saves them to the public folders for marketing and web packages.
+ * and saves them to the web package public folder.
  *
  * Usage: npx tsx scripts/generate-base-images.ts
  */
@@ -250,11 +250,10 @@ async function main() {
   }
 
   const projectRoot = path.resolve(__dirname, '..');
-  const marketingOutputDir = path.join(projectRoot, 'packages/marketing/public/generated');
   const webOutputDir = path.join(projectRoot, 'packages/web/public/generated');
 
-  console.log('=== Generating Marketing Images ===');
-  await generateAndSaveImages(marketingImages, marketingOutputDir);
+  console.log('=== Generating Marketing Images (saved in web) ===');
+  await generateAndSaveImages(marketingImages, webOutputDir);
 
   console.log('\n=== Generating Onboarding Images ===');
   await generateAndSaveImages(onboardingImages, webOutputDir);
@@ -281,7 +280,6 @@ async function main() {
   );
 
   console.log('\nDone! Generated images saved to:');
-  console.log(`  Marketing: ${marketingOutputDir}`);
   console.log(`  Web: ${webOutputDir}`);
 }
 

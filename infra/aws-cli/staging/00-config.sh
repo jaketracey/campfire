@@ -46,7 +46,6 @@ export S3_VAULT_BUCKET="${RESOURCE_PREFIX}-vault"
 export ECR_GATEWAY_REPO="${RESOURCE_PREFIX}/gateway"
 export ECR_ORCHESTRATOR_REPO="${RESOURCE_PREFIX}/orchestrator"
 export ECR_WEB_REPO="${RESOURCE_PREFIX}/web"
-export ECR_MARKETING_REPO="${RESOURCE_PREFIX}/marketing"
 export ECR_WORKERS_REPO="${RESOURCE_PREFIX}/workers"
 
 # -----------------------------------------------------------------------------
@@ -88,12 +87,6 @@ export WEB_MEMORY="1024"
 export WEB_DESIRED_COUNT="2"
 export WEB_MIN_COUNT="2"
 export WEB_MAX_COUNT="6"
-
-export MARKETING_CPU="256"
-export MARKETING_MEMORY="512"
-export MARKETING_DESIRED_COUNT="2"
-export MARKETING_MIN_COUNT="1"
-export MARKETING_MAX_COUNT="4"
 
 export WORKERS_CPU="512"
 export WORKERS_MEMORY="1024"

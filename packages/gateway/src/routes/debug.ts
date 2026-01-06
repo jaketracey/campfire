@@ -10,6 +10,7 @@ import { getKnowledgeGraphRepository } from '../repositories/knowledge-graph.js'
 import { getEventStore } from '../db/event-store.js';
 import { logger } from '../observability/logger.js';
 import { withSpan } from '../observability/tracing.js';
+import { renderPromptFromDb } from '../services/prompt-runtime.js';
 
 // Orchestrator base URL for LLM calls
 const ORCHESTRATOR_URL = process.env['ORCHESTRATOR_URL'] || 'http://localhost:8000';
@@ -214,27 +215,30 @@ export async function debugRoutes(app: FastifyInstance): Promise<void> {
           });
         }
 
-        // Call orchestrator to generate summary
-        const prompt = `You are a knowledge graph analyst. Analyze the following knowledge graph data and provide a concise summary of what the AI companion knows about this user.
+        const { rendered: systemPrompt } = await renderPromptFromDb({
+          key: 'gateway.debug_kg_system_prompt',
+          variables: {},
+        });
 
-Knowledge Graph Data:
-- Total Entities: ${kgData.entityCount}
-- Total Relationships: ${kgData.edgeCount}
-- Entity Types: ${JSON.stringify(kgData.entityTypes)}
-- Relationship Types: ${JSON.stringify(kgData.relationTypes)}
+        const sampleEntitiesBullets = kgData.sampleEntities.length > 0
+          ? kgData.sampleEntities.map((e) => `- ${e.name} (${e.type})`).join('\n')
+          : '- (none)';
 
-Sample Entities:
-${kgData.sampleEntities.map((e) => `- ${e.name} (${e.type})`).join('\n')}
+        const sampleEdgesBullets = kgData.sampleEdges.length > 0
+          ? kgData.sampleEdges.map((e) => `- ${e.source} --[${e.relation}]--> ${e.target} (confidence: ${e.confidence.toFixed(2)})`).join('\n')
+          : '- (none)';
 
-Sample Relationships:
-${kgData.sampleEdges.map((e) => `- ${e.source} --[${e.relation}]--> ${e.target} (confidence: ${e.confidence.toFixed(2)})`).join('\n')}
-
-Provide a 2-3 paragraph summary that:
-1. Describes the key people, places, and concepts the companion knows about
-2. Highlights the most important relationships
-3. Notes any patterns or themes in what has been learned
-
-Keep it conversational and insightful.`;
+        const { rendered: userPrompt } = await renderPromptFromDb({
+          key: 'gateway.debug_kg_user_prompt',
+          variables: {
+            entity_count: kgData.entityCount,
+            edge_count: kgData.edgeCount,
+            entity_types_json: JSON.stringify(kgData.entityTypes),
+            relation_types_json: JSON.stringify(kgData.relationTypes),
+            sample_entities_bullets: sampleEntitiesBullets,
+            sample_edges_bullets: sampleEdgesBullets,
+          },
+        });
 
         try {
           const response = await fetch(`${ORCHESTRATOR_URL}/stream`, {
@@ -243,22 +247,22 @@ Keep it conversational and insightful.`;
             body: JSON.stringify({
               session_id: 'debug-kg-summary',
               user_id: user.userId,
-              companion_spec: {
-                id: 'system',
-                name: 'KG Analyst',
-                description: 'Knowledge graph analysis assistant',
-                personality_traits: ['analytical', 'concise'],
-                communication_style: 'professional',
-                voice_id: null,
-                avatar_url: null,
-                system_prompt: 'You are a knowledge graph analyst. Provide concise, insightful summaries.',
-                safety_level: 'standard',
-                allowed_tools: [],
-                max_context_turns: 1,
-                temperature: 0.3,
-                version: 1,
-              },
-              user_message: prompt,
+                companion_spec: {
+                  id: 'system',
+                  name: 'KG Analyst',
+                  description: 'Knowledge graph analysis assistant',
+                  personality_traits: ['analytical', 'concise'],
+                  communication_style: 'professional',
+                  voice_id: null,
+                  avatar_url: null,
+                  system_prompt: systemPrompt,
+                  safety_level: 'standard',
+                  allowed_tools: [],
+                  max_context_turns: 1,
+                  temperature: 0.3,
+                  version: 1,
+                },
+              user_message: userPrompt,
               recent_turns: [],
               session_summary: null,
               long_term_memories: null,
@@ -306,16 +310,13 @@ Keep it conversational and insightful.`;
             },
           });
         } catch (error) {
+          const errorMessage = error instanceof Error ? error.message : String(error);
           logger.error({ err: error, sessionId }, 'Failed to generate KG summary');
-
-          // Return stats without LLM summary
-          return reply.send({
-            success: true,
-            data: {
-              summary: `Knowledge graph contains ${kgData.entityCount} entities and ${kgData.edgeCount} relationships. Entity types: ${kgData.entityTypes.map((t) => `${t.entityType} (${t.count})`).join(', ')}. Top relationships: ${kgData.relationTypes.slice(0, 5).map((r) => `${r.relationType} (${r.count})`).join(', ')}.`,
-              stats: kgData,
-              llmError: 'Could not generate detailed summary',
-            },
+          return reply.status(502).send({
+            success: false,
+            error: 'Failed to generate KG summary',
+            details: errorMessage,
+            stats: kgData,
           });
         }
       });

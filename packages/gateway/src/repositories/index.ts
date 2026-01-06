@@ -308,6 +308,19 @@ export type {
   CompanionOverrideListFilters,
 } from './provider-settings.js';
 
+// Prompt Templates repository
+import { getPromptTemplatesRepository as _getPromptTemplatesRepository } from './prompt-templates.js';
+export {
+  PromptTemplatesRepository,
+  getPromptTemplatesRepository,
+} from './prompt-templates.js';
+export type {
+  PromptAdminArea,
+  PromptSettings,
+  PromptDefinition,
+  EffectivePromptTemplate,
+} from './prompt-templates.js';
+
 // Affiliates repository
 import { getAffiliatesRepository as _getAffiliatesRepository } from './affiliates.js';
 export {

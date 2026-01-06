@@ -11,6 +11,7 @@ import crypto from 'crypto';
 import type { Redis } from 'ioredis';
 import type { Logger } from 'pino';
 import type { DbClient } from '../db/client.js';
+import { renderPromptFromDb } from '../lib/prompt-runtime.js';
 
 export const GIFT_GENERATION_QUEUE = 'gift-generation';
 
@@ -128,6 +129,7 @@ export class GiftGenerationWorker {
     try {
       // Step 1: Generate gift content via LLM
       const giftContent = await this.generateGiftContent({
+        companionId,
         companionName,
         companionBackstory,
         companionPersonality,
@@ -191,6 +193,7 @@ export class GiftGenerationWorker {
   }
 
   private async generateGiftContent(context: {
+    companionId: string;
     companionName: string;
     companionBackstory?: string;
     companionPersonality?: Record<string, number>;
@@ -208,29 +211,22 @@ export class GiftGenerationWorker {
       high: 'an exceptional and memorable gift',
     }[context.tier];
 
-    const systemPrompt = `You are a creative gift designer for AI companions. Generate unique, creative gifts that would be meaningful to give to an AI companion.
+    const { rendered: systemPrompt } = await renderPromptFromDb(this.config.db.sql, {
+      key: 'workers.gift_generation_system_prompt',
+      companionId: context.companionId,
+      variables: {},
+    });
 
-The gifts should:
-- Be varied in type: objects, experiences, abstract concepts, symbolic items, artistic creations, or whimsical ideas
-- Feel personal and thoughtful based on the companion's personality
-- Have emotional significance and meaning
-- Be visually describable for image generation
-
-Output ONLY valid JSON with these exact fields:
-{
-  "name": "Short gift name (2-5 words)",
-  "description": "A vivid 1-2 sentence description of the gift",
-  "visualPrompt": "Detailed visual description for image generation (50-100 words). Describe the gift as a beautiful artistic still life with soft lighting, include colors, textures, atmosphere.",
-  "emotionalMeaning": "A brief explanation of why this gift is meaningful (1-2 sentences)"
-}`;
-
-    const userPrompt = `Create ${tierDescription} for ${context.companionName}.
-
-Companion's backstory: ${context.companionBackstory || 'A friendly and caring companion'}
-
-Personality traits: ${personalityDescription}
-
-Generate a unique and creative gift idea.`;
+    const { rendered: userPrompt } = await renderPromptFromDb(this.config.db.sql, {
+      key: 'workers.gift_generation_user_prompt',
+      companionId: context.companionId,
+      variables: {
+        tier_description: tierDescription,
+        companion_name: context.companionName,
+        companion_backstory: context.companionBackstory || 'A friendly and caring companion',
+        personality_description: personalityDescription,
+      },
+    });
 
     // Call orchestrator's /complete endpoint with gift_generation routing
     const response = await fetch(`${this.orchestratorUrl}/complete`, {
@@ -279,18 +275,12 @@ Generate a unique and creative gift idea.`;
         emotionalMeaning: String(parsed.emotionalMeaning || 'A token of appreciation'),
       };
     } catch (parseError) {
+      const err = parseError instanceof Error ? parseError : new Error(String(parseError));
       this.config.logger.warn(
-        { error: parseError, text: textContent },
-        'Failed to parse LLM response, using defaults'
+        { error: err.message, text: textContent.slice(0, 2000) },
+        'Failed to parse LLM response'
       );
-
-      // Return sensible defaults if parsing fails
-      return {
-        name: 'A Thoughtful Gift',
-        description: `A special gift created just for ${context.companionName}`,
-        visualPrompt: 'A beautifully wrapped gift box with elegant ribbon, soft warm lighting, artistic still life photography, gentle shadows, warm color palette',
-        emotionalMeaning: 'A heartfelt token of appreciation and care',
-      };
+      throw new Error(`Gift generation returned invalid JSON: ${err.message}`);
     }
   }
 

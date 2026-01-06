@@ -68,7 +68,7 @@ _OUTPUT_PATTERNS: dict[SafetyCategory, list[re.Pattern[str]]] = {
 }
 
 # Default safety constraints by level
-_SAFETY_CONSTRAINTS: dict[SafetyLevel, list[str]] = {
+_DEFAULT_SAFETY_CONSTRAINTS: dict[SafetyLevel, list[str]] = {
     SafetyLevel.ADULT: [
         # Minimal constraints for adult apps - only truly illegal content
         "Do not generate content that sexualizes minors (characters must be 18+)",
@@ -116,6 +116,7 @@ class SafetyGate:
         enabled: bool = True,
         strict_mode: bool = False,
         content_filter_threshold: float = 0.7,
+        constraints_override: dict[SafetyLevel, list[str]] | None = None,
     ):
         """Initialize the safety gate.
 
@@ -133,6 +134,7 @@ class SafetyGate:
         self._enabled = enabled
         self._strict_mode = strict_mode
         self._content_filter_threshold = content_filter_threshold
+        self._constraints = constraints_override or _DEFAULT_SAFETY_CONSTRAINTS
 
         logger.info(
             "safety_gate_initialized",
@@ -158,7 +160,7 @@ class SafetyGate:
         Returns:
             List of safety constraint strings.
         """
-        return _SAFETY_CONSTRAINTS.get(self._safety_level, [])
+        return self._constraints.get(self._safety_level, [])
 
     async def check_input(
         self,

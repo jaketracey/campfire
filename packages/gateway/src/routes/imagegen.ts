@@ -21,6 +21,7 @@ import {
 import { enqueueImageRenditionJob } from '../utils/queue.js';
 import { getRenditionKeyPrefix, type ImageRenditions } from '@campfire/shared';
 import { getLLMUsageService } from '../services/llm-usage.js';
+import { renderPromptFromDb } from '../services/prompt-runtime.js';
 
 // Orchestrator configuration
 const ORCHESTRATOR_URL = process.env['ORCHESTRATOR_URL'] || 'http://localhost:8000';
@@ -1218,9 +1219,12 @@ export async function imagegenRoutes(app: FastifyInstance): Promise<void> {
         basePromptParts.push(hairColorDesc);
       }
 
-      // Build subject description, then add photography terms
+      // Build subject description, then render base prompt template
       const subjectDesc = basePromptParts.join(', ');
-      const basePrompt = `${subjectDesc}. Portrait photography, natural expression, soft diffused lighting, shallow depth of field, shot on 85mm lens, photorealistic, high resolution`;
+      const { rendered: basePrompt } = await renderPromptFromDb({
+        key: 'gateway.image_anchor_base_prompt',
+        variables: { subject_desc: subjectDesc },
+      });
       const anchorStates = ['neutral', 'happy', 'thoughtful'] as const;
       const generatedAnchors: AnchorImage[] = [];
       let primaryAnchorId: string | null = null;

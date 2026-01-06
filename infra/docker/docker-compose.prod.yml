@@ -216,45 +216,6 @@ services:
         max_attempts: 3
 
   # ---------------------------------------------------------------------------
-  # Marketing Site - Landing pages and marketing content
-  # ---------------------------------------------------------------------------
-  marketing:
-    build:
-      context: ../../
-      dockerfile: infra/docker/Dockerfile.marketing
-      target: production
-    container_name: campfire-marketing-prod
-    restart: always
-    ports:
-      - "3001:3001"
-    environment:
-      NODE_ENV: production
-      PORT: 3001
-      NEXT_PUBLIC_WEB_URL: ${WEB_URL}
-      NEXT_PUBLIC_GATEWAY_URL: ${GATEWAY_URL}
-      NEXT_PUBLIC_GTM_ID: ${GTM_CONTAINER_ID}
-    healthcheck:
-      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:3001/api/health"]
-      interval: 15s
-      timeout: 5s
-      retries: 3
-      start_period: 45s
-    networks:
-      - campfire-prod-network
-    deploy:
-      resources:
-        limits:
-          cpus: '0.5'
-          memory: 512M
-        reservations:
-          cpus: '0.1'
-          memory: 128M
-      restart_policy:
-        condition: on-failure
-        delay: 5s
-        max_attempts: 3
-
-  # ---------------------------------------------------------------------------
   # Workers - Background job processing
   # ---------------------------------------------------------------------------
   workers:
@@ -314,7 +275,6 @@ services:
     depends_on:
       - gateway
       - web
-      - marketing
     networks:
       - campfire-prod-network
     deploy:

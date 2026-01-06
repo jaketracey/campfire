@@ -53,7 +53,7 @@ echo "  Cluster:     ${ECS_CLUSTER_NAME} (${CLUSTER_STATUS})"
 if [[ "${CLUSTER_STATUS}" == "ACTIVE" ]]; then
     echo ""
     echo "  Services:"
-    for service in gateway orchestrator web marketing workers; do
+    for service in gateway orchestrator web workers; do
         SERVICE_NAME="${RESOURCE_PREFIX}-${service}"
         SERVICE_INFO=$(aws ecs describe-services \
             --cluster "${ECS_CLUSTER_NAME}" \
@@ -144,7 +144,7 @@ echo ""
 # -----------------------------------------------------------------------------
 echo "ECR Repositories"
 echo "----------------"
-for repo in "${ECR_GATEWAY_REPO}" "${ECR_ORCHESTRATOR_REPO}" "${ECR_WEB_REPO}" "${ECR_MARKETING_REPO}" "${ECR_WORKERS_REPO}"; do
+for repo in "${ECR_GATEWAY_REPO}" "${ECR_ORCHESTRATOR_REPO}" "${ECR_WEB_REPO}" "${ECR_WORKERS_REPO}"; do
     IMAGE_COUNT=$(aws ecr describe-images --repository-name "${repo}" --query 'length(imageDetails)' --output text 2>/dev/null || echo "N/A")
     echo "  ${repo}: ${IMAGE_COUNT} images"
 done

@@ -7,7 +7,6 @@
     { "path": "packages/shared" },
     { "path": "packages/gateway" },
     { "path": "packages/web" },
-    { "path": "packages/marketing" },
     { "path": "packages/workers" }
   ],
   "exclude": ["node_modules", "dist", ".next", "coverage", "packages/orchestrator"]

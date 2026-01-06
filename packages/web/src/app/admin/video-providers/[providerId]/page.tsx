@@ -171,7 +171,7 @@ export default function VideoProviderDetailPage() {
   const handleDelete = async () => {
     try {
       await deleteVideoProvider(providerId);
-      router.push('/admin/video-providers' as Route);
+      router.push('/admin/providers?tab=video' as Route);
     } catch (error) {
       console.error('Failed to delete video provider:', error);
     }
@@ -273,7 +273,7 @@ export default function VideoProviderDetailPage() {
     return (
       <div className="space-y-6">
         <div className="flex items-center gap-4">
-          <Link href={'/admin/video-providers' as Route}>
+          <Link href={'/admin/providers?tab=video' as Route}>
             <Button variant="ghost" size="sm">
               <ArrowLeft className="h-4 w-4 mr-2" />
               Back
@@ -294,7 +294,7 @@ export default function VideoProviderDetailPage() {
     return (
       <div className="space-y-6">
         <div className="flex items-center gap-4">
-          <Link href={'/admin/video-providers' as Route}>
+          <Link href={'/admin/providers?tab=video' as Route}>
             <Button variant="ghost" size="sm">
               <ArrowLeft className="h-4 w-4 mr-2" />
               Back
@@ -311,7 +311,7 @@ export default function VideoProviderDetailPage() {
       {/* Header */}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-4">
-          <Link href={'/admin/video-providers' as Route}>
+          <Link href={'/admin/providers?tab=video' as Route}>
             <Button variant="ghost" size="sm">
               <ArrowLeft className="h-4 w-4 mr-2" />
               Back

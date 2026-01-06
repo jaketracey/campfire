@@ -19,14 +19,13 @@ This document provides operational procedures for deploying and managing Campfir
 
 ### Architecture
 
-Campfire consists of five services deployed to AWS ECS Fargate:
+Campfire consists of four services deployed to AWS ECS Fargate:
 
 | Service | Port | Description | Load Balanced |
 |---------|------|-------------|---------------|
 | gateway | 4000 | WebSocket and HTTP API gateway | Yes |
 | orchestrator | 5000 | Python agent runner | No (internal) |
 | web | 3000 | Next.js web application | Yes |
-| marketing | 3001 | Marketing site | Yes |
 | workers | 8080 | Background job processors | No |
 
 ### Environments
@@ -59,7 +58,6 @@ PROD_WEB_URL            - Web app URL for prod
 PROD_STRIPE_PUBLISHABLE_KEY - Stripe key for prod
 POSTHOG_KEY             - PostHog project key
 POSTHOG_HOST            - PostHog host URL
-GTM_ID                  - Google Tag Manager ID
 ```
 
 ### AWS OIDC Configuration
@@ -296,7 +294,6 @@ aws ecs describe-services \
     campfire-prod-gateway \
     campfire-prod-orchestrator \
     campfire-prod-web \
-    campfire-prod-marketing \
     campfire-prod-workers
 
 # Single service
@@ -363,7 +360,6 @@ aws ecs execute-command \
 # Check all services
 curl https://api.campfire.com/health         # gateway
 curl https://app.campfire.com/api/health     # web
-curl https://campfire.com/api/health         # marketing
 ```
 
 ---

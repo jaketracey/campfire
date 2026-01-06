@@ -135,7 +135,6 @@ create_ecr_repo() {
 create_ecr_repo "${ECR_GATEWAY_REPO}"
 create_ecr_repo "${ECR_ORCHESTRATOR_REPO}"
 create_ecr_repo "${ECR_WEB_REPO}"
-create_ecr_repo "${ECR_MARKETING_REPO}"
 create_ecr_repo "${ECR_WORKERS_REPO}"
 
 # -----------------------------------------------------------------------------
@@ -143,7 +142,7 @@ create_ecr_repo "${ECR_WORKERS_REPO}"
 # -----------------------------------------------------------------------------
 log "Setting repository policies for production security"
 
-for repo in "${ECR_GATEWAY_REPO}" "${ECR_ORCHESTRATOR_REPO}" "${ECR_WEB_REPO}" "${ECR_MARKETING_REPO}" "${ECR_WORKERS_REPO}"; do
+for repo in "${ECR_GATEWAY_REPO}" "${ECR_ORCHESTRATOR_REPO}" "${ECR_WEB_REPO}" "${ECR_WORKERS_REPO}"; do
     # Allow only specific roles to push (CI/CD role and admin role)
     aws ecr set-repository-policy \
         --repository-name "${repo}" \
@@ -202,7 +201,6 @@ echo "Repositories:"
 echo "  - ${ECR_GATEWAY_REPO}"
 echo "  - ${ECR_ORCHESTRATOR_REPO}"
 echo "  - ${ECR_WEB_REPO}"
-echo "  - ${ECR_MARKETING_REPO}"
 echo "  - ${ECR_WORKERS_REPO}"
 echo ""
 echo "Production Settings:"

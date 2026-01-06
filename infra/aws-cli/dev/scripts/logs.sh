@@ -21,7 +21,7 @@ source "${SCRIPT_DIR}/../00-config.sh"
 if [[ $# -lt 1 ]]; then
     echo "Usage: $0 <service_name> [--follow] [--since <time>]"
     echo ""
-    echo "Services: gateway, orchestrator, web, marketing, workers"
+    echo "Services: gateway, orchestrator, web, workers"
     echo ""
     echo "Options:"
     echo "  --follow, -f    Follow logs in real-time"

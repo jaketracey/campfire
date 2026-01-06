@@ -413,9 +413,10 @@ class PromptManager:
         self,
         default_version: str = "1.0.0",
         custom_templates: dict[str, dict[str, PromptTemplate]] | None = None,
+        include_builtin_templates: bool = True,
     ):
         self._default_version = default_version
-        self._templates = _PROMPT_TEMPLATES.copy()
+        self._templates = _PROMPT_TEMPLATES.copy() if include_builtin_templates else {}
         if custom_templates:
             for version, templates in custom_templates.items():
                 if version not in self._templates:
@@ -438,13 +439,7 @@ class PromptManager:
     def get_template(self, name: str, version: str | None = None) -> PromptTemplate:
         version = version or self._default_version
         if version not in self._templates:
-            available = sorted(self._templates.keys(), reverse=True)
-            for v in available:
-                if v <= version:
-                    version = v
-                    break
-            else:
-                raise KeyError(f"No templates available for version {version}")
+            raise KeyError(f"No templates available for version {version}")
         templates = self._templates[version]
         if name not in templates:
             raise KeyError(f"Template '{name}' not found in version {version}")
@@ -463,6 +458,50 @@ class PromptManager:
         if variables:
             return template.render(**variables)
         return template.template
+
+    def get_prompt_optional(
+        self, name: str, version: str | None = None, **variables: Any
+    ) -> str | None:
+        """Best-effort prompt fetch for optional templates."""
+        try:
+            return self.get_prompt(name, version, **variables)
+        except KeyError:
+            return None
+
+    def get_prompt_effective(
+        self,
+        name: str,
+        version: str | None = None,
+        companion_id: str | None = None,
+        **variables: Any,
+    ) -> str:
+        """Get a prompt, preferring a per-companion override when present.
+
+        Per-companion templates are represented by naming convention:
+        `{name}::companion:{companion_id}`.
+        """
+        if companion_id:
+            override_name = f"{name}::companion:{companion_id}"
+            try:
+                return self.get_prompt(override_name, version, **variables)
+            except KeyError:
+                pass
+        return self.get_prompt(name, version, **variables)
+
+    def get_prompt_effective_optional(
+        self,
+        name: str,
+        version: str | None = None,
+        companion_id: str | None = None,
+        **variables: Any,
+    ) -> str | None:
+        """Best-effort per-companion prompt fetch for optional templates."""
+        if companion_id:
+            override_name = f"{name}::companion:{companion_id}"
+            value = self.get_prompt_optional(override_name, version, **variables)
+            if value is not None:
+                return value
+        return self.get_prompt_optional(name, version, **variables)
 
     def register_template(self, template: PromptTemplate) -> None:
         version = template.version

@@ -145,7 +145,6 @@ jobs:
         package:
           - gateway
           - web
-          - marketing
           - workers
           - shared
     steps:
@@ -201,7 +200,6 @@ jobs:
           - web
           - workers
           - shared
-        # Note: marketing uses type-check script name (handled below)
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -236,46 +234,6 @@ jobs:
 
       - name: Run typecheck
         run: pnpm turbo run typecheck --filter=@campfire/${{ matrix.package }}
-
-  # Marketing package uses different script name (type-check vs typecheck)
-  typecheck-marketing:
-    name: Type Check (marketing)
-    runs-on: ubuntu-latest
-    needs: build-shared
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Setup pnpm
-        uses: pnpm/action-setup@v4
-        with:
-          version: ${{ env.PNPM_VERSION }}
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: ${{ env.NODE_VERSION }}
-          cache: "pnpm"
-
-      - name: Restore Turbo cache
-        uses: actions/cache@v4
-        with:
-          path: .turbo
-          key: ${{ runner.os }}-turbo-${{ github.sha }}
-          restore-keys: |
-            ${{ runner.os }}-turbo-
-
-      - name: Download shared build
-        uses: actions/download-artifact@v4
-        with:
-          name: shared-dist
-          path: packages/shared/dist
-
-      - name: Install dependencies
-        run: pnpm install --frozen-lockfile
-
-      - name: Run type-check
-        run: pnpm --filter @campfire/marketing type-check
 
   # ===========================================================================
   # Unit Tests (Matrix)
@@ -537,7 +495,7 @@ jobs:
   build:
     name: Build
     runs-on: ubuntu-latest
-    needs: [lint, typecheck, typecheck-marketing, test-unit]
+    needs: [lint, typecheck, test-unit]
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -574,7 +532,6 @@ jobs:
           name: nextjs-builds
           path: |
             packages/web/.next
-            packages/marketing/.next
           retention-days: 1
 
   # ===========================================================================
@@ -590,7 +547,6 @@ jobs:
     needs:
       - lint
       - typecheck
-      - typecheck-marketing
       - test-unit
       - test-integration
       - test-python
@@ -600,7 +556,7 @@ jobs:
       - name: Check all job statuses
         run: |
           # Aggregate results from all required jobs
-          results="${{ needs.lint.result }} ${{ needs.typecheck.result }} ${{ needs.typecheck-marketing.result }} ${{ needs.test-unit.result }} ${{ needs.test-integration.result }} ${{ needs.test-python.result }} ${{ needs.build.result }}"
+          results="${{ needs.lint.result }} ${{ needs.typecheck.result }} ${{ needs.test-unit.result }} ${{ needs.test-integration.result }} ${{ needs.test-python.result }} ${{ needs.build.result }}"
 
           echo "Job results: $results"
 

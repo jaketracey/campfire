@@ -42,7 +42,7 @@ log "SNS topic ready: ${SNS_TOPIC_ARN}"
 # -----------------------------------------------------------------------------
 log "Creating CloudWatch log groups"
 
-SERVICES=("gateway" "orchestrator" "web" "marketing" "workers")
+SERVICES=("gateway" "orchestrator" "web" "workers")
 
 for service in "${SERVICES[@]}"; do
     LOG_GROUP="/ecs/${RESOURCE_PREFIX}/${service}"

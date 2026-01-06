@@ -70,15 +70,7 @@ class AnimateDiffProvider:
         frames = frames or self.default_frames
         fps = fps or self.default_fps
 
-        # Default negative prompt for quality
-        if not negative_prompt:
-            negative_prompt = (
-                "ugly, deformed, blurry, low quality, bad anatomy, "
-                "watermark, text, signature, disfigured, cropped, "
-                "bad hands, bad fingers, extra limbs, mutation, "
-                "worst quality, low resolution, artifacts, noise, "
-                "static, frozen, jerky motion, glitches"
-            )
+        negative_prompt = negative_prompt or ""
 
         try:
             async with httpx.AsyncClient(timeout=self.timeout) as client:

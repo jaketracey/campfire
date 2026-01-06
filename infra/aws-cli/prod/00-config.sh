@@ -51,7 +51,6 @@ export S3_BACKUPS_BUCKET="${RESOURCE_PREFIX}-backups"
 export ECR_GATEWAY_REPO="${PROJECT_NAME}/gateway"
 export ECR_ORCHESTRATOR_REPO="${PROJECT_NAME}/orchestrator"
 export ECR_WEB_REPO="${PROJECT_NAME}/web"
-export ECR_MARKETING_REPO="${PROJECT_NAME}/marketing"
 export ECR_WORKERS_REPO="${PROJECT_NAME}/workers"
 
 # -----------------------------------------------------------------------------
@@ -100,12 +99,6 @@ export WEB_MEMORY="1024"
 export WEB_DESIRED_COUNT="3"
 export WEB_MIN_COUNT="2"
 export WEB_MAX_COUNT="10"
-
-export MARKETING_CPU="256"
-export MARKETING_MEMORY="512"
-export MARKETING_DESIRED_COUNT="2"
-export MARKETING_MIN_COUNT="1"
-export MARKETING_MAX_COUNT="5"
 
 export WORKERS_CPU="512"
 export WORKERS_MEMORY="1024"

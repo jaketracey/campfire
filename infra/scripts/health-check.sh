@@ -90,7 +90,6 @@ HEALTH_PATHS=(
     ["gateway"]="/health:4000"
     ["orchestrator"]="/health:5000"
     ["web"]="/api/health:3000"
-    ["marketing"]="/api/health:3001"
     ["workers"]="/health:8080"
 )
 
@@ -127,7 +126,7 @@ echo ""
 log_info "Checking ECS service status..."
 echo ""
 
-SERVICES=("gateway" "orchestrator" "web" "marketing" "workers")
+SERVICES=("gateway" "orchestrator" "web" "workers")
 ALL_HEALTHY=true
 
 printf "%-15s %-10s %-15s %-10s %-20s\n" "SERVICE" "STATUS" "RUNNING" "DESIRED" "HEALTH"

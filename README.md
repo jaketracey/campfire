@@ -19,7 +19,7 @@ Campfire is a full-stack platform for building and interacting with customizable
 ```
 ┌─────────────────────────────────────────────────────────────────────────┐
 │                              Clients                                      │
-│                    (Web App / Marketing Site)                             │
+│                             (Web App)                                    │
 └─────────────────────┬───────────────────────────────────────────────────┘
                       │
                       ▼
@@ -58,7 +58,6 @@ Campfire is a full-stack platform for building and interacting with customizable
 | **Monorepo** | pnpm workspaces + Turborepo |
 | **Gateway** | Fastify 5, WebSocket, OpenTelemetry |
 | **Web App** | Next.js 16, React 19, Radix UI, TanStack Query |
-| **Marketing** | Next.js, Tailwind CSS, Stripe |
 | **Orchestrator** | Python 3.11+, FastAPI, Pydantic |
 | **Workers** | BullMQ, ioredis |
 | **Database** | PostgreSQL 18 + pgvector |
@@ -73,7 +72,6 @@ campfire/
 ├── packages/
 │   ├── gateway/          # API Gateway + WebSocket server (TypeScript)
 │   ├── web/              # Main web application (Next.js)
-│   ├── marketing/        # Marketing site (Next.js)
 │   ├── orchestrator/     # AI orchestration service (Python)
 │   ├── workers/          # Background job processors (TypeScript)
 │   └── shared/           # Shared types and schemas (TypeScript)
@@ -148,7 +146,6 @@ pnpm dev
 # Or start individual services
 pnpm --filter gateway dev      # API Gateway (localhost:4000)
 pnpm --filter web dev          # Web App (localhost:3000)
-pnpm --filter marketing dev    # Marketing (localhost:3001)
 pnpm --filter orchestrator dev # Orchestrator (localhost:5000)
 pnpm --filter workers dev      # Background workers
 ```
@@ -156,7 +153,6 @@ pnpm --filter workers dev      # Background workers
 ### 6. Open the App
 
 - **Web App**: http://localhost:3000
-- **Marketing Site**: http://localhost:3001
 - **API Gateway**: http://localhost:4000
 - **API Docs**: http://localhost:4000/docs
 
@@ -259,14 +255,6 @@ Main user-facing Next.js application:
 - **Chat Interface** - Real-time conversation with voice support
 - **Dashboard** - Companion management and analytics
 - **Theme Support** - Light/dark mode with system preference detection
-
-### Marketing (`packages/marketing`)
-
-Marketing and landing page site:
-
-- **Landing Pages** - Product showcase and feature highlights
-- **Pricing** - Stripe integration for subscriptions
-- **Legal** - Terms, privacy policy, acceptable use
 
 ## Event System
 

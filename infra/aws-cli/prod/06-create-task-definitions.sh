@@ -277,74 +277,6 @@ aws ecs register-task-definition --cli-input-json file:///tmp/web-task-def.json
 log "Web task definition registered"
 
 # -----------------------------------------------------------------------------
-# Marketing Task Definition (Production)
-# -----------------------------------------------------------------------------
-log "Creating Marketing task definition"
-
-cat > /tmp/marketing-task-def.json << EOF
-{
-    "family": "${RESOURCE_PREFIX}-marketing",
-    "networkMode": "awsvpc",
-    "requiresCompatibilities": ["FARGATE"],
-    "cpu": "${MARKETING_CPU}",
-    "memory": "${MARKETING_MEMORY}",
-    "executionRoleArn": "${EXECUTION_ROLE_ARN}",
-    "taskRoleArn": "${TASK_ROLE_ARN}",
-    "runtimePlatform": {
-        "cpuArchitecture": "ARM64",
-        "operatingSystemFamily": "LINUX"
-    },
-    "containerDefinitions": [
-        {
-            "name": "marketing",
-            "image": "${ECR_REGISTRY}/${ECR_MARKETING_REPO}:${IMAGE_TAG}",
-            "essential": true,
-            "portMappings": [
-                {
-                    "containerPort": 3001,
-                    "protocol": "tcp",
-                    "name": "marketing-http"
-                }
-            ],
-            "environment": [
-                {"name": "NODE_ENV", "value": "production"},
-                {"name": "PORT", "value": "3001"},
-                {"name": "NEXT_TELEMETRY_DISABLED", "value": "1"}
-            ],
-            "logConfiguration": {
-                "logDriver": "awslogs",
-                "options": {
-                    "awslogs-group": "/ecs/${RESOURCE_PREFIX}/marketing",
-                    "awslogs-region": "${AWS_REGION}",
-                    "awslogs-stream-prefix": "ecs",
-                    "awslogs-create-group": "true"
-                }
-            },
-            "healthCheck": {
-                "command": ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://localhost:3001/api/health || exit 1"],
-                "interval": 30,
-                "timeout": 5,
-                "retries": 3,
-                "startPeriod": 120
-            },
-            "linuxParameters": {
-                "initProcessEnabled": true
-            }
-        }
-    ],
-    "tags": [
-        {"key": "Project", "value": "${TAG_PROJECT}"},
-        {"key": "Environment", "value": "${TAG_ENVIRONMENT}"},
-        {"key": "Service", "value": "marketing"},
-        {"key": "CostCenter", "value": "${TAG_COST_CENTER}"}
-    ]
-}
-EOF
-
-aws ecs register-task-definition --cli-input-json file:///tmp/marketing-task-def.json
-log "Marketing task definition registered"
-
-# -----------------------------------------------------------------------------
 # Workers Task Definition (Production)
 # -----------------------------------------------------------------------------
 log "Creating Workers task definition"
@@ -441,10 +373,6 @@ echo "      Architecture: ARM64 (Graviton)"
 echo ""
 echo "  - ${RESOURCE_PREFIX}-web"
 echo "      CPU: ${WEB_CPU}, Memory: ${WEB_MEMORY}"
-echo "      Architecture: ARM64 (Graviton)"
-echo ""
-echo "  - ${RESOURCE_PREFIX}-marketing"
-echo "      CPU: ${MARKETING_CPU}, Memory: ${MARKETING_MEMORY}"
 echo "      Architecture: ARM64 (Graviton)"
 echo ""
 echo "  - ${RESOURCE_PREFIX}-workers"

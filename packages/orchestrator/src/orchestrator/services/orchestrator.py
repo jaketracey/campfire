@@ -757,11 +757,16 @@ class ConversationOrchestrator:
 
         # Use adult-appropriate safety response when in adult mode
         is_adult = companion_spec.safety_level == "adult"
-        template_name = "safety_response_adult" if is_adult else "safety_response"
+        template_name = (
+            "orchestrator.safety_response_adult"
+            if is_adult
+            else "orchestrator.safety_response"
+        )
 
-        safety_response = self.prompt_manager.get_prompt(
+        safety_response = self.prompt_manager.get_prompt_effective(
             template_name,
             version=self.prompt_manager.current_version,
+            companion_id=str(companion_spec.id),
         )
 
         return await self.turn_manager.complete_turn(
@@ -831,20 +836,13 @@ class ConversationOrchestrator:
             policy_version=self.safety_gate.policy_version,
         )
 
-        # Try to get a content redirect template, fallback to safety response
-        try:
-            redirect_response = self.prompt_manager.get_prompt(
-                "content_redirect",
-                version=self.prompt_manager.current_version,
-                companion_name=companion_spec.name,
-                detected_intent=routing_decision.intent_result.intent.value,
-            )
-        except Exception:
-            # Fallback to generic redirect if template doesn't exist
-            redirect_response = (
-                f"I'd love to keep chatting with you! "
-                f"Let's talk about something else - what's been on your mind lately?"
-            )
+        redirect_response = self.prompt_manager.get_prompt_effective(
+            "orchestrator.content_redirect",
+            version=self.prompt_manager.current_version,
+            companion_id=str(companion_spec.id),
+            companion_name=companion_spec.name,
+            detected_intent=routing_decision.intent_result.intent.value,
+        )
 
         return await self.turn_manager.complete_turn(
             turn_id=turn_id,
@@ -1075,14 +1073,21 @@ class ConversationOrchestrator:
 Assistant: {assistant_response}"""
 
             # Get the extraction prompt
-            extraction_prompt = self.prompt_manager.get_prompt(
-                "kg_extraction",
+            extraction_prompt = self.prompt_manager.get_prompt_effective(
+                "orchestrator.kg_extraction",
+                version=self.prompt_manager.current_version,
+                companion_id=str(companion_spec.id),
                 text=conversation_text,
             )
 
             # Call LLM for extraction (use primary provider - typically OpenAI)
+            kg_system_prompt = self.prompt_manager.get_prompt_effective(
+                "orchestrator.kg_extraction_system_prompt",
+                version=self.prompt_manager.current_version,
+                companion_id=str(companion_spec.id),
+            )
             messages = [
-                {"role": "system", "content": "You are a knowledge graph extraction system. Extract entities and relationships from conversations and return valid JSON."},
+                {"role": "system", "content": kg_system_prompt},
                 {"role": "user", "content": extraction_prompt},
             ]
 

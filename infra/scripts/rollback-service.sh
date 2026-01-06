@@ -7,7 +7,7 @@
 # Usage: ./rollback-service.sh <service> <environment> <target_tag>
 #
 # Arguments:
-#   service     - gateway, orchestrator, web, marketing, or workers
+#   service     - gateway, orchestrator, web, or workers
 #   environment - dev, staging, or prod
 #   target_tag  - Image tag to rollback to (e.g., abc1234 or previous revision number)
 #
@@ -52,7 +52,7 @@ usage() {
     echo "Usage: $0 <service> <environment> <target_tag|revision>"
     echo ""
     echo "Arguments:"
-    echo "  service     - gateway, orchestrator, web, marketing, or workers"
+    echo "  service     - gateway, orchestrator, web, or workers"
     echo "  environment - dev, staging, or prod"
     echo "  target_tag  - Image tag to rollback to, or task definition revision number"
     echo ""
@@ -80,7 +80,7 @@ SERVICE="$1"
 ENVIRONMENT="$2"
 TARGET="$3"
 
-VALID_SERVICES=("gateway" "orchestrator" "web" "marketing" "workers")
+VALID_SERVICES=("gateway" "orchestrator" "web" "workers")
 VALID_ENVIRONMENTS=("dev" "staging" "prod")
 
 if [[ ! " ${VALID_SERVICES[*]} " =~ " ${SERVICE} " ]]; then

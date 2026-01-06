@@ -7,7 +7,7 @@
 # Usage: ./deploy-service.sh <service> <environment> [image_tag]
 #
 # Arguments:
-#   service     - gateway, orchestrator, web, marketing, or workers
+#   service     - gateway, orchestrator, web, or workers
 #   environment - dev, staging, or prod
 #   image_tag   - Optional: specific image tag to deploy (default: latest)
 #
@@ -51,7 +51,7 @@ usage() {
     echo "Usage: $0 <service> <environment> [image_tag]"
     echo ""
     echo "Arguments:"
-    echo "  service     - gateway, orchestrator, web, marketing, or workers"
+    echo "  service     - gateway, orchestrator, web, or workers"
     echo "  environment - dev, staging, or prod"
     echo "  image_tag   - Optional: specific image tag (default: latest)"
     echo ""
@@ -74,7 +74,7 @@ SERVICE="$1"
 ENVIRONMENT="$2"
 IMAGE_TAG="${3:-latest}"
 
-VALID_SERVICES=("gateway" "orchestrator" "web" "marketing" "workers")
+VALID_SERVICES=("gateway" "orchestrator" "web" "workers")
 VALID_ENVIRONMENTS=("dev" "staging" "prod")
 
 if [[ ! " ${VALID_SERVICES[*]} " =~ " ${SERVICE} " ]]; then

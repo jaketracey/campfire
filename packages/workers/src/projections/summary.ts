@@ -2,6 +2,7 @@ import { Worker, Job } from 'bullmq';
 import type { Redis } from 'ioredis';
 import type { Logger } from 'pino';
 import type { DbClient } from '../db/client.js';
+import { renderPromptFromDb } from '../lib/prompt-runtime.js';
 
 interface SummaryJobData {
   type: 'session' | 'daily' | 'weekly';
@@ -122,10 +123,12 @@ export class SummaryProjectionWorker {
       )
       .join('\n\n');
 
-    const summary = await this.generateWithOllama(
-      `Summarize this conversation in 2-3 sentences, capturing the key topics discussed and any important information learned about the user:\n\n${transcript}`,
-      500
-    );
+    const { rendered: prompt } = await renderPromptFromDb(this.config.db.sql, {
+      key: 'workers.session_summary_prompt',
+      variables: { transcript },
+    });
+
+    const summary = await this.generateWithOllama(prompt, 500);
 
     // Store session summary
     await this.config.db.sql`
@@ -158,10 +161,13 @@ export class SummaryProjectionWorker {
 
     const summaries = sessions.map((s) => s.summary).join('\n\n');
 
-    const dailySummary = await this.generateWithOllama(
-      `Create a brief daily summary from these conversation summaries:\n\n${summaries}`,
-      300
-    );
+    const { rendered: prompt } = await renderPromptFromDb(this.config.db.sql, {
+      key: 'workers.daily_summary_prompt',
+      companionId,
+      variables: { summaries },
+    });
+
+    const dailySummary = await this.generateWithOllama(prompt, 300);
 
     // Store daily summary (could be in a separate table or vault file)
     this.config.logger.info(

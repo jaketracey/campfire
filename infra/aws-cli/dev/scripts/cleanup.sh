@@ -65,7 +65,7 @@ log "Starting cleanup..."
 # -----------------------------------------------------------------------------
 log "Stopping ECS services..."
 
-for service in gateway orchestrator web marketing workers; do
+for service in gateway orchestrator web workers; do
     SERVICE_NAME="${RESOURCE_PREFIX}-${service}"
     if aws ecs describe-services --cluster "${ECS_CLUSTER_NAME}" --services "${SERVICE_NAME}" --query 'services[0].status' --output text 2>/dev/null | grep -q "ACTIVE"; then
         log "Scaling down ${SERVICE_NAME}..."
@@ -77,7 +77,7 @@ done
 log "Waiting for tasks to stop..."
 sleep 30
 
-for service in gateway orchestrator web marketing workers; do
+for service in gateway orchestrator web workers; do
     SERVICE_NAME="${RESOURCE_PREFIX}-${service}"
     log "Deleting service ${SERVICE_NAME}..."
     aws ecs delete-service --cluster "${ECS_CLUSTER_NAME}" --service "${SERVICE_NAME}" --force 2>/dev/null || true
@@ -85,7 +85,7 @@ done
 
 # Delete service discovery services
 log "Deleting service discovery services..."
-for service in gateway orchestrator web marketing workers; do
+for service in gateway orchestrator web workers; do
     SERVICE_ID=$(aws servicediscovery list-services --query "Services[?Name=='${service}'].Id" --output text 2>/dev/null || echo "")
     if [[ -n "${SERVICE_ID}" && "${SERVICE_ID}" != "None" ]]; then
         aws servicediscovery delete-service --id "${SERVICE_ID}" 2>/dev/null || true
@@ -122,7 +122,7 @@ if [[ -n "${ALB_ARN:-}" ]]; then
     sleep 30
 
     # Delete target groups
-    for tg in "${GATEWAY_TG_ARN:-}" "${WEB_TG_ARN:-}" "${MARKETING_TG_ARN:-}" "${ORCHESTRATOR_TG_ARN:-}" "${WS_TG_ARN:-}"; do
+    for tg in "${GATEWAY_TG_ARN:-}" "${WEB_TG_ARN:-}" "${ORCHESTRATOR_TG_ARN:-}" "${WS_TG_ARN:-}"; do
         if [[ -n "${tg}" ]]; then
             aws elbv2 delete-target-group --target-group-arn "${tg}" 2>/dev/null || true
         fi
@@ -240,7 +240,7 @@ done
 # -----------------------------------------------------------------------------
 log "Deleting ECR repositories..."
 
-for repo in "${ECR_GATEWAY_REPO:-}" "${ECR_ORCHESTRATOR_REPO:-}" "${ECR_WEB_REPO:-}" "${ECR_MARKETING_REPO:-}" "${ECR_WORKERS_REPO:-}"; do
+for repo in "${ECR_GATEWAY_REPO:-}" "${ECR_ORCHESTRATOR_REPO:-}" "${ECR_WEB_REPO:-}" "${ECR_WORKERS_REPO:-}"; do
     if [[ -n "${repo}" ]]; then
         aws ecr delete-repository --repository-name "${repo}" --force 2>/dev/null || true
     fi
@@ -277,7 +277,7 @@ done
 log "Deleting CloudWatch resources..."
 
 # Delete log groups
-for service in gateway orchestrator web marketing workers; do
+for service in gateway orchestrator web workers; do
     aws logs delete-log-group --log-group-name "/ecs/${RESOURCE_PREFIX}/${service}" 2>/dev/null || true
 done
 

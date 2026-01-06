@@ -24,7 +24,8 @@ import { getUsersRepository } from '../repositories/users.js';
 import { getAdminSettingsRepository } from '../repositories/admin-settings.js';
 import { getEngagementRepository } from '../repositories/engagement.js';
 import { getEngagementService } from '../services/engagement.js';
-import type { EngagementLevel } from '../db/types.js';
+import type { EngagementLevel, UUID } from '../db/types.js';
+import { renderPromptFromDb } from '../services/prompt-runtime.js';
 
 import { enqueueSummaryJob } from '../utils/queue.js';
 
@@ -1017,7 +1018,10 @@ async function handleUserMessage(
       communication_style: spec?.personality?.archetype || 'friendly and supportive',
       voice_id: spec?.voice?.voice_id || null,
       avatar_url: null,
-      system_prompt: buildSystemPrompt(companion as unknown as { name: string; spec: Record<string, unknown> | null }),
+      system_prompt: await buildSystemPrompt(
+        companionId,
+        companion as unknown as { name: string; spec: Record<string, unknown> | null }
+      ),
       safety_level: effectiveSafetyLevel,
       allowed_tools: [],
       max_context_turns: 20,
@@ -1628,46 +1632,47 @@ async function handleUserMessage(
 /**
  * Build a system prompt from companion spec
  */
-function buildSystemPrompt(companion: { name: string; spec: Record<string, unknown> | null }): string {
+async function buildSystemPrompt(
+  companionId: string,
+  companion: { name: string; spec: Record<string, unknown> | null }
+): Promise<string> {
   const spec = companion.spec || {};
   const identity = spec.identity as Record<string, string> | undefined;
   const personality = spec.personality as Record<string, unknown> | undefined;
   const boundaries = spec.boundaries as Record<string, unknown> | undefined;
 
-  const parts: string[] = [
-    `You are ${companion.name}, an AI companion.`,
-  ];
+  const backstoryLine = identity?.backstory ? `Background: ${identity.backstory}` : '';
+  const pronounsLine = identity?.pronouns ? `Use ${identity.pronouns} pronouns when referring to yourself.` : '';
+  const archetypeLine = personality?.archetype ? `Personality archetype: ${String(personality.archetype)}` : '';
 
-  if (identity?.backstory) {
-    parts.push(`Background: ${identity.backstory}`);
-  }
-
-  if (identity?.pronouns) {
-    parts.push(`Use ${identity.pronouns} pronouns when referring to yourself.`);
-  }
-
-  if (personality?.archetype) {
-    parts.push(`Personality archetype: ${personality.archetype}`);
-  }
-
+  let traitsLine = '';
   if (personality?.traits && typeof personality.traits === 'object') {
     const traitDescriptions = Object.entries(personality.traits as Record<string, number>)
       .filter(([_, value]) => value > 0.5)
       .map(([trait, value]) => `${trait} (${Math.round(value * 100)}%)`)
       .join(', ');
     if (traitDescriptions) {
-      parts.push(`Key traits: ${traitDescriptions}`);
+      traitsLine = `Key traits: ${traitDescriptions}`;
     }
   }
 
-  if (boundaries?.content_rating) {
-    parts.push(`Content rating: ${boundaries.content_rating}`);
-  }
+  const contentRatingLine = boundaries?.content_rating ? `Content rating: ${boundaries.content_rating}` : '';
+  const closingLine = 'Be conversational, warm, and engaging. Listen actively and respond thoughtfully.';
 
-  parts.push('');
-  parts.push('Be conversational, warm, and engaging. Listen actively and respond thoughtfully.');
-
-  return parts.join('\n');
+  const { rendered } = await renderPromptFromDb({
+    key: 'gateway.chat_system_prompt',
+    companionId: companionId as unknown as UUID,
+    variables: {
+      companion_name: companion.name,
+      backstory_line: backstoryLine,
+      pronouns_line: pronounsLine,
+      archetype_line: archetypeLine,
+      traits_line: traitsLine,
+      content_rating_line: contentRatingLine,
+      closing_line: closingLine,
+    },
+  });
+  return rendered;
 }
 
 /**

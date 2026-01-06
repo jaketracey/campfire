@@ -21,7 +21,7 @@ from orchestrator.models.conversation import (
     SessionSummary,
 )
 from orchestrator.models.memory import LongTermMemory
-from orchestrator.prompts.manager import PromptManager
+from orchestrator.prompts.manager import PromptManager, PromptTemplate
 from orchestrator.providers.animatediff import AnimateDiffProvider
 from orchestrator.providers.comfyui import ComfyUIProvider
 from orchestrator.providers.fal import FalProvider
@@ -37,6 +37,7 @@ from orchestrator.services.anchor_generation import AnchorGenerationService
 from orchestrator.services.image_routing_config_service import ImageRoutingConfigService
 from orchestrator.services.orchestrator import ConversationOrchestrator
 from orchestrator.services.prompt_enhancer import PromptEnhancer
+from orchestrator.services.prompt_config_service import PromptConfigService
 from orchestrator.services.routing_config_service import RoutingConfigService
 from orchestrator.tools.router import ToolRouter
 from orchestrator.db.pool import DatabasePool
@@ -462,6 +463,7 @@ class AppState:
     settings: Settings
     event_emitter: EventEmitter
     prompt_manager: PromptManager
+    prompt_config_service: PromptConfigService | None
     safety_gate: SafetyGate
     tool_router: ToolRouter
     orchestrator: ConversationOrchestrator
@@ -493,26 +495,9 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     app_state.event_emitter = EventEmitter()
     await app_state.event_emitter.start()
 
-    # Initialize prompt manager
-    app_state.prompt_manager = PromptManager(default_version="1.0.0")
-
-    # Initialize safety gate with configured safety level
-    safety_level_map = {
-        "adult": SafetyLevel.ADULT,
-        "permissive": SafetyLevel.PERMISSIVE,
-        "standard": SafetyLevel.STANDARD,
-        "strict": SafetyLevel.STRICT,
-    }
-    configured_level = safety_level_map.get(settings.safety_level, SafetyLevel.ADULT)
-
-    app_state.safety_gate = SafetyGate(
-        event_emitter=app_state.event_emitter,
-        policy_version="1.0.0",
-        safety_level=configured_level,
-        enabled=settings.safety_enabled,
-        strict_mode=settings.safety_strict_mode,
-        content_filter_threshold=settings.content_filter_threshold,
-    )
+    # Initialize prompt manager (DB-backed). Requests will error until prompts are configured.
+    app_state.prompt_manager = PromptManager(default_version="1.0.0", include_builtin_templates=False)
+    app_state.prompt_config_service = None
 
     # Initialize tool router
     app_state.tool_router = ToolRouter(
@@ -531,6 +516,21 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     try:
         await DatabasePool.get_pool()
         logger.info("database_pool_initialized")
+
+        # Load prompt templates from DB (non-fatal; missing prompts will error at request time)
+        try:
+            app_state.prompt_config_service = PromptConfigService(
+                prompt_manager=app_state.prompt_manager,
+                cache_ttl_seconds=60.0,
+            )
+            await app_state.prompt_config_service.initialize()
+            logger.info(
+                "prompt_config_service_initialized",
+                cache_status=app_state.prompt_config_service.get_cache_status(),
+            )
+        except Exception as e:
+            logger.error("prompt_config_service_initialization_failed", error=str(e))
+            app_state.prompt_config_service = None
 
         # Initialize text routing config service with caching
         app_state.routing_config_service = RoutingConfigService(cache_ttl_seconds=60.0)
@@ -559,12 +559,53 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         logger.warning(
             "routing_config_service_initialization_failed",
             error=str(e),
-            message="Falling back to environment-based routing",
+            message="Database-backed routing/prompt config unavailable; requests will error until configured",
         )
         app_state.routing_config_service = None
         app_state.image_routing_config_service = None
+        app_state.prompt_config_service = None
         # Initialize image router without database routing as fallback
         app_state.image_router = ImageModelRouter(prefer_local=True)
+
+    # Initialize safety gate with configured safety level.
+    # If DB-backed prompt constraints are available, use them; otherwise keep defaults.
+    safety_level_map = {
+        "adult": SafetyLevel.ADULT,
+        "permissive": SafetyLevel.PERMISSIVE,
+        "standard": SafetyLevel.STANDARD,
+        "strict": SafetyLevel.STRICT,
+    }
+    configured_level = safety_level_map.get(settings.safety_level, SafetyLevel.ADULT)
+
+    constraints_override = None
+    if app_state.prompt_config_service is not None:
+        def _split_constraints(text: str) -> list[str]:
+            return [line.strip() for line in text.splitlines() if line.strip()]
+
+        constraints_override = {
+            SafetyLevel.ADULT: _split_constraints(
+                app_state.prompt_manager.get_prompt("orchestrator.safety_constraints_adult")
+            ),
+            SafetyLevel.PERMISSIVE: _split_constraints(
+                app_state.prompt_manager.get_prompt("orchestrator.safety_constraints_permissive")
+            ),
+            SafetyLevel.STANDARD: _split_constraints(
+                app_state.prompt_manager.get_prompt("orchestrator.safety_constraints_standard")
+            ),
+            SafetyLevel.STRICT: _split_constraints(
+                app_state.prompt_manager.get_prompt("orchestrator.safety_constraints_strict")
+            ),
+        }
+
+    app_state.safety_gate = SafetyGate(
+        event_emitter=app_state.event_emitter,
+        policy_version="1.0.0",
+        safety_level=configured_level,
+        enabled=settings.safety_enabled,
+        strict_mode=settings.safety_strict_mode,
+        content_filter_threshold=settings.content_filter_threshold,
+        constraints_override=constraints_override,
+    )
 
     # Load LLM API keys from database (with env var fallback)
     primary_provider = None
@@ -678,7 +719,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     # Initialize prompt enhancer for image generation (uses Ollama)
     app_state.prompt_enhancer = None
     if settings.prompt_enhancement_enabled and app_state.ollama_provider is not None:
-        app_state.prompt_enhancer = PromptEnhancer(settings)
+        app_state.prompt_enhancer = PromptEnhancer(settings, prompt_manager=app_state.prompt_manager)
         logger.info(
             "prompt_enhancer_initialized",
             model=settings.prompt_enhancement_model,
@@ -1275,8 +1316,13 @@ async def generate_image(request: ImageGenRequest) -> ImageGenResponse:
                 enhanced=prompt[:200],
             )
 
-    # Add minimal quality suffix
-    full_prompt = prompt + ", high quality, detailed"
+    # Build the provider prompt (quality suffix, etc.) via prompt template
+    full_prompt = app_state.prompt_manager.get_prompt_effective(
+        "orchestrator.imagegen_full_prompt",
+        version=app_state.prompt_manager.current_version,
+        companion_id=request.companion_id,
+        prompt=prompt,
+    )
 
     logger.info(
         "imagegen_request",
@@ -1295,13 +1341,31 @@ async def generate_image(request: ImageGenRequest) -> ImageGenResponse:
     selected_provider = routing_decision.provider if routing_decision and routing_decision.provider else None
     model_id = routing_decision.model_id if routing_decision else None
 
+    # Negative prompt is optional and provider/model dependent.
+    def _get_default_negative_prompt(provider: str | None) -> str | None:
+        if provider == "fal":
+            return app_state.prompt_manager.get_prompt_effective_optional(
+                "orchestrator.image_negative_prompt_fal_default",
+                version=app_state.prompt_manager.current_version,
+                companion_id=request.companion_id,
+            )
+        # Default to comfyui
+        return app_state.prompt_manager.get_prompt_effective_optional(
+            "orchestrator.image_negative_prompt_comfyui_default",
+            version=app_state.prompt_manager.current_version,
+            companion_id=request.companion_id,
+        )
+
     # Try ComfyUI if routed to it or as default/fallback
     if (selected_provider == "comfyui" or selected_provider is None) and app_state.comfyui_provider:
         try:
+            negative_prompt = request.negative_prompt
+            if negative_prompt is None:
+                negative_prompt = _get_default_negative_prompt("comfyui")
             result = await app_state.comfyui_provider.generate(
                 prompt=full_prompt,
                 size=f"{request.width}x{request.height}",
-                negative_prompt=request.negative_prompt,
+                negative_prompt=negative_prompt,
                 model_id=model_id,
                 reference_image_url=request.reference_image_url,
                 reference_strength=request.reference_strength,
@@ -1346,10 +1410,14 @@ async def generate_image(request: ImageGenRequest) -> ImageGenResponse:
     # Try FAL if routed to it or as fallback
     if (selected_provider == "fal" or selected_provider is None) and app_state.fal_provider:
         try:
+            negative_prompt = request.negative_prompt
+            if negative_prompt is None:
+                negative_prompt = _get_default_negative_prompt("fal")
             result = await app_state.fal_provider.generate(
                 prompt=full_prompt,
                 size=f"{request.width}x{request.height}",
                 model_id=model_id,
+                negative_prompt=negative_prompt,
             )
 
             # FAL returns a URL, we need to fetch and encode it
@@ -1501,7 +1569,7 @@ async def generate_seeded_anchors(request: SeededAnchorRequest) -> SeededAnchorR
 
     try:
         # Create the anchor generation service
-        service = AnchorGenerationService(app_state.fal_provider)
+        service = AnchorGenerationService(app_state.fal_provider, app_state.prompt_manager)
 
         # Convert Pydantic model to dict for the service
         appearance_dict = {
@@ -1610,9 +1678,15 @@ async def generate_video(request: VideoGenRequest) -> VideoGenResponse:
         )
 
     try:
+        negative_prompt = request.negative_prompt
+        if negative_prompt is None:
+            negative_prompt = app_state.prompt_manager.get_prompt_optional(
+                "orchestrator.video_negative_prompt_animatediff_default",
+                version=app_state.prompt_manager.current_version,
+            )
         result = await app_state.animatediff_provider.generate(
             prompt=request.prompt,
-            negative_prompt=request.negative_prompt,
+            negative_prompt=negative_prompt,
             width=request.width,
             height=request.height,
             frames=request.frames,
@@ -1897,44 +1971,45 @@ async def generate_backstory(request: GenerateBackstoryRequest) -> GenerateBacks
                 f"- {'NEVER: ' if t.is_negation else ''}{t.rule}" for t in core_rules
             )
 
-    # Build the generation prompt
-    system_prompt = """You are a creative writer specializing in character development for AI companions.
-Your task is to create a rich, compelling backstory for a companion character based on their personality traits and archetype.
+    version = app_state.prompt_manager.current_version
 
-The backstory should:
-- Feel authentic and emotionally resonant
-- Explain how the character developed their personality traits
-- Include formative experiences that shaped who they are
-- Be intimate and personal, suitable for a close companion relationship
-- Avoid clichés while still being relatable
-- Be 2-3 paragraphs long
+    system_prompt = app_state.prompt_manager.get_prompt(
+        "orchestrator.backstory_generation_system_prompt",
+        version=version,
+    )
 
-You must respond with valid JSON in this exact format:
-{
-  "backstory": "The full backstory narrative (2-3 paragraphs)",
-  "motivations": ["motivation1", "motivation2", "motivation3"],
-  "key_memories": ["memory1", "memory2", "memory3"],
-  "personality_quirks": ["quirk1", "quirk2", "quirk3"]
-}
+    secondary_archetype_line = (
+        f"Secondary Archetype: {request.secondary_archetype}"
+        if request.secondary_archetype
+        else ""
+    )
+    archetype_description_line = (
+        f"Archetype Description: {request.archetype_description}"
+        if request.archetype_description
+        else ""
+    )
+    user_backstory_hint_line = (
+        f"User's backstory hint: {request.user_backstory_hint}"
+        if request.user_backstory_hint
+        else ""
+    )
+    pronoun_subject = (request.pronouns.split("/")[0] if request.pronouns else "").strip() or "they"
+    verb_is_are = "is" if pronoun_subject.lower() in ["she", "he"] else "are"
 
-motivations: 3 core things that drive this character
-key_memories: 3 formative memories that shaped them
-personality_quirks: 3 unique mannerisms or habits"""
-
-    user_prompt = f"""Create a backstory for this companion:
-
-Name: {request.companion_name}
-Pronouns: {request.pronouns}
-Archetype: {request.archetype}
-{f"Secondary Archetype: {request.secondary_archetype}" if request.secondary_archetype else ""}
-{f"Archetype Description: {request.archetype_description}" if request.archetype_description else ""}
-
-Personality: {personality_summary}
-{tenets_summary}
-
-{f"User's backstory hint: {request.user_backstory_hint}" if request.user_backstory_hint else ""}
-
-Generate a rich, intimate backstory that explains how {request.companion_name} became who {request.pronouns.split('/')[0]} {('is' if request.pronouns.split('/')[0] in ['she', 'he'] else 'are')}."""
+    user_prompt = app_state.prompt_manager.get_prompt(
+        "orchestrator.backstory_generation_user_prompt",
+        version=version,
+        companion_name=request.companion_name,
+        pronouns=request.pronouns,
+        archetype=request.archetype,
+        secondary_archetype_line=secondary_archetype_line,
+        archetype_description_line=archetype_description_line,
+        personality_summary=personality_summary,
+        tenets_summary=tenets_summary,
+        user_backstory_hint_line=user_backstory_hint_line,
+        pronoun_subject=pronoun_subject,
+        verb_is_are=verb_is_are,
+    )
 
     try:
         # Get LLM provider - try routing first, then fallbacks
@@ -2017,30 +2092,14 @@ Generate a rich, intimate backstory that explains how {request.companion_name} b
                     response_preview=response.content[:200] if response else None,
                 )
                 if attempt == max_retries - 1:
-                    # Final attempt failed, use fallback
                     logger.error(
-                        "backstory_json_parse_failed_using_fallback",
+                        "backstory_json_parse_failed",
                         error=str(e),
                     )
-                    # Generate a simple fallback backstory
-                    result = {
-                        "backstory": f"{request.companion_name} has always been drawn to meaningful connections. "
-                                     f"With a {request.archetype.lower()} spirit, they bring warmth and understanding "
-                                     f"to every interaction, shaped by experiences that taught them the value of genuine presence.",
-                        "motivations": [
-                            "To form deep, meaningful connections",
-                            "To understand and be understood",
-                            "To bring joy and comfort to those they care about",
-                        ],
-                        "key_memories": [
-                            "A moment of profound connection that changed their perspective",
-                            "Learning the importance of being present for others",
-                        ],
-                        "personality_quirks": [
-                            "Has a unique way of making others feel special",
-                            "Sometimes gets lost in thought about meaningful conversations",
-                        ],
-                    }
+                    raise HTTPException(
+                        status_code=status.HTTP_502_BAD_GATEWAY,
+                        detail=f"Backstory generation returned invalid JSON after {max_retries} attempts: {str(e)}",
+                    )
 
         latency_ms = (time.time() - start_time) * 1000
 
@@ -2131,63 +2190,35 @@ IMPORTANT - NAME PROVIDED: The user has already chosen the name "{request.name}"
 - Match the appearance gender and voice_gender to the pronouns (female for she/her, male for he/him)
 """
 
-    system_prompt = f"""You are creating a unique AI companion identity. Generate someone who feels real, grounded, and genuinely interesting to talk to.
-{name_instructions}
-THIS TIME, create: {selected_category}
+    version = app_state.prompt_manager.current_version
+    has_name = bool(request and request.name)
+    name_rule = (
+        "Use the provided name exactly (do not generate a different name)."
+        if has_name
+        else "Generate a realistic name appropriate to the character."
+    )
+    pronouns_rule = " based on the name provided" if has_name else ""
 
-Guidelines:
-- {"Use the exact name provided above" if request and request.name else "Use a realistic name appropriate to the character (common names are great! Sarah, Marcus, Kenji, Fatima, Devon, etc.)"}
-- The pronouns should fit the character naturally{" based on the name provided" if request and request.name else ""}
-- The backstory should be grounded and relatable, 1-2 sentences that make you want to know more
-- Choose an archetype that fits their personality (caregiver, sage, explorer, creator, hero, jester, lover, magician, ruler, everyperson, innocent, rebel)
-- Optionally add a secondary archetype if it fits (or null if not)
-- Set personality traits (0-100) that match their character
-- Choose appearance that matches their cultural background and persona
-- Visual style should match their personality (realistic for grounded, anime for playful, etc.)
-- NO sci-fi, fantasy, mythology, or supernatural elements
-- Make them feel like someone you could actually meet and have a fascinating conversation with
+    system_prompt = app_state.prompt_manager.get_prompt(
+        "orchestrator.random_identity_system_prompt",
+        version=version,
+        name_instructions=name_instructions,
+        selected_category=selected_category,
+        name_rule=name_rule,
+        pronouns_rule=pronouns_rule,
+    )
 
-You must respond with valid JSON in this exact format:
-{{
-  "name": "A realistic name appropriate to the character",
-  "pronouns": "she/her or he/him or they/them",
-  "backstory": "A brief, grounded backstory (1-2 sentences)",
-  "archetype": "one of: caregiver, sage, explorer, creator, hero, jester, lover, magician, ruler, everyperson, innocent, rebel",
-  "secondary_archetype": "another archetype or null",
-  "personality": {{
-    "warmth": 30-90,
-    "energy": 20-90,
-    "playfulness": 30-80,
-    "formality": 20-70,
-    "assertiveness": 30-80,
-    "curiosity": 40-90,
-    "empathy": 40-90,
-    "spontaneity": 30-80,
-    "optimism": 40-90,
-    "directness": 30-80
-  }},
-  "appearance": {{
-    "gender": "female or male",
-    "ethnicity": "one of: east-asian, south-asian, black, caucasian, latina, middle-eastern, mixed",
-    "body_type": "FOR FEMALE: one of slim, athletic, curvy, plus-size | FOR MALE: one of slim, athletic, muscular, dad-bod",
-    "hair_color": "one of: black, brown, blonde, red, fantasy",
-    "breast_size": "0-100 (only if female, omit if male)",
-    "build": "one of S, M, L (only if male, omit if female)"
-  }},
-  "visual_style": "one of: realistic, anime, stylized, abstract, minimal",
-  "voice_gender": "feminine or masculine or neutral"
-}}
-
-IMPORTANT: The body_type MUST match the gender:
-- For female: use slim, athletic, curvy, or plus-size
-- For male: use slim, athletic, muscular, or dad-bod
-- Include breast_size (0-100) ONLY for female
-- Include build (S/M/L) ONLY for male"""
-
-    if request and request.name:
-        user_prompt = f"""Generate a companion identity for someone named "{request.name}". Infer their gender from the name and create a matching appearance, pronouns, and voice. Make them feel like a real, interesting person with genuine depth."""
+    if has_name:
+        user_prompt = app_state.prompt_manager.get_prompt(
+            "orchestrator.random_identity_user_prompt_with_name",
+            version=version,
+            name=request.name,
+        )
     else:
-        user_prompt = """Generate a unique companion identity based on the category. Make them feel like a real, interesting person with genuine depth and warmth."""
+        user_prompt = app_state.prompt_manager.get_prompt(
+            "orchestrator.random_identity_user_prompt_without_name",
+            version=version,
+        )
 
     try:
         # Get LLM provider - use same pattern as backstory generation
@@ -2268,36 +2299,11 @@ IMPORTANT: The body_type MUST match the gender:
                     error=str(e),
                 )
                 if attempt == max_retries - 1:
-                    # Final attempt failed, use fallback
-                    logger.error("identity_json_parse_failed_using_fallback", error=str(e))
-                    fallback_names = ["Alex", "Jordan", "Sam", "Riley", "Morgan", "Casey"]
-                    result = {
-                        "name": random.choice(fallback_names),
-                        "pronouns": "they/them",
-                        "backstory": "Someone with a warm heart and an interesting perspective on life.",
-                        "archetype": random.choice(["caregiver", "sage", "explorer", "creator", "everyperson"]),
-                        "secondary_archetype": None,
-                        "personality": {
-                            "warmth": random.randint(50, 80),
-                            "energy": random.randint(40, 70),
-                            "playfulness": random.randint(40, 70),
-                            "formality": random.randint(30, 60),
-                            "assertiveness": random.randint(40, 70),
-                            "curiosity": random.randint(50, 80),
-                            "empathy": random.randint(50, 80),
-                            "spontaneity": random.randint(40, 70),
-                            "optimism": random.randint(50, 80),
-                            "directness": random.randint(40, 70),
-                        },
-                        "appearance": {
-                            "ethnicity": random.choice(["east-asian", "south-asian", "black", "caucasian", "latina", "middle-eastern", "mixed"]),
-                            "body_type": random.choice(["slim", "athletic", "curvy", "plus-size"]),
-                            "hair_color": random.choice(["black", "brown", "blonde", "red"]),
-                            "breast_size": random.randint(30, 70),
-                        },
-                        "visual_style": "realistic",
-                        "voice_gender": "neutral",
-                    }
+                    logger.error("identity_json_parse_failed", error=str(e))
+                    raise HTTPException(
+                        status_code=status.HTTP_502_BAD_GATEWAY,
+                        detail=f"Identity generation returned invalid JSON after {max_retries} attempts: {str(e)}",
+                    )
 
         latency_ms = (time.time() - start_time) * 1000
 
@@ -2430,15 +2436,19 @@ async def analyze_user_profile(request: AnalyzeUserProfileRequest) -> AnalyzeUse
 
         # Get the prompt template
         prompt = app_state.prompt_manager.get_prompt(
-            "user_personality_analysis",
+            "orchestrator.user_personality_analysis",
             conversation_history=conversation_history,
             existing_profile=existing_profile_text,
+        )
+
+        system_prompt = app_state.prompt_manager.get_prompt(
+            "orchestrator.user_profile_analysis_system_prompt",
         )
 
         # Generate personality analysis
         response = await app_state.ollama_provider.generate(
             messages=[
-                {"role": "system", "content": "You are a personality analyst. Analyze the user's communication patterns and respond with a JSON object."},
+                {"role": "system", "content": system_prompt},
                 {"role": "user", "content": prompt},
             ],
             max_tokens=2000,

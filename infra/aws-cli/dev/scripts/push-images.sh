@@ -104,12 +104,6 @@ if [[ "${SERVICE}" == "all" || "${SERVICE}" == "web" ]]; then
         "${PROJECT_ROOT}"
 fi
 
-if [[ "${SERVICE}" == "all" || "${SERVICE}" == "marketing" ]]; then
-    build_and_push "marketing" "${ECR_MARKETING_REPO}" \
-        "${PROJECT_ROOT}/infra/docker/Dockerfile.marketing" \
-        "${PROJECT_ROOT}"
-fi
-
 if [[ "${SERVICE}" == "all" || "${SERVICE}" == "workers" ]]; then
     build_and_push "workers" "${ECR_WORKERS_REPO}" \
         "${PROJECT_ROOT}/infra/docker/Dockerfile.workers" \
@@ -132,7 +126,6 @@ if [[ "${SERVICE}" == "all" ]]; then
     echo "  - ${ECR_REGISTRY}/${ECR_GATEWAY_REPO}:${TAG}"
     echo "  - ${ECR_REGISTRY}/${ECR_ORCHESTRATOR_REPO}:${TAG}"
     echo "  - ${ECR_REGISTRY}/${ECR_WEB_REPO}:${TAG}"
-    echo "  - ${ECR_REGISTRY}/${ECR_MARKETING_REPO}:${TAG}"
     echo "  - ${ECR_REGISTRY}/${ECR_WORKERS_REPO}:${TAG}"
 else
     echo "  - ${ECR_REGISTRY}/${RESOURCE_PREFIX}/${SERVICE}:${TAG}"

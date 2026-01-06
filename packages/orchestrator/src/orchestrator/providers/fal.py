@@ -68,14 +68,6 @@ class FalProvider(ImageProvider):
             )
         return self._client
 
-    # Default negative prompt for quality photorealistic generation
-    DEFAULT_NEGATIVE_PROMPT = (
-        "ugly, deformed, disfigured, low quality, blurry, pixelated, "
-        "bad anatomy, extra limbs, missing limbs, floating limbs, disconnected limbs, "
-        "mutation, mutated, extra fingers, fewer fingers, bad hands, "
-        "watermark, text, signature, logo"
-    )
-
     @retry(
         stop=stop_after_attempt(3),
         wait=wait_exponential(multiplier=1, min=1, max=10),
@@ -129,12 +121,12 @@ class FalProvider(ImageProvider):
         }
 
         # Add optional params only for models that support them
-        if "flux" in endpoint.lower() and "dreamina" not in endpoint.lower():
+        if endpoint.startswith("fal-ai/flux"):
             input_params["enable_safety_checker"] = False
             input_params["guidance_scale"] = 7.5
             input_params["num_inference_steps"] = 4  # Flux schnell uses fewer steps
-            if negative_prompt or self.DEFAULT_NEGATIVE_PROMPT:
-                input_params["negative_prompt"] = negative_prompt or self.DEFAULT_NEGATIVE_PROMPT
+            if negative_prompt:
+                input_params["negative_prompt"] = negative_prompt
 
         # Style parameter is deprecated - always photorealistic now
         if style:
@@ -365,6 +357,7 @@ class FalProvider(ImageProvider):
         reference_image_url: str,
         width: int = 768,
         height: int = 1024,
+        negative_prompt: str | None = None,
         id_weight: float = 1.0,
         guidance_scale: float = 4.0,
         num_inference_steps: int = 20,
@@ -400,8 +393,9 @@ class FalProvider(ImageProvider):
             "num_inference_steps": num_inference_steps,
             "num_images": 1,
             "enable_safety_checker": False,
-            "negative_prompt": self.DEFAULT_NEGATIVE_PROMPT,
         }
+        if negative_prompt:
+            input_params["negative_prompt"] = negative_prompt
 
         try:
             response = await client.post(

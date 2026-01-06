@@ -123,34 +123,6 @@ aws elbv2 modify-target-group-attributes \
 
 log "Web target group created: ${WEB_TG_ARN}"
 
-# Marketing Target Group
-MARKETING_TG_ARN=$(aws elbv2 create-target-group \
-    --name "${RESOURCE_PREFIX}-marketing-tg" \
-    --protocol HTTP \
-    --port 3001 \
-    --vpc-id "${VPC_ID}" \
-    --target-type ip \
-    --protocol-version HTTP1 \
-    --health-check-enabled \
-    --health-check-protocol HTTP \
-    --health-check-path "/api/health" \
-    --health-check-interval-seconds 15 \
-    --health-check-timeout-seconds 5 \
-    --healthy-threshold-count 2 \
-    --unhealthy-threshold-count 3 \
-    --matcher HttpCode=200 \
-    --tags Key=Project,Value="${TAG_PROJECT}" Key=Environment,Value="${TAG_ENVIRONMENT}" Key=Service,Value=marketing \
-    --query 'TargetGroups[0].TargetGroupArn' \
-    --output text)
-
-aws elbv2 modify-target-group-attributes \
-    --target-group-arn "${MARKETING_TG_ARN}" \
-    --attributes \
-        Key=slow_start.duration_seconds,Value=90 \
-        Key=deregistration_delay.timeout_seconds,Value=30
-
-log "Marketing target group created: ${MARKETING_TG_ARN}"
-
 # WebSocket Target Group (for gateway WS)
 WS_TG_ARN=$(aws elbv2 create-target-group \
     --name "${RESOURCE_PREFIX}-ws-tg" \
@@ -400,7 +372,6 @@ export HTTP_LISTENER_ARN="${HTTP_LISTENER_ARN}"
 export HTTPS_LISTENER_ARN="${HTTPS_LISTENER_ARN:-}"
 export GATEWAY_TG_ARN="${GATEWAY_TG_ARN}"
 export WEB_TG_ARN="${WEB_TG_ARN}"
-export MARKETING_TG_ARN="${MARKETING_TG_ARN}"
 export WS_TG_ARN="${WS_TG_ARN}"
 export WAF_ACL_ARN="${WAF_ACL_ARN:-}"
 EOF
@@ -419,7 +390,6 @@ echo ""
 echo "Target Groups:"
 echo "  - Gateway:   ${GATEWAY_TG_ARN}"
 echo "  - Web:       ${WEB_TG_ARN}"
-echo "  - Marketing: ${MARKETING_TG_ARN}"
 echo "  - WebSocket: ${WS_TG_ARN}"
 echo ""
 echo "Routing Rules:"

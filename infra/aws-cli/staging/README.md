@@ -204,7 +204,6 @@ Staging includes auto-scaling with these settings:
 | Gateway | 2 | 6 | 70% | 70% |
 | Orchestrator | 2 | 8 | 70% | 70% |
 | Web | 2 | 6 | 70% | 70% |
-| Marketing | 1 | 4 | 70% | 70% |
 | Workers | 1 | 6 | 70% | 70% |
 
 Scale-in cooldown: 300 seconds
@@ -303,7 +302,6 @@ aws rds modify-db-instance \
 aws ecs update-service --cluster campfire-staging-cluster --service campfire-staging-gateway --desired-count 0
 aws ecs update-service --cluster campfire-staging-cluster --service campfire-staging-orchestrator --desired-count 0
 aws ecs update-service --cluster campfire-staging-cluster --service campfire-staging-web --desired-count 0
-aws ecs update-service --cluster campfire-staging-cluster --service campfire-staging-marketing --desired-count 0
 aws ecs update-service --cluster campfire-staging-cluster --service campfire-staging-workers --desired-count 0
 
 # 4. Delete services

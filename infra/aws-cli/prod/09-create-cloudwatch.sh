@@ -58,7 +58,7 @@ echo ""
 # -----------------------------------------------------------------------------
 log "Creating CloudWatch log groups"
 
-SERVICES=("gateway" "orchestrator" "web" "marketing" "workers")
+SERVICES=("gateway" "orchestrator" "web" "workers")
 
 for service in "${SERVICES[@]}"; do
     LOG_GROUP="/ecs/${RESOURCE_PREFIX}/${service}"
@@ -338,8 +338,7 @@ cat > /tmp/dashboard.json << EOF
                 "title": "Healthy Host Count",
                 "metrics": [
                     ["AWS/ApplicationELB", "HealthyHostCount", "TargetGroup", "${GATEWAY_TG_ARN##*/}", "LoadBalancer", "${ALB_ARN##*/}", {"label": "Gateway"}],
-                    [".", ".", ".", "${WEB_TG_ARN##*/}", ".", ".", {"label": "Web"}],
-                    [".", ".", ".", "${MARKETING_TG_ARN##*/}", ".", ".", {"label": "Marketing"}]
+                    [".", ".", ".", "${WEB_TG_ARN##*/}", ".", ".", {"label": "Web"}]
                 ],
                 "view": "timeSeries",
                 "stacked": false,

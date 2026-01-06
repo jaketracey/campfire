@@ -182,7 +182,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        service: [gateway, orchestrator, web, marketing, workers]
+        service: [gateway, orchestrator, web, workers]
         include:
           - service: gateway
             dockerfile: infra/docker/Dockerfile.gateway
@@ -193,9 +193,6 @@ jobs:
           - service: web
             dockerfile: infra/docker/Dockerfile.web
             port: 3000
-          - service: marketing
-            dockerfile: infra/docker/Dockerfile.marketing
-            port: 3001
           - service: workers
             dockerfile: infra/docker/Dockerfile.workers
             port: 8080
@@ -203,7 +200,6 @@ jobs:
       gateway_image: ${{ steps.build-push.outputs.gateway_image }}
       orchestrator_image: ${{ steps.build-push.outputs.orchestrator_image }}
       web_image: ${{ steps.build-push.outputs.web_image }}
-      marketing_image: ${{ steps.build-push.outputs.marketing_image }}
       workers_image: ${{ steps.build-push.outputs.workers_image }}
 
     steps:
@@ -309,7 +305,7 @@ jobs:
       fail-fast: false
       max-parallel: 2
       matrix:
-        service: [gateway, orchestrator, web, marketing, workers]
+        service: [gateway, orchestrator, web, workers]
         include:
           - service: gateway
             port: 4000
@@ -319,9 +315,6 @@ jobs:
             has_alb: false
           - service: web
             port: 3000
-            has_alb: true
-          - service: marketing
-            port: 3001
             has_alb: true
           - service: workers
             port: 8080
@@ -481,7 +474,6 @@ jobs:
           declare -A ENDPOINTS=(
             ["gateway"]="/api/health"
             ["web"]="/api/health"
-            ["marketing"]="/api/health"
           )
 
           FAILED=0
@@ -544,7 +536,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        service: [gateway, orchestrator, web, marketing, workers]
+        service: [gateway, orchestrator, web, workers]
 
     steps:
       - name: Configure AWS credentials via OIDC

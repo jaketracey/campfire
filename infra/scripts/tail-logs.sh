@@ -7,7 +7,7 @@
 # Usage: ./tail-logs.sh <service> <environment> [options]
 #
 # Arguments:
-#   service     - gateway, orchestrator, web, marketing, or workers
+#   service     - gateway, orchestrator, web, or workers
 #   environment - dev, staging, or prod
 #
 # Options:
@@ -59,7 +59,7 @@ usage() {
     echo "Usage: $0 <service> <environment> [options]"
     echo ""
     echo "Arguments:"
-    echo "  service     - gateway, orchestrator, web, marketing, or workers"
+    echo "  service     - gateway, orchestrator, web, or workers"
     echo "  environment - dev, staging, or prod"
     echo ""
     echo "Options:"
@@ -116,7 +116,7 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
-VALID_SERVICES=("gateway" "orchestrator" "web" "marketing" "workers")
+VALID_SERVICES=("gateway" "orchestrator" "web" "workers")
 VALID_ENVIRONMENTS=("dev" "staging" "prod")
 
 if [[ ! " ${VALID_SERVICES[*]} " =~ " ${SERVICE} " ]]; then

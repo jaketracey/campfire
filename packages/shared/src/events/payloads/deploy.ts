@@ -16,7 +16,6 @@ export const DeployServiceSchema = z.enum([
   'orchestrator',
   'workers',
   'web',
-  'marketing',
 ]);
 export type DeployService = z.infer<typeof DeployServiceSchema>;
 

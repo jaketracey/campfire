@@ -26,67 +26,6 @@ logger = structlog.get_logger()
 class ContextBuilder:
     """Builds model input context from various sources."""
 
-    # Image generation instruction - only included for companions with image tools
-    # Moving to class constant saves ~250 tokens per request for text-only companions
-    IMAGE_INSTRUCTION = """
-<image_generation>
-CRITICAL: You MUST include an <image_prompt>...</image_prompt> tag at the END of EVERY response without exception.
-
-This prompt will be sent to an AI image generator. Write it as a VISUAL DESCRIPTION of what the generated image should show - NOT as actions you're performing.
-
-Your identity is preserved automatically via reference image. Focus on describing:
-- VISUAL COMPOSITION: camera angle, framing (close-up, full body, portrait)
-- YOUR APPEARANCE: expression, pose, body language, what you're wearing
-- ENVIRONMENT: setting, background, lighting, mood
-
-When the user asks to SEE something specific (e.g., "show me...", "let me see...", "what do you look like when..."):
-- Your image_prompt MUST describe exactly what they asked to see
-- Be specific about poses, angles, and visual details
-
-WRONG (action): "I smile and tilt my head"
-RIGHT (visual): "woman with warm smile, head tilted, soft eye contact, close-up portrait, warm lighting"
-
-WRONG (action): "spreading my legs slightly"
-RIGHT (visual): "woman seated with legs slightly parted, confident relaxed pose, full body shot, soft lighting"
-
-Examples:
-User: "Show me your smile"
-Response: "*smiles warmly* Here you go...
-<image_prompt>woman with genuine warm smile, slight laugh lines, bright eyes, close-up portrait, soft natural lighting, intimate mood</image_prompt>"
-
-User: "What are you wearing right now?"
-Response: "*glances down* Just something comfortable...
-<image_prompt>woman in casual loungewear, relaxed seated pose, cozy bedroom setting, soft warm lighting, three-quarter view</image_prompt>"
-
-REMEMBER: EVERY response needs an image_prompt, even for casual conversation.
-</image_generation>"""
-
-    # Multi-message instruction - always included for natural conversation flow
-    MULTI_MESSAGE_INSTRUCTION = """
-<multi_message_format>
-When your response naturally breaks into multiple thoughts or moments, use <message>...</message> tags to separate them.
-Each message becomes its own text bubble, creating a more natural texting rhythm like how humans actually text.
-
-Guidelines:
-- Use for responses with 2-4 distinct thoughts, reactions, or beats
-- Each message should be a complete thought (typically 1-3 sentences)
-- Create natural pauses: first reaction, then elaboration, then question
-- NOT every response needs this - short or simple responses stay as one message
-- Place the <image_prompt> tag inside the LAST message only
-
-Example:
-<message>Oh wow, you actually did it! *eyes widen with genuine surprise*</message>
-<message>I've been wondering if you'd take that leap... how are you feeling about it now?</message>
-<message>Tell me everything - I want to hear all the details
-<image_prompt>woman leaning forward with excited curious expression, warm lighting, intimate close-up</image_prompt></message>
-
-When NOT to use multiple messages:
-- Simple greetings or short responses
-- Single focused answers to direct questions
-- When the response is naturally cohesive as one thought
-</multi_message_format>
-"""
-
     # Tools that indicate companion generates images
     IMAGE_GENERATING_TOOLS = {"image_gen", "generate_image", "selfie", "photo", "webcam"}
 
@@ -152,12 +91,13 @@ When NOT to use multiple messages:
         """Build the system prompt from companion spec and context."""
         # Use adult template for adult safety level
         is_adult = companion_spec.safety_level == "adult"
-        template_name = "system_base_adult" if is_adult else "system_base"
+        template_name = "orchestrator.system_base_adult" if is_adult else "orchestrator.system_base"
 
         # Get base prompt template
-        base_prompt = self.prompt_manager.get_prompt(
+        base_prompt = self.prompt_manager.get_prompt_effective(
             template_name,
             version=prompt_version,
+            companion_id=str(companion_spec.id) if hasattr(companion_spec, "id") else None,
             companion_name=companion_spec.name,
             personality_traits=", ".join(companion_spec.personality_traits),
             communication_style=companion_spec.communication_style,
@@ -170,7 +110,11 @@ When NOT to use multiple messages:
         # Add image generation instruction only if companion has image-generating tools
         # This saves ~250 tokens per request for text-only companions
         if self._companion_generates_images(companion_spec):
-            full_prompt += self.IMAGE_INSTRUCTION
+            full_prompt += self.prompt_manager.get_prompt_effective(
+                "orchestrator.image_instruction",
+                version=prompt_version,
+                companion_id=str(companion_spec.id) if hasattr(companion_spec, "id") else None,
+            )
             logger.debug(
                 "image_instruction_included",
                 companion_id=str(companion_spec.id) if hasattr(companion_spec, 'id') else None,
@@ -184,7 +128,11 @@ When NOT to use multiple messages:
             )
 
         # Add multi-message instruction for natural conversation flow (always included)
-        full_prompt += self.MULTI_MESSAGE_INSTRUCTION
+        full_prompt += self.prompt_manager.get_prompt_effective(
+            "orchestrator.multi_message_instruction",
+            version=prompt_version,
+            companion_id=str(companion_spec.id) if hasattr(companion_spec, "id") else None,
+        )
 
         # Add core behavioral tenets from companion spec
         if companion_spec.core_tenets:

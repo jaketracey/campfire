@@ -7,7 +7,7 @@
 # Usage: ./build-and-push.sh <service|all> <environment>
 #
 # Arguments:
-#   service     - gateway, orchestrator, web, marketing, workers, or "all"
+#   service     - gateway, orchestrator, web, workers, or "all"
 #   environment - dev, staging, or prod
 #
 # Examples:
@@ -50,7 +50,7 @@ usage() {
     echo "Usage: $0 <service|all> <environment>"
     echo ""
     echo "Arguments:"
-    echo "  service     - gateway, orchestrator, web, marketing, workers, or 'all'"
+    echo "  service     - gateway, orchestrator, web, workers, or 'all'"
     echo "  environment - dev, staging, or prod"
     echo ""
     echo "Examples:"
@@ -71,7 +71,7 @@ fi
 SERVICE="$1"
 ENVIRONMENT="$2"
 
-VALID_SERVICES=("gateway" "orchestrator" "web" "marketing" "workers" "all")
+VALID_SERVICES=("gateway" "orchestrator" "web" "workers" "all")
 VALID_ENVIRONMENTS=("dev" "staging" "prod")
 
 if [[ ! " ${VALID_SERVICES[*]} " =~ " ${SERVICE} " ]]; then
@@ -184,7 +184,7 @@ build_and_push_service() {
 SERVICES_TO_BUILD=()
 
 if [[ "${SERVICE}" == "all" ]]; then
-    SERVICES_TO_BUILD=("gateway" "orchestrator" "web" "marketing" "workers")
+    SERVICES_TO_BUILD=("gateway" "orchestrator" "web" "workers")
 else
     SERVICES_TO_BUILD=("${SERVICE}")
 fi
@@ -227,7 +227,7 @@ if [[ ${#FAILED_SERVICES[@]} -eq 0 ]]; then
     echo "    ./deploy-service.sh <service> ${ENVIRONMENT}"
     echo ""
     echo "  Deploy all services:"
-    echo "    for svc in gateway orchestrator web marketing workers; do"
+    echo "    for svc in gateway orchestrator web workers; do"
     echo "      ./deploy-service.sh \$svc ${ENVIRONMENT}"
     echo "    done"
 else

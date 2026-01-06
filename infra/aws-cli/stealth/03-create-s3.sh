@@ -58,7 +58,7 @@ aws s3api put-bucket-cors \
             {
                 "AllowedHeaders": ["*"],
                 "AllowedMethods": ["GET", "PUT", "POST", "DELETE", "HEAD"],
-                "AllowedOrigins": ["https://'"${DOMAIN}"'", "http://localhost:3000", "http://localhost:3001"],
+                "AllowedOrigins": ["https://'"${DOMAIN}"'", "http://localhost:3000"],
                 "ExposeHeaders": ["ETag"],
                 "MaxAgeSeconds": 3600
             }

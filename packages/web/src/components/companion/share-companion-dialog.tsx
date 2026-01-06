@@ -39,12 +39,14 @@ export function ShareCompanionDialog({
   const [copied, setCopied] = useState(false);
   const [isUpdating, setIsUpdating] = useState(false);
 
-  // Use marketing site URL for share links
-  const marketingUrl = process.env.NEXT_PUBLIC_MARKETING_URL || 'https://ignite.cam';
+  const baseUrl =
+    process.env.NEXT_PUBLIC_APP_URL ||
+    (typeof window !== 'undefined' ? window.location.origin : null) ||
+    'https://ignite.cam';
   // Include referral code in share URL for tracking
   const shareUrl = referralCode
-    ? `${marketingUrl}/c/${companionId}?ref=${encodeURIComponent(referralCode)}`
-    : `${marketingUrl}/c/${companionId}`;
+    ? `${baseUrl}/c/${companionId}?ref=${encodeURIComponent(referralCode)}`
+    : `${baseUrl}/c/${companionId}`;
 
   const handleCopyLink = async () => {
     await navigator.clipboard.writeText(shareUrl);

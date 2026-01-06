@@ -18,53 +18,17 @@ from orchestrator.models.group_chat import (
     GroupParticipant,
     ParticipantRole,
 )
+from orchestrator.prompts.manager import PromptManager
 
 logger = structlog.get_logger()
-
-
-GROUP_SYSTEM_PROMPT_TEMPLATE = """You are {companion_name}, a companion in a group conversation.
-
-YOUR IDENTITY:
-{identity_section}
-
-YOUR PERSONALITY:
-{personality_section}
-
-BEHAVIORAL GUIDELINES:
-{tenets_section}
-
-OTHER PARTICIPANTS IN THIS CONVERSATION:
-{participants_section}
-
-GROUP CONVERSATION RULES:
-1. You are responding as yourself ({companion_name}). Speak naturally in first person.
-2. The user is talking to the group, not just you. Respond when appropriate.
-3. You can acknowledge or build on what other companions said.
-4. Keep responses conversational - not every response needs to be long.
-5. If another companion said something, you can react or add to it briefly.
-6. Stay in character while being collaborative with other companions.
-
-AVAILABLE TOOLS:
-{tools_section}
-
-Remember: You are {companion_name}. Respond naturally and authentically."""
-
-
-REACTION_PROMPT_TEMPLATE = """You are {companion_name}. Add a brief reaction (1-2 sentences max) to what {speaker_name} just said.
-
-What {speaker_name} said: "{speaker_message}"
-
-Your personality: {personality_summary}
-Your relationship to {speaker_name}: {relationship}
-
-Keep it natural and brief - like you're adding a quick comment to a friend's statement."""
 
 
 class GroupContextBuilder:
     """Builds context and prompts for group chat conversations."""
 
-    def __init__(self, settings: Settings):
+    def __init__(self, settings: Settings, prompt_manager: PromptManager):
         self.settings = settings
+        self.prompt_manager = prompt_manager
 
     def build_system_prompt(
         self,
@@ -118,7 +82,10 @@ class GroupContextBuilder:
         else:
             tools_section = "No special tools available."
 
-        return GROUP_SYSTEM_PROMPT_TEMPLATE.format(
+        return self.prompt_manager.get_prompt_effective(
+            "orchestrator.group_system_prompt",
+            version=self.prompt_manager.current_version,
+            companion_id=str(spec.id),
             companion_name=spec.name,
             identity_section=identity_section,
             personality_section=personality_section,
@@ -150,7 +117,10 @@ class GroupContextBuilder:
             else spec.communication_style
         )
 
-        return REACTION_PROMPT_TEMPLATE.format(
+        return self.prompt_manager.get_prompt_effective(
+            "orchestrator.group_reaction_prompt",
+            version=self.prompt_manager.current_version,
+            companion_id=str(spec.id),
             companion_name=spec.name,
             speaker_name=speaker.companion_spec.name,
             speaker_message=speaker_message[:500],

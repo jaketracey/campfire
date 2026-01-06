@@ -25,6 +25,7 @@ from orchestrator.models.group_chat import (
     get_theme_color,
 )
 from orchestrator.providers.ollama import OllamaProvider
+from orchestrator.prompts.manager import PromptManager
 from orchestrator.services.group_context_builder import GroupContextBuilder
 from orchestrator.services.response_selector import ResponseSelector
 
@@ -37,16 +38,18 @@ class GroupConversationOrchestrator:
     def __init__(
         self,
         settings: Settings,
+        prompt_manager: PromptManager,
         event_emitter: EventEmitter,
         http_client: httpx.AsyncClient | None = None,
     ):
         self.settings = settings
+        self.prompt_manager = prompt_manager
         self.event_emitter = event_emitter
         self.http_client = http_client or httpx.AsyncClient(timeout=60.0)
 
         # Initialize components
-        self.response_selector = ResponseSelector(settings, self.http_client)
-        self.context_builder = GroupContextBuilder(settings)
+        self.response_selector = ResponseSelector(settings, prompt_manager, self.http_client)
+        self.context_builder = GroupContextBuilder(settings, prompt_manager)
         self.ollama_provider = OllamaProvider(settings)
 
     async def process_message(

@@ -221,63 +221,6 @@ aws ecs register-task-definition --cli-input-json file:///tmp/web-task-def.json
 log "Web task definition registered"
 
 # -----------------------------------------------------------------------------
-# Marketing Task Definition
-# -----------------------------------------------------------------------------
-log "Creating Marketing task definition"
-
-cat > /tmp/marketing-task-def.json << EOF
-{
-    "family": "${RESOURCE_PREFIX}-marketing",
-    "networkMode": "awsvpc",
-    "requiresCompatibilities": ["FARGATE"],
-    "cpu": "${MARKETING_CPU}",
-    "memory": "${MARKETING_MEMORY}",
-    "executionRoleArn": "${EXECUTION_ROLE_ARN}",
-    "taskRoleArn": "${TASK_ROLE_ARN}",
-    "containerDefinitions": [
-        {
-            "name": "marketing",
-            "image": "${ECR_REGISTRY}/${ECR_MARKETING_REPO}:latest",
-            "essential": true,
-            "portMappings": [
-                {
-                    "containerPort": 3001,
-                    "protocol": "tcp"
-                }
-            ],
-            "environment": [
-                {"name": "NODE_ENV", "value": "production"},
-                {"name": "PORT", "value": "3001"}
-            ],
-            "logConfiguration": {
-                "logDriver": "awslogs",
-                "options": {
-                    "awslogs-group": "/ecs/${RESOURCE_PREFIX}/marketing",
-                    "awslogs-region": "${AWS_REGION}",
-                    "awslogs-stream-prefix": "ecs"
-                }
-            },
-            "healthCheck": {
-                "command": ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://localhost:3001/api/health || exit 1"],
-                "interval": 30,
-                "timeout": 5,
-                "retries": 3,
-                "startPeriod": 90
-            }
-        }
-    ],
-    "tags": [
-        {"key": "Project", "value": "${TAG_PROJECT}"},
-        {"key": "Environment", "value": "${TAG_ENVIRONMENT}"},
-        {"key": "Service", "value": "marketing"}
-    ]
-}
-EOF
-
-aws ecs register-task-definition --cli-input-json file:///tmp/marketing-task-def.json
-log "Marketing task definition registered"
-
-# -----------------------------------------------------------------------------
 # Workers Task Definition
 # -----------------------------------------------------------------------------
 log "Creating Workers task definition"
@@ -355,7 +298,6 @@ echo "Task Definitions:"
 echo "  - ${RESOURCE_PREFIX}-gateway (CPU: ${GATEWAY_CPU}, Memory: ${GATEWAY_MEMORY})"
 echo "  - ${RESOURCE_PREFIX}-orchestrator (CPU: ${ORCHESTRATOR_CPU}, Memory: ${ORCHESTRATOR_MEMORY})"
 echo "  - ${RESOURCE_PREFIX}-web (CPU: ${WEB_CPU}, Memory: ${WEB_MEMORY})"
-echo "  - ${RESOURCE_PREFIX}-marketing (CPU: ${MARKETING_CPU}, Memory: ${MARKETING_MEMORY})"
 echo "  - ${RESOURCE_PREFIX}-workers (CPU: ${WORKERS_CPU}, Memory: ${WORKERS_MEMORY})"
 echo ""
 echo "IMPORTANT: Before deploying, ensure these SSM parameters are created:"

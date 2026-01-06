@@ -1,7 +1,8 @@
 'use client';
 
-import { useEffect, useState, useCallback } from 'react';
-import { Server, Plus, RefreshCw, CheckCircle2, AlertCircle, Zap, Settings2 } from 'lucide-react';
+import { useEffect, useMemo, useState, useCallback } from 'react';
+import { usePathname, useRouter, useSearchParams } from 'next/navigation';
+import { Server, Image, Video, Plus, RefreshCw, CheckCircle2, AlertCircle, Zap, Settings2 } from 'lucide-react';
 import Link from 'next/link';
 import type { Route } from 'next';
 import {
@@ -9,69 +10,177 @@ import {
   testProviderConnection,
   type Provider,
 } from '@/lib/api/providers';
+import {
+  listImageProviders,
+  testImageProviderConnection,
+  type ImageProvider,
+} from '@/lib/api/image-providers';
+import {
+  listVideoProviders,
+  testVideoProviderConnection,
+  type VideoProvider,
+} from '@/lib/api/video-providers';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { cn } from '@/lib/utils';
 
-export default function ProvidersPage() {
-  const [isLoading, setIsLoading] = useState(true);
-  const [providers, setProviders] = useState<Provider[]>([]);
-  const [testingProvider, setTestingProvider] = useState<string | null>(null);
-  const [testResults, setTestResults] = useState<Record<string, { success: boolean; latencyMs: number | null; error: string | null }>>({});
+type ProviderKind = 'text' | 'image' | 'video';
 
-  const fetchData = useCallback(async () => {
-    try {
-      const response = await listProviders();
-      setProviders(response.providers);
-    } catch (error) {
-      console.error('Failed to fetch providers:', error);
-    } finally {
-      setIsLoading(false);
-    }
-  }, []);
+type ConnectionTestResult = {
+  success: boolean;
+  latencyMs: number | null;
+  error: string | null;
+};
 
-  useEffect(() => {
-    fetchData();
-  }, [fetchData]);
+type ProviderHealth = {
+  isAvailable: boolean;
+  avgLatencyMs: number | null;
+} | null;
 
-  const handleTestConnection = async (providerId: string) => {
-    setTestingProvider(providerId);
-    try {
-      const result = await testProviderConnection(providerId);
-      setTestResults((prev) => ({
-        ...prev,
-        [providerId]: result,
-      }));
-    } catch (error) {
-      setTestResults((prev) => ({
-        ...prev,
-        [providerId]: { success: false, latencyMs: null, error: 'Failed to test connection' },
-      }));
-    } finally {
-      setTestingProvider(null);
-    }
+type ProviderBase = {
+  id: string;
+  provider: string;
+  displayName: string;
+  isEnabled: boolean;
+  hasApiKey: boolean;
+  rateLimitRpm: number | null;
+  modelCount: number;
+  health: ProviderHealth;
+};
+
+type ProviderTabConfig = {
+  kind: ProviderKind;
+  title: string;
+  description: string;
+  icon: typeof Server;
+  iconClasses: {
+    overviewBg: string;
+    overviewText: string;
+    listIconText: string;
+    listIconBg: string;
   };
+  addHref: Route;
+  configureHref: (id: string) => Route;
+  routingHref: Route;
+  routingLabel: string;
+  isLocalProvider: (provider: ProviderBase) => boolean;
+  providerTypeLabel: (providerType: string) => string;
+};
 
-  const getHealthStatus = (provider: Provider) => {
-    // Local providers (ollama) don't need API keys
-    const isLocalProvider = provider.provider === 'ollama';
+const normalizeProviderTab = (tab: string | null): ProviderKind => {
+  if (tab === 'image' || tab === 'video' || tab === 'text') return tab;
+  return 'text';
+};
 
-    // If no API key configured and not a local provider, can't determine health status
-    if (!provider.hasApiKey && !isLocalProvider) {
-      return 'not_configured';
-    }
+const PROVIDER_TABS: Record<ProviderKind, ProviderTabConfig> = {
+  text: {
+    kind: 'text',
+    title: 'Text Providers',
+    description: 'Configure AI text providers and API keys',
+    icon: Server,
+    iconClasses: {
+      overviewBg: 'bg-blue-500/10',
+      overviewText: 'text-blue-500',
+      listIconText: 'text-blue-500',
+      listIconBg: 'bg-blue-500/10',
+    },
+    addHref: '/admin/providers/new' as Route,
+    configureHref: (id: string) => `/admin/providers/${id}` as Route,
+    routingHref: '/admin/routing' as Route,
+    routingLabel: 'Text Routing Rules',
+    isLocalProvider: (provider) => provider.provider === 'ollama',
+    providerTypeLabel: (providerType) => providerType,
+  },
+  image: {
+    kind: 'image',
+    title: 'Image Providers',
+    description: 'Configure image generation providers (ComfyUI, FAL.ai)',
+    icon: Image,
+    iconClasses: {
+      overviewBg: 'bg-purple-500/10',
+      overviewText: 'text-purple-500',
+      listIconText: 'text-purple-500',
+      listIconBg: 'bg-purple-500/10',
+    },
+    addHref: '/admin/image-providers/new' as Route,
+    configureHref: (id: string) => `/admin/image-providers/${id}` as Route,
+    routingHref: '/admin/routing?tab=image' as Route,
+    routingLabel: 'Image Routing Rules',
+    isLocalProvider: (provider) => provider.provider === 'comfyui',
+    providerTypeLabel: (providerType) => {
+      switch (providerType) {
+        case 'comfyui':
+          return 'ComfyUI';
+        case 'fal':
+          return 'FAL.ai';
+        default:
+          return providerType;
+      }
+    },
+  },
+  video: {
+    kind: 'video',
+    title: 'Video Providers',
+    description: 'Configure video generation providers (FAL.ai)',
+    icon: Video,
+    iconClasses: {
+      overviewBg: 'bg-blue-500/10',
+      overviewText: 'text-blue-500',
+      listIconText: 'text-blue-500',
+      listIconBg: 'bg-blue-500/10',
+    },
+    addHref: '/admin/video-providers/new' as Route,
+    configureHref: (id: string) => `/admin/video-providers/${id}` as Route,
+    routingHref: '/admin/routing?tab=video' as Route,
+    routingLabel: 'Video Routing Rules',
+    isLocalProvider: () => false,
+    providerTypeLabel: (providerType) => {
+      switch (providerType) {
+        case 'fal_video':
+          return 'FAL.ai';
+        case 'replicate_video':
+          return 'Replicate';
+        case 'runway':
+          return 'Runway';
+        default:
+          return providerType;
+      }
+    },
+  },
+};
+
+function ProviderTabContent({
+  config,
+  providers,
+  loading,
+  onRefresh,
+  onTestConnection,
+  testingProviderId,
+  testResults,
+}: {
+  config: ProviderTabConfig;
+  providers: ProviderBase[];
+  loading: boolean;
+  onRefresh: () => void;
+  onTestConnection: (providerId: string) => Promise<void>;
+  testingProviderId: string | null;
+  testResults: Record<string, ConnectionTestResult>;
+}) {
+  const Icon = config.icon;
+
+  const canTest = (provider: ProviderBase) => provider.hasApiKey || config.isLocalProvider(provider);
+
+  const getHealthStatus = (provider: ProviderBase) => {
+    if (!canTest(provider)) return 'not_configured';
     const testResult = testResults[provider.id];
-    if (testResult) {
-      return testResult.success ? 'online' : 'offline';
-    }
-    if (provider.health) {
-      return provider.health.isAvailable ? 'online' : 'offline';
-    }
+    if (testResult) return testResult.success ? 'online' : 'offline';
+    if (provider.health) return provider.health.isAvailable ? 'online' : 'offline';
     return 'unknown';
   };
 
-  const getHealthBadge = (provider: Provider) => {
+  const getHealthBadge = (provider: ProviderBase) => {
     const status = getHealthStatus(provider);
     const testResult = testResults[provider.id];
 
@@ -84,11 +193,7 @@ export default function ProvidersPage() {
           </Badge>
         );
       case 'offline':
-        return (
-          <Badge variant="destructive">
-            Offline
-          </Badge>
-        );
+        return <Badge variant="destructive">Offline</Badge>;
       case 'not_configured':
         return (
           <Badge variant="secondary" className="bg-amber-500/10 text-amber-500">
@@ -104,53 +209,48 @@ export default function ProvidersPage() {
     }
   };
 
-  if (isLoading) {
+  if (loading) {
     return (
       <div className="space-y-6">
         <div className="flex items-center justify-between">
-          <h1 className="text-2xl font-bold text-white">Providers</h1>
+          <h2 className="text-2xl font-bold text-white">{config.title}</h2>
         </div>
-        <div className="grid gap-4 md:grid-cols-3">
-          {[1, 2, 3].map((i) => (
+        <div className="grid gap-4 md:grid-cols-4">
+          {[1, 2, 3, 4].map((i) => (
             <Card key={i} className="bg-white/[0.02] border-white/5">
               <CardContent className="p-6">
-                <div className="animate-pulse h-24 bg-white/5 rounded" />
+                <div className="animate-pulse h-16 bg-white/5 rounded" />
               </CardContent>
             </Card>
           ))}
         </div>
+        <Card className="bg-white/[0.02] border-white/5">
+          <CardContent className="p-6">
+            <div className="animate-pulse h-64 bg-white/5 rounded" />
+          </CardContent>
+        </Card>
       </div>
     );
   }
 
   const enabledProviders = providers.filter((p) => p.isEnabled).length;
-  const configuredProviders = providers.filter((p) => p.hasApiKey || p.provider === 'ollama').length;
-  // Only count configured providers (API key or local) as potentially healthy
-  const healthyProviders = providers.filter((p) =>
-    (p.hasApiKey || p.provider === 'ollama') && p.health?.isAvailable
-  ).length;
+  const configuredProviders = providers.filter((p) => canTest(p)).length;
+  const healthyProviders = providers.filter((p) => canTest(p) && p.health?.isAvailable).length;
 
   return (
     <div className="space-y-6">
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-white">Providers</h1>
-          <p className="text-gray-400 text-sm mt-1">
-            Configure AI providers and API keys
-          </p>
+          <h2 className="text-2xl font-bold text-white">{config.title}</h2>
+          <p className="text-gray-400 text-sm mt-1">{config.description}</p>
         </div>
         <div className="flex gap-2">
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => fetchData()}
-            className="gap-2"
-          >
+          <Button variant="outline" size="sm" onClick={onRefresh} className="gap-2">
             <RefreshCw className="h-4 w-4" />
             Refresh
           </Button>
-          <Link href={'/admin/providers/new' as Route}>
+          <Link href={config.addHref}>
             <Button size="sm" className="gap-2 bg-campfire-600 hover:bg-campfire-700">
               <Plus className="h-4 w-4" />
               Add Provider
@@ -164,8 +264,8 @@ export default function ProvidersPage() {
         <Card className="bg-white/[0.02] border-white/5">
           <CardContent className="p-6">
             <div className="flex items-center gap-3">
-              <div className="p-2 rounded-lg bg-blue-500/10 text-blue-500">
-                <Server className="h-5 w-5" />
+              <div className={cn('p-2 rounded-lg', config.iconClasses.overviewBg, config.iconClasses.overviewText)}>
+                <Icon className="h-5 w-5" />
               </div>
               <div>
                 <p className="text-sm text-gray-400">Total Providers</p>
@@ -206,15 +306,19 @@ export default function ProvidersPage() {
         <Card className="bg-white/[0.02] border-white/5">
           <CardContent className="p-6">
             <div className="flex items-center gap-3">
-              <div className={cn(
-                "p-2 rounded-lg",
-                healthyProviders > 0 ? "bg-green-500/10 text-green-500" : "bg-red-500/10 text-red-500"
-              )}>
+              <div
+                className={cn(
+                  'p-2 rounded-lg',
+                  healthyProviders > 0 ? 'bg-green-500/10 text-green-500' : 'bg-red-500/10 text-red-500'
+                )}
+              >
                 <AlertCircle className="h-5 w-5" />
               </div>
               <div>
                 <p className="text-sm text-gray-400">Healthy</p>
-                <p className="text-lg font-semibold text-white">{healthyProviders}/{providers.length}</p>
+                <p className="text-lg font-semibold text-white">
+                  {healthyProviders}/{providers.length}
+                </p>
               </div>
             </div>
           </CardContent>
@@ -225,7 +329,7 @@ export default function ProvidersPage() {
       <Card className="bg-white/[0.02] border-white/5">
         <CardHeader>
           <CardTitle className="text-lg text-white flex items-center gap-2">
-            <Server className="h-5 w-5 text-blue-500" />
+            <Icon className={cn('h-5 w-5', config.iconClasses.listIconText)} />
             Provider Configurations
           </CardTitle>
         </CardHeader>
@@ -248,31 +352,35 @@ export default function ProvidersPage() {
                 >
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-4">
-                      <div className={cn(
-                        "p-3 rounded-lg",
-                        provider.isEnabled ? "bg-blue-500/10" : "bg-gray-500/10"
-                      )}>
-                        <Server className={cn(
-                          "h-6 w-6",
-                          provider.isEnabled ? "text-blue-500" : "text-gray-500"
-                        )} />
+                      <div
+                        className={cn(
+                          'p-3 rounded-lg',
+                          provider.isEnabled ? config.iconClasses.listIconBg : 'bg-gray-500/10'
+                        )}
+                      >
+                        <Icon
+                          className={cn(
+                            'h-6 w-6',
+                            provider.isEnabled ? config.iconClasses.listIconText : 'text-gray-500'
+                          )}
+                        />
                       </div>
                       <div>
                         <div className="flex items-center gap-2">
                           <h3 className="font-medium text-white">{provider.displayName}</h3>
-                          {!provider.isEnabled && (
-                            <Badge variant="secondary" className="text-xs">Disabled</Badge>
-                          )}
+                          {!provider.isEnabled && <Badge variant="secondary" className="text-xs">Disabled</Badge>}
                         </div>
-                        <p className="text-sm text-gray-400 capitalize">{provider.provider}</p>
+                        <p className={cn('text-sm text-gray-400', config.kind === 'text' && 'capitalize')}>
+                          {config.providerTypeLabel(provider.provider)}
+                        </p>
                         <div className="flex items-center gap-4 mt-1 text-xs text-gray-500">
-                          <span>{provider.modelCount} model{provider.modelCount !== 1 ? 's' : ''}</span>
-                          {provider.rateLimitRpm && (
-                            <span>{provider.rateLimitRpm} RPM</span>
-                          )}
+                          <span>
+                            {provider.modelCount} model{provider.modelCount !== 1 ? 's' : ''}
+                          </span>
+                          {provider.rateLimitRpm && <span>{provider.rateLimitRpm} RPM</span>}
                           {provider.hasApiKey ? (
                             <span className="text-green-500">API key configured</span>
-                          ) : provider.provider === 'ollama' ? (
+                          ) : config.isLocalProvider(provider) ? (
                             <span className="text-blue-500">Local provider</span>
                           ) : (
                             <span className="text-amber-500">No API key</span>
@@ -287,11 +395,11 @@ export default function ProvidersPage() {
                       <Button
                         variant="outline"
                         size="sm"
-                        onClick={() => handleTestConnection(provider.id)}
-                        disabled={testingProvider === provider.id || (!provider.hasApiKey && provider.provider !== 'ollama')}
+                        onClick={() => onTestConnection(provider.id)}
+                        disabled={testingProviderId === provider.id || !canTest(provider)}
                         className="gap-2"
                       >
-                        {testingProvider === provider.id ? (
+                        {testingProviderId === provider.id ? (
                           <RefreshCw className="h-4 w-4 animate-spin" />
                         ) : (
                           <Zap className="h-4 w-4" />
@@ -299,7 +407,7 @@ export default function ProvidersPage() {
                         Test
                       </Button>
 
-                      <Link href={`/admin/providers/${provider.id}` as Route}>
+                      <Link href={config.configureHref(provider.id)}>
                         <Button variant="outline" size="sm" className="gap-2">
                           <Settings2 className="h-4 w-4" />
                           Configure
@@ -308,7 +416,6 @@ export default function ProvidersPage() {
                     </div>
                   </div>
 
-                  {/* Show error message if test failed */}
                   {testResults[provider.id]?.error && (
                     <div className="mt-3 p-2 rounded bg-red-500/10 border border-red-500/20">
                       <p className="text-sm text-red-400">{testResults[provider.id].error}</p>
@@ -320,6 +427,229 @@ export default function ProvidersPage() {
           )}
         </CardContent>
       </Card>
+
+      {/* Quick Links */}
+      <Card className="bg-white/[0.02] border-white/5">
+        <CardHeader>
+          <CardTitle className="text-lg text-white">Related Configuration</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <Link href={config.routingHref}>
+            <Button variant="outline" className="gap-2">
+              <Settings2 className="h-4 w-4" />
+              {config.routingLabel}
+            </Button>
+          </Link>
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+
+export default function ProvidersPage() {
+  const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
+  const tabParam = searchParams.get('tab');
+
+  const [activeTab, setActiveTab] = useState<ProviderKind>(() => normalizeProviderTab(tabParam));
+
+  const [loading, setLoading] = useState<Record<ProviderKind, boolean>>({
+    text: true,
+    image: true,
+    video: true,
+  });
+
+  const [textProviders, setTextProviders] = useState<Provider[]>([]);
+  const [imageProviders, setImageProviders] = useState<ImageProvider[]>([]);
+  const [videoProviders, setVideoProviders] = useState<VideoProvider[]>([]);
+
+  const [testingProviderId, setTestingProviderId] = useState<Record<ProviderKind, string | null>>({
+    text: null,
+    image: null,
+    video: null,
+  });
+
+  const [testResults, setTestResults] = useState<Record<ProviderKind, Record<string, ConnectionTestResult>>>({
+    text: {},
+    image: {},
+    video: {},
+  });
+
+  const fetchAll = useCallback(async () => {
+    setLoading({ text: true, image: true, video: true });
+    const results = await Promise.allSettled([
+      listProviders(),
+      listImageProviders(),
+      listVideoProviders(),
+    ]);
+
+    const [text, image, video] = results;
+
+    if (text.status === 'fulfilled') setTextProviders(text.value.providers);
+    else console.error('Failed to fetch text providers:', text.reason);
+
+    if (image.status === 'fulfilled') setImageProviders(image.value.providers);
+    else console.error('Failed to fetch image providers:', image.reason);
+
+    if (video.status === 'fulfilled') setVideoProviders(video.value.providers);
+    else console.error('Failed to fetch video providers:', video.reason);
+
+    setLoading({ text: false, image: false, video: false });
+  }, []);
+
+  const refreshKind = useCallback(async (kind: ProviderKind) => {
+    setLoading((prev) => ({ ...prev, [kind]: true }));
+    try {
+      if (kind === 'text') {
+        const response = await listProviders();
+        setTextProviders(response.providers);
+        return;
+      }
+      if (kind === 'image') {
+        const response = await listImageProviders();
+        setImageProviders(response.providers);
+        return;
+      }
+      const response = await listVideoProviders();
+      setVideoProviders(response.providers);
+    } catch (error) {
+      console.error(`Failed to refresh ${kind} providers:`, error);
+    } finally {
+      setLoading((prev) => ({ ...prev, [kind]: false }));
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchAll();
+  }, [fetchAll]);
+
+  useEffect(() => {
+    setActiveTab(normalizeProviderTab(tabParam));
+  }, [tabParam]);
+
+  const onTabChange = (value: string) => {
+    const nextTab = normalizeProviderTab(value);
+    setActiveTab(nextTab);
+
+    const params = new URLSearchParams(searchParams.toString());
+    if (nextTab === 'text') params.delete('tab');
+    else params.set('tab', nextTab);
+    const query = params.toString();
+    router.replace((query ? `${pathname}?${query}` : pathname) as Route);
+  };
+
+  const handleTestConnection = useCallback(async (kind: ProviderKind, providerId: string) => {
+    setTestingProviderId((prev) => ({ ...prev, [kind]: providerId }));
+    try {
+      const result =
+        kind === 'text'
+          ? await testProviderConnection(providerId)
+          : kind === 'image'
+            ? await testImageProviderConnection(providerId)
+            : await testVideoProviderConnection(providerId);
+
+      setTestResults((prev) => ({
+        ...prev,
+        [kind]: {
+          ...prev[kind],
+          [providerId]: result,
+        },
+      }));
+    } catch (error) {
+      setTestResults((prev) => ({
+        ...prev,
+        [kind]: {
+          ...prev[kind],
+          [providerId]: { success: false, latencyMs: null, error: 'Failed to test connection' },
+        },
+      }));
+    } finally {
+      setTestingProviderId((prev) => ({ ...prev, [kind]: null }));
+    }
+  }, []);
+
+  const tabCounts = useMemo(() => {
+    const getCount = (kind: ProviderKind) => (loading[kind] ? null : kind === 'text' ? textProviders.length : kind === 'image' ? imageProviders.length : videoProviders.length);
+    return {
+      text: getCount('text'),
+      image: getCount('image'),
+      video: getCount('video'),
+    };
+  }, [imageProviders.length, loading, textProviders.length, videoProviders.length]);
+
+  return (
+    <div className="space-y-6">
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-2xl font-bold text-white">Providers</h1>
+          <p className="text-gray-400 text-sm mt-1">
+            Configure providers for text, image, and video inference
+          </p>
+        </div>
+      </div>
+
+      <Tabs value={activeTab} onValueChange={onTabChange} className="space-y-6">
+        <TabsList className="grid w-full grid-cols-3 bg-white/5">
+          <TabsTrigger value="text" className="gap-2">
+            <Server className="h-4 w-4" />
+            Text
+            <Badge variant="secondary" className="ml-1 bg-white/10 text-gray-300">
+              {tabCounts.text ?? '-'}
+            </Badge>
+          </TabsTrigger>
+          <TabsTrigger value="image" className="gap-2">
+            <Image className="h-4 w-4" />
+            Image
+            <Badge variant="secondary" className="ml-1 bg-white/10 text-gray-300">
+              {tabCounts.image ?? '-'}
+            </Badge>
+          </TabsTrigger>
+          <TabsTrigger value="video" className="gap-2">
+            <Video className="h-4 w-4" />
+            Video
+            <Badge variant="secondary" className="ml-1 bg-white/10 text-gray-300">
+              {tabCounts.video ?? '-'}
+            </Badge>
+          </TabsTrigger>
+        </TabsList>
+
+        <TabsContent value="text">
+          <ProviderTabContent
+            config={PROVIDER_TABS.text}
+            providers={textProviders as unknown as ProviderBase[]}
+            loading={loading.text}
+            onRefresh={() => refreshKind('text')}
+            onTestConnection={(providerId) => handleTestConnection('text', providerId)}
+            testingProviderId={testingProviderId.text}
+            testResults={testResults.text}
+          />
+        </TabsContent>
+
+        <TabsContent value="image">
+          <ProviderTabContent
+            config={PROVIDER_TABS.image}
+            providers={imageProviders as unknown as ProviderBase[]}
+            loading={loading.image}
+            onRefresh={() => refreshKind('image')}
+            onTestConnection={(providerId) => handleTestConnection('image', providerId)}
+            testingProviderId={testingProviderId.image}
+            testResults={testResults.image}
+          />
+        </TabsContent>
+
+        <TabsContent value="video">
+          <ProviderTabContent
+            config={PROVIDER_TABS.video}
+            providers={videoProviders as unknown as ProviderBase[]}
+            loading={loading.video}
+            onRefresh={() => refreshKind('video')}
+            onTestConnection={(providerId) => handleTestConnection('video', providerId)}
+            testingProviderId={testingProviderId.video}
+            testResults={testResults.video}
+          />
+        </TabsContent>
+      </Tabs>
     </div>
   );
 }

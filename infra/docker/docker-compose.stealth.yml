@@ -231,17 +231,6 @@ services:
       - campfire-network
 
   # ---------------------------------------------------------------------------
-  # Marketing Site - DISABLED (package doesn't exist yet)
-  # ---------------------------------------------------------------------------
-  # marketing:
-  #   build:
-  #     context: ../../
-  #     dockerfile: infra/docker/Dockerfile.marketing
-  #     target: production
-  #   container_name: campfire-marketing
-  #   ...
-
-  # ---------------------------------------------------------------------------
   # Workers - Background job processing
   # ---------------------------------------------------------------------------
   workers:
@@ -336,7 +325,6 @@ networks:
 # Gateway:     256 MB (limit) / 128 MB (reserve)
 # Orchestrator:384 MB (limit) / 192 MB (reserve)
 # Web:         384 MB (limit) / 192 MB (reserve)
-# Marketing:   192 MB (limit) / 96 MB (reserve)
 # Workers:     256 MB (limit) / 128 MB (reserve)
 # Nginx:        64 MB (limit) / 32 MB (reserve)
 # ------------------------------------------------

@@ -86,17 +86,7 @@ class ComfyUIProvider(ImageProvider):
         except ValueError:
             width, height = 768, 1024
 
-        # Default negative prompt for high-quality companion images
-        if not negative_prompt:
-            negative_prompt = (
-                "ugly, deformed, blurry, low quality, bad anatomy, "
-                "watermark, text, signature, disfigured, cropped, "
-                "bad hands, bad fingers, extra limbs, mutation, "
-                "worst quality, low resolution, artifacts, noise, "
-                "poorly drawn, amateur, sketch, grainy, pixelated, "
-                "overexposed, underexposed, bad lighting, "
-                "malformed face, cross-eyed, asymmetric eyes"
-            )
+        negative_prompt = negative_prompt or ""
 
         try:
             async with httpx.AsyncClient(timeout=self.timeout) as client:

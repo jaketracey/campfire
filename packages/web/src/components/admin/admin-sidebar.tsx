@@ -4,7 +4,7 @@ import { useState } from 'react';
 import Link from 'next/link';
 import type { Route } from 'next';
 import { usePathname } from 'next/navigation';
-import { Users, Mail, BarChart3, Flame, LayoutDashboard, DollarSign, LifeBuoy, Server, GitBranch, Handshake, Target, Search, Image, Palette, ChevronDown, Cpu, Terminal, Video, Clapperboard } from 'lucide-react';
+import { Users, Mail, BarChart3, Flame, LayoutDashboard, DollarSign, LifeBuoy, Server, GitBranch, Handshake, Target, Search, ChevronDown, Cpu, Terminal } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 interface NavItem {
@@ -78,34 +78,14 @@ const inferenceGroup: NavGroup = {
       icon: DollarSign,
     },
     {
-      label: 'Text Providers',
+      label: 'Providers',
       href: '/admin/providers' as Route,
       icon: Server,
     },
     {
-      label: 'Text Routing',
+      label: 'Routing',
       href: '/admin/routing' as Route,
       icon: GitBranch,
-    },
-    {
-      label: 'Image Providers',
-      href: '/admin/image-providers' as Route,
-      icon: Image,
-    },
-    {
-      label: 'Image Routing',
-      href: '/admin/image-routing' as Route,
-      icon: Palette,
-    },
-    {
-      label: 'Video Providers',
-      href: '/admin/video-providers' as Route,
-      icon: Video,
-    },
-    {
-      label: 'Video Routing',
-      href: '/admin/video-routing' as Route,
-      icon: Clapperboard,
     },
   ],
 };
@@ -113,8 +93,21 @@ const inferenceGroup: NavGroup = {
 export function AdminSidebar() {
   const pathname = usePathname();
 
+  const isProvidersSectionActive =
+    pathname.startsWith('/admin/providers') ||
+    pathname.startsWith('/admin/image-providers') ||
+    pathname.startsWith('/admin/video-providers');
+
+  const isRoutingSectionActive =
+    pathname.startsWith('/admin/routing') ||
+    pathname.startsWith('/admin/image-routing') ||
+    pathname.startsWith('/admin/video-routing');
+
   // Check if any inference sub-item is active to auto-expand
-  const isInferenceActive = inferenceGroup.items.some(item => pathname.startsWith(item.href));
+  const isInferenceActive =
+    inferenceGroup.items.some((item) => pathname.startsWith(item.href)) ||
+    isProvidersSectionActive ||
+    isRoutingSectionActive;
   const [inferenceOpen, setInferenceOpen] = useState(isInferenceActive);
 
   // Find where to insert the Inference group (after Invites)
@@ -188,7 +181,12 @@ export function AdminSidebar() {
           {inferenceOpen && (
             <div className="ml-4 mt-1 space-y-1 border-l border-white/5 pl-2">
               {inferenceGroup.items.map((item) => {
-                const isActive = pathname.startsWith(item.href);
+                const isActive =
+                  item.href === '/admin/providers'
+                    ? isProvidersSectionActive
+                    : item.href === '/admin/routing'
+                      ? isRoutingSectionActive
+                    : pathname.startsWith(item.href);
                 const Icon = item.icon;
 
                 return (

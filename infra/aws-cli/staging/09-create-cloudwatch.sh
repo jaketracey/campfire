@@ -25,7 +25,7 @@ AWS_ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
 # -----------------------------------------------------------------------------
 log "Creating CloudWatch log groups"
 
-SERVICES=("gateway" "orchestrator" "web" "marketing" "workers")
+SERVICES=("gateway" "orchestrator" "web" "workers")
 
 for service in "${SERVICES[@]}"; do
     LOG_GROUP="/ecs/${RESOURCE_PREFIX}/${service}"

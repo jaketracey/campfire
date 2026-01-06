@@ -134,7 +134,6 @@ echo $ALB_DNS
 | Gateway | `/health` | 4000 |
 | Orchestrator | `/health` | 5000 |
 | Web | `/api/health` | 3000 |
-| Marketing | `/api/health` | 3001 |
 | Workers | `/health` | 8080 |
 
 ## Common Operations
@@ -211,7 +210,6 @@ To delete all resources (in reverse order):
 aws ecs update-service --cluster campfire-dev-cluster --service campfire-dev-gateway --desired-count 0
 aws ecs update-service --cluster campfire-dev-cluster --service campfire-dev-orchestrator --desired-count 0
 aws ecs update-service --cluster campfire-dev-cluster --service campfire-dev-web --desired-count 0
-aws ecs update-service --cluster campfire-dev-cluster --service campfire-dev-marketing --desired-count 0
 aws ecs update-service --cluster campfire-dev-cluster --service campfire-dev-workers --desired-count 0
 
 # Delete services

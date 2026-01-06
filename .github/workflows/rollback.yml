@@ -80,7 +80,7 @@ jobs:
         run: |
           SERVICES="${{ github.event.inputs.services }}"
           if [[ "${SERVICES}" == "all" ]]; then
-            SERVICES_LIST='["gateway", "orchestrator", "web", "marketing", "workers"]'
+            SERVICES_LIST='["gateway", "orchestrator", "web", "workers"]'
           else
             # Convert comma-separated to JSON array
             SERVICES_LIST=$(echo "${SERVICES}" | tr ',' '\n' | jq -R . | jq -s .)

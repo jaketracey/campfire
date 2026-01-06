@@ -14,40 +14,22 @@ import httpx
 import structlog
 
 from orchestrator.config import Settings
+from orchestrator.prompts.manager import PromptManager
 
 logger = structlog.get_logger()
-
-PROMPT_ENHANCEMENT_SYSTEM = """You are an expert at writing prompts for Seedream 4.5 AI image generation.
-Your task is to transform scene descriptions into effective photorealistic portrait prompts.
-
-CRITICAL RULES:
-1. Output ONLY the enhanced prompt - no explanations, no preamble, no quotes
-2. Use natural language sentences, NOT comma-separated keyword lists
-3. Structure: Subject description FIRST (most important), then photography/lighting details
-4. Include: subject traits, expression/pose, lighting (soft diffused, studio, golden hour), technical terms (85mm lens, shallow depth of field)
-5. Keep the same scene content and emotional tone
-6. Keep prompts 30-100 words, clear and focused
-
-Good prompt structure:
-"Beautiful woman with [traits], [expression/pose]. [Lighting description], [photography terms], photorealistic, high resolution."
-
-Transform action descriptions into static visual descriptions:
-- "tilting head with intense gaze" → "...looking at the camera with a tilted head and an intense, captivating gaze. Portrait photography, soft studio lighting, shallow depth of field, photorealistic."
-- "stretching in sunlight" → "...stretching her arms, bathed in warm morning sunlight. Natural lighting, golden hour tones, lifestyle photography, high resolution."
-
-Focus on WHAT THE IMAGE SHOWS as a single moment, not ongoing action."""
 
 
 class PromptEnhancer:
     """Enhances image prompts using local Ollama with abliterated models."""
 
-    def __init__(self, settings: Settings):
+    def __init__(self, settings: Settings, prompt_manager: PromptManager):
         """Initialize the prompt enhancer.
 
         Args:
             settings: Application settings containing Ollama config.
         """
         self.settings = settings
+        self.prompt_manager = prompt_manager
         self.base_url = settings.ollama_base_url.rstrip("/")
         self.model = settings.prompt_enhancement_model
         self.max_tokens = settings.prompt_enhancement_max_tokens
@@ -75,20 +57,19 @@ class PromptEnhancer:
 
         start_time = time.time()
 
-        # Build the user message
-        user_message = f"""Transform this into an effective AI image generation prompt for {style} style.
-
-Original: {original_prompt}
-Emotional state: {emotional_state}
-Style: {style}
-
-Enhanced prompt:"""
+        system_message = self.prompt_manager.get_prompt("orchestrator.image_prompt_enhancement_system")
+        user_message = self.prompt_manager.get_prompt(
+            "orchestrator.image_prompt_enhancement_user",
+            style=style,
+            original_prompt=original_prompt,
+            emotional_state=emotional_state,
+        )
 
         # Build Ollama request payload
         payload = {
             "model": self.model,
             "messages": [
-                {"role": "system", "content": PROMPT_ENHANCEMENT_SYSTEM},
+                {"role": "system", "content": system_message},
                 {"role": "user", "content": user_message},
             ],
             "stream": False,

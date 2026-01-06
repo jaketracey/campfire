@@ -85,7 +85,7 @@ export default function NewVideoProviderPage() {
     <div className="space-y-6">
       {/* Header */}
       <div className="flex items-center gap-4">
-        <Link href={'/admin/video-providers' as Route}>
+        <Link href={'/admin/providers?tab=video' as Route}>
           <Button variant="ghost" size="sm">
             <ArrowLeft className="h-4 w-4 mr-2" />
             Back
@@ -225,7 +225,7 @@ export default function NewVideoProviderPage() {
             </div>
 
             <div className="flex justify-end gap-3 pt-4">
-              <Link href={'/admin/video-providers' as Route}>
+              <Link href={'/admin/providers?tab=video' as Route}>
                 <Button type="button" variant="outline">
                   Cancel
                 </Button>

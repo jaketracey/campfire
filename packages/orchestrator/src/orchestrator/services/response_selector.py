@@ -18,55 +18,9 @@ from orchestrator.models.group_chat import (
     GroupParticipant,
     SpeakerSelection,
 )
+from orchestrator.prompts.manager import PromptManager
 
 logger = structlog.get_logger()
-
-
-SPEAKER_SELECTION_PROMPT = """You are a conversation director for a group chat. Given the recent conversation and participant list, decide who should respond next.
-
-PARTICIPANTS:
-{participants}
-
-RECENT MESSAGES:
-{recent_messages}
-
-USER'S NEW MESSAGE: "{user_message}"
-
-RULES:
-1. If the user @mentions a specific companion by name, that companion MUST respond
-2. If the message is clearly directed at someone (e.g., "Hey {name}"), that person should respond
-3. Otherwise, pick the most relevant companion based on:
-   - Who the user was just talking to
-   - Who has expertise related to the topic
-   - Who hasn't spoken in a while (for variety)
-4. Usually only ONE companion should respond (the primary speaker)
-5. A second companion MAY add a brief reaction if:
-   - The topic is highly relevant to them
-   - They have a strong relationship with the speaker
-   - It would add value without interrupting the flow
-
-OUTPUT FORMAT (JSON):
-{{
-  "primary_speaker_id": "<companion_id of who should respond>",
-  "should_react": <true/false>,
-  "reactor_ids": [<optional list of companion_ids who should add brief reactions>],
-  "reasoning": "<brief explanation of your choice>"
-}}
-
-Respond ONLY with valid JSON, no other text."""
-
-
-REACTION_CHECK_PROMPT = """Given this conversation context, should {reactor_name} ({reactor_desc}) add a brief reaction to {speaker_name}'s response?
-
-{speaker_name}'s response: "{response_preview}"
-
-Context:
-- Relationship: {relationship}
-- {reactor_name}'s personality: {reactor_personality}
-
-Only react if it adds genuine value. Most of the time, the answer is NO.
-
-Respond with JSON: {{"should_react": true/false, "reason": "brief explanation"}}"""
 
 
 class ResponseSelector:
@@ -75,9 +29,11 @@ class ResponseSelector:
     def __init__(
         self,
         settings: Settings,
+        prompt_manager: PromptManager,
         http_client: httpx.AsyncClient | None = None,
     ):
         self.settings = settings
+        self.prompt_manager = prompt_manager
         self.http_client = http_client or httpx.AsyncClient(timeout=30.0)
         self.ollama_url = settings.ollama_url or "http://localhost:11434"
         self.selector_model = settings.selector_model or "llama3.2:3b"  # Fast, lightweight model
@@ -174,7 +130,10 @@ class ResponseSelector:
                 return False
 
         try:
-            prompt = REACTION_CHECK_PROMPT.format(
+            prompt = self.prompt_manager.get_prompt_effective(
+                "orchestrator.reaction_check_prompt",
+                version=self.prompt_manager.current_version,
+                companion_id=str(reactor.companion_spec.id),
                 reactor_name=reactor.companion_spec.name,
                 reactor_desc=reactor.relationship_to_primary or "friend",
                 speaker_name=speaker.companion_spec.name,
@@ -240,11 +199,12 @@ class ResponseSelector:
                 prefix = "[Reaction]" if msg.is_reaction else ""
                 message_lines.append(f"{prefix}{msg.speaker_name}: {msg.content[:100]}")
 
-        prompt = SPEAKER_SELECTION_PROMPT.format(
+        prompt = self.prompt_manager.get_prompt(
+            "orchestrator.speaker_selection_prompt",
+            version=self.prompt_manager.current_version,
             participants="\n".join(participant_lines),
             recent_messages="\n".join(message_lines) or "(No recent messages)",
             user_message=user_message[:500],
-            name="{name}",  # Keep the placeholder in the prompt
         )
 
         response = await self._call_ollama(prompt)

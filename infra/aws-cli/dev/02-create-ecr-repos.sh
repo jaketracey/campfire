@@ -96,7 +96,6 @@ create_ecr_repo() {
 create_ecr_repo "${ECR_GATEWAY_REPO}"
 create_ecr_repo "${ECR_ORCHESTRATOR_REPO}"
 create_ecr_repo "${ECR_WEB_REPO}"
-create_ecr_repo "${ECR_MARKETING_REPO}"
 create_ecr_repo "${ECR_WORKERS_REPO}"
 
 # -----------------------------------------------------------------------------
@@ -118,7 +117,6 @@ echo "Repositories:"
 echo "  - ${ECR_GATEWAY_REPO}"
 echo "  - ${ECR_ORCHESTRATOR_REPO}"
 echo "  - ${ECR_WEB_REPO}"
-echo "  - ${ECR_MARKETING_REPO}"
 echo "  - ${ECR_WORKERS_REPO}"
 echo ""
 echo "To login to ECR:"
