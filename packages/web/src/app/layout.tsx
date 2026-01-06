@@ -4,7 +4,11 @@ import Script from 'next/script';
 import { Suspense } from 'react';
 import { ClientProviders } from '@/components/providers/client-providers';
 import { PageErrorBoundary } from '@/components/error-boundary';
+import { fetchBrandForRequest } from '@/lib/brand/server';
 import './globals.css';
+import { BrandCssVars } from '@/components/brand/brand-css-vars';
+
+export const dynamic = 'force-dynamic';
 
 const inter = Inter({
   subsets: ['latin'],
@@ -23,21 +27,26 @@ const dmSans = DM_Sans({
   display: 'swap',
 });
 
-export const metadata: Metadata = {
-  title: 'Ignite - Your AI Companion',
-  description: 'Create and connect with your personalized AI companion',
-  icons: {
-    icon: [
-      { url: '/favicon/favicon.ico', sizes: 'any' },
-      { url: '/favicon/favicon.svg', type: 'image/svg+xml' },
-      { url: '/favicon/favicon-96x96.png', sizes: '96x96', type: 'image/png' },
-    ],
-    apple: [
-      { url: '/favicon/apple-touch-icon.png', sizes: '180x180', type: 'image/png' },
-    ],
-  },
-  manifest: '/favicon/site.webmanifest',
-};
+export async function generateMetadata(): Promise<Metadata> {
+  const resolved = await fetchBrandForRequest();
+  const title = `${resolved.brand.name} - Your AI Companion`;
+
+  return {
+    title,
+    description: 'Create and connect with your personalized AI companion',
+    icons: {
+      icon: [
+        { url: '/favicon/favicon.ico', sizes: 'any' },
+        { url: '/favicon/favicon.svg', type: 'image/svg+xml' },
+        { url: '/favicon/favicon-96x96.png', sizes: '96x96', type: 'image/png' },
+      ],
+      apple: [
+        { url: '/favicon/apple-touch-icon.png', sizes: '180x180', type: 'image/png' },
+      ],
+    },
+    manifest: '/favicon/site.webmanifest',
+  };
+}
 
 function GlobalFallback() {
   return (
@@ -47,7 +56,7 @@ function GlobalFallback() {
   );
 }
 
-export default function RootLayout({
+export default async function RootLayout({
   children,
 }: Readonly<{
   children: React.ReactNode;
@@ -57,6 +66,7 @@ export default function RootLayout({
       <body className={`${inter.variable} ${outfit.variable} ${dmSans.variable} font-sans antialiased uppercase-none`}>
         <PageErrorBoundary>
           <Suspense fallback={<GlobalFallback />}>
+            <BrandCssVars />
             <ClientProviders>{children}</ClientProviders>
           </Suspense>
         </PageErrorBoundary>

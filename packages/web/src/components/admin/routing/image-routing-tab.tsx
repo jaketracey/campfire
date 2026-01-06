@@ -71,7 +71,6 @@ import {
   AlertDialogTrigger,
 } from '@/components/ui/alert-dialog';
 import { Slider } from '@/components/ui/slider';
-import { PromptTemplatesPanel } from '@/components/admin/prompt-templates/prompt-templates-panel';
 
 export function ImageRoutingTab() {
   const [isLoading, setIsLoading] = useState(true);
@@ -536,8 +535,6 @@ export function ImageRoutingTab() {
           </CardContent>
         </Card>
       </div>
-
-      <PromptTemplatesPanel adminArea="image_routing" title="Image Routing Prompts" />
 
       {/* Rule Dialog */}
       <Dialog open={isRuleDialogOpen} onOpenChange={setIsRuleDialogOpen}>

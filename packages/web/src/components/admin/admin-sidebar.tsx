@@ -4,7 +4,7 @@ import { useState } from 'react';
 import Link from 'next/link';
 import type { Route } from 'next';
 import { usePathname } from 'next/navigation';
-import { Users, Mail, BarChart3, Flame, LayoutDashboard, DollarSign, LifeBuoy, Server, GitBranch, Handshake, Target, Search, ChevronDown, Cpu, Terminal } from 'lucide-react';
+import { Users, Mail, BarChart3, Flame, LayoutDashboard, DollarSign, LifeBuoy, Server, GitBranch, Handshake, Target, Search, ChevronDown, Cpu, Terminal, Store, ScrollText } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 interface NavItem {
@@ -47,6 +47,11 @@ const navItems: NavItem[] = [
     icon: Handshake,
   },
   {
+    label: 'Tenants',
+    href: '/admin/tenants' as Route,
+    icon: Store,
+  },
+  {
     label: 'Analytics',
     href: '/admin/analytics' as Route,
     icon: BarChart3,
@@ -86,6 +91,11 @@ const inferenceGroup: NavGroup = {
       label: 'Routing',
       href: '/admin/routing' as Route,
       icon: GitBranch,
+    },
+    {
+      label: 'Prompts',
+      href: '/admin/prompts' as Route,
+      icon: ScrollText,
     },
   ],
 };

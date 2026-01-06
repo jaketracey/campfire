@@ -71,7 +71,6 @@ import {
   AlertDialogTrigger,
 } from '@/components/ui/alert-dialog';
 import { Slider } from '@/components/ui/slider';
-import { PromptTemplatesPanel } from '@/components/admin/prompt-templates/prompt-templates-panel';
 
 export function VideoRoutingTab() {
   const [isLoading, setIsLoading] = useState(true);
@@ -536,8 +535,6 @@ export function VideoRoutingTab() {
           </CardContent>
         </Card>
       </div>
-
-      <PromptTemplatesPanel adminArea="video_routing" title="Video Routing Prompts" />
 
       {/* Rule Dialog */}
       <Dialog open={isRuleDialogOpen} onOpenChange={setIsRuleDialogOpen}>

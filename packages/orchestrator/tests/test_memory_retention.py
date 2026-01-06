@@ -187,8 +187,11 @@ class TestMemoryRetention:
         for scenario in scenarios:
             assert "id" in scenario
             assert "description" in scenario
-            assert "turns" in scenario
-            assert isinstance(scenario["turns"], list)
+            assert ("turns" in scenario) or ("sessions" in scenario)
+            if "turns" in scenario:
+                assert isinstance(scenario["turns"], list)
+            if "sessions" in scenario:
+                assert isinstance(scenario["sessions"], list)
 
 
 class TestSeverityCalculation:

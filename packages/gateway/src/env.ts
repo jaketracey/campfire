@@ -109,6 +109,10 @@ export const GatewayEnvSchema = z.object({
   ELEVENLABS_STT_MODEL: z.string().optional(),
 
   PROVIDER_KEY_ENCRYPTION_SECRET: z.string().optional(),
+
+  // Creator monetization
+  CREATOR_TOKEN_VALUE_CENTS: IntSchema.pipe(z.number().int().positive()).default(10),
+  CREATOR_PLATFORM_FEE_BPS: IntSchema.pipe(z.number().int().min(0).max(10_000)).default(2000),
 });
 
 export type GatewayEnv = z.infer<typeof GatewayEnvSchema> & {

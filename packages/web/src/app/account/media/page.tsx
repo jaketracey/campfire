@@ -1,10 +1,8 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import Link from 'next/link';
 import { motion } from 'framer-motion';
 import {
-  ArrowLeft,
   Image as ImageIcon,
   Video,
   Loader2,
@@ -13,12 +11,10 @@ import {
   XCircle,
   RefreshCw,
 } from 'lucide-react';
-import { Button } from '@/components/ui/button';
-import { AnimatedFlame } from '@/components/ui/animated-flame';
 import { Card, CardContent } from '@/components/ui/card';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useRequireAuth } from '@/hooks/use-auth';
-import { getUserMedia, type UserMediaItem, type MediaType, type MediaStatus } from '@/lib/api/media';
+import { getUserMedia, type UserMediaItem, type MediaStatus } from '@/lib/api/media';
 
 type MediaFilter = 'all' | 'images' | 'videos';
 type StatusFilter = 'all' | 'ready' | 'generating' | 'failed';
@@ -90,22 +86,6 @@ export default function MediaGalleryPage() {
 
   return (
     <div className="min-h-screen bg-background">
-      {/* Header */}
-      <header className="border-b border-white/5 px-6 py-4 bg-black/20 backdrop-blur-lg sticky top-0 z-10">
-        <div className="max-w-6xl mx-auto flex items-center gap-4">
-          <Link href="/dashboard" className="hover:opacity-80 transition-opacity">
-            <AnimatedFlame size="sm" />
-          </Link>
-          <div className="flex-1" />
-          <Link href="/account">
-            <Button variant="ghost" size="sm" className="gap-2 text-gray-400 hover:text-white">
-              <ArrowLeft className="h-4 w-4" />
-              Back to Account
-            </Button>
-          </Link>
-        </div>
-      </header>
-
       {/* Content */}
       <main className="max-w-6xl mx-auto px-6 py-8">
         <motion.div

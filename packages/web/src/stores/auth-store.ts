@@ -17,6 +17,39 @@ function clearAuthCookie() {
   }
 }
 
+function getSafeStorage(): Storage {
+  if (
+    typeof window !== 'undefined' &&
+    window.localStorage &&
+    typeof window.localStorage.getItem === 'function' &&
+    typeof window.localStorage.setItem === 'function'
+  ) {
+    return window.localStorage;
+  }
+
+  // Server / build-time fallback.
+  return {
+    get length() {
+      return 0;
+    },
+    clear() {
+      // noop
+    },
+    getItem() {
+      return null;
+    },
+    key() {
+      return null;
+    },
+    removeItem() {
+      // noop
+    },
+    setItem() {
+      // noop
+    },
+  } as Storage;
+}
+
 // Impersonation state stored separately to survive session changes
 interface ImpersonationState {
   originalUser: User;
@@ -173,7 +206,7 @@ export const useAuthStore = create<AuthState>()(
     }),
     {
       name: 'campfire-auth',
-      storage: createJSONStorage(() => localStorage),
+      storage: createJSONStorage(() => getSafeStorage()),
       partialize: (state) => ({
         user: state.user,
         accessToken: state.accessToken,
@@ -183,17 +216,21 @@ export const useAuthStore = create<AuthState>()(
         impersonationState: state.impersonationState,
       }),
       onRehydrateStorage: () => {
-        console.log('[AUTH-STORE] onRehydrateStorage called');
+        if (typeof window !== 'undefined') {
+          console.log('[AUTH-STORE] onRehydrateStorage called');
+        }
         return (state, error) => {
           if (error) {
             console.error('[AUTH-STORE] Hydration error:', error);
           }
-          console.log('[AUTH-STORE] Hydration complete:', {
-            hasState: !!state,
-            userId: state?.user?.id ?? null,
-            hasAccessToken: !!state?.accessToken,
-            expiresAt: state?.expiresAt,
-          });
+          if (typeof window !== 'undefined') {
+            console.log('[AUTH-STORE] Hydration complete:', {
+              hasState: !!state,
+              userId: state?.user?.id ?? null,
+              hasAccessToken: !!state?.accessToken,
+              expiresAt: state?.expiresAt,
+            });
+          }
           // Defer to next tick to avoid circular reference issues
           queueMicrotask(() => {
             // Check if token is expired
@@ -213,7 +250,9 @@ export const useAuthStore = create<AuthState>()(
               });
             }
 
-            console.log('[AUTH-STORE] Setting isInitialized = true');
+            if (typeof window !== 'undefined') {
+              console.log('[AUTH-STORE] Setting isInitialized = true');
+            }
             useAuthStore.setState({ isInitialized: true });
           });
         };

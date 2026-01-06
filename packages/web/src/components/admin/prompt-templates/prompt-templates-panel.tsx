@@ -301,16 +301,16 @@ export function PromptTemplatesPanel(props: {
                         onClick={() => onSelectPrompt(p.key)}
                         type="button"
                       >
-                        <div className="flex items-center justify-between gap-2">
+                        <div className="line-clamp-2 text-sm text-foreground">
+                          {p.description}
+                        </div>
+                        <div className="mt-1 flex items-center justify-between gap-2 text-xs text-muted-foreground">
                           <span className="truncate font-mono">{p.key}</span>
                           <div className="flex items-center gap-2">
                             {p.is_required && <Badge variant="secondary">required</Badge>}
                             {isMissing && p.is_required && <Badge variant="destructive">missing</Badge>}
                             {!isMissing && <Badge variant="outline">{p.template_source}</Badge>}
                           </div>
-                        </div>
-                        <div className="mt-1 line-clamp-2 text-xs text-muted-foreground">
-                          {p.description}
                         </div>
                       </button>
                     );
@@ -327,18 +327,19 @@ export function PromptTemplatesPanel(props: {
               </div>
             ) : (
               <div className="space-y-3">
-                <div className="flex flex-wrap items-center gap-2">
-                  <Badge variant="outline" className="font-mono">
-                    {selectedPrompt.key}
-                  </Badge>
-                  {selectedPrompt.is_required && <Badge variant="secondary">required</Badge>}
-                  <Badge variant="outline">{selectedPrompt.template_source}</Badge>
-                  {version === defaultVersion && (
-                    <Badge variant="destructive">editing default</Badge>
-                  )}
+                <div className="md:hidden">
+                  <div className="text-sm text-foreground">{selectedPrompt.description}</div>
+                  <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+                    <Badge variant="outline" className="font-mono">
+                      {selectedPrompt.key}
+                    </Badge>
+                    {selectedPrompt.is_required && <Badge variant="secondary">required</Badge>}
+                    <Badge variant="outline">{selectedPrompt.template_source}</Badge>
+                    {version === defaultVersion && (
+                      <Badge variant="destructive">editing default</Badge>
+                    )}
+                  </div>
                 </div>
-
-                <div className="text-sm text-muted-foreground">{selectedPrompt.description}</div>
 
                 <div className="grid gap-3 md:grid-cols-2">
                   <div>

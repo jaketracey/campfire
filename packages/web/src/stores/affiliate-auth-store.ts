@@ -21,6 +21,38 @@ function clearAffiliateAuthCookie() {
   }
 }
 
+function getSafeStorage(): Storage {
+  if (
+    typeof window !== 'undefined' &&
+    window.localStorage &&
+    typeof window.localStorage.getItem === 'function' &&
+    typeof window.localStorage.setItem === 'function'
+  ) {
+    return window.localStorage;
+  }
+
+  return {
+    get length() {
+      return 0;
+    },
+    clear() {
+      // noop
+    },
+    getItem() {
+      return null;
+    },
+    key() {
+      return null;
+    },
+    removeItem() {
+      // noop
+    },
+    setItem() {
+      // noop
+    },
+  } as Storage;
+}
+
 export interface Affiliate {
   id: string;
   name: string;
@@ -85,7 +117,7 @@ export const useAffiliateAuthStore = create<AffiliateAuthState>()(
     }),
     {
       name: 'campfire-affiliate-auth',
-      storage: createJSONStorage(() => localStorage),
+      storage: createJSONStorage(() => getSafeStorage()),
       partialize: (state) => ({
         affiliate: state.affiliate,
         token: state.token,

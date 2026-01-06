@@ -174,6 +174,32 @@ export type {
   GiftMemorySearchResult,
 } from './gifts.js';
 
+// Tenants repository (white-label / domain routing)
+import { getTenantsRepository as _getTenantsRepository } from './tenants.js';
+export {
+  TenantsRepository,
+  getTenantsRepository,
+} from './tenants.js';
+export type {
+  Tenant,
+  TenantDomain,
+  TenantStatus,
+} from './tenants.js';
+
+// Creator earnings repository (token spend attribution)
+import { getCreatorEarningsRepository as _getCreatorEarningsRepository } from './creator-earnings.js';
+export {
+  CreatorEarningsRepository,
+  getCreatorEarningsRepository,
+} from './creator-earnings.js';
+export type {
+  TokenSpendFeature,
+  TokenSpendAttributionInsert,
+  CreatorEarningInsert,
+  CreatorEarningRow,
+  CreatorEarningsSummary,
+} from './creator-earnings.js';
+
 // Personality Profiles repository
 import { getPersonalityProfilesRepository as _getPersonalityProfilesRepository } from './personality-profiles.js';
 export {
@@ -400,6 +426,8 @@ export function initializeRepositories(): void {
   _getVaultRepository();
   _getKnowledgeGraphRepository();
   _getGiftsRepository();
+  _getTenantsRepository();
+  _getCreatorEarningsRepository();
   _getPersonalityProfilesRepository();
   _getAdminSettingsRepository();
   _getAnonymousUsageRepository();
@@ -432,6 +460,8 @@ export function getRepositories() {
     vault: _getVaultRepository(),
     knowledgeGraph: _getKnowledgeGraphRepository(),
     gifts: _getGiftsRepository(),
+    tenants: _getTenantsRepository(),
+    creatorEarnings: _getCreatorEarningsRepository(),
     personalityProfiles: _getPersonalityProfilesRepository(),
     adminSettings: _getAdminSettingsRepository(),
     anonymousUsage: _getAnonymousUsageRepository(),

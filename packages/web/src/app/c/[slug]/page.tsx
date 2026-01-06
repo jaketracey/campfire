@@ -2,6 +2,7 @@ import { Metadata } from 'next';
 import { notFound } from 'next/navigation';
 import { CompanionProfile } from '@/components/seo/companion-profile';
 import { serverEnv } from '@/env/server';
+import { getRequestBaseUrl } from '@/lib/request-base-url';
 
 interface PageProps {
   params: Promise<{ slug: string }>;
@@ -71,11 +72,11 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
 
   if (!page) {
     return {
-      title: 'Companion Not Found | Ignite',
+      title: 'Companion Not Found',
     };
   }
 
-  const baseUrl = serverEnv.NEXT_PUBLIC_APP_URL;
+  const baseUrl = await getRequestBaseUrl();
 
   return {
     title: page.title,

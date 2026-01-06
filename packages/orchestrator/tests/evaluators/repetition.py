@@ -107,24 +107,49 @@ class RepetitionDetector:
 
     def _calculate_similarity(self, text_a: str, text_b: str) -> float:
         """Calculate normalized similarity between two texts."""
-        # Use SequenceMatcher for quick similarity
         norm_a = self._normalize(text_a)
         norm_b = self._normalize(text_b)
 
         if not norm_a or not norm_b:
             return 0.0
 
-        ratio = difflib.SequenceMatcher(None, norm_a, norm_b).ratio()
-        return ratio
+        # Avoid false positives on very short messages.
+        if len(norm_a) < 25 or len(norm_b) < 25:
+            return 0.0
+
+        # Combine character-level similarity with word overlap.
+        #
+        # Many LLM near-duplicates use the same structure with a few adjective swaps.
+        # Adding a small word-overlap boost helps catch those cases.
+        seq_ratio = difflib.SequenceMatcher(None, norm_a, norm_b).ratio()
+
+        words_a = set(norm_a.split())
+        words_b = set(norm_b.split())
+        if not words_a or not words_b:
+            return seq_ratio
+
+        word_jaccard = len(words_a & words_b) / len(words_a | words_b)
+        boosted = seq_ratio + (0.15 * word_jaccard)
+        return min(1.0, boosted)
 
     def _extract_phrases(self, text: str, min_words: int) -> list[str]:
-        """Extract phrases of minimum length from text."""
+        """Extract phrases up to the minimum length from text.
+
+        The detector is configured with a minimum phrase length, but we also
+        consider shorter sub-phrases (down to 3 words) to catch repeated
+        fragments across slightly varied sentences.
+        """
         words = self._normalize(text).split()
         phrases = []
 
-        for i in range(len(words) - min_words + 1):
-            phrase = " ".join(words[i : i + min_words])
-            phrases.append(phrase)
+        min_len = max(3, min_words)
+        if len(words) < 3:
+            return phrases
+
+        for phrase_len in range(3, min_len + 1):
+            for i in range(len(words) - phrase_len + 1):
+                phrase = " ".join(words[i : i + phrase_len])
+                phrases.append(phrase)
 
         return phrases
 

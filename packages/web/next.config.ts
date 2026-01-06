@@ -5,7 +5,8 @@ const nextConfig: NextConfig = {
   reactStrictMode: true,
   reactCompiler: true,
   devIndicators: false,
-  cacheComponents: true,
+  // Disabled to allow request-based (host) branding in layout metadata.
+  cacheComponents: false,
   typedRoutes: true,
   transpilePackages: ['@campfire/shared'],
   // Proxy API requests to gateway (needed for ngrok/external access)

@@ -50,6 +50,11 @@ import { adminAnalyticsRoutes } from './admin-analytics.js';
 import { adminAdsRoutes } from './admin-ads.js';
 import { adminSeoRoutes } from './admin-seo.js';
 import { seoPublicRoutes } from './seo-public.js';
+import { brandPublicRoutes } from './brand-public.js';
+import { creatorEarningsRoutes } from './creator-earnings.js';
+import { adminTenantsRoutes } from './admin-tenants.js';
+import { tenantApplicationsPublicRoutes } from './tenant-applications-public.js';
+import { adminTenantApplicationsRoutes } from './admin-tenant-applications.js';
 import { videosRoutes, mediaRoutes } from './videos.js';
 import { adminLogsRoutes } from './admin-logs.js';
 import { adminPromptsRoutes } from './admin-prompts.js';
@@ -100,6 +105,9 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
 
       // Gifts routes
       await api.register(giftsRoutes, { prefix: '/gifts' });
+
+      // Creator routes
+      await api.register(creatorEarningsRoutes, { prefix: '/creator' });
 
       // Image generation routes
       await api.register(imagegenRoutes, { prefix: '/imagegen' });
@@ -167,6 +175,12 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
       // Admin ads routes
       await api.register(adminAdsRoutes, { prefix: '/admin/ads' });
 
+      // Admin tenants routes
+      await api.register(adminTenantsRoutes, { prefix: '/admin/tenants' });
+
+      // Admin tenant applications routes
+      await api.register(adminTenantApplicationsRoutes, { prefix: '/admin/tenants/applications' });
+
       // Admin SEO routes
       await api.register(adminSeoRoutes, { prefix: '/admin/seo' });
 
@@ -178,6 +192,8 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
 
       // Public SEO routes (for SSR/sitemap)
       await api.register(seoPublicRoutes, { prefix: '/public' });
+      await api.register(brandPublicRoutes, { prefix: '/public' });
+      await api.register(tenantApplicationsPublicRoutes, { prefix: '/public' });
     },
     { prefix: '/api/v1' }
   );

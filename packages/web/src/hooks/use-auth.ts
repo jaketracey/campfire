@@ -46,40 +46,11 @@ export function useAuth() {
         // After the MFA check, we know we have user and tokens
         const data = response.data as { user: User; tokens: AuthTokens };
         const { user, tokens } = data;
-        const expiresAt = Date.now() + tokens.expiresIn * 1000;
-
-        console.log('[AUTH] Login successful, writing to localStorage:', {
-          user: user?.id,
-          hasAccessToken: !!tokens.accessToken,
-          hasRefreshToken: !!tokens.refreshToken,
-          expiresAt,
-        });
-
-        // Write to localStorage BEFORE Zustand update to guarantee persistence
-        localStorage.setItem(
-          'campfire-auth',
-          JSON.stringify({
-            state: {
-              user,
-              accessToken: tokens.accessToken,
-              refreshToken: tokens.refreshToken,
-              expiresAt,
-            },
-            version: 0,
-          })
-        );
-
-        // Verify it was written
-        const stored = localStorage.getItem('campfire-auth');
-        console.log('[AUTH] localStorage after write:', stored?.substring(0, 100));
 
         // Update Zustand state and set cookie
         setSession(user, tokens);
 
-        console.log('[AUTH] setSession called, navigating to /dashboard');
-
-        // Hard navigation to ensure cookie is sent to server middleware
-        window.location.href = '/dashboard';
+        router.push('/dashboard');
         return { success: true };
       } catch (error) {
         setLoading(false);
@@ -100,21 +71,6 @@ export function useAuth() {
         }
 
         const { user, tokens } = response.data;
-        const expiresAt = Date.now() + tokens.expiresIn * 1000;
-
-        // Write to localStorage BEFORE Zustand update to guarantee persistence
-        localStorage.setItem(
-          'campfire-auth',
-          JSON.stringify({
-            state: {
-              user,
-              accessToken: tokens.accessToken,
-              refreshToken: tokens.refreshToken,
-              expiresAt,
-            },
-            version: 0,
-          })
-        );
 
         // Update Zustand state and set cookie
         setSession(user, tokens);
@@ -125,15 +81,14 @@ export function useAuth() {
         // Set welcome transition flag for the destination page
         setWelcomeTransition({ type: 'signup', provider: 'email' });
 
-        // Hard navigation to ensure cookie is sent to server middleware
-        window.location.href = '/onboard';
+        router.push('/onboard');
         return { success: true };
       } catch (error) {
         setLoading(false);
         throw error;
       }
     },
-    [setSession, setLoading]
+    [router, setSession, setLoading]
   );
 
   const logout = useCallback(async () => {
@@ -145,7 +100,7 @@ export function useAuth() {
       // Ignore errors during logout
     } finally {
       clearSession();
-      window.location.href = 'https://www.cnn.com';
+      router.push('/login');
     }
   }, [refreshToken, clearSession, router]);
 
@@ -183,28 +138,6 @@ export function useAuth() {
         }
 
         const { user, tokens } = response.data;
-        const expiresAt = Date.now() + tokens.expiresIn * 1000;
-
-        console.log('[AUTH] Google auth successful, writing to localStorage:', {
-          user: user?.id,
-          hasAccessToken: !!tokens.accessToken,
-          hasRefreshToken: !!tokens.refreshToken,
-          expiresAt,
-        });
-
-        // Write to localStorage BEFORE Zustand update to guarantee persistence
-        localStorage.setItem(
-          'campfire-auth',
-          JSON.stringify({
-            state: {
-              user,
-              accessToken: tokens.accessToken,
-              refreshToken: tokens.refreshToken,
-              expiresAt,
-            },
-            version: 0,
-          })
-        );
 
         // Update Zustand state and set cookie
         setSession(user, tokens);
@@ -225,14 +158,14 @@ export function useAuth() {
           provider: 'google',
         });
 
-        window.location.href = redirectPath;
+        router.push(redirectPath);
         return { success: true };
       } catch (error) {
         setLoading(false);
         throw error;
       }
     },
-    [setSession, setLoading]
+    [router, setSession, setLoading]
   );
 
   return {

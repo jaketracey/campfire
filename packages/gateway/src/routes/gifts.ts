@@ -18,6 +18,7 @@ import { getBillingRepository } from '../repositories/billing.js';
 import { getEventStore } from '../db/event-store.js';
 import { ValidationError } from '../repositories/errors.js';
 import { enqueueGiftGenerationJob } from '../utils/queue.js';
+import { getCreatorEarningsService } from '../services/creator-earnings.js';
 import {
   isFlowguardConfigured,
   startPurchaseSession,
@@ -144,6 +145,7 @@ export async function giftsRoutes(app: FastifyInstance): Promise<void> {
   const companionsRepo = getCompanionsRepository();
   const billingRepo = getBillingRepository();
   const eventStore = getEventStore();
+  const creatorEarnings = getCreatorEarningsService();
 
   // ==========================================================================
   // Token Endpoints (User-facing)
@@ -573,7 +575,9 @@ export async function giftsRoutes(app: FastifyInstance): Promise<void> {
           },
         });
       }
-      if (!companion || companion.user_id !== user.userId) {
+      const isOwner = companion?.user_id === user.userId;
+      const canUsePublic = Boolean(companion?.is_public) && companion?.status === 'active';
+      if (!companion || (!isOwner && !canUsePublic)) {
         return reply.status(404).send({
           success: false,
           error: {
@@ -855,6 +859,23 @@ export async function giftsRoutes(app: FastifyInstance): Promise<void> {
             timestamp: new Date().toISOString(),
           },
         });
+      }
+
+      // Attribute spend to the companion creator (for public companions / creator monetization)
+      if (deductResult.transactionId) {
+        const companion = await companionsRepo.findById(gift.companion_id);
+        if (companion) {
+          await creatorEarnings.recordTokenSpend({
+            tokenTransactionId: deductResult.transactionId,
+            spenderUserId: user.userId,
+            creatorUserId: companion.user_id,
+            companionId: gift.companion_id,
+            sessionId: null,
+            feature: 'gift',
+            tokensSpent: gift.token_cost,
+            metadata: { giftId: gift.id },
+          });
+        }
       }
 
       // Mark gift as given
@@ -1643,7 +1664,9 @@ export async function giftsRoutes(app: FastifyInstance): Promise<void> {
 
       // Verify companion ownership
       const companion = await companionsRepo.findById(companionId);
-      if (!companion || companion.user_id !== user.userId) {
+      const isOwner = companion?.user_id === user.userId;
+      const canUsePublic = Boolean(companion?.is_public) && companion?.status === 'active';
+      if (!companion || (!isOwner && !canUsePublic)) {
         return reply.status(404).send({
           success: false,
           error: {
@@ -1691,6 +1714,19 @@ export async function giftsRoutes(app: FastifyInstance): Promise<void> {
             message: deductResult.errorMessage ?? 'Insufficient tokens',
             timestamp: new Date().toISOString(),
           },
+        });
+      }
+
+      if (deductResult.transactionId) {
+        await creatorEarnings.recordTokenSpend({
+          tokenTransactionId: deductResult.transactionId,
+          spenderUserId: user.userId,
+          creatorUserId: companion.user_id,
+          companionId,
+          sessionId: null,
+          feature: 'gift',
+          tokensSpent: template.token_cost,
+          metadata: { giftId: gift.id, templateId },
         });
       }
 

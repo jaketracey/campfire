@@ -26,6 +26,7 @@ import { getEngagementRepository } from '../repositories/engagement.js';
 import { getEngagementService } from '../services/engagement.js';
 import type { EngagementLevel, UUID } from '../db/types.js';
 import { renderPromptFromDb } from '../services/prompt-runtime.js';
+import { getCreatorEarningsService } from '../services/creator-earnings.js';
 import { env } from '../env.js';
 
 import { enqueueSummaryJob } from '../utils/queue.js';
@@ -230,6 +231,7 @@ interface ConnectedClient {
   user?: AuthenticatedUser;
   sessionId?: string;
   companionId?: string;
+  companionOwnerUserId?: string;
   authenticated: boolean;
   connectedAt: Date;
   lastPing: Date;
@@ -829,6 +831,16 @@ async function handleSessionStart(
 
     client.sessionId = sessionId;
     client.companionId = companionId;
+    client.companionOwnerUserId = undefined;
+
+    try {
+      const companion = await companionsService.getById(client.user.userId, companionId);
+      if (companion) {
+        client.companionOwnerUserId = companion.user_id;
+      }
+    } catch {
+      // Best-effort only (used for creator earnings attribution)
+    }
 
     // Load session participants for group chat support
     const participants = await sessionsService.getActiveParticipants(client.user.userId, sessionId);
@@ -2015,6 +2027,7 @@ async function deductVoiceCallToken(client: ConnectedClient): Promise<void> {
   const userId = client.user.userId;
   const sessionId = client.sessionId;
   const giftsRepo = getGiftsRepository();
+  const creatorEarnings = getCreatorEarningsService();
 
   const result = await giftsRepo.deductVoiceCallToken(
     userId,
@@ -2024,6 +2037,19 @@ async function deductVoiceCallToken(client: ConnectedClient): Promise<void> {
 
   if (result.success) {
     client.voiceCallTokensDeducted++;
+
+    if (result.transactionId && client.companionId && client.companionOwnerUserId) {
+      await creatorEarnings.recordTokenSpend({
+        tokenTransactionId: result.transactionId,
+        spenderUserId: userId,
+        creatorUserId: client.companionOwnerUserId,
+        companionId: client.companionId,
+        sessionId,
+        feature: 'voice_call',
+        tokensSpent: 1,
+        metadata: { seconds: client.voiceCallTokensDeducted },
+      });
+    }
 
     // Send balance update to client
     send(client, {

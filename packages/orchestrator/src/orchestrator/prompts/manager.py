@@ -436,41 +436,41 @@ class PromptManager:
     def available_versions(self) -> list[str]:
         return sorted(self._templates.keys())
 
-    def get_template(self, name: str, version: str | None = None) -> PromptTemplate:
+    def get_template(self, template_name: str, version: str | None = None) -> PromptTemplate:
         version = version or self._default_version
         if version not in self._templates:
             raise KeyError(f"No templates available for version {version}")
         templates = self._templates[version]
-        if name not in templates:
-            raise KeyError(f"Template '{name}' not found in version {version}")
-        template = templates[name]
+        if template_name not in templates:
+            raise KeyError(f"Template '{template_name}' not found in version {version}")
+        template = templates[template_name]
         if template.deprecated:
             logger.warning(
                 "deprecated_template_used",
-                template_name=name,
+                template_name=template_name,
                 version=version,
                 deprecation_message=template.deprecation_message,
             )
         return template
 
-    def get_prompt(self, name: str, version: str | None = None, **variables: Any) -> str:
-        template = self.get_template(name, version)
+    def get_prompt(self, template_name: str, version: str | None = None, **variables: Any) -> str:
+        template = self.get_template(template_name, version)
         if variables:
             return template.render(**variables)
         return template.template
 
     def get_prompt_optional(
-        self, name: str, version: str | None = None, **variables: Any
+        self, template_name: str, version: str | None = None, **variables: Any
     ) -> str | None:
         """Best-effort prompt fetch for optional templates."""
         try:
-            return self.get_prompt(name, version, **variables)
+            return self.get_prompt(template_name, version, **variables)
         except KeyError:
             return None
 
     def get_prompt_effective(
         self,
-        name: str,
+        template_name: str,
         version: str | None = None,
         companion_id: str | None = None,
         **variables: Any,
@@ -478,30 +478,30 @@ class PromptManager:
         """Get a prompt, preferring a per-companion override when present.
 
         Per-companion templates are represented by naming convention:
-        `{name}::companion:{companion_id}`.
+        `{template_name}::companion:{companion_id}`.
         """
         if companion_id:
-            override_name = f"{name}::companion:{companion_id}"
+            override_name = f"{template_name}::companion:{companion_id}"
             try:
                 return self.get_prompt(override_name, version, **variables)
             except KeyError:
                 pass
-        return self.get_prompt(name, version, **variables)
+        return self.get_prompt(template_name, version, **variables)
 
     def get_prompt_effective_optional(
         self,
-        name: str,
+        template_name: str,
         version: str | None = None,
         companion_id: str | None = None,
         **variables: Any,
     ) -> str | None:
         """Best-effort per-companion prompt fetch for optional templates."""
         if companion_id:
-            override_name = f"{name}::companion:{companion_id}"
+            override_name = f"{template_name}::companion:{companion_id}"
             value = self.get_prompt_optional(override_name, version, **variables)
             if value is not None:
                 return value
-        return self.get_prompt_optional(name, version, **variables)
+        return self.get_prompt_optional(template_name, version, **variables)
 
     def register_template(self, template: PromptTemplate) -> None:
         version = template.version
