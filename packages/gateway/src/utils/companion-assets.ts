@@ -26,6 +26,7 @@ import {
   isFemaleAppearance,
   isMaleAppearance,
 } from '../db/types.js';
+import { env } from '../env.js';
 
 // Re-export types for convenience
 export type {
@@ -45,8 +46,8 @@ export { isFemaleAppearance, isMaleAppearance };
 export type PhysicalAppearance = CompanionAppearance;
 
 // S3 configuration for companion assets
-const S3_REGION = process.env['AWS_REGION'] || 'us-east-1';
-const S3_MEDIA_BUCKET = process.env['S3_MEDIA_BUCKET'] || 'campfire-dev-media';
+const S3_REGION = env.AWS_REGION;
+const S3_MEDIA_BUCKET = env.S3_MEDIA_BUCKET;
 const S3_COMPANIONS_PREFIX = 'companions/variations';
 const S3_ANCHORS_PREFIX = 'companions/anchors';
 

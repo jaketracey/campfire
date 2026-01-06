@@ -8,11 +8,13 @@ import type { FastifyRequest, FastifyReply } from 'fastify';
 import * as jose from 'jose';
 import { logger } from '../observability/logger.js';
 import { getAffiliatesService } from '../services/affiliates.js';
+import { env } from '../env.js';
 
 // Affiliate JWT configuration - uses separate issuer from user JWT
-const JWT_SECRET = new TextEncoder().encode(
-  process.env['JWT_AFFILIATE_SECRET'] ?? process.env['JWT_SECRET'] ?? 'development-secret-change-in-production'
-);
+if (!env.JWT_AFFILIATE_SECRET_BYTES) {
+  throw new Error('FATAL: JWT_AFFILIATE_SECRET or JWT_SECRET environment variable is required.');
+}
+const JWT_SECRET = env.JWT_AFFILIATE_SECRET_BYTES;
 const JWT_ISSUER = 'campfire-affiliate'; // Different from user JWT issuer
 const JWT_AUDIENCE = 'campfire-affiliate-portal';
 const JWT_EXPIRY = '30d'; // Longer expiry for affiliates

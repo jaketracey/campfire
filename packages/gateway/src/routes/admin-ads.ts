@@ -8,6 +8,7 @@ import { z } from 'zod';
 import { requireAdmin } from '../middleware/auth.js';
 import { sql } from '../db/pool.js';
 import { logger } from '../observability/logger.js';
+import { env } from '../env.js';
 import { getFacebookAdsService } from '../services/facebook-ads.js';
 
 // ===========================================================================
@@ -114,7 +115,7 @@ export async function adminAdsRoutes(app: FastifyInstance): Promise<void> {
   // OAuth Callback Endpoints (no auth required - these are redirects from OAuth providers)
   // ===========================================================================
 
-  const webBaseUrl = process.env.WEB_URL || process.env.WEB_BASE_URL || 'http://localhost:3000';
+  const webBaseUrl = env.WEB_BASE_URL ?? env.WEB_URL;
 
   /**
    * GET /callback/google - Handle Google Ads OAuth callback
@@ -190,7 +191,7 @@ export async function adminAdsRoutes(app: FastifyInstance): Promise<void> {
     try {
       // TODO: Implement Google Ads OAuth flow
       // For now, return a placeholder URL
-      const clientId = process.env.GOOGLE_ADS_CLIENT_ID || process.env.GOOGLE_OAUTH_CLIENT_ID;
+      const clientId = env.GOOGLE_ADS_CLIENT_ID || env.GOOGLE_OAUTH_CLIENT_ID;
       if (!clientId) {
         return reply.status(503).send({
           error: 'Service Unavailable',
@@ -198,7 +199,7 @@ export async function adminAdsRoutes(app: FastifyInstance): Promise<void> {
         });
       }
 
-      const redirectUri = `${process.env.API_BASE_URL}/api/v1/admin/ads/callback/google`;
+      const redirectUri = `${env.API_BASE_URL}/api/v1/admin/ads/callback/google`;
       const scope = 'https://www.googleapis.com/auth/adwords';
       const state = crypto.randomUUID();
 

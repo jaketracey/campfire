@@ -10,6 +10,7 @@ import type { Redis } from 'ioredis';
 import type { Logger } from 'pino';
 import type { DbClient } from '../db/client.js';
 import { AD_SPEND_SYNC_QUEUE, type AdSpendSyncJob } from './queues.js';
+import { env } from '../env.js';
 
 interface AdAccount {
   id: string;
@@ -53,9 +54,9 @@ export class AdSpendSyncWorker {
   constructor(config: AdSpendSyncWorkerConfig) {
     this.config = config;
     this.googleAdsApiUrl =
-      config.googleAdsApiUrl || process.env.GOOGLE_ADS_API_URL || 'https://googleads.googleapis.com';
+      config.googleAdsApiUrl || env.GOOGLE_ADS_API_URL;
     this.facebookAdsApiUrl =
-      config.facebookAdsApiUrl || process.env.FACEBOOK_ADS_API_URL || 'https://graph.facebook.com/v18.0';
+      config.facebookAdsApiUrl || env.FACEBOOK_ADS_API_URL;
   }
 
   async start(): Promise<void> {
@@ -284,8 +285,8 @@ export class AdSpendSyncWorker {
   private async refreshGoogleToken(
     refreshToken: string
   ): Promise<{ accessToken: string; expiresIn: number }> {
-    const clientId = process.env.GOOGLE_ADS_CLIENT_ID;
-    const clientSecret = process.env.GOOGLE_ADS_CLIENT_SECRET;
+    const clientId = env.GOOGLE_ADS_CLIENT_ID;
+    const clientSecret = env.GOOGLE_ADS_CLIENT_SECRET;
 
     if (!clientId || !clientSecret) {
       throw new Error('Google Ads OAuth credentials not configured');
@@ -317,8 +318,8 @@ export class AdSpendSyncWorker {
   private async refreshFacebookToken(
     refreshToken: string
   ): Promise<{ accessToken: string; expiresIn: number }> {
-    const clientId = process.env.FACEBOOK_ADS_APP_ID;
-    const clientSecret = process.env.FACEBOOK_ADS_APP_SECRET;
+    const clientId = env.FACEBOOK_ADS_APP_ID;
+    const clientSecret = env.FACEBOOK_ADS_APP_SECRET;
 
     if (!clientId || !clientSecret) {
       throw new Error('Facebook Ads OAuth credentials not configured');
@@ -353,7 +354,7 @@ export class AdSpendSyncWorker {
     startDate: Date,
     endDate: Date
   ): Promise<SpendData[]> {
-    const developerToken = process.env.GOOGLE_ADS_DEVELOPER_TOKEN;
+    const developerToken = env.GOOGLE_ADS_DEVELOPER_TOKEN;
     if (!developerToken) {
       throw new Error('Google Ads developer token not configured');
     }

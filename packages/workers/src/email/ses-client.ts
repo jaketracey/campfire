@@ -11,6 +11,7 @@ import {
   type SendBulkEmailCommandInput,
   type EmailTemplateContent,
 } from '@aws-sdk/client-sesv2';
+import { env } from '../env.js';
 
 export interface EmailAddress {
   email: string;
@@ -49,14 +50,14 @@ export interface SESTemplate {
 
 export function createSESClient() {
   const client = new SESv2Client({
-    region: process.env.SES_REGION || process.env.AWS_REGION || 'us-east-1',
+    region: env.SES_REGION || env.AWS_REGION,
   });
 
-  const senderEmail = process.env.SES_SENDER_EMAIL || 'noreply@ignite.cam';
-  const senderName = process.env.SES_SENDER_NAME || 'Ignite';
-  const replyToEmail = process.env.SES_REPLY_TO_EMAIL || senderEmail;
-  const configurationSet = process.env.SES_CONFIGURATION_SET;
-  const sandboxMode = process.env.SES_SANDBOX_MODE === 'true';
+  const senderEmail = env.SES_SENDER_EMAIL;
+  const senderName = env.SES_SENDER_NAME;
+  const replyToEmail = env.SES_REPLY_TO_EMAIL || senderEmail;
+  const configurationSet = env.SES_CONFIGURATION_SET;
+  const sandboxMode = env.SES_SANDBOX_MODE;
 
   const formatAddress = (addr: EmailAddress): string =>
     addr.name ? `${addr.name} <${addr.email}>` : addr.email;
@@ -214,7 +215,7 @@ export function createSESClient() {
       replyToEmail,
       configurationSet,
       sandboxMode,
-      region: process.env.SES_REGION || process.env.AWS_REGION,
+      region: env.SES_REGION || env.AWS_REGION,
     }),
   };
 }

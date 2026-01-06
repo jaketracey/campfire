@@ -52,6 +52,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
+import { TimeSeriesAreaChart } from '@/components/admin/charts/time-series-area-chart';
 
 export default function AdminDashboardPage() {
   const [isLoading, setIsLoading] = useState(true);
@@ -564,26 +565,15 @@ export default function AdminDashboardPage() {
             </Link>
           </CardHeader>
           <CardContent>
-            <div className="h-24 flex items-end gap-1">
+            <div className="h-24">
               {costTrend.length === 0 ? (
                 <p className="text-gray-500 text-center w-full py-8">No cost data yet.</p>
               ) : (
-                costTrend.map((point) => {
-                  const max = Math.max(...costTrend.map((p) => p.costUsd), 0.01);
-                  const height = (point.costUsd / max) * 100;
-                  return (
-                    <div
-                      key={point.date}
-                      className="flex-1 group relative"
-                      title={`${point.date}: ${formatCost(point.costUsd)}`}
-                    >
-                      <div
-                        className="w-full bg-campfire-500/60 hover:bg-campfire-500 transition-colors rounded-t cursor-pointer"
-                        style={{ height: `${Math.max(height, 2)}%` }}
-                      />
-                    </div>
-                  );
-                })
+                <TimeSeriesAreaChart
+                  data={costTrend.map((p) => ({ label: p.date, value: p.costUsd }))}
+                  formatValue={formatCost}
+                  className="rounded-md"
+                />
               )}
             </div>
             <div className="flex justify-between mt-2 text-xs text-gray-500">

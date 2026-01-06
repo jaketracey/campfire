@@ -16,6 +16,7 @@ import {
   AdminGrantTokensSchema,
 } from '../services/admin.js';
 import { logger } from '../observability/logger.js';
+import { env } from '../env.js';
 import { getAdminSettingsRepository } from '../repositories/admin-settings.js';
 import { getDemoCompanionsRepository } from '../repositories/demo-companions.js';
 import { getCompanionsRepository } from '../repositories/companions.js';
@@ -160,7 +161,7 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
         data: {
           message: 'Password reset email sent',
           // Only return token in development for testing
-          ...(process.env.NODE_ENV === 'development' && { resetToken: result.resetToken }),
+          ...(env.NODE_ENV === 'development' && { resetToken: result.resetToken }),
         },
       });
     } catch (error) {

@@ -42,9 +42,15 @@ export async function listPromptTemplates(options?: {
   version?: string;
   companionId?: string;
 }): Promise<{ version: string; prompts: EffectivePromptTemplate[] }> {
+  const normalized = options
+    ? {
+        ...options,
+        version: options.version && options.version.trim() ? options.version : undefined,
+      }
+    : undefined;
   const res = await get<ApiResponse<{ version: string; prompts: EffectivePromptTemplate[] }>>(
     '/admin/prompts',
-    options
+    normalized
   );
   return res.data;
 }
@@ -54,9 +60,13 @@ export async function validatePromptTemplates(input: {
   version?: string;
   companionId?: string;
 }): Promise<{ version: string; result: PromptValidationResult }> {
+  const normalized = {
+    ...input,
+    version: input.version && input.version.trim() ? input.version : undefined,
+  };
   const res = await post<ApiResponse<{ version: string; result: PromptValidationResult }>>(
     '/admin/prompts/validate',
-    input
+    normalized
   );
   return res.data;
 }
@@ -96,4 +106,3 @@ export async function updatePromptTemplate(
   );
   return res.data;
 }
-

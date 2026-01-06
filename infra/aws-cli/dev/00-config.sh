@@ -113,76 +113,10 @@ export TAG_ENVIRONMENT="${ENVIRONMENT}"
 export TAG_MANAGED_BY="aws-cli"
 
 # -----------------------------------------------------------------------------
-# Helper Functions
+# Shared Helpers
 # -----------------------------------------------------------------------------
 
-# Print a formatted message
-log() {
-    echo "[$(date '+%Y-%m-%d %H:%M:%S')] $1"
-}
-
-# Print error message and exit
-error() {
-    echo "[ERROR] $1" >&2
-    exit 1
-}
-
-# Check if AWS CLI is configured
-check_aws_cli() {
-    if ! command -v aws &> /dev/null; then
-        error "AWS CLI is not installed. Please install it first."
-    fi
-
-    if ! aws sts get-caller-identity &> /dev/null; then
-        error "AWS CLI is not configured. Please run 'aws configure' first."
-    fi
-
-    log "AWS CLI configured for account: $(aws sts get-caller-identity --query Account --output text)"
-}
-
-# Generate common tags JSON
-get_tags() {
-    cat <<EOF
-[
-    {"Key": "Project", "Value": "${TAG_PROJECT}"},
-    {"Key": "Environment", "Value": "${TAG_ENVIRONMENT}"},
-    {"Key": "ManagedBy", "Value": "${TAG_MANAGED_BY}"}
-]
-EOF
-}
-
-# Wait for resource to be available
-wait_for_resource() {
-    local resource_type="$1"
-    local resource_id="$2"
-    local max_attempts="${3:-30}"
-    local sleep_time="${4:-10}"
-
-    log "Waiting for ${resource_type} ${resource_id} to be available..."
-
-    for ((i=1; i<=max_attempts; i++)); do
-        case "${resource_type}" in
-            "rds")
-                status=$(aws rds describe-db-instances \
-                    --db-instance-identifier "${resource_id}" \
-                    --query 'DBInstances[0].DBInstanceStatus' \
-                    --output text 2>/dev/null || echo "pending")
-                ;;
-            *)
-                status="available"
-                ;;
-        esac
-
-        if [[ "${status}" == "available" ]]; then
-            log "${resource_type} ${resource_id} is now available"
-            return 0
-        fi
-
-        log "Status: ${status}. Attempt ${i}/${max_attempts}. Waiting ${sleep_time}s..."
-        sleep "${sleep_time}"
-    done
-
-    error "Timeout waiting for ${resource_type} ${resource_id}"
-}
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "${SCRIPT_DIR}/../_shared/common.sh"
 
 log "Configuration loaded for environment: ${ENVIRONMENT}"

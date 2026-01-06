@@ -13,9 +13,10 @@ import { getKnowledgeGraphRepository } from '../repositories/knowledge-graph.js'
 import { db } from '../db/index.js';
 import { logger } from '../observability/logger.js';
 import type { CompanionSpec } from '../db/types.js';
+import { env } from '../env.js';
 
 // Orchestrator configuration
-const ORCHESTRATOR_URL = process.env['ORCHESTRATOR_URL'] || 'http://localhost:8000';
+const ORCHESTRATOR_URL = env.ORCHESTRATOR_URL;
 
 // Appearance schema for validation (gender-aware discriminated union)
 const FemaleAppearanceSchema = z.object({

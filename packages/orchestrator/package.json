@@ -3,10 +3,10 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": ".venv/bin/python -m uvicorn orchestrator.main:app --host 0.0.0.0 --port 8000 --reload --app-dir src",
-    "start": ".venv/bin/python -m uvicorn orchestrator.main:app --host 0.0.0.0 --port 8000 --app-dir src",
-    "test": ".venv/bin/pytest",
-    "lint": ".venv/bin/ruff check src",
-    "typecheck": ".venv/bin/mypy src"
+    "dev": "bash scripts/python.sh -m uvicorn orchestrator.main:app --host 0.0.0.0 --port 8000 --reload --app-dir src",
+    "start": "bash scripts/python.sh -m uvicorn orchestrator.main:app --host 0.0.0.0 --port 8000 --app-dir src",
+    "test": "bash scripts/python.sh -m pytest",
+    "lint": "bash scripts/python.sh -m ruff check src",
+    "typecheck": "bash scripts/python.sh -m mypy src"
   }
 }

@@ -71,9 +71,12 @@ export function PromptTemplatesPanel(props: {
       setVersions(v.versions);
       setDefaultVersionState(v.defaultVersion);
 
-      const nextVersion = opts?.version ?? version ?? v.defaultVersion ?? v.versions[0] ?? '';
+      const requestedVersion = opts?.version ?? version;
+      const nextVersion =
+        (requestedVersion && requestedVersion.trim()) ? requestedVersion : (v.defaultVersion ?? v.versions[0] ?? '');
       setVersion(nextVersion);
 
+      if (!nextVersion) throw new Error('No prompt versions found (prompt templates not configured).');
       const list = await listPromptTemplates({ adminArea, version: nextVersion });
       setPrompts(list.prompts);
 

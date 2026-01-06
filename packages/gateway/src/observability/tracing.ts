@@ -18,6 +18,7 @@ import { trace, context, SpanStatusCode, type Span, type Tracer } from '@opentel
 import { FastifyInstrumentation } from '@opentelemetry/instrumentation-fastify';
 import { PgInstrumentation } from '@opentelemetry/instrumentation-pg';
 import { logger } from './logger.js';
+import { env } from '../env.js';
 
 /**
  * Tracing configuration from environment
@@ -32,11 +33,11 @@ interface TracingConfig {
 
 function getTracingConfig(): TracingConfig {
   return {
-    serviceName: process.env['OTEL_SERVICE_NAME'] ?? 'campfire-gateway',
-    serviceVersion: process.env['SERVICE_VERSION'] ?? '0.1.0',
-    environment: process.env['NODE_ENV'] ?? 'development',
-    otlpEndpoint: process.env['OTEL_EXPORTER_OTLP_ENDPOINT'] ?? 'http://localhost:4318',
-    enabled: process.env['OTEL_ENABLED'] !== 'false',
+    serviceName: env.OTEL_SERVICE_NAME,
+    serviceVersion: env.SERVICE_VERSION,
+    environment: env.NODE_ENV,
+    otlpEndpoint: env.OTEL_EXPORTER_OTLP_ENDPOINT,
+    enabled: env.OTEL_ENABLED,
   };
 }
 

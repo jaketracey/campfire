@@ -26,6 +26,7 @@ import { getEngagementRepository } from '../repositories/engagement.js';
 import { getEngagementService } from '../services/engagement.js';
 import type { EngagementLevel, UUID } from '../db/types.js';
 import { renderPromptFromDb } from '../services/prompt-runtime.js';
+import { env } from '../env.js';
 
 import { enqueueSummaryJob } from '../utils/queue.js';
 
@@ -38,7 +39,7 @@ const ANONYMOUS_USER_ID_PREFIX = 'anon-';
 const ANONYMOUS_USER_ID = '00000000-0000-0000-0000-000000000000';
 
 // Orchestrator base URL
-const ORCHESTRATOR_URL = process.env['ORCHESTRATOR_URL'] || 'http://localhost:8000';
+const ORCHESTRATOR_URL = env.ORCHESTRATOR_URL;
 
 // ============================================================================
 // WebSocket Payload Validation Schemas

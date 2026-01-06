@@ -3,6 +3,7 @@ import type { Redis } from 'ioredis';
 import type { Logger } from 'pino';
 import type { DbClient } from '../db/client.js';
 import { renderPromptFromDb } from '../lib/prompt-runtime.js';
+import { env } from '../env.js';
 
 interface SummaryJobData {
   type: 'session' | 'daily' | 'weekly';
@@ -31,8 +32,8 @@ export class SummaryProjectionWorker {
 
   constructor(config: WorkerConfig) {
     this.config = config;
-    this.ollamaBaseUrl = (process.env.OLLAMA_BASE_URL || 'http://localhost:11434').replace(/\/$/, '');
-    this.ollamaModel = process.env.OLLAMA_MODEL || 'llama3';
+    this.ollamaBaseUrl = env.OLLAMA_BASE_URL.replace(/\/$/, '');
+    this.ollamaModel = env.OLLAMA_MODEL;
   }
 
   async start() {

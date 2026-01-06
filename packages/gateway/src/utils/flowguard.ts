@@ -7,6 +7,7 @@
 import * as jose from 'jose';
 import crypto from 'crypto';
 import { logger } from '../observability/logger.js';
+import { env } from '../env.js';
 import type {
   FlowguardConfig,
   FlowguardPurchaseRequest,
@@ -27,10 +28,10 @@ const DEFAULT_API_URL = 'https://flowguard.yoursafe.com/api/merchant';
 
 function getConfig(): FlowguardConfig {
   return {
-    shopId: process.env['FLOWGUARD_SHOP_ID'] ?? '',
-    signatureKey: process.env['FLOWGUARD_SIGNATURE_KEY'] ?? '',
-    baseUrl: process.env['FLOWGUARD_BASE_URL'] ?? DEFAULT_BASE_URL,
-    apiUrl: process.env['FLOWGUARD_API_URL'] ?? DEFAULT_API_URL,
+    shopId: env.FLOWGUARD_SHOP_ID ?? '',
+    signatureKey: env.FLOWGUARD_SIGNATURE_KEY ?? '',
+    baseUrl: env.FLOWGUARD_BASE_URL ?? DEFAULT_BASE_URL,
+    apiUrl: env.FLOWGUARD_API_URL ?? DEFAULT_API_URL,
   };
 }
 

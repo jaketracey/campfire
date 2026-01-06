@@ -8,6 +8,7 @@ import { z } from 'zod';
 import { nanoid } from 'nanoid';
 import { requireAuth } from '../middleware/auth.js';
 import { logger } from '../observability/logger.js';
+import { env } from '../env.js';
 import { withSpan } from '../observability/tracing.js';
 import { getEventStore } from '../db/event-store.js';
 import { getUsersRepository } from '../repositories/index.js';
@@ -79,7 +80,7 @@ export async function billingRoutes(app: FastifyInstance): Promise<void> {
 
       // Create Flowguard subscription session
       const referenceId = `sub_${nanoid()}`;
-      const apiBaseUrl = process.env.API_BASE_URL || 'https://ignite.cam';
+      const apiBaseUrl = env.API_BASE_URL;
       const postbackUrl = `${apiBaseUrl}/api/v1/billing/postback`;
       const session = await startSubscriptionSession({
         subscriptionType: 'recurring',

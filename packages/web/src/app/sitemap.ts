@@ -1,8 +1,9 @@
 import { MetadataRoute } from 'next';
+import { serverEnv } from '@/env/server';
 
 // Gateway URL for fetching published pages
-const GATEWAY_URL = process.env.GATEWAY_URL || 'http://localhost:4000';
-const BASE_URL = process.env.NEXT_PUBLIC_APP_URL || 'https://ignite.cam';
+const GATEWAY_URL = serverEnv.GATEWAY_URL;
+const BASE_URL = serverEnv.NEXT_PUBLIC_APP_URL;
 
 interface SitemapEntry {
   slug: string;

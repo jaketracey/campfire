@@ -15,11 +15,12 @@ import {
   UpdateCreativeSchema,
 } from '../services/creative.js';
 import type { UUID } from '../db/types.js';
+import { env } from '../env.js';
 
 // S3 configuration
-const S3_MEDIA_BUCKET = process.env['S3_MEDIA_BUCKET'] || 'campfire-dev-media';
-const S3_REGION = process.env['AWS_REGION'] || 'us-east-1';
-const S3_CDN_URL = process.env['S3_CDN_URL'] || `https://${S3_MEDIA_BUCKET}.s3.${S3_REGION}.amazonaws.com`;
+const S3_MEDIA_BUCKET = env.S3_MEDIA_BUCKET;
+const S3_REGION = env.AWS_REGION;
+const S3_CDN_URL = env.S3_CDN_URL || `https://${S3_MEDIA_BUCKET}.s3.${S3_REGION}.amazonaws.com`;
 
 // Initialize S3 client
 const s3Client = new S3Client({ region: S3_REGION });

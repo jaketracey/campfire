@@ -12,6 +12,7 @@ import { getVideosRepository } from '../repositories/videos.js';
 import { getGiftsRepository } from '../repositories/gifts.js';
 import { getCompanionsRepository } from '../repositories/companions.js';
 import { enqueueVideoGenerationJob } from '../utils/queue.js';
+import { env } from '../env.js';
 
 // ============================================================================
 // Constants
@@ -128,6 +129,8 @@ export async function videosRoutes(app: FastifyInstance): Promise<void> {
 
       // 5. Get companion's identity anchor for character consistency
       let referenceImageUrl: string | undefined;
+      let referenceImageS3Key: string | undefined;
+      let referenceImageS3Bucket: string | undefined;
       try {
         const anchors = await companionsRepo.getAllIdentityAnchors(companionId);
         if (anchors.length > 0) {
@@ -136,7 +139,17 @@ export async function videosRoutes(app: FastifyInstance): Promise<void> {
             (a.metadata as Record<string, unknown>)?.emotionalState === 'neutral'
           ) || anchors[0];
           if (neutralAnchor) {
+            const metadata = neutralAnchor.metadata as Record<string, unknown> | null | undefined;
             referenceImageUrl = neutralAnchor.asset_url;
+            referenceImageS3Key =
+              neutralAnchor.s3_key ||
+              (metadata?.['s3_key'] as string | undefined) ||
+              (metadata?.['s3Key'] as string | undefined);
+            referenceImageS3Bucket =
+              neutralAnchor.s3_bucket ||
+              (metadata?.['s3_bucket'] as string | undefined) ||
+              (metadata?.['s3Bucket'] as string | undefined) ||
+              env.S3_MEDIA_BUCKET;
           }
         }
       } catch (error) {
@@ -150,6 +163,8 @@ export async function videosRoutes(app: FastifyInstance): Promise<void> {
         companionId,
         prompt,
         referenceImageUrl,
+        referenceImageS3Key,
+        referenceImageS3Bucket,
         durationSeconds: videoRequest.duration_seconds,
         width: videoRequest.width,
         height: videoRequest.height,

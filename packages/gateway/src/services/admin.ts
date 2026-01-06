@@ -7,6 +7,7 @@ import { nanoid } from 'nanoid';
 import { z } from 'zod';
 import { getUsersRepository, getReferralsRepository, getGiftsRepository, type UserWithStats, type UserListFilters } from '../repositories/index.js';
 import { logger } from '../observability/logger.js';
+import { env } from '../env.js';
 import { enqueueEmailJob } from '../utils/queue.js';
 import type { User, UserRole, UserStatus, PendingInvite } from '../db/types.js';
 import type { TransactionContext, PaginatedResult } from '../repositories/types.js';
@@ -152,8 +153,7 @@ export class AdminService {
     }, tx);
 
     // Build invite URL
-    const webUrl = process.env.WEB_URL || 'http://localhost:3000';
-    const inviteUrl = `${webUrl}/signup?invite=${token}`;
+    const inviteUrl = `${env.WEB_URL}/signup?invite=${token}`;
 
     // Get inviter name for the email
     const inviter = await this.users.findById(invitedByUserId, tx);

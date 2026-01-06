@@ -43,7 +43,6 @@ import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { cn } from '@/lib/utils';
 import {
   Dialog,
@@ -281,6 +280,7 @@ export function VideoRoutingTab() {
 
   const useCasesWithRules = new Set(rules.map((r) => r.useCase));
   const unconfiguredUseCases = VIDEO_USE_CASE_TYPES.filter((uc) => !useCasesWithRules.has(uc));
+  const enabledModels = models.filter((m) => m.isEnabled && m.providerIsEnabled);
 
   return (
     <div className="space-y-6">
@@ -365,132 +365,177 @@ export function VideoRoutingTab() {
         </Card>
       )}
 
-      {/* Use Case Tabs */}
-      <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as VideoUseCaseType)}>
-        <TabsList className="bg-white/5 border border-white/10 p-1 flex-wrap h-auto">
-          {VIDEO_USE_CASE_TYPES.map((useCase) => {
-            const hasRules = useCasesWithRules.has(useCase);
-            return (
-              <TabsTrigger
-                key={useCase}
-                value={useCase}
-                className={cn(
-                  'gap-2 data-[state=active]:bg-campfire-500/20 data-[state=active]:text-campfire-500',
-                  !hasRules && 'opacity-50'
-                )}
-              >
-                <span>{getUseCaseIcon(useCase)}</span>
-                {VIDEO_USE_CASE_LABELS[useCase]}
-                {hasRules && (
-                  <Badge variant="secondary" className="ml-1 text-xs bg-white/10">
-                    {getRulesForUseCase(useCase).length}
-                  </Badge>
-                )}
-              </TabsTrigger>
-            );
-          })}
-        </TabsList>
+      {/* Main Content */}
+      <div className="grid gap-6 lg:grid-cols-3">
+        {/* Use Cases */}
+        <Card className="bg-white/[0.02] border-white/5 lg:col-span-1">
+          <CardHeader>
+            <CardTitle className="text-lg text-white flex items-center gap-2">
+              <GitBranch className="h-5 w-5 text-blue-500" />
+              Use Cases
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-2">
+              {VIDEO_USE_CASE_TYPES.map((useCase) => {
+                const ruleCount = getRulesForUseCase(useCase).length;
+                const isConfigured = ruleCount > 0;
 
-        {VIDEO_USE_CASE_TYPES.map((useCase) => (
-          <TabsContent key={useCase} value={useCase} className="mt-6">
-            <Card className="bg-white/[0.02] border-white/5">
-              <CardHeader className="flex flex-row items-center justify-between">
+                return (
+                  <button
+                    key={useCase}
+                    onClick={() => setActiveTab(useCase)}
+                    className={cn(
+                      'w-full flex items-center justify-between p-3 rounded-lg border transition-colors text-left',
+                      activeTab === useCase
+                        ? 'bg-campfire-500/10 border-campfire-500/20'
+                        : 'bg-white/[0.01] border-white/5 hover:border-white/10'
+                    )}
+                  >
+                    <div className="flex items-center gap-3">
+                      <span className="text-lg">{getUseCaseIcon(useCase)}</span>
+                      <div>
+                        <p className={cn(
+                          'font-medium',
+                          activeTab === useCase ? 'text-campfire-500' : 'text-white'
+                        )}>
+                          {VIDEO_USE_CASE_LABELS[useCase]}
+                        </p>
+                        <p className="text-xs text-gray-500">
+                          {VIDEO_USE_CASE_DESCRIPTIONS[useCase]}
+                        </p>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      {!isConfigured ? (
+                        <Badge variant="secondary" className="bg-amber-500/10 text-amber-400 text-xs">
+                          Setup
+                        </Badge>
+                      ) : (
+                        <Badge variant="secondary" className="bg-white/10 text-xs">
+                          {ruleCount}
+                        </Badge>
+                      )}
+                      <ChevronRight
+                        className={cn(
+                          'h-4 w-4 transition-transform',
+                          activeTab === useCase ? 'text-campfire-500' : 'text-gray-500'
+                        )}
+                      />
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* Routing Rules */}
+        <Card className="bg-white/[0.02] border-white/5 lg:col-span-2">
+          <CardHeader className="flex flex-row items-center justify-between">
+            <div>
+              <CardTitle className="text-lg text-white flex items-center gap-2">
+                <GitBranch className="h-5 w-5 text-blue-500" />
+                {VIDEO_USE_CASE_LABELS[activeTab]} Rules
+              </CardTitle>
+              <p className="text-sm text-gray-400 mt-1">
+                {VIDEO_USE_CASE_DESCRIPTIONS[activeTab]}
+              </p>
+            </div>
+            <Button size="sm" className="gap-2" onClick={() => openRuleDialog()}>
+              <Plus className="h-4 w-4" />
+              Add Rule
+            </Button>
+          </CardHeader>
+          <CardContent className="space-y-6">
+            <div className="p-4 rounded-lg bg-white/[0.01] border border-white/5">
+              <div className="flex items-center justify-between">
                 <div>
-                  <CardTitle className="text-lg text-white flex items-center gap-2">
-                    <GitBranch className="h-5 w-5 text-blue-500" />
-                    {VIDEO_USE_CASE_LABELS[useCase]} Routing
-                  </CardTitle>
-                  <p className="text-sm text-gray-400 mt-1">
-                    {VIDEO_USE_CASE_DESCRIPTIONS[useCase]}
+                  <p className="text-sm font-medium text-white">Enabled Models</p>
+                  <p className="text-xs text-gray-500 mt-1">
+                    {enabledModels.length} models available for routing
                   </p>
                 </div>
-                <Button size="sm" className="gap-2" onClick={() => openRuleDialog()}>
+                <Badge variant="secondary" className="bg-white/10">
+                  {providers.length} providers
+                </Badge>
+              </div>
+            </div>
+
+            {getRulesForUseCase(activeTab).length === 0 ? (
+              <div className="text-center py-12">
+                <GitBranch className="h-12 w-12 text-gray-600 mx-auto mb-4" />
+                <p className="text-gray-400 mb-4">
+                  No routing rules configured for {VIDEO_USE_CASE_LABELS[activeTab]}.
+                </p>
+                <Button onClick={() => openRuleDialog()} className="gap-2">
                   <Plus className="h-4 w-4" />
-                  Add Rule
+                  Add First Rule
                 </Button>
-              </CardHeader>
-              <CardContent>
-                {getRulesForUseCase(useCase).length === 0 ? (
-                  <div className="text-center py-12">
-                    <GitBranch className="h-12 w-12 text-gray-600 mx-auto mb-4" />
-                    <p className="text-gray-400 mb-4">
-                      No routing rules configured for {VIDEO_USE_CASE_LABELS[useCase]}.
-                    </p>
-                    <Button onClick={() => openRuleDialog()} className="gap-2">
-                      <Plus className="h-4 w-4" />
-                      Add First Rule
-                    </Button>
-                  </div>
-                ) : (
-                  <div className="space-y-6">
-                    {/* Tier 1: Primary */}
-                    <VideoTierSection
-                      tier={1}
-                      label="Primary"
-                      description="First choice for video requests"
-                      rules={getTierRules(useCase, 1)}
-                      onEdit={openRuleDialog}
-                      onDelete={handleDeleteRule}
-                      onToggle={handleToggleRule}
-                      getCapabilityColor={getCapabilityColor}
-                    />
+              </div>
+            ) : (
+              <div className="space-y-6">
+                <VideoTierSection
+                  tier={1}
+                  label="Primary"
+                  description="First choice for video requests"
+                  rules={getTierRules(activeTab, 1)}
+                  onEdit={openRuleDialog}
+                  onDelete={handleDeleteRule}
+                  onToggle={handleToggleRule}
+                  getCapabilityColor={getCapabilityColor}
+                />
 
-                    {/* Arrow between tiers */}
-                    {getTierRules(useCase, 2).length > 0 && (
-                      <div className="flex items-center justify-center gap-2 text-gray-500">
-                        <div className="h-px w-16 bg-gray-700" />
-                        <ChevronRight className="h-4 w-4" />
-                        <span className="text-xs">Fallback</span>
-                        <ChevronRight className="h-4 w-4" />
-                        <div className="h-px w-16 bg-gray-700" />
-                      </div>
-                    )}
-
-                    {/* Tier 2: Secondary */}
-                    {getTierRules(useCase, 2).length > 0 && (
-                      <VideoTierSection
-                        tier={2}
-                        label="Secondary"
-                        description="Fallback if primary fails"
-                        rules={getTierRules(useCase, 2)}
-                        onEdit={openRuleDialog}
-                        onDelete={handleDeleteRule}
-                        onToggle={handleToggleRule}
-                        getCapabilityColor={getCapabilityColor}
-                      />
-                    )}
-
-                    {/* Arrow between tiers */}
-                    {getTierRules(useCase, 3).length > 0 && (
-                      <div className="flex items-center justify-center gap-2 text-gray-500">
-                        <div className="h-px w-16 bg-gray-700" />
-                        <ChevronRight className="h-4 w-4" />
-                        <span className="text-xs">Fallback</span>
-                        <ChevronRight className="h-4 w-4" />
-                        <div className="h-px w-16 bg-gray-700" />
-                      </div>
-                    )}
-
-                    {/* Tier 3: Tertiary */}
-                    {getTierRules(useCase, 3).length > 0 && (
-                      <VideoTierSection
-                        tier={3}
-                        label="Tertiary"
-                        description="Last resort fallback"
-                        rules={getTierRules(useCase, 3)}
-                        onEdit={openRuleDialog}
-                        onDelete={handleDeleteRule}
-                        onToggle={handleToggleRule}
-                        getCapabilityColor={getCapabilityColor}
-                      />
-                    )}
+                {getTierRules(activeTab, 2).length > 0 && (
+                  <div className="flex items-center justify-center gap-2 text-gray-500">
+                    <div className="h-px w-16 bg-gray-700" />
+                    <ChevronRight className="h-4 w-4" />
+                    <span className="text-xs">Fallback</span>
+                    <ChevronRight className="h-4 w-4" />
+                    <div className="h-px w-16 bg-gray-700" />
                   </div>
                 )}
-              </CardContent>
-            </Card>
-          </TabsContent>
-        ))}
-      </Tabs>
+
+                {getTierRules(activeTab, 2).length > 0 && (
+                  <VideoTierSection
+                    tier={2}
+                    label="Secondary"
+                    description="Fallback if primary fails"
+                    rules={getTierRules(activeTab, 2)}
+                    onEdit={openRuleDialog}
+                    onDelete={handleDeleteRule}
+                    onToggle={handleToggleRule}
+                    getCapabilityColor={getCapabilityColor}
+                  />
+                )}
+
+                {getTierRules(activeTab, 3).length > 0 && (
+                  <div className="flex items-center justify-center gap-2 text-gray-500">
+                    <div className="h-px w-16 bg-gray-700" />
+                    <ChevronRight className="h-4 w-4" />
+                    <span className="text-xs">Fallback</span>
+                    <ChevronRight className="h-4 w-4" />
+                    <div className="h-px w-16 bg-gray-700" />
+                  </div>
+                )}
+
+                {getTierRules(activeTab, 3).length > 0 && (
+                  <VideoTierSection
+                    tier={3}
+                    label="Tertiary"
+                    description="Last resort fallback"
+                    rules={getTierRules(activeTab, 3)}
+                    onEdit={openRuleDialog}
+                    onDelete={handleDeleteRule}
+                    onToggle={handleToggleRule}
+                    getCapabilityColor={getCapabilityColor}
+                  />
+                )}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      </div>
 
       <PromptTemplatesPanel adminArea="video_routing" title="Video Routing Prompts" />
 

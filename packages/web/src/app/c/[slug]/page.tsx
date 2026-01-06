@@ -1,13 +1,14 @@
 import { Metadata } from 'next';
 import { notFound } from 'next/navigation';
 import { CompanionProfile } from '@/components/seo/companion-profile';
+import { serverEnv } from '@/env/server';
 
 interface PageProps {
   params: Promise<{ slug: string }>;
 }
 
 // Gateway URL for server-side fetching
-const GATEWAY_URL = process.env.GATEWAY_URL || 'http://localhost:4000';
+const GATEWAY_URL = serverEnv.GATEWAY_URL;
 
 interface SeoPageData {
   id: string;
@@ -74,7 +75,7 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
     };
   }
 
-  const baseUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://ignite.cam';
+  const baseUrl = serverEnv.NEXT_PUBLIC_APP_URL;
 
   return {
     title: page.title,

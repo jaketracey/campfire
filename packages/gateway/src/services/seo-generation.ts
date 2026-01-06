@@ -7,9 +7,10 @@ import { logger } from '../observability/logger.js';
 import { getSeoPagesRepository } from '../repositories/seo-pages.js';
 import type { CompanionWithAvatar } from '../repositories/companions.js';
 import type { SeoPageContentJson } from '../db/types.js';
+import { env } from '../env.js';
 
 // Orchestrator configuration
-const ORCHESTRATOR_URL = process.env['ORCHESTRATOR_URL'] || 'http://localhost:8000';
+const ORCHESTRATOR_URL = env.ORCHESTRATOR_URL;
 
 /**
  * Orchestrator response for SEO content generation

@@ -147,114 +147,11 @@ export TAG_COST_CENTER="${COST_CENTER:-engineering}"
 export TAG_OWNER="${OWNER:-platform-team}"
 
 # -----------------------------------------------------------------------------
-# Helper Functions
+# Shared Helpers
 # -----------------------------------------------------------------------------
 
-# Print a formatted message
-log() {
-    echo "[$(date '+%Y-%m-%d %H:%M:%S')] $1"
-}
-
-# Print error message and exit
-error() {
-    echo "[ERROR] $1" >&2
-    exit 1
-}
-
-# Print warning message
-warn() {
-    echo "[WARN] $1" >&2
-}
-
-# Check if AWS CLI is configured
-check_aws_cli() {
-    if ! command -v aws &> /dev/null; then
-        error "AWS CLI is not installed. Please install it first."
-    fi
-
-    if ! aws sts get-caller-identity &> /dev/null; then
-        error "AWS CLI is not configured. Please run 'aws configure' first."
-    fi
-
-    log "AWS CLI configured for account: $(aws sts get-caller-identity --query Account --output text)"
-}
-
-# Confirm production deployment
-confirm_production() {
-    if [[ "${SKIP_CONFIRMATION:-false}" != "true" ]]; then
-        echo ""
-        echo "=========================================="
-        echo "  WARNING: PRODUCTION ENVIRONMENT"
-        echo "=========================================="
-        echo ""
-        echo "You are about to make changes to the PRODUCTION environment."
-        echo "Region: ${AWS_REGION}"
-        echo "Account: $(aws sts get-caller-identity --query Account --output text)"
-        echo ""
-        read -p "Are you sure you want to continue? (type 'yes' to confirm): " confirmation
-        if [[ "${confirmation}" != "yes" ]]; then
-            error "Deployment cancelled by user"
-        fi
-    fi
-}
-
-# Generate common tags JSON
-get_tags() {
-    cat <<EOF
-[
-    {"Key": "Project", "Value": "${TAG_PROJECT}"},
-    {"Key": "Environment", "Value": "${TAG_ENVIRONMENT}"},
-    {"Key": "ManagedBy", "Value": "${TAG_MANAGED_BY}"},
-    {"Key": "CostCenter", "Value": "${TAG_COST_CENTER}"},
-    {"Key": "Owner", "Value": "${TAG_OWNER}"}
-]
-EOF
-}
-
-# Generate common tags for CLI commands
-get_tags_cli() {
-    echo "Key=Project,Value=${TAG_PROJECT} Key=Environment,Value=${TAG_ENVIRONMENT} Key=ManagedBy,Value=${TAG_MANAGED_BY} Key=CostCenter,Value=${TAG_COST_CENTER} Key=Owner,Value=${TAG_OWNER}"
-}
-
-# Wait for resource to be available
-wait_for_resource() {
-    local resource_type="$1"
-    local resource_id="$2"
-    local max_attempts="${3:-60}"
-    local sleep_time="${4:-10}"
-
-    log "Waiting for ${resource_type} ${resource_id} to be available..."
-
-    for ((i=1; i<=max_attempts; i++)); do
-        case "${resource_type}" in
-            "rds")
-                status=$(aws rds describe-db-instances \
-                    --db-instance-identifier "${resource_id}" \
-                    --query 'DBInstances[0].DBInstanceStatus' \
-                    --output text 2>/dev/null || echo "pending")
-                ;;
-            "elasticache")
-                status=$(aws elasticache describe-replication-groups \
-                    --replication-group-id "${resource_id}" \
-                    --query 'ReplicationGroups[0].Status' \
-                    --output text 2>/dev/null || echo "creating")
-                ;;
-            *)
-                status="available"
-                ;;
-        esac
-
-        if [[ "${status}" == "available" ]]; then
-            log "${resource_type} ${resource_id} is now available"
-            return 0
-        fi
-
-        log "Status: ${status}. Attempt ${i}/${max_attempts}. Waiting ${sleep_time}s..."
-        sleep "${sleep_time}"
-    done
-
-    error "Timeout waiting for ${resource_type} ${resource_id}"
-}
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "${SCRIPT_DIR}/../_shared/common.sh"
 
 # Check if SSL certificate is configured
 check_ssl_certificate() {

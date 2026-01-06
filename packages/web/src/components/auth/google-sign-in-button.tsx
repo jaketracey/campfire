@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState, useRef } from 'react';
 import { Button } from '@/components/ui/button';
 import { Loader2 } from 'lucide-react';
 import { isNativeApp, requestNativeGoogleAuth } from '@/lib/native-bridge';
+import { publicEnv } from '@/env/public';
 
 declare global {
   interface Window {
@@ -62,7 +63,7 @@ export function GoogleSignInButton({
   const googleButtonRef = useRef<HTMLDivElement>(null);
   const [isNative, setIsNative] = useState(false);
 
-  const clientId = process.env.NEXT_PUBLIC_GOOGLE_OAUTH_CLIENT_ID;
+  const clientId = publicEnv.NEXT_PUBLIC_GOOGLE_OAUTH_CLIENT_ID;
 
   // Check if running in native app
   useEffect(() => {

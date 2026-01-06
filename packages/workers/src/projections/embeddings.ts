@@ -3,6 +3,7 @@ import type { Redis } from 'ioredis';
 import type { Logger } from 'pino';
 import OpenAI from 'openai';
 import type { DbClient } from '../db/client.js';
+import { env } from '../env.js';
 
 interface EmbeddingJobData {
   type: 'create' | 'delete';
@@ -24,7 +25,10 @@ export class EmbeddingProjectionWorker {
 
   constructor(config: WorkerConfig) {
     this.config = config;
-    this.openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+    if (!env.OPENAI_API_KEY) {
+      throw new Error('OPENAI_API_KEY is required to run the embedding worker');
+    }
+    this.openai = new OpenAI({ apiKey: env.OPENAI_API_KEY });
   }
 
   async start() {

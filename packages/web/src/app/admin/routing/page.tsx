@@ -50,21 +50,21 @@ export default function RoutingPage() {
       </div>
 
       <Tabs value={activeTab} onValueChange={onTabChange} className="space-y-6">
-        <TabsList className="grid w-full grid-cols-3 bg-white/5">
-          <TabsTrigger value="text" className="gap-2">
-            <GitBranch className="h-4 w-4" />
+        <TabsList className="grid w-full grid-cols-3 gap-1 md:gap-2 bg-white/5 border border-white/10 h-12 md:h-14 p-1">
+          <TabsTrigger value="text" className="gap-2 md:gap-3 px-4 py-2 md:px-6 md:py-2.5 text-sm md:text-base data-[state=inactive]:hover:bg-white/5 data-[state=inactive]:hover:text-white">
+            <GitBranch className="h-5 w-5 md:h-6 md:w-6" />
             Text
-            <Badge variant="secondary" className="ml-1 bg-white/10 text-gray-300">AI</Badge>
+            <Badge variant="secondary" className="ml-1 bg-white/10 text-gray-300 text-xs md:text-sm">AI</Badge>
           </TabsTrigger>
-          <TabsTrigger value="image" className="gap-2">
-            <Image className="h-4 w-4" />
+          <TabsTrigger value="image" className="gap-2 md:gap-3 px-4 py-2 md:px-6 md:py-2.5 text-sm md:text-base data-[state=inactive]:hover:bg-white/5 data-[state=inactive]:hover:text-white">
+            <Image className="h-5 w-5 md:h-6 md:w-6" />
             Image
-            <Badge variant="secondary" className="ml-1 bg-white/10 text-gray-300">Gen</Badge>
+            <Badge variant="secondary" className="ml-1 bg-white/10 text-gray-300 text-xs md:text-sm">Gen</Badge>
           </TabsTrigger>
-          <TabsTrigger value="video" className="gap-2">
-            <Video className="h-4 w-4" />
+          <TabsTrigger value="video" className="gap-2 md:gap-3 px-4 py-2 md:px-6 md:py-2.5 text-sm md:text-base data-[state=inactive]:hover:bg-white/5 data-[state=inactive]:hover:text-white">
+            <Video className="h-5 w-5 md:h-6 md:w-6" />
             Video
-            <Badge variant="secondary" className="ml-1 bg-white/10 text-gray-300">Gen</Badge>
+            <Badge variant="secondary" className="ml-1 bg-white/10 text-gray-300 text-xs md:text-sm">Gen</Badge>
           </TabsTrigger>
         </TabsList>
 
@@ -81,4 +81,3 @@ export default function RoutingPage() {
     </div>
   );
 }
-

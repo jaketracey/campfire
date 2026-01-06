@@ -320,6 +320,8 @@ export interface CompanionAvatar {
   companion_id: UUID;
   asset_url: string;
   asset_type: AvatarAssetType;
+  s3_bucket: string | null;
+  s3_key: string | null;
   is_active: boolean;
   is_identity_anchor: boolean;
   metadata: JSONObject;
@@ -334,6 +336,8 @@ export interface CompanionAvatarInsert {
   companion_id: UUID;
   asset_url: string;
   asset_type: AvatarAssetType;
+  s3_bucket?: string | null;
+  s3_key?: string | null;
   is_active?: boolean;
   is_identity_anchor?: boolean;
   metadata?: JSONObject;

@@ -4,10 +4,11 @@
  */
 
 import { logger } from '../observability/logger.js';
+import { env } from '../env.js';
 
-const OPENAI_API_KEY = process.env['OPENAI_API_KEY'];
-const EMBEDDING_MODEL = process.env['EMBEDDING_MODEL'] ?? 'text-embedding-3-small';
-const EMBEDDING_DIMENSIONS = parseInt(process.env['EMBEDDING_DIMENSIONS'] ?? '1536', 10);
+const OPENAI_API_KEY = env.OPENAI_API_KEY;
+const EMBEDDING_MODEL = env.EMBEDDING_MODEL ?? 'text-embedding-3-small';
+const EMBEDDING_DIMENSIONS = env.EMBEDDING_DIMENSIONS ?? 1536;
 
 export class EmbeddingService {
   private apiKey: string | undefined;

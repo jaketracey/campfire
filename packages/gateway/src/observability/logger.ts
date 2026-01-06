@@ -5,6 +5,7 @@
 
 import pino from 'pino';
 import { AsyncLocalStorage } from 'node:async_hooks';
+import { env } from '../env.js';
 
 /**
  * Request context for logging
@@ -47,8 +48,8 @@ export function withContext<T>(ctx: RequestContext, fn: () => T): T {
 /**
  * Logger configuration
  */
-const logLevel = process.env['LOG_LEVEL'] ?? 'info';
-const isPretty = process.env['NODE_ENV'] !== 'production';
+const logLevel = env.LOG_LEVEL;
+const isPretty = env.NODE_ENV !== 'production';
 
 /**
  * Create the base logger with custom serializers

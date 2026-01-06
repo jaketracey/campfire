@@ -7,6 +7,7 @@ import type { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
 import { z } from 'zod';
 import { createVerify } from 'crypto';
 import { logger } from '../observability/logger.js';
+import { env } from '../env.js';
 import { withSpan } from '../observability/tracing.js';
 import { getEventStore } from '../db/event-store.js';
 import { nanoid } from 'nanoid';
@@ -200,7 +201,7 @@ export async function emailWebhookRoutes(app: FastifyInstance): Promise<void> {
         });
 
         // Verify signature in production
-        if (process.env.NODE_ENV === 'production') {
+        if (env.NODE_ENV === 'production') {
           const isValid = await verifySNSSignature(snsMessage);
           if (!isValid) {
             logger.warn({ messageId: snsMessage.MessageId }, 'Invalid SNS signature');
@@ -282,7 +283,7 @@ export async function emailWebhookRoutes(app: FastifyInstance): Promise<void> {
       }
 
       // Redirect to unsubscribe confirmation page
-      const webUrl = process.env.WEB_URL || 'https://ignite.cam';
+      const webUrl = env.WEB_URL;
       return reply.redirect(`${webUrl}/email/unsubscribed?token=${encodeURIComponent(token)}`);
     });
   });

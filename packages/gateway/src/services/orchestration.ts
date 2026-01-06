@@ -19,12 +19,13 @@ import {
 import { logger } from '../observability/logger.js';
 import type { TransactionContext, PaginatedResult } from '../repositories/types.js';
 import type { UUID } from '../db/types.js';
+import { env } from '../env.js';
 
 // ============================================================================
 // Configuration
 // ============================================================================
 
-const ORCHESTRATOR_URL = process.env.ORCHESTRATOR_URL || 'http://localhost:8000';
+const ORCHESTRATOR_URL = env.ORCHESTRATOR_URL;
 
 // ============================================================================
 // Validation Schemas

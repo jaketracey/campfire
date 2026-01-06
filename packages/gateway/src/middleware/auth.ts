@@ -7,19 +7,16 @@ import type { FastifyRequest, FastifyReply } from 'fastify';
 import * as jose from 'jose';
 import { timingSafeEqual } from 'crypto';
 import { logger } from '../observability/logger.js';
+import { env } from '../env.js';
 
-// JWT configuration
-const NODE_ENV = process.env['NODE_ENV'] ?? 'development';
-
-// SECURITY: JWT_SECRET is required in ALL environments - no defaults allowed
-const jwtSecretValue = process.env['JWT_SECRET'];
-if (!jwtSecretValue) {
+// JWT configuration (validated at startup)
+if (!env.JWT_SECRET_BYTES) {
   throw new Error('FATAL: JWT_SECRET environment variable is required. Set it in your .env file.');
 }
-const JWT_SECRET = new TextEncoder().encode(jwtSecretValue);
-const JWT_ISSUER = process.env['JWT_ISSUER'] ?? 'campfire';
-const JWT_AUDIENCE = process.env['JWT_AUDIENCE'] ?? 'campfire-api';
-const JWT_EXPIRY = process.env['JWT_EXPIRY'] ?? '24h';
+const JWT_SECRET = env.JWT_SECRET_BYTES;
+const JWT_ISSUER = env.JWT_ISSUER;
+const JWT_AUDIENCE = env.JWT_AUDIENCE;
+const JWT_EXPIRY = env.JWT_EXPIRY;
 
 /**
  * Authenticated user attached to request
@@ -218,13 +215,10 @@ export async function verifyRefreshToken(token: string): Promise<string | null> 
 }
 
 // Internal service authentication
-// SECURITY: INTERNAL_SERVICE_KEY is required in ALL environments - no defaults allowed
-const internalServiceKeyValue = process.env['INTERNAL_SERVICE_KEY'];
-if (!internalServiceKeyValue) {
+if (!env.INTERNAL_SERVICE_KEY_BUFFER) {
   throw new Error('FATAL: INTERNAL_SERVICE_KEY environment variable is required. Set it in your .env file.');
 }
-const INTERNAL_SERVICE_KEY = internalServiceKeyValue;
-const INTERNAL_SERVICE_KEY_BUFFER = Buffer.from(INTERNAL_SERVICE_KEY);
+const INTERNAL_SERVICE_KEY_BUFFER = env.INTERNAL_SERVICE_KEY_BUFFER;
 
 /**
  * Internal service middleware - for service-to-service calls (orchestrator -> gateway)

@@ -11,6 +11,7 @@ import {
 } from '../services/affiliates.js';
 import { requireAffiliateAuth } from '../middleware/affiliate-auth.js';
 import { logger } from '../observability/logger.js';
+import { env } from '../env.js';
 
 // Query schemas
 const PaginationQuerySchema = z.object({
@@ -191,7 +192,7 @@ export async function affiliatePortalRoutes(app: FastifyInstance): Promise<void>
    */
   app.get('/link', async (request: FastifyRequest, reply: FastifyReply) => {
     const code = request.affiliate!.code;
-    const baseUrl = process.env['APP_URL'] ?? 'https://app.campfire.ai';
+    const baseUrl = env.APP_URL;
 
     return reply.send({
       success: true,

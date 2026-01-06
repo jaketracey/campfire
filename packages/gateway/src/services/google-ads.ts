@@ -5,6 +5,7 @@
 
 import { getAdsRepository } from '../repositories/ads.js';
 import { logger } from '../observability/logger.js';
+import { env } from '../env.js';
 import type { AdAccount, AdCampaign, AdSpendDaily } from '../db/types.js';
 import type { TransactionContext } from '../repositories/types.js';
 
@@ -20,10 +21,10 @@ interface GoogleAdsConfig {
 }
 
 function getConfig(): GoogleAdsConfig {
-  const clientId = process.env['GOOGLE_ADS_CLIENT_ID'];
-  const clientSecret = process.env['GOOGLE_ADS_CLIENT_SECRET'];
-  const developerToken = process.env['GOOGLE_ADS_DEVELOPER_TOKEN'];
-  const redirectUri = process.env['GOOGLE_ADS_REDIRECT_URI'] || 'http://localhost:3000/api/v1/admin/ads/callback/google';
+  const clientId = env.GOOGLE_ADS_CLIENT_ID;
+  const clientSecret = env.GOOGLE_ADS_CLIENT_SECRET;
+  const developerToken = env.GOOGLE_ADS_DEVELOPER_TOKEN;
+  const redirectUri = env.GOOGLE_ADS_REDIRECT_URI || 'http://localhost:3000/api/v1/admin/ads/callback/google';
 
   if (!clientId || !clientSecret || !developerToken) {
     throw new Error('Missing Google Ads configuration. Set GOOGLE_ADS_CLIENT_ID, GOOGLE_ADS_CLIENT_SECRET, and GOOGLE_ADS_DEVELOPER_TOKEN');

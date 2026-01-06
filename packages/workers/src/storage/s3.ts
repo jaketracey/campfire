@@ -4,14 +4,15 @@ import {
   DeleteObjectCommand,
   GetObjectCommand,
 } from '@aws-sdk/client-s3';
+import { env } from '../env.js';
 
 export function createS3Client() {
   const client = new S3Client({
-    region: process.env.AWS_REGION || 'us-east-1',
+    region: env.AWS_REGION,
   });
 
-  const vaultBucket = process.env.S3_VAULT_BUCKET || 'campfire-dev-vault';
-  const mediaBucket = process.env.S3_MEDIA_BUCKET || 'campfire-dev-media';
+  const vaultBucket = env.S3_VAULT_BUCKET;
+  const mediaBucket = env.S3_MEDIA_BUCKET;
 
   return {
     async uploadVaultFile(key: string, content: string): Promise<string> {

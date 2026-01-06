@@ -7,6 +7,7 @@ import type { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
 import { z } from 'zod';
 import { getAffiliatesService } from '../services/affiliates.js';
 import { logger } from '../observability/logger.js';
+import { env } from '../env.js';
 
 // Params schemas
 const TrackCodeParamsSchema = z.object({
@@ -37,7 +38,7 @@ export async function affiliateTrackingRoutes(app: FastifyInstance): Promise<voi
     const paramsResult = TrackCodeParamsSchema.safeParse(request.params);
     if (!paramsResult.success) {
       // Invalid code format - just redirect to signup without tracking
-      const baseUrl = process.env['APP_URL'] ?? 'https://app.campfire.ai';
+      const baseUrl = env.APP_URL;
       return reply.redirect(`${baseUrl}/signup`);
     }
 
@@ -61,7 +62,7 @@ export async function affiliateTrackingRoutes(app: FastifyInstance): Promise<voi
 
         reply.header(
           'Set-Cookie',
-          `${AFFILIATE_COOKIE_NAME}=${cookieValue}; Max-Age=${COOKIE_MAX_AGE_SECONDS}; HttpOnly; Path=/; SameSite=Lax${process.env['NODE_ENV'] === 'production' ? '; Secure' : ''}`
+          `${AFFILIATE_COOKIE_NAME}=${cookieValue}; Max-Age=${COOKIE_MAX_AGE_SECONDS}; HttpOnly; Path=/; SameSite=Lax${env.NODE_ENV === 'production' ? '; Secure' : ''}`
         );
 
         logger.debug(
@@ -77,7 +78,7 @@ export async function affiliateTrackingRoutes(app: FastifyInstance): Promise<voi
     }
 
     // Always redirect to signup
-    const baseUrl = process.env['APP_URL'] ?? 'https://app.campfire.ai';
+    const baseUrl = env.APP_URL;
     return reply.redirect(`${baseUrl}/signup?ref=${encodeURIComponent(code)}`);
   });
 
@@ -88,7 +89,7 @@ export async function affiliateTrackingRoutes(app: FastifyInstance): Promise<voi
     // Delegate to the main tracking endpoint
     const paramsResult = TrackCodeParamsSchema.safeParse(request.params);
     if (!paramsResult.success) {
-      const baseUrl = process.env['APP_URL'] ?? 'https://app.campfire.ai';
+      const baseUrl = env.APP_URL;
       return reply.redirect(`${baseUrl}/signup`);
     }
 
@@ -111,14 +112,14 @@ export async function affiliateTrackingRoutes(app: FastifyInstance): Promise<voi
 
         reply.header(
           'Set-Cookie',
-          `${AFFILIATE_COOKIE_NAME}=${cookieValue}; Max-Age=${COOKIE_MAX_AGE_SECONDS}; HttpOnly; Path=/; SameSite=Lax${process.env['NODE_ENV'] === 'production' ? '; Secure' : ''}`
+          `${AFFILIATE_COOKIE_NAME}=${cookieValue}; Max-Age=${COOKIE_MAX_AGE_SECONDS}; HttpOnly; Path=/; SameSite=Lax${env.NODE_ENV === 'production' ? '; Secure' : ''}`
         );
       }
     } catch (error) {
       logger.error({ err: error, code }, 'Error recording affiliate click');
     }
 
-    const baseUrl = process.env['APP_URL'] ?? 'https://app.campfire.ai';
+    const baseUrl = env.APP_URL;
     return reply.redirect(`${baseUrl}/signup?ref=${encodeURIComponent(code)}`);
   });
 
@@ -160,7 +161,7 @@ export async function affiliateTrackingRoutes(app: FastifyInstance): Promise<voi
 
         reply.header(
           'Set-Cookie',
-          `${AFFILIATE_COOKIE_NAME}=${cookieValue}; Max-Age=${COOKIE_MAX_AGE_SECONDS}; HttpOnly; Path=/; SameSite=Lax${process.env['NODE_ENV'] === 'production' ? '; Secure' : ''}`
+          `${AFFILIATE_COOKIE_NAME}=${cookieValue}; Max-Age=${COOKIE_MAX_AGE_SECONDS}; HttpOnly; Path=/; SameSite=Lax${env.NODE_ENV === 'production' ? '; Secure' : ''}`
         );
 
         return reply.send({

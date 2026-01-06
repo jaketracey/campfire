@@ -14,6 +14,7 @@ import {
   ListTicketsQuerySchema,
 } from '../services/support.js';
 import { logger } from '../observability/logger.js';
+import { env } from '../env.js';
 import { enqueueEmailJob } from '../utils/queue.js';
 import { getUsersRepository } from '../repositories/index.js';
 
@@ -335,7 +336,7 @@ export async function adminSupportRoutes(app: FastifyInstance): Promise<void> {
     const adminUserId = request.user!.userId;
     const adminEmail = request.user!.email;
 
-    const webUrl = process.env.WEB_URL || 'https://ignite.cam';
+    const webUrl = env.WEB_URL;
     const emailJobId = await enqueueEmailJob({
       type: 'transactional',
       templateName: 'notification',
@@ -406,7 +407,7 @@ export async function adminSupportRoutes(app: FastifyInstance): Promise<void> {
     });
 
     // Queue notification email to the user
-    const webUrl = process.env.WEB_URL || 'https://ignite.cam';
+    const webUrl = env.WEB_URL;
     const emailQueued = await enqueueEmailJob({
       type: 'notification',
       templateName: 'notification',

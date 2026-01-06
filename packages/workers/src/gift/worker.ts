@@ -12,6 +12,7 @@ import type { Redis } from 'ioredis';
 import type { Logger } from 'pino';
 import type { DbClient } from '../db/client.js';
 import { renderPromptFromDb } from '../lib/prompt-runtime.js';
+import { env } from '../env.js';
 
 export const GIFT_GENERATION_QUEUE = 'gift-generation';
 
@@ -59,9 +60,9 @@ export class GiftGenerationWorker {
 
   constructor(config: GiftGenerationWorkerConfig) {
     this.config = config;
-    this.region = process.env.AWS_REGION || 'us-east-1';
-    this.bucket = process.env.S3_BUCKET_MEDIA || 'campfire-media';
-    this.orchestratorUrl = config.orchestratorUrl || process.env.ORCHESTRATOR_URL || 'http://localhost:8000';
+    this.region = env.AWS_REGION;
+    this.bucket = env.S3_BUCKET_MEDIA || env.S3_MEDIA_BUCKET;
+    this.orchestratorUrl = config.orchestratorUrl || env.ORCHESTRATOR_URL;
     this.s3Client = new S3Client({ region: this.region });
   }
 

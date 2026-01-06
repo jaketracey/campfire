@@ -3,6 +3,8 @@
  * Real-time communication with the gateway.
  */
 
+import { publicEnv } from '@/env/public';
+
 // Dynamically determine WebSocket URL based on environment
 // - Explicit NEXT_PUBLIC_WS_URL takes priority
 // - NEXT_PUBLIC_GATEWAY_URL is converted to WebSocket URL
@@ -10,13 +12,13 @@
 // - External (ngrok/prod): use same host with /ws path (proxied)
 function getWebSocketUrl(): string {
   // Explicit WebSocket URL takes priority
-  if (process.env.NEXT_PUBLIC_WS_URL) {
-    return process.env.NEXT_PUBLIC_WS_URL;
+  if (publicEnv.NEXT_PUBLIC_WS_URL) {
+    return publicEnv.NEXT_PUBLIC_WS_URL;
   }
 
   // If gateway URL is set, derive WebSocket URL from it
-  if (process.env.NEXT_PUBLIC_GATEWAY_URL) {
-    const gatewayUrl = process.env.NEXT_PUBLIC_GATEWAY_URL;
+  if (publicEnv.NEXT_PUBLIC_GATEWAY_URL) {
+    const gatewayUrl = publicEnv.NEXT_PUBLIC_GATEWAY_URL;
     // Convert http(s):// to ws(s)://
     return gatewayUrl.replace(/^http/, 'ws') + '/ws';
   }

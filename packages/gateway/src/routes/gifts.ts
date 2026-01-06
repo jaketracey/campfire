@@ -9,6 +9,7 @@ import { z } from 'zod';
 import { nanoid } from 'nanoid';
 import { requireAuth, requireInternalService } from '../middleware/auth.js';
 import { logger } from '../observability/logger.js';
+import { env } from '../env.js';
 import { withSpan } from '../observability/tracing.js';
 import { getGiftsRepository } from '../repositories/gifts.js';
 import { getGiftTemplatesRepository } from '../repositories/gift-templates.js';
@@ -263,7 +264,7 @@ export async function giftsRoutes(app: FastifyInstance): Promise<void> {
 
       // Create Flowguard purchase session
       const referenceId = `tok_${nanoid()}`;
-      const apiBaseUrl = process.env.API_BASE_URL || 'https://ignite.cam';
+      const apiBaseUrl = env.API_BASE_URL;
       const postbackUrl = `${apiBaseUrl}/api/v1/gifts/tokens/postback`;
       const session = await startPurchaseSession({
         priceAmount: (bundle.price_cents / 100).toFixed(2), // Format as "NNN.NN"

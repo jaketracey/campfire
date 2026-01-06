@@ -11,9 +11,10 @@ import { getEventStore } from '../db/event-store.js';
 import { logger } from '../observability/logger.js';
 import { withSpan } from '../observability/tracing.js';
 import { renderPromptFromDb } from '../services/prompt-runtime.js';
+import { env } from '../env.js';
 
 // Orchestrator base URL for LLM calls
-const ORCHESTRATOR_URL = process.env['ORCHESTRATOR_URL'] || 'http://localhost:8000';
+const ORCHESTRATOR_URL = env.ORCHESTRATOR_URL;
 
 /**
  * Register debug routes

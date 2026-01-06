@@ -5,6 +5,7 @@
 
 import postgres from 'postgres';
 import { logger } from '../observability/logger.js';
+import { env } from '../env.js';
 
 /**
  * Database configuration from environment
@@ -23,15 +24,15 @@ interface DatabaseConfig {
 
 function getDatabaseConfig(): DatabaseConfig {
   return {
-    host: process.env['DATABASE_HOST'] ?? 'localhost',
-    port: parseInt(process.env['DATABASE_PORT'] ?? '5432', 10),
-    database: process.env['DATABASE_NAME'] ?? 'campfire',
-    username: process.env['DATABASE_USER'] ?? 'campfire',
-    password: process.env['DATABASE_PASSWORD'] ?? 'campfire',
-    ssl: process.env['DATABASE_SSL'] === 'true' ? 'require' : false,
-    maxConnections: parseInt(process.env['DATABASE_MAX_CONNECTIONS'] ?? '20', 10),
-    idleTimeout: parseInt(process.env['DATABASE_IDLE_TIMEOUT'] ?? '20', 10),
-    connectionTimeout: parseInt(process.env['DATABASE_CONNECTION_TIMEOUT'] ?? '30', 10),
+    host: env.DATABASE_HOST,
+    port: env.DATABASE_PORT,
+    database: env.DATABASE_NAME,
+    username: env.DATABASE_USER,
+    password: env.DATABASE_PASSWORD,
+    ssl: env.DATABASE_SSL ? 'require' : false,
+    maxConnections: env.DATABASE_MAX_CONNECTIONS,
+    idleTimeout: env.DATABASE_IDLE_TIMEOUT,
+    connectionTimeout: env.DATABASE_CONNECTION_TIMEOUT,
   };
 }
 

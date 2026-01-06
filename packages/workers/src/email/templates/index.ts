@@ -1,5 +1,6 @@
 import mjml2html from 'mjml';
 import { createHmac } from 'crypto';
+import { env } from '../../env.js';
 
 // Template context types
 export interface BaseTemplateContext {
@@ -62,7 +63,7 @@ export function generateUnsubscribeUrl(
   emailType: string,
   baseUrl: string
 ): string {
-  const secret = process.env.EMAIL_UNSUBSCRIBE_SECRET || 'dev-secret';
+  const secret = env.EMAIL_UNSUBSCRIBE_SECRET;
   const payload = `${identifier}:${emailType}:${Date.now()}`;
   const signature = createHmac('sha256', secret).update(payload).digest('hex');
   const token = Buffer.from(`${payload}:${signature}`).toString('base64url');
@@ -71,7 +72,7 @@ export function generateUnsubscribeUrl(
 
 /** Generate signed preferences URL */
 export function generatePreferencesUrl(identifier: string, baseUrl: string): string {
-  const secret = process.env.EMAIL_UNSUBSCRIBE_SECRET || 'dev-secret';
+  const secret = env.EMAIL_UNSUBSCRIBE_SECRET;
   const payload = `${identifier}:preferences:${Date.now()}`;
   const signature = createHmac('sha256', secret).update(payload).digest('hex');
   const token = Buffer.from(`${payload}:${signature}`).toString('base64url');
@@ -93,7 +94,7 @@ export function verifyUnsubscribeToken(token: string): {
     const [identifier, emailType, timestamp, signature] = parts;
 
     // Verify signature
-    const secret = process.env.EMAIL_UNSUBSCRIBE_SECRET || 'dev-secret';
+    const secret = env.EMAIL_UNSUBSCRIBE_SECRET;
     const payload = `${identifier}:${emailType}:${timestamp}`;
     const expectedSignature = createHmac('sha256', secret).update(payload).digest('hex');
 

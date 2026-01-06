@@ -80,18 +80,18 @@ export class CompanionsRepository {
 
     const db = this.getSql(tx);
 
-    const result = await db`
-      SELECT
-        c.id, c.user_id, c.name, c.spec, c.spec_version, c.status, c.is_public,
-        c.active_avatar_id, c.created_at, c.updated_at,
-        a.id as avatar_id, a.asset_url, a.asset_type, a.is_active,
-        a.is_identity_anchor, a.metadata as avatar_metadata,
-        a.generation_params, a.source_event_id as avatar_source_event_id,
-        a.created_at as avatar_created_at
-      FROM companions c
-      LEFT JOIN companion_avatars a ON c.active_avatar_id = a.id
-      WHERE c.id = ${id}
-    `;
+	    const result = await db`
+	      SELECT
+	        c.id, c.user_id, c.name, c.spec, c.spec_version, c.status, c.is_public,
+	        c.active_avatar_id, c.created_at, c.updated_at,
+	        a.id as avatar_id, a.asset_url, a.asset_type, a.s3_bucket as avatar_s3_bucket, a.s3_key as avatar_s3_key, a.is_active,
+	        a.is_identity_anchor, a.metadata as avatar_metadata,
+	        a.generation_params, a.source_event_id as avatar_source_event_id,
+	        a.created_at as avatar_created_at
+	      FROM companions c
+	      LEFT JOIN companion_avatars a ON c.active_avatar_id = a.id
+	      WHERE c.id = ${id}
+	    `;
 
     if (!result[0]) {
       return null;
@@ -132,18 +132,18 @@ export class CompanionsRepository {
 
     const db = this.getSql(tx);
 
-    const result = await db`
-      SELECT
-        c.id, c.user_id, c.name, c.spec, c.spec_version, c.status, c.is_public,
-        c.active_avatar_id, c.created_at, c.updated_at,
-        a.id as avatar_id, a.asset_url, a.asset_type, a.is_active,
-        a.is_identity_anchor, a.metadata as avatar_metadata,
-        a.generation_params, a.source_event_id as avatar_source_event_id,
-        a.created_at as avatar_created_at
-      FROM companions c
-      LEFT JOIN companion_avatars a ON c.active_avatar_id = a.id
-      WHERE c.id = ${id} AND c.is_public = TRUE AND c.status = 'active'
-    `;
+	    const result = await db`
+	      SELECT
+	        c.id, c.user_id, c.name, c.spec, c.spec_version, c.status, c.is_public,
+	        c.active_avatar_id, c.created_at, c.updated_at,
+	        a.id as avatar_id, a.asset_url, a.asset_type, a.s3_bucket as avatar_s3_bucket, a.s3_key as avatar_s3_key, a.is_active,
+	        a.is_identity_anchor, a.metadata as avatar_metadata,
+	        a.generation_params, a.source_event_id as avatar_source_event_id,
+	        a.created_at as avatar_created_at
+	      FROM companions c
+	      LEFT JOIN companion_avatars a ON c.active_avatar_id = a.id
+	      WHERE c.id = ${id} AND c.is_public = TRUE AND c.status = 'active'
+	    `;
 
     if (!result[0]) {
       return null;
@@ -163,20 +163,20 @@ export class CompanionsRepository {
   async getRandomPublic(tx?: TransactionContext): Promise<CompanionWithAvatar | null> {
     const db = this.getSql(tx);
 
-    const result = await db`
-      SELECT
-        c.id, c.user_id, c.name, c.spec, c.spec_version, c.status, c.is_public,
-        c.active_avatar_id, c.created_at, c.updated_at,
-        a.id as avatar_id, a.asset_url, a.asset_type, a.is_active,
-        a.is_identity_anchor, a.metadata as avatar_metadata,
-        a.generation_params, a.source_event_id as avatar_source_event_id,
-        a.created_at as avatar_created_at
-      FROM companions c
-      LEFT JOIN companion_avatars a ON c.active_avatar_id = a.id
-      WHERE c.is_public = TRUE AND c.status = 'active'
-      ORDER BY RANDOM()
-      LIMIT 1
-    `;
+	    const result = await db`
+	      SELECT
+	        c.id, c.user_id, c.name, c.spec, c.spec_version, c.status, c.is_public,
+	        c.active_avatar_id, c.created_at, c.updated_at,
+	        a.id as avatar_id, a.asset_url, a.asset_type, a.s3_bucket as avatar_s3_bucket, a.s3_key as avatar_s3_key, a.is_active,
+	        a.is_identity_anchor, a.metadata as avatar_metadata,
+	        a.generation_params, a.source_event_id as avatar_source_event_id,
+	        a.created_at as avatar_created_at
+	      FROM companions c
+	      LEFT JOIN companion_avatars a ON c.active_avatar_id = a.id
+	      WHERE c.is_public = TRUE AND c.status = 'active'
+	      ORDER BY RANDOM()
+	      LIMIT 1
+	    `;
 
     if (!result[0]) {
       return null;
@@ -198,16 +198,16 @@ export class CompanionsRepository {
   async getRandomWithAnchorAndBackstory(tx?: TransactionContext): Promise<CompanionWithAvatar | null> {
     const db = this.getSql(tx);
 
-    const result = await db`
-      SELECT DISTINCT ON (c.id)
-        c.id, c.user_id, c.name, c.spec, c.spec_version, c.status, c.is_public,
-        c.active_avatar_id, c.created_at, c.updated_at,
-        anchor.id as avatar_id, anchor.asset_url, anchor.asset_type, anchor.is_active,
-        anchor.is_identity_anchor, anchor.metadata as avatar_metadata,
-        anchor.generation_params, anchor.source_event_id as avatar_source_event_id,
-        anchor.created_at as avatar_created_at
-      FROM companions c
-      INNER JOIN companion_avatars anchor ON anchor.companion_id = c.id AND anchor.is_identity_anchor = TRUE
+	    const result = await db`
+	      SELECT DISTINCT ON (c.id)
+	        c.id, c.user_id, c.name, c.spec, c.spec_version, c.status, c.is_public,
+	        c.active_avatar_id, c.created_at, c.updated_at,
+	        anchor.id as avatar_id, anchor.asset_url, anchor.asset_type, anchor.s3_bucket as avatar_s3_bucket, anchor.s3_key as avatar_s3_key, anchor.is_active,
+	        anchor.is_identity_anchor, anchor.metadata as avatar_metadata,
+	        anchor.generation_params, anchor.source_event_id as avatar_source_event_id,
+	        anchor.created_at as avatar_created_at
+	      FROM companions c
+	      INNER JOIN companion_avatars anchor ON anchor.companion_id = c.id AND anchor.is_identity_anchor = TRUE
       INNER JOIN kg_entities backstory ON backstory.companion_id = c.id
         AND backstory.name = 'My Backstory'
         AND backstory.entity_type = 'concept'
@@ -479,12 +479,14 @@ export class CompanionsRepository {
 
     const result = await db`
       INSERT INTO companion_avatars (
-        companion_id, asset_url, asset_type, is_active, is_identity_anchor,
-        metadata, generation_params, source_event_id
+        companion_id, asset_url, asset_type, s3_bucket, s3_key,
+        is_active, is_identity_anchor, metadata, generation_params, source_event_id
       ) VALUES (
         ${data.companion_id},
         ${data.asset_url},
         ${data.asset_type},
+        ${data.s3_bucket ?? null},
+        ${data.s3_key ?? null},
         ${data.is_active ?? false},
         ${data.is_identity_anchor ?? false},
         ${db.json((data.metadata ?? {}) as postgres.JSONValue)},
@@ -649,6 +651,8 @@ export class CompanionsRepository {
       companion_id: row['companion_id'] as string,
       asset_url: row['asset_url'] as string,
       asset_type: row['asset_type'] as AvatarAssetType,
+      s3_bucket: (row['s3_bucket'] as string | null) ?? null,
+      s3_key: (row['s3_key'] as string | null) ?? null,
       is_active: row['is_active'] as boolean,
       is_identity_anchor: row['is_identity_anchor'] as boolean,
       metadata: row['metadata'] as JSONObject,
@@ -658,20 +662,22 @@ export class CompanionsRepository {
     };
   }
 
-  private mapAvatarFromJoin(row: Record<string, unknown>): CompanionAvatar {
-    return {
-      id: row['avatar_id'] as string,
-      companion_id: row['id'] as string,
-      asset_url: row['asset_url'] as string,
-      asset_type: row['asset_type'] as AvatarAssetType,
-      is_active: row['is_active'] as boolean,
-      is_identity_anchor: row['is_identity_anchor'] as boolean,
-      metadata: row['avatar_metadata'] as JSONObject,
-      generation_params: row['generation_params'] as JSONObject | null,
-      source_event_id: row['avatar_source_event_id'] as string | null,
-      created_at: row['avatar_created_at'] as Date,
-    };
-  }
+	  private mapAvatarFromJoin(row: Record<string, unknown>): CompanionAvatar {
+	    return {
+	      id: row['avatar_id'] as string,
+	      companion_id: row['id'] as string,
+	      asset_url: row['asset_url'] as string,
+	      asset_type: row['asset_type'] as AvatarAssetType,
+	      s3_bucket: (row['avatar_s3_bucket'] as string | null) ?? null,
+	      s3_key: (row['avatar_s3_key'] as string | null) ?? null,
+	      is_active: row['is_active'] as boolean,
+	      is_identity_anchor: row['is_identity_anchor'] as boolean,
+	      metadata: row['avatar_metadata'] as JSONObject,
+	      generation_params: row['generation_params'] as JSONObject | null,
+	      source_event_id: row['avatar_source_event_id'] as string | null,
+	      created_at: row['avatar_created_at'] as Date,
+	    };
+	  }
 }
 
 // Singleton instance

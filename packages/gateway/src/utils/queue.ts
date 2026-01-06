@@ -6,9 +6,10 @@
 import { Queue } from 'bullmq';
 import { logger } from '../observability/logger.js';
 import type { ImageRenditionJobData } from '@campfire/shared';
+import { env } from '../env.js';
 
 // Redis configuration
-const REDIS_URL = process.env['REDIS_URL'] || 'redis://localhost:6379';
+const REDIS_URL = env.REDIS_URL;
 
 // Parse Redis URL
 function parseRedisUrl(url: string): { host: string; port: number } {
@@ -71,6 +72,8 @@ export interface VideoGenerationJobData {
   companionId: string;
   prompt: string;
   referenceImageUrl?: string;
+  referenceImageS3Bucket?: string;
+  referenceImageS3Key?: string;
   durationSeconds: number;
   width: number;
   height: number;

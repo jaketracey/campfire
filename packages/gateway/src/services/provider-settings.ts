@@ -39,16 +39,17 @@ import {
   type EffectiveRoutingConfig,
   type ProviderCategory,
 } from '../db/types.js';
+import { env } from '../env.js';
 
 // ============================================================================
 // Configuration
 // ============================================================================
 
-const NODE_ENV = process.env['NODE_ENV'] ?? 'development';
-const ORCHESTRATOR_URL = process.env.ORCHESTRATOR_URL || 'http://localhost:8000';
+const NODE_ENV = env.NODE_ENV;
+const ORCHESTRATOR_URL = env.ORCHESTRATOR_URL;
 
 // SECURITY: Encryption key required in production - no defaults allowed
-const providerKeyEncryptionSecretValue = process.env['PROVIDER_KEY_ENCRYPTION_SECRET'];
+const providerKeyEncryptionSecretValue = env.PROVIDER_KEY_ENCRYPTION_SECRET;
 if (!providerKeyEncryptionSecretValue && NODE_ENV === 'production') {
   throw new Error('FATAL: PROVIDER_KEY_ENCRYPTION_SECRET environment variable is required in production');
 }

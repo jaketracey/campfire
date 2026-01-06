@@ -6,10 +6,11 @@
 import { S3Client, PutObjectCommand, GetObjectCommand } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { logger } from '../observability/logger.js';
+import { env } from '../env.js';
 
 // S3 configuration
-const S3_MEDIA_BUCKET = process.env['S3_MEDIA_BUCKET'] || 'campfire-dev-media';
-const S3_REGION = process.env['AWS_REGION'] || 'us-east-1';
+const S3_MEDIA_BUCKET = env.S3_MEDIA_BUCKET;
+const S3_REGION = env.AWS_REGION;
 
 // Initialize S3 client
 const s3Client = new S3Client({ region: S3_REGION });

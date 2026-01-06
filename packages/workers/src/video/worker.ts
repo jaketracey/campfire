@@ -6,10 +6,12 @@
  */
 
 import { Worker, Job } from 'bullmq';
-import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3';
+import { S3Client, PutObjectCommand, GetObjectCommand } from '@aws-sdk/client-s3';
+import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import type { Redis } from 'ioredis';
 import type { Logger } from 'pino';
 import type { DbClient } from '../db/client.js';
+import { env } from '../env.js';
 
 export const VIDEO_GENERATION_QUEUE = 'video-generation';
 
@@ -19,6 +21,8 @@ export interface VideoGenerationJobData {
   companionId: string;
   prompt: string;
   referenceImageUrl?: string;
+  referenceImageS3Bucket?: string;
+  referenceImageS3Key?: string;
   durationSeconds: number;
   width: number;
   height: number;
@@ -50,9 +54,9 @@ export class VideoGenerationWorker {
 
   constructor(config: VideoGenerationWorkerConfig) {
     this.config = config;
-    this.region = process.env.AWS_REGION || 'us-east-1';
-    this.bucket = process.env.S3_BUCKET_MEDIA || 'campfire-media';
-    this.orchestratorUrl = config.orchestratorUrl || process.env.ORCHESTRATOR_URL || 'http://localhost:8000';
+    this.region = env.AWS_REGION;
+    this.bucket = env.S3_BUCKET_MEDIA || env.S3_MEDIA_BUCKET;
+    this.orchestratorUrl = config.orchestratorUrl || env.ORCHESTRATOR_URL;
     this.s3Client = new S3Client({ region: this.region });
   }
 
@@ -108,6 +112,8 @@ export class VideoGenerationWorker {
       companionId,
       prompt,
       referenceImageUrl,
+      referenceImageS3Bucket,
+      referenceImageS3Key,
       durationSeconds,
       width,
       height,
@@ -133,6 +139,8 @@ export class VideoGenerationWorker {
         frames,
         fps,
         referenceImageUrl,
+        referenceImageS3Bucket,
+        referenceImageS3Key,
       });
 
       // Update status to encoding
@@ -199,8 +207,29 @@ export class VideoGenerationWorker {
       frames: number;
       fps: number;
       referenceImageUrl?: string;
+      referenceImageS3Bucket?: string;
+      referenceImageS3Key?: string;
     }
   ): Promise<{ videoData: Buffer; thumbnailData?: Buffer }> {
+    let referenceImageUrl = options.referenceImageUrl;
+
+    // Prefer presigning just-in-time so queued jobs don't fail due to expired URLs.
+    if (options.referenceImageS3Key) {
+      try {
+        const bucket = options.referenceImageS3Bucket || this.bucket;
+        referenceImageUrl = await getSignedUrl(
+          this.s3Client,
+          new GetObjectCommand({ Bucket: bucket, Key: options.referenceImageS3Key }),
+          { expiresIn: 3600 }
+        );
+      } catch (error) {
+        this.config.logger.warn(
+          { error, s3Key: options.referenceImageS3Key },
+          'Failed to presign reference image URL; falling back to provided URL'
+        );
+      }
+    }
+
     const response = await fetch(`${this.orchestratorUrl}/videogen/generate`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -210,7 +239,7 @@ export class VideoGenerationWorker {
         height: options.height,
         frames: options.frames,
         fps: options.fps,
-        reference_image_url: options.referenceImageUrl,
+        reference_image_url: referenceImageUrl,
       }),
     });
 

@@ -15,6 +15,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
 import { updateCompanion } from '@/lib/api/companions';
+import { publicEnv } from '@/env/public';
 
 interface ShareCompanionDialogProps {
   companionId: string;
@@ -40,7 +41,7 @@ export function ShareCompanionDialog({
   const [isUpdating, setIsUpdating] = useState(false);
 
   const baseUrl =
-    process.env.NEXT_PUBLIC_APP_URL ||
+    publicEnv.NEXT_PUBLIC_APP_URL ||
     (typeof window !== 'undefined' ? window.location.origin : null) ||
     'https://ignite.cam';
   // Include referral code in share URL for tracking

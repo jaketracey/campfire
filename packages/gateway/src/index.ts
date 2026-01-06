@@ -14,14 +14,10 @@ import { getDatabase, closeDatabase, checkDatabaseHealth } from './db/client.js'
 import { registerRoutes } from './routes/index.js';
 import { registerWebSocketHandler } from './ws/handler.js';
 import { nanoid } from 'nanoid';
-
-// Configuration
-const PORT = parseInt(process.env['PORT'] ?? '3002', 10);
-const HOST = process.env['HOST'] ?? '0.0.0.0';
-const NODE_ENV = process.env['NODE_ENV'] ?? 'development';
+import { env } from './env.js';
 
 // Initialize tracing before anything else
-if (NODE_ENV === 'production') {
+if (env.NODE_ENV === 'production') {
   initTracing();
 }
 
@@ -50,12 +46,12 @@ app.addContentTypeParser('application/json', { parseAs: 'string' }, (req, body, 
 async function registerPlugins() {
   // Security headers
   await app.register(helmet, {
-    contentSecurityPolicy: NODE_ENV === 'production',
+    contentSecurityPolicy: env.NODE_ENV === 'production',
   });
 
   // CORS
   await app.register(cors, {
-    origin: process.env['CORS_ORIGINS']?.split(',') ?? ['http://localhost:3000', 'http://localhost:5173'],
+    origin: env.CORS_ORIGINS,
     credentials: true,
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
   });
@@ -125,7 +121,7 @@ app.setErrorHandler((error: Error & { statusCode?: number }, request, reply) => 
   );
 
   // Don't expose internal errors in production
-  if (NODE_ENV === 'production' && !error.statusCode) {
+  if (env.NODE_ENV === 'production' && !error.statusCode) {
     return reply.status(500).send({
       error: 'Internal Server Error',
       message: 'An unexpected error occurred',
@@ -151,8 +147,8 @@ app.get('/health', async (request, reply) => {
 
   return reply.send({
     status: 'healthy',
-    version: process.env['npm_package_version'] ?? '0.1.0',
-    environment: NODE_ENV,
+    version: env.SERVICE_VERSION,
+    environment: env.NODE_ENV,
   });
 });
 
@@ -184,10 +180,10 @@ async function start() {
     await registerWebSocketHandler(app);
 
     // Start server
-    await app.listen({ port: PORT, host: HOST });
+    await app.listen({ port: env.PORT, host: env.HOST });
 
     logger.info(
-      { port: PORT, host: HOST, environment: NODE_ENV },
+      { port: env.PORT, host: env.HOST, environment: env.NODE_ENV },
       'Gateway server started'
     );
   } catch (error) {
@@ -210,7 +206,7 @@ async function shutdown(signal: string) {
     logger.info('Database connections closed');
 
     // Shutdown tracing
-    if (NODE_ENV === 'production') {
+    if (env.NODE_ENV === 'production') {
       await shutdownTracing();
     }
 

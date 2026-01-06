@@ -4,6 +4,7 @@
  */
 
 import postgres from 'postgres';
+import { env } from '../env.js';
 
 export interface DatabaseConfig {
   host: string;
@@ -20,16 +21,16 @@ export interface DatabaseConfig {
 
 function getConfig(): DatabaseConfig {
   const config: DatabaseConfig = {
-    host: process.env['DATABASE_HOST'] ?? 'localhost',
-    port: parseInt(process.env['DATABASE_PORT'] ?? '5432', 10),
-    database: process.env['DATABASE_NAME'] ?? 'campfire',
-    username: process.env['DATABASE_USER'] ?? 'campfire',
-    password: process.env['DATABASE_PASSWORD'] ?? 'campfire',
-    ssl: process.env['DATABASE_SSL'] === 'true' ? 'require' : false,
-    max: parseInt(process.env['DATABASE_POOL_MAX'] ?? '20', 10),
-    idle_timeout: parseInt(process.env['DATABASE_IDLE_TIMEOUT'] ?? '20', 10),
-    connect_timeout: parseInt(process.env['DATABASE_CONNECT_TIMEOUT'] ?? '10', 10),
-    max_lifetime: parseInt(process.env['DATABASE_MAX_LIFETIME'] ?? '3600', 10),
+    host: env.DATABASE_HOST,
+    port: env.DATABASE_PORT,
+    database: env.DATABASE_NAME,
+    username: env.DATABASE_USER,
+    password: env.DATABASE_PASSWORD,
+    ssl: env.DATABASE_SSL ? 'require' : false,
+    max: env.DATABASE_POOL_MAX,
+    idle_timeout: env.DATABASE_IDLE_TIMEOUT,
+    connect_timeout: env.DATABASE_CONNECT_TIMEOUT,
+    max_lifetime: env.DATABASE_MAX_LIFETIME,
   };
 
   return config;
@@ -59,13 +60,13 @@ export function createPool(config?: DatabaseConfig): postgres.Sql {
 
     // Connection lifecycle hooks
     onnotice: (notice) => {
-      if (process.env['NODE_ENV'] !== 'production') {
+      if (env.NODE_ENV !== 'production') {
         console.log('[DB Notice]', notice.message);
       }
     },
 
     // Debug mode for development
-    ...(process.env['DATABASE_DEBUG'] === 'true' && {
+    ...(env.DATABASE_DEBUG && {
       debug: (connection: number, query: string, params: unknown[]) => {
         console.log('[DB Query]', query);
         if (params.length > 0) {

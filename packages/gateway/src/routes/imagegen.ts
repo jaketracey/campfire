@@ -22,13 +22,14 @@ import { enqueueImageRenditionJob } from '../utils/queue.js';
 import { getRenditionKeyPrefix, type ImageRenditions } from '@campfire/shared';
 import { getLLMUsageService } from '../services/llm-usage.js';
 import { renderPromptFromDb } from '../services/prompt-runtime.js';
+import { env } from '../env.js';
 
 // Orchestrator configuration
-const ORCHESTRATOR_URL = process.env['ORCHESTRATOR_URL'] || 'http://localhost:8000';
+const ORCHESTRATOR_URL = env.ORCHESTRATOR_URL;
 
 // S3 configuration
-const S3_MEDIA_BUCKET = process.env['S3_MEDIA_BUCKET'] || 'campfire-dev-media';
-const S3_REGION = process.env['AWS_REGION'] || 'us-east-1';
+const S3_MEDIA_BUCKET = env.S3_MEDIA_BUCKET;
+const S3_REGION = env.AWS_REGION;
 
 // Initialize S3 client
 const s3Client = new S3Client({ region: S3_REGION });
@@ -185,10 +186,18 @@ async function getCompanionIdentityAnchorUrl(
       // Select best anchor based on emotional state
       const selectedAnchor = selectBestAnchor(anchors, emotionalState || 'neutral');
       if (selectedAnchor) {
-        // If we have s3_key and s3_bucket in metadata, generate a fresh presigned URL
+        // If we have s3_key and s3_bucket (preferred: columns, fallback: metadata), generate a fresh presigned URL
         // This avoids 403 errors from expired presigned URLs
-        const s3Key = selectedAnchor.metadata?.s3_key as string | undefined;
-        const s3Bucket = selectedAnchor.metadata?.s3_bucket as string | undefined;
+        const metadata = selectedAnchor.metadata as Record<string, unknown> | null | undefined;
+        const s3Key =
+          selectedAnchor.s3_key ||
+          (metadata?.['s3_key'] as string | undefined) ||
+          (metadata?.['s3Key'] as string | undefined);
+        const s3Bucket =
+          selectedAnchor.s3_bucket ||
+          (metadata?.['s3_bucket'] as string | undefined) ||
+          (metadata?.['s3Bucket'] as string | undefined) ||
+          S3_MEDIA_BUCKET;
         if (s3Key && s3Bucket) {
           const freshUrl = await getSignedUrl(
             s3Client,
@@ -986,6 +995,8 @@ export async function imagegenRoutes(app: FastifyInstance): Promise<void> {
             companion_id: companionId,
             asset_url: s3Url,
             asset_type: 'identity_anchor',
+            s3_bucket: S3_MEDIA_BUCKET,
+            s3_key: s3Key,
             is_active: isPrimary,  // Seed (neutral) anchor is the active avatar
             is_identity_anchor: true,
             metadata: {
@@ -996,6 +1007,7 @@ export async function imagegenRoutes(app: FastifyInstance): Promise<void> {
               s3Key,
               s3_key: s3Key,
               s3Bucket: S3_MEDIA_BUCKET,
+              s3_bucket: S3_MEDIA_BUCKET,
               isIdentitySeed: isPrimary,
               randomSeed: orchestratorResult.random_seed,
             },
@@ -1304,6 +1316,8 @@ export async function imagegenRoutes(app: FastifyInstance): Promise<void> {
               companion_id: companionId,
               asset_url: s3Url,
               asset_type: 'identity_anchor',
+              s3_bucket: S3_MEDIA_BUCKET,
+              s3_key: s3Key,
               is_active: isPrimary,
               is_identity_anchor: true,
               metadata: {
@@ -1313,6 +1327,7 @@ export async function imagegenRoutes(app: FastifyInstance): Promise<void> {
                 s3Key,
                 s3_key: s3Key,
                 s3Bucket: S3_MEDIA_BUCKET,
+                s3_bucket: S3_MEDIA_BUCKET,
               },
               generation_params: {
                 prompt: fullPrompt,

@@ -6,11 +6,12 @@
 import WebSocketLib from 'ws';
 import type { WebSocket as WebSocketType } from 'ws';
 import { logger } from '../observability/logger.js';
+import { env } from '../env.js';
 
 // ElevenLabs API configuration
-const ELEVENLABS_API_KEY = process.env['ELEVENLABS_API_KEY'] || '';
-const ELEVENLABS_STT_MODEL = process.env['ELEVENLABS_STT_MODEL'] || 'scribe_v2_realtime';
-const ELEVENLABS_TTS_MODEL = process.env['ELEVENLABS_TTS_MODEL'] || 'eleven_turbo_v2_5';
+const ELEVENLABS_API_KEY = env.ELEVENLABS_API_KEY || '';
+const ELEVENLABS_STT_MODEL = env.ELEVENLABS_STT_MODEL || 'scribe_v2_realtime';
+const ELEVENLABS_TTS_MODEL = env.ELEVENLABS_TTS_MODEL || 'eleven_turbo_v2_5';
 
 // ============================================================================
 // Types

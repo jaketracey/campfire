@@ -1,17 +1,11 @@
-import dotenv from 'dotenv';
-import { resolve, dirname } from 'path';
-import { fileURLToPath } from 'url';
-
-const __dirname = dirname(fileURLToPath(import.meta.url));
-
-// Load .env from monorepo root (3 levels up from src/)
-dotenv.config({ path: resolve(__dirname, '../../../.env') });
+import './load-env.js';
 
 // Dynamic import to ensure env vars are loaded first
 async function bootstrap() {
   const { Worker: _Worker } = await import('bullmq');
   const Redis = (await import('ioredis')).default;
   const pino = (await import('pino')).default;
+  const { env } = await import('./env.js');
   const { VaultProjectionWorker } = await import('./projections/vault.js');
   const { EmbeddingProjectionWorker } = await import('./projections/embeddings.js');
   const { KnowledgeGraphProjectionWorker } = await import('./projections/knowledge-graph.js');
@@ -27,8 +21,8 @@ async function bootstrap() {
   const { createS3Client } = await import('./storage/s3.js');
 
   const logger = pino({
-    level: process.env.LOG_LEVEL || 'info',
-    ...(process.env.NODE_ENV !== 'production' && {
+    level: env.LOG_LEVEL,
+    ...(env.NODE_ENV !== 'production' && {
       transport: {
         target: 'pino-pretty',
         options: { colorize: true },
@@ -36,10 +30,9 @@ async function bootstrap() {
     }),
   });
 
-  const redisUrl = process.env.REDIS_URL || 'redis://localhost:6379';
-  const connection = new Redis(redisUrl, { maxRetriesPerRequest: null });
+  const connection = new Redis(env.REDIS_URL, { maxRetriesPerRequest: null });
 
-  const db = createDbClient(process.env.DATABASE_URL!);
+  const db = createDbClient(env.DATABASE_URL);
   const s3 = createS3Client();
 
   logger.info('Starting Campfire projection workers...');
@@ -55,7 +48,7 @@ async function bootstrap() {
   // Embedding projection worker - generates and stores vector embeddings
   // Skip if no OpenAI API key (for stealth/self-hosted deployments)
   let embeddingWorker: InstanceType<typeof EmbeddingProjectionWorker> | null = null;
-  if (process.env.OPENAI_API_KEY) {
+  if (env.OPENAI_API_KEY) {
     embeddingWorker = new EmbeddingProjectionWorker({
       connection,
       db,
@@ -99,7 +92,7 @@ async function bootstrap() {
     db,
     logger: logger.child({ worker: 'email' }),
     concurrency: 5,
-    rateLimitPerSecond: parseInt(process.env.SES_MAX_SEND_RATE || '14'),
+    rateLimitPerSecond: env.SES_MAX_SEND_RATE,
   });
 
   // Image rendition worker - generates optimized image sizes/formats

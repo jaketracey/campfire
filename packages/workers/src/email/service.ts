@@ -13,6 +13,7 @@ import {
   type TemplateType,
 } from './templates/index.js';
 import type { DbClient } from '../db/client.js';
+import { env } from '../env.js';
 
 // Validation schemas
 export const EmailJobDataSchema = z.object({
@@ -86,7 +87,7 @@ export class EmailService {
     this.ses = createSESClient();
     this.db = config.db;
     this.logger = config.logger;
-    this.baseUrl = config.baseUrl || process.env.WEB_URL || 'https://ignite.cam';
+    this.baseUrl = config.baseUrl || env.WEB_URL;
 
     this.queue = new Queue<EmailJobData>('email', {
       connection: config.connection,

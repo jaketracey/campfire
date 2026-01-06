@@ -12,6 +12,7 @@ import {
   type ConversionListFilters,
 } from '../repositories/affiliates.js';
 import { logger } from '../observability/logger.js';
+import { env } from '../env.js';
 import type {
   Affiliate,
   AffiliateClick,
@@ -432,8 +433,7 @@ export class AffiliatesService {
    */
   private async sendWelcomeEmail(affiliate: Affiliate, temporaryPassword: string): Promise<void> {
     const { nanoid } = await import('nanoid');
-    const baseUrl = process.env.WEB_URL || 'https://ignite.cam';
-    const loginUrl = `${baseUrl}/affiliate/login`;
+    const loginUrl = `${env.WEB_URL}/affiliate/login`;
 
     // Format commission amounts as currency
     const formatCurrency = (cents: number) => `$${(cents / 100).toFixed(2)}`;

@@ -7,6 +7,7 @@ import { getReferralsRepository, type ReferralStats, type ReferralWithUser } fro
 import { logger } from '../observability/logger.js';
 import type { InviteCode, UserReferral } from '../db/types.js';
 import type { TransactionContext } from '../repositories/types.js';
+import { env } from '../env.js';
 
 // ============================================================================
 // Types
@@ -45,8 +46,7 @@ export class ReferralsService {
     const recentResult = await this.referrals.listReferralsByReferrer(userId, { limit: 5 }, tx);
 
     // Build invite URL
-    const webUrl = process.env.WEB_URL || 'http://localhost:3000';
-    const inviteUrl = `${webUrl}/signup?ref=${inviteCode.code}`;
+    const inviteUrl = `${env.WEB_URL}/signup?ref=${inviteCode.code}`;
 
     return {
       inviteCode: inviteCode.code,

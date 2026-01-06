@@ -5,6 +5,7 @@
 
 import { get } from './client';
 import { getAccessToken } from '@/stores/auth-store';
+import { publicEnv } from '@/env/public';
 
 // ============================================================================
 // Types
@@ -127,8 +128,8 @@ export interface LogStreamOptions {
 
 function getLogsWebSocketUrl(): string {
   // If gateway URL is set, derive WebSocket URL from it
-  if (process.env.NEXT_PUBLIC_GATEWAY_URL) {
-    const gatewayUrl = process.env.NEXT_PUBLIC_GATEWAY_URL;
+  if (publicEnv.NEXT_PUBLIC_GATEWAY_URL) {
+    const gatewayUrl = publicEnv.NEXT_PUBLIC_GATEWAY_URL;
     return gatewayUrl.replace(/^http/, 'ws') + '/api/v1/admin/logs/stream';
   }
 

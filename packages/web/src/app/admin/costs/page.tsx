@@ -27,6 +27,7 @@ import {
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
+import { TimeSeriesAreaChart } from '@/components/admin/charts/time-series-area-chart';
 
 export default function CostsDashboardPage() {
   const [isLoading, setIsLoading] = useState(true);
@@ -259,29 +260,15 @@ export default function CostsDashboardPage() {
           </CardTitle>
         </CardHeader>
         <CardContent>
-          <div className="h-32 flex items-end gap-1">
+          <div className="h-32">
             {trend.length === 0 ? (
               <p className="text-gray-500 text-center w-full py-8">No cost data available yet.</p>
             ) : (
-              trend.map((point) => {
-                const max = Math.max(...trend.map((p) => p.costUsd), 0.01);
-                const height = (point.costUsd / max) * 100;
-                return (
-                  <div
-                    key={point.date}
-                    className="flex-1 group relative"
-                    title={`${point.date}: ${formatCost(point.costUsd)}`}
-                  >
-                    <div
-                      className="w-full bg-campfire-500/60 hover:bg-campfire-500 transition-colors rounded-t cursor-pointer"
-                      style={{ height: `${Math.max(height, 2)}%` }}
-                    />
-                    <div className="absolute bottom-full mb-2 left-1/2 -translate-x-1/2 bg-zinc-800 text-white text-xs px-2 py-1 rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none z-10">
-                      {point.date}: {formatCost(point.costUsd)}
-                    </div>
-                  </div>
-                );
-              })
+              <TimeSeriesAreaChart
+                data={trend.map((p) => ({ label: p.date, value: p.costUsd }))}
+                formatValue={formatCost}
+                className="rounded-md"
+              />
             )}
           </div>
           <div className="flex justify-between mt-2 text-xs text-gray-500">

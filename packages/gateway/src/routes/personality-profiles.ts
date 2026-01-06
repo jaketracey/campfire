@@ -13,6 +13,7 @@ import {
 } from '../repositories/personality-profiles.js';
 import { getSessionsRepository } from '../repositories/sessions.js';
 import { logger } from '../observability/logger.js';
+import { env } from '../env.js';
 
 interface OrchestratorConfig {
   baseUrl: string;
@@ -47,7 +48,7 @@ export async function personalityProfilesRoutes(app: FastifyInstance): Promise<v
   const sessionsRepo = getSessionsRepository();
 
   // Get orchestrator URL from environment
-  const orchestratorUrl = process.env.ORCHESTRATOR_URL ?? 'http://localhost:8000';
+  const orchestratorUrl = env.ORCHESTRATOR_URL;
 
   /**
    * GET /users/:userId/personality-profile - Get user's personality profile

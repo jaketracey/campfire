@@ -3,6 +3,7 @@ import type { Redis } from 'ioredis';
 import type { Logger } from 'pino';
 import { EmailJobDataSchema, type EmailJobData, getEmailService } from './service.js';
 import type { DbClient } from '../db/client.js';
+import { env } from '../env.js';
 
 interface EmailWorkerConfig {
   connection: Redis;
@@ -20,7 +21,7 @@ export class EmailProjectionWorker {
   constructor(config: EmailWorkerConfig) {
     this.config = config;
     this.rateLimitPerSecond =
-      config.rateLimitPerSecond || parseInt(process.env.SES_MAX_SEND_RATE || '14');
+      config.rateLimitPerSecond || env.SES_MAX_SEND_RATE;
   }
 
   async start(): Promise<void> {

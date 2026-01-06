@@ -12,10 +12,11 @@
 import { createPool, closePool } from './pool.js';
 import { migrate } from './migrate.js';
 import { seed } from './seed.js';
+import { env } from '../env.js';
 
 async function reset(): Promise<void> {
   // Safety check
-  if (process.env['NODE_ENV'] === 'production') {
+  if (env.NODE_ENV === 'production') {
     console.error('[Reset] ERROR: Cannot reset database in production!');
     process.exit(1);
   }

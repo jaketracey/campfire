@@ -7,10 +7,11 @@
 import type { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
 import { z } from 'zod';
 import { logger } from '../observability/logger.js';
+import { env } from '../env.js';
 
 // ElevenLabs API configuration
-const ELEVENLABS_API_KEY = process.env['ELEVENLABS_API_KEY'] || '';
-const ELEVENLABS_TTS_MODEL = process.env['ELEVENLABS_TTS_MODEL'] || 'eleven_turbo_v2_5';
+const ELEVENLABS_API_KEY = env.ELEVENLABS_API_KEY || '';
+const ELEVENLABS_TTS_MODEL = env.ELEVENLABS_TTS_MODEL || 'eleven_turbo_v2_5';
 
 // Flirty sample text for voice previews
 const SAMPLE_TEXT = "Hey there... I've been thinking about you. Want to come a little closer and tell me what's on your mind?";

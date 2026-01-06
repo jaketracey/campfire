@@ -5,6 +5,7 @@ process.env['NODE_ENV'] = 'test';
 process.env['JWT_SECRET'] = 'test-jwt-secret-for-testing-only-min-32-chars';
 process.env['JWT_ISSUER'] = 'campfire-test';
 process.env['JWT_AUDIENCE'] = 'campfire-api-test';
+process.env['INTERNAL_SERVICE_KEY'] = 'test-internal-service-key';
 
 // Create mock logger
 const mockLogger = {

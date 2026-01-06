@@ -2,6 +2,7 @@ import { Worker, Job } from 'bullmq';
 import type { Redis } from 'ioredis';
 import type { Logger } from 'pino';
 import type { DbClient } from '../db/client.js';
+import { env } from '../env.js';
 
 interface PersonalityProfileJobData {
   type: 'analyze' | 'batch_check';
@@ -40,7 +41,7 @@ export class PersonalityProfileProjectionWorker {
 
   constructor(config: WorkerConfig) {
     this.config = config;
-    this.orchestratorUrl = config.orchestratorUrl ?? process.env.ORCHESTRATOR_URL ?? 'http://localhost:8000';
+    this.orchestratorUrl = config.orchestratorUrl ?? env.ORCHESTRATOR_URL;
   }
 
   async start() {

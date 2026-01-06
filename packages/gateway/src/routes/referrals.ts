@@ -7,6 +7,7 @@ import type { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
 import { z } from 'zod';
 import { requireAuth } from '../middleware/auth.js';
 import { getReferralsService } from '../services/referrals.js';
+import { env } from '../env.js';
 
 // Params schema
 const CodeParamsSchema = z.object({
@@ -52,8 +53,7 @@ export async function referralsRoutes(app: FastifyInstance): Promise<void> {
     const userId = request.user!.userId;
 
     const inviteCode = await referralsService.getOrCreateInviteCode(userId);
-    const webUrl = process.env.WEB_URL || 'http://localhost:3000';
-    const inviteUrl = `${webUrl}/signup?ref=${inviteCode.code}`;
+    const inviteUrl = `${env.WEB_URL}/signup?ref=${inviteCode.code}`;
 
     return reply.send({
       success: true,

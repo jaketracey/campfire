@@ -5,6 +5,7 @@
 
 import { getAdsRepository } from '../repositories/ads.js';
 import { logger } from '../observability/logger.js';
+import { env } from '../env.js';
 import type { AdAccount, AdCampaign, AdSpendDaily } from '../db/types.js';
 import type { TransactionContext } from '../repositories/types.js';
 
@@ -19,9 +20,9 @@ interface FacebookAdsConfig {
 }
 
 function getConfig(): FacebookAdsConfig {
-  const appId = process.env['FACEBOOK_APP_ID'];
-  const appSecret = process.env['FACEBOOK_APP_SECRET'];
-  const redirectUri = process.env['FACEBOOK_ADS_REDIRECT_URI'] || 'http://localhost:3000/api/v1/admin/ads/callback/facebook';
+  const appId = env.FACEBOOK_APP_ID;
+  const appSecret = env.FACEBOOK_APP_SECRET;
+  const redirectUri = env.FACEBOOK_ADS_REDIRECT_URI || 'http://localhost:3000/api/v1/admin/ads/callback/facebook';
 
   if (!appId || !appSecret) {
     throw new Error('Missing Facebook Ads configuration. Set FACEBOOK_APP_ID and FACEBOOK_APP_SECRET');

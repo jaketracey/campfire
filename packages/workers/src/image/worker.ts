@@ -10,6 +10,7 @@ import { S3Client, PutObjectCommand, GetObjectCommand } from '@aws-sdk/client-s3
 import type { Redis } from 'ioredis';
 import type { Logger } from 'pino';
 import type { DbClient } from '../db/client.js';
+import { env } from '../env.js';
 import {
   type ImageRenditionJobData,
   type ImageRenditionResult,
@@ -43,7 +44,7 @@ export class ImageRenditionWorker {
 
   constructor(config: ImageRenditionWorkerConfig) {
     this.config = config;
-    this.region = process.env.AWS_REGION || 'us-east-1';
+    this.region = env.AWS_REGION;
     this.s3Client = new S3Client({ region: this.region });
   }
 

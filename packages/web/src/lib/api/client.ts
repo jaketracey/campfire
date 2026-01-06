@@ -4,11 +4,12 @@
  */
 
 import { getAccessToken } from '@/stores/auth-store';
+import { publicEnv } from '@/env/public';
 
 // API base URL - on localhost go direct to gateway, otherwise use relative (nginx proxies)
 function getApiBaseUrl(): string {
-  if (process.env.NEXT_PUBLIC_GATEWAY_URL) {
-    return process.env.NEXT_PUBLIC_GATEWAY_URL;
+  if (publicEnv.NEXT_PUBLIC_GATEWAY_URL) {
+    return publicEnv.NEXT_PUBLIC_GATEWAY_URL;
   }
   // Client-side: check if we're on localhost
   if (typeof window !== 'undefined') {
@@ -117,7 +118,7 @@ export async function apiClient<T>(
   if (params) {
     const searchParams = new URLSearchParams();
     for (const [key, value] of Object.entries(params)) {
-      if (value !== undefined) {
+      if (value !== undefined && value !== '') {
         searchParams.append(key, String(value));
       }
     }
