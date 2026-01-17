@@ -139,8 +139,33 @@ export interface UpdateCompanionInput {
   isPublic?: boolean;
   isActive?: boolean;
   spec?: {
+    identity?: {
+      name?: string;
+      pronouns?: string;
+      backstory?: string;
+      address_style?: string;
+    };
     personality?: {
+      archetype?: string;
+      secondary_archetype?: string;
       traits?: Record<string, number>;
+    };
+    voice?: {
+      provider?: string;
+      voice_id?: string;
+    };
+    visual_style?: {
+      style_type?: string;
+      appearance?: CompanionAppearance;
+      palette?: string[];
+      constraints?: string[];
+    };
+    boundaries?: {
+      relationship_pacing?: string;
+      content_rating?: string;
+      emotional_depth?: 'surface' | 'moderate' | 'deep';
+      topics_avoid?: string[];
+      safe_topics?: string[];
     };
   };
 }

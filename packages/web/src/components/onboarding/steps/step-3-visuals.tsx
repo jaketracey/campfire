@@ -275,12 +275,13 @@ export function Step3Visuals() {
         {/* Left: Appearance Options */}
         <div className="lg:col-span-2 space-y-6 order-2 lg:order-1">
           {/* Gender Selection */}
-          <div className="space-y-3">
+          <div className="space-y-3" data-testid="gender-options">
             <h3 className="text-sm font-bold tracking-widest uppercase text-gray-500">Gender</h3>
             <div className="flex gap-3">
               {(['female', 'male'] as CompanionGender[]).map((gender) => (
                 <motion.button
                   key={gender}
+                  data-testid={`gender-${gender}`}
                   whileHover={{ scale: 1.02 }}
                   whileTap={{ scale: 0.98 }}
                   onClick={() => handleGenderChange(gender)}
@@ -299,12 +300,13 @@ export function Step3Visuals() {
           </div>
 
           {/* Ethnicity Selection */}
-          <div className="space-y-3">
+          <div className="space-y-3" data-testid="ethnicity-options">
             <h3 className="text-sm font-bold tracking-widest uppercase text-gray-500">Ethnicity</h3>
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
               {ethnicityOptions.map((option) => (
                 <motion.button
                   key={option.id}
+                  data-testid={`ethnicity-${option.id}`}
                   whileHover={{ scale: 1.02 }}
                   whileTap={{ scale: 0.98 }}
                   onClick={() => setAppearance({ ...appearance, ethnicity: option.id })}
@@ -328,12 +330,13 @@ export function Step3Visuals() {
           </div>
 
           {/* Body Type Selection */}
-          <div className="space-y-3">
+          <div className="space-y-3" data-testid="body-type-options">
             <h3 className="text-sm font-bold tracking-widest uppercase text-gray-500">Body Type</h3>
             <div className="flex flex-wrap gap-2">
               {bodyTypeOptions.map((option) => (
                 <motion.button
                   key={option.id}
+                  data-testid={`body-type-${option.id}`}
                   whileHover={{ scale: 1.02 }}
                   whileTap={{ scale: 0.98 }}
                   onClick={() => handleBodyTypeChange(option.id)}
@@ -351,12 +354,13 @@ export function Step3Visuals() {
           </div>
 
           {/* Hair Color Selection */}
-          <div className="space-y-3">
+          <div className="space-y-3" data-testid="hair-color-options">
             <h3 className="text-sm font-bold tracking-widest uppercase text-gray-500">Hair Color</h3>
             <div className="flex flex-wrap gap-3">
               {hairColorOptions.map((option) => (
                 <motion.button
                   key={option.id}
+                  data-testid={`hair-color-${option.id}`}
                   whileHover={{ scale: 1.05 }}
                   whileTap={{ scale: 0.95 }}
                   onClick={() => setAppearance({ ...appearance, hairColor: option.id })}
@@ -380,7 +384,7 @@ export function Step3Visuals() {
           </div>
 
           {/* Body Measurements - S/M/L buttons */}
-          <div className="space-y-4 pt-4 border-t border-white/5">
+          <div className="space-y-4 pt-4 border-t border-white/5" data-testid="size-options">
             <h3 className="text-sm font-bold tracking-widest uppercase text-gray-500 font-display">
               {isFemale ? 'Figure' : 'Build'}
             </h3>
@@ -389,6 +393,7 @@ export function Step3Visuals() {
                 {sizeOptions.map((size) => (
                   <motion.button
                     key={size}
+                    data-testid={`size-${size}`}
                     whileHover={{ scale: 1.02 }}
                     whileTap={{ scale: 0.98 }}
                     onClick={() => handleSizeChange(size)}
@@ -485,6 +490,7 @@ export function Step3Visuals() {
           size="lg"
           disabled={isSurprising}
           onClick={nextStep}
+          data-testid="next-to-archetype"
           className="group h-16 px-14 rounded-full bg-gradient-to-r from-vibes-cyan to-vibes-electric hover:shadow-[0_0_30px_rgba(6,182,212,0.3)] transition-all font-bold text-xl disabled:opacity-50"
         >
           Next: Archetype

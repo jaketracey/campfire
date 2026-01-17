@@ -32,6 +32,10 @@ interface ChatMessagesProps {
 
   // Demo mode
   isDemo?: boolean;
+
+  // Mobile background avatar
+  mobileAvatarUrl?: string | null;
+  onMobileAvatarClick?: () => void;
 }
 
 export function ChatMessages({
@@ -50,14 +54,41 @@ export function ChatMessages({
   onUserMove,
   onResign,
   isDemo,
+  mobileAvatarUrl,
+  onMobileAvatarClick,
 }: ChatMessagesProps) {
   return (
     <div
-      className="flex-1 overflow-y-auto py-4 px-6 lg:px-4 space-y-4 scrollbar-chat"
+      className="flex-1 overflow-y-auto py-4 px-6 lg:px-4 space-y-4 scrollbar-chat relative"
       style={{ paddingBottom: keyboardHeight > 0 ? `${keyboardHeight + 80}px` : undefined }}
     >
+      {/* Mobile background avatar */}
+      {mobileAvatarUrl && (
+        <div
+          className="lg:hidden fixed inset-0 z-0 pointer-events-none"
+          style={{ top: '56px' }}
+        >
+          <div
+            className="absolute inset-0 bg-cover bg-center bg-no-repeat"
+            style={{ backgroundImage: `url(${mobileAvatarUrl})` }}
+          />
+          <div className="absolute inset-0 bg-background/85 backdrop-blur-[2px]" />
+          {/* Clickable overlay to expand avatar */}
+          <button
+            onClick={onMobileAvatarClick}
+            className="absolute top-4 right-4 w-16 h-16 rounded-xl overflow-hidden border-2 border-campfire-500/50 shadow-lg pointer-events-auto hover:border-campfire-500 transition-colors"
+            aria-label="View full image"
+          >
+            <img
+              src={mobileAvatarUrl}
+              alt={companionName}
+              className="w-full h-full object-cover"
+            />
+          </button>
+        </div>
+      )}
       {messages.length === 0 && !streamingContent && !isLoading && (
-        <div className="flex items-center justify-center h-full text-muted-foreground">
+        <div className="flex items-center justify-center h-full text-muted-foreground relative z-10">
           Start a conversation with your companion
         </div>
       )}
@@ -66,11 +97,12 @@ export function ChatMessages({
         // Handle gift messages specially
         if (message.giftData) {
           return (
-            <GiftMessage
-              key={message.id}
-              giftData={message.giftData}
-              isNew={message.isNew}
-            />
+            <div key={message.id} className="relative z-10">
+              <GiftMessage
+                giftData={message.giftData}
+                isNew={message.isNew}
+              />
+            </div>
           );
         }
 
@@ -81,7 +113,7 @@ export function ChatMessages({
         return (
           <div
             key={message.id}
-            className={`flex ${isUser ? 'justify-end' : 'justify-start'}`}
+            className={`flex relative z-10 ${isUser ? 'justify-end' : 'justify-start'}`}
           >
             {/* Use animated segments for assistant messages with actions */}
             {!isUser && hasMultipleSegments ? (
@@ -121,7 +153,7 @@ export function ChatMessages({
 
       {/* Streaming message */}
       {streamingContent && (
-        <div className="flex justify-start">
+        <div className="flex justify-start relative z-10">
           <Card className="bg-muted p-3 max-w-[80%]">
             <p className="text-base lg:text-sm whitespace-pre-wrap">{streamingContent}</p>
           </Card>
@@ -131,7 +163,7 @@ export function ChatMessages({
       {/* Loading indicator / typing indicator between multi-messages */}
       {(isLoading && !streamingContent) || showTypingBetweenMessages ? (
         <motion.div
-          className="flex justify-start"
+          className="flex justify-start relative z-10"
           initial={{ opacity: 0, y: 5 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.15 }}
@@ -160,7 +192,7 @@ export function ChatMessages({
 
       {/* Active Game Board */}
       {activeGame && (
-        <div className="flex justify-center my-4">
+        <div className="flex justify-center my-4 relative z-10">
           <GameBoardContainer
             gameState={activeGame}
             onUserMove={onUserMove}

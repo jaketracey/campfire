@@ -204,6 +204,7 @@ export function Step9Review() {
             className="text-center pt-8 md:pt-12"
           >
             <motion.h1
+              data-testid="companion-name"
               className="text-5xl md:text-7xl font-bold font-display text-white"
               animate={{
                 textShadow: [
@@ -317,6 +318,7 @@ export function Step9Review() {
             {/* Hero image */}
             {generatedAnchors[0] && visibleImageCount >= 1 && (
               <motion.div
+                data-testid="anchor-image-0"
                 initial={{ scale: 0, rotate: -8, opacity: 0 }}
                 animate={{ scale: 1, rotate: 0, opacity: 1 }}
                 transition={{ type: 'spring', stiffness: 150, damping: 15 }}
@@ -355,6 +357,7 @@ export function Step9Review() {
                   visibleImageCount >= index + 2 && (
                     <motion.div
                       key={anchor.url}
+                      data-testid={`anchor-image-${index + 1}`}
                       initial={{ scale: 0, y: 30, opacity: 0 }}
                       animate={{ scale: 1, y: 0, opacity: 1 }}
                       transition={{
@@ -395,6 +398,7 @@ export function Step9Review() {
                   <Button
                     size="lg"
                     onClick={handleIgnite}
+                    data-testid="ignite-button"
                     className="h-20 px-16 text-2xl font-bold rounded-2xl bg-gradient-to-r from-orange-500 via-red-500 to-pink-500 hover:from-orange-400 hover:via-red-400 hover:to-pink-400 shadow-[0_0_40px_rgba(239,68,68,0.5)] hover:shadow-[0_0_60px_rgba(239,68,68,0.7)] transition-all duration-300 hover:scale-105 active:scale-95"
                   >
                     <Flame className="mr-3 h-8 w-8" />

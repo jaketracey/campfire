@@ -76,6 +76,8 @@ export function Step2Identity() {
     addAnchorImage,
     clearAnchorImages,
     setAnchorImagesComplete,
+    setAnchorAppearanceSnapshot,
+    setAppearanceChangedAfterGeneration,
   } = store;
   const [isGenerating, setIsGenerating] = useState(false);
   const [justGenerated, setJustGenerated] = useState(false);
@@ -240,8 +242,14 @@ export function Step2Identity() {
         // Clear any previous anchor images before starting new generation
         clearAnchorImages();
 
+        // Save the appearance snapshot that anchors are being generated with
+        setAnchorAppearanceSnapshot(visualStyle.appearance);
+        // Reset the change flag since we're generating fresh
+        setAppearanceChangedAfterGeneration(false);
+
         // Start streaming anchor images in the background with LLM-generated appearance
         console.log('[SurpriseMe] Starting anchor image generation for companion:', companion.id);
+        console.log('[SurpriseMe] Anchor appearance snapshot:', visualStyle.appearance);
         streamAnchorImages(
           {
             companionId: companion.id,
@@ -327,6 +335,7 @@ export function Step2Identity() {
                 size="lg"
                 onClick={handleSurpriseMe}
                 disabled={isGenerating}
+                data-testid="surprise-me-button"
                 className="relative w-full h-16 rounded-2xl font-bold text-lg transition-all duration-400 overflow-hidden group bg-gradient-to-r from-vibes-hot via-vibes-neon to-vibes-cyan text-white shadow-[0_0_30px_rgba(168,85,247,0.3)] hover:shadow-[0_0_50px_rgba(168,85,247,0.5)]"
               >
                 {/* Animated shimmer effect */}
@@ -376,6 +385,7 @@ export function Step2Identity() {
             >
               <Input
                 id="name"
+                data-testid="name-input"
                 placeholder="e.g. Atlas, Luna, Jarvis..."
                 {...register('name')}
                 className="bg-white/[0.03] border-white/10 h-14 md:h-16 text-lg md:text-xl focus:ring-vibes-neon focus:border-vibes-neon font-sans transition-all"
@@ -396,6 +406,7 @@ export function Step2Identity() {
             >
               <Input
                 id="pronouns"
+                data-testid="pronouns-input"
                 placeholder="e.g. they/them, she/her..."
                 {...register('pronouns')}
                 className="bg-white/[0.03] border-white/10 h-14 md:h-16 text-lg md:text-xl focus:ring-vibes-cyan focus:border-vibes-cyan transition-all"
@@ -416,6 +427,7 @@ export function Step2Identity() {
             >
               <Textarea
                 id="backstory"
+                data-testid="backstory-input"
                 placeholder="Briefly describe who they are... (e.g. A digital librarian from the 22nd century)"
                 {...register('backstory')}
                 className="min-h-[120px] md:min-h-[180px] lg:min-h-[220px] bg-white/[0.03] border-white/10 text-lg md:text-xl focus:ring-vibes-electric focus:border-vibes-electric transition-all scrollbar-subtle"
@@ -432,6 +444,7 @@ export function Step2Identity() {
                 type="submit"
                 size="lg"
                 disabled={!isValid}
+                data-testid="next-to-visuals"
                 className="group h-14 px-10 rounded-full bg-gradient-to-r from-vibes-electric to-vibes-cyan hover:shadow-[0_0_30px_rgba(6,182,212,0.3)] transition-all font-bold text-lg"
               >
                 Next: Visuals

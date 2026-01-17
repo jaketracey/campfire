@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useMemo, useState, useEffect } from 'react';
 import Link from 'next/link';
 import type { Route } from 'next';
 import { ArrowLeft, Send } from 'lucide-react';
@@ -12,6 +12,8 @@ import { Textarea } from '@/components/ui/textarea';
 import { Switch } from '@/components/ui/switch';
 import { useToast } from '@/hooks/use-toast';
 import { submitTenantApplication, type TenantApplicationBrandConfig } from '@/lib/api/tenant-applications';
+import { trackEvent, trackCustomEvent } from '@/lib/analytics/meta-pixel';
+import { usePartnerAffiliate } from '@/hooks/use-partner-affiliate';
 
 function normalizeSlugInput(value: string): string {
   return value
@@ -25,9 +27,19 @@ function normalizeSlugInput(value: string): string {
 
 export default function TenantApplicationPage() {
   const { toast } = useToast();
+  const { affiliateCode } = usePartnerAffiliate();
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submittedId, setSubmittedId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [hasTrackedStart, setHasTrackedStart] = useState(false);
+
+  // Track application start on page load
+  useEffect(() => {
+    if (!hasTrackedStart) {
+      trackCustomEvent('PartnerApplicationStart', { affiliate_code: affiliateCode || undefined });
+      setHasTrackedStart(true);
+    }
+  }, [hasTrackedStart, affiliateCode]);
 
   const [applicantName, setApplicantName] = useState('');
   const [applicantEmail, setApplicantEmail] = useState('');
@@ -61,6 +73,14 @@ export default function TenantApplicationPage() {
         ) as TenantApplicationBrandConfig)
         : undefined;
 
+      // Include affiliate code in message if present
+      let finalMessage = message.trim() || '';
+      if (affiliateCode) {
+        finalMessage = finalMessage
+          ? `${finalMessage}\n\n[Referred by: ${affiliateCode}]`
+          : `[Referred by: ${affiliateCode}]`;
+      }
+
       const res = await submitTenantApplication({
         applicantName,
         applicantEmail,
@@ -68,10 +88,17 @@ export default function TenantApplicationPage() {
         desiredSlug,
         desiredPrimaryDomain: desiredPrimaryDomain.trim() ? desiredPrimaryDomain : undefined,
         brandConfig,
-        message: message.trim() ? message : undefined,
+        message: finalMessage || undefined,
       });
 
       setSubmittedId(res.data.id);
+
+      // Track successful application
+      trackEvent('CompleteRegistration', {
+        content_name: 'tenant_application',
+        status: 'submitted',
+      });
+
       toast({
         title: 'Application submitted',
         description: 'We\'ll review it and follow up via email.',

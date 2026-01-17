@@ -43,7 +43,9 @@ export function MobileAvatar({
   onRequireAuth,
   demoAvatarTopRight,
 }: MobileAvatarProps) {
-  if (!currentAvatarUrl) {
+  // Only render when expanded (showMobileAvatar is true)
+  // The collapsed thumbnail is now shown as a background in ChatMessages
+  if (!currentAvatarUrl || !showMobileAvatar) {
     return null;
   }
 
@@ -62,38 +64,27 @@ export function MobileAvatar({
 
   return (
     <>
-      {/* Backdrop when expanded */}
-      <AnimatePresence>
-        {showMobileAvatar && (
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            transition={{ duration: 0.2 }}
-            className="lg:hidden fixed inset-0 z-40 bg-black/80 backdrop-blur-sm"
-            onClick={onToggleMobileAvatar}
-          />
-        )}
-      </AnimatePresence>
-
-      {/* Avatar container - expands in place */}
+      {/* Backdrop */}
       <motion.div
-        layoutId="mobile-avatar"
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        exit={{ opacity: 0 }}
+        transition={{ duration: 0.2 }}
+        className="lg:hidden fixed inset-0 z-40 bg-black/80 backdrop-blur-sm"
         onClick={onToggleMobileAvatar}
-        className={`lg:hidden fixed z-50 rounded-xl overflow-hidden border-2 border-campfire-500 shadow-xl bg-muted cursor-pointer ${
-          showMobileAvatar
-            ? 'inset-4 top-16 bottom-auto max-h-[70vh]'
-            : demoAvatarTopRight
-              ? 'right-4 top-20 w-[80px] h-[96px]'
-              : 'right-4 w-[120px] h-[144px]'
-        }`}
-        style={!showMobileAvatar && !demoAvatarTopRight ? { bottom: keyboardHeight > 0 ? `${keyboardHeight + 150}px` : '150px' } : undefined}
-        animate={!showMobileAvatar ? { scale: mobileAvatarPop ? 1.15 : 1 } : undefined}
-        transition={{ type: 'spring', stiffness: 400, damping: 20 }}
+      />
+
+      {/* Avatar container - always expanded when rendered */}
+      <motion.div
+        initial={{ opacity: 0, scale: 0.95 }}
+        animate={{ opacity: 1, scale: 1 }}
+        exit={{ opacity: 0, scale: 0.95 }}
+        transition={{ type: 'spring', stiffness: 400, damping: 25 }}
+        onClick={onToggleMobileAvatar}
+        className="lg:hidden fixed z-50 rounded-xl overflow-hidden border-2 border-campfire-500 shadow-xl bg-muted cursor-pointer inset-4 top-16 bottom-auto max-h-[70vh]"
       >
-        {/* Swipeable gallery when expanded */}
-        {showMobileAvatar ? (
-          <motion.div
+        {/* Swipeable gallery */}
+        <motion.div
             className="w-full h-full"
             drag="x"
             dragConstraints={{ left: 0, right: 0 }}
@@ -195,13 +186,6 @@ export function MobileAvatar({
               </div>
             )}
           </motion.div>
-        ) : (
-          <img
-            src={currentAvatarUrl}
-            alt={companionName}
-            className="w-full h-full object-cover"
-          />
-        )}
         <LikeHeartsAnimation trigger={likeAnimationTrigger} />
       </motion.div>
     </>

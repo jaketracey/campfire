@@ -103,8 +103,33 @@ const UpdateCompanionSchema = z.object({
   isPublic: z.boolean().optional(),
   status: z.enum(['draft', 'active', 'archived']).optional(),
   spec: z.object({
+    identity: z.object({
+      name: z.string().optional(),
+      pronouns: z.string().optional(),
+      backstory: z.string().optional(),
+      address_style: z.string().optional(),
+    }).optional(),
     personality: z.object({
-      traits: z.record(z.string(), z.number().min(0).max(100)),
+      archetype: z.string().optional(),
+      secondary_archetype: z.string().optional(),
+      traits: z.record(z.string(), z.number().min(0).max(100)).optional(),
+    }).optional(),
+    voice: z.object({
+      provider: z.string().optional(),
+      voice_id: z.string().optional(),
+    }).optional(),
+    visual_style: z.object({
+      style_type: z.string().optional(),
+      appearance: AppearanceSchema.optional(),
+      palette: z.array(z.string()).optional(),
+      constraints: z.array(z.string()).optional(),
+    }).optional(),
+    boundaries: z.object({
+      relationship_pacing: z.string().optional(),
+      content_rating: z.string().optional(),
+      emotional_depth: z.enum(['surface', 'moderate', 'deep']).optional(),
+      topics_avoid: z.array(z.string()).optional(),
+      safe_topics: z.array(z.string()).optional(),
     }).optional(),
   }).optional(),
 });
@@ -531,19 +556,61 @@ export async function companionsRoutes(app: FastifyInstance): Promise<void> {
     let specUpdated = false;
     const newSpec = { ...existing.spec } as CompanionSpec;
 
-    // If voice changed, update spec
+    // If voice changed via top-level voiceId, update spec
     if (input.voiceId) {
       newSpec.voice = { ...newSpec.voice, voice_id: input.voiceId };
       specUpdated = true;
     }
 
-    // If personality traits provided, update spec
-    if (input.spec?.personality?.traits) {
-      newSpec.personality = {
-        ...newSpec.personality,
-        traits: { ...newSpec.personality?.traits, ...input.spec.personality.traits },
-      };
-      specUpdated = true;
+    // Handle spec updates
+    if (input.spec) {
+      // Identity updates
+      if (input.spec.identity) {
+        newSpec.identity = {
+          ...newSpec.identity,
+          ...input.spec.identity,
+        };
+        specUpdated = true;
+      }
+
+      // Personality updates (including archetype and traits)
+      if (input.spec.personality) {
+        newSpec.personality = {
+          ...newSpec.personality,
+          ...input.spec.personality,
+          traits: input.spec.personality.traits
+            ? { ...newSpec.personality?.traits, ...input.spec.personality.traits }
+            : newSpec.personality?.traits,
+        };
+        specUpdated = true;
+      }
+
+      // Voice updates
+      if (input.spec.voice) {
+        newSpec.voice = {
+          ...newSpec.voice,
+          ...input.spec.voice,
+        };
+        specUpdated = true;
+      }
+
+      // Visual style updates (including appearance)
+      if (input.spec.visual_style) {
+        newSpec.visual_style = {
+          ...newSpec.visual_style,
+          ...input.spec.visual_style,
+        };
+        specUpdated = true;
+      }
+
+      // Boundaries updates
+      if (input.spec.boundaries) {
+        newSpec.boundaries = {
+          ...newSpec.boundaries,
+          ...input.spec.boundaries,
+        };
+        specUpdated = true;
+      }
     }
 
     // Persist spec changes if any

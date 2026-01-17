@@ -14,6 +14,10 @@
  *
  * Run benchmarks before/after:
  * npm test -- performance-benchmarks.test.ts
+ *
+ * NOTE: CREATE INDEX (without CONCURRENTLY) is used because the migration
+ * system runs within a transaction block. For large production tables,
+ * consider running these indexes manually with CONCURRENTLY outside of migrations.
  */
 
 import type postgres from 'postgres';
@@ -31,7 +35,7 @@ export async function up(sql: postgres.Sql): Promise<void> {
    * AFTER: Index scan ~10ms (90% improvement)
    */
   await sql`
-    CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_sessions_active_lookup
+    CREATE INDEX IF NOT EXISTS idx_sessions_active_lookup
     ON sessions (user_id, companion_id, status, started_at DESC)
     WHERE status = 'active'
   `;
@@ -44,7 +48,7 @@ export async function up(sql: postgres.Sql): Promise<void> {
    * AFTER: Index scan ~45ms (70% improvement)
    */
   await sql`
-    CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_sessions_stale_detection
+    CREATE INDEX IF NOT EXISTS idx_sessions_stale_detection
     ON sessions (status, last_activity_at)
     WHERE status = 'active'
   `;
@@ -57,9 +61,9 @@ export async function up(sql: postgres.Sql): Promise<void> {
    * AFTER: Index scan ~30ms (60% improvement)
    */
   await sql`
-    CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_sessions_user_recent
+    CREATE INDEX IF NOT EXISTS idx_sessions_user_recent
     ON sessions (user_id, started_at DESC)
-    WHERE status != 'deleted'
+    WHERE status != 'ended'
   `;
 
   /**
@@ -68,9 +72,9 @@ export async function up(sql: postgres.Sql): Promise<void> {
    * USAGE: Companion analytics, popular companions
    */
   await sql`
-    CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_sessions_companion_recent
+    CREATE INDEX IF NOT EXISTS idx_sessions_companion_recent
     ON sessions (companion_id, started_at DESC)
-    WHERE status != 'deleted'
+    WHERE status != 'ended'
   `;
 
   // =========================================================================
@@ -85,7 +89,7 @@ export async function up(sql: postgres.Sql): Promise<void> {
    * AFTER: Index-only scan ~30ms (65% improvement)
    */
   await sql`
-    CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_turns_session_recent
+    CREATE INDEX IF NOT EXISTS idx_turns_session_recent
     ON turns (session_id, turn_number DESC)
     INCLUDE (user_message, agent_message, created_at)
   `;
@@ -108,10 +112,10 @@ export async function up(sql: postgres.Sql): Promise<void> {
    * AFTER: Index-only scan ~2ms (96% improvement)
    */
   await sql`
-    CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_user_sessions_token_valid
+    CREATE INDEX IF NOT EXISTS idx_user_sessions_token_valid
     ON user_sessions (token_hash, expires_at, revoked_at)
-    WHERE revoked_at IS NULL
     INCLUDE (user_id, device_info, created_at)
+    WHERE revoked_at IS NULL
   `;
 
   /**
@@ -119,7 +123,7 @@ export async function up(sql: postgres.Sql): Promise<void> {
    * QUERY: Cleanup expired sessions (background job)
    */
   await sql`
-    CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_user_sessions_cleanup
+    CREATE INDEX IF NOT EXISTS idx_user_sessions_cleanup
     ON user_sessions (expires_at)
     WHERE revoked_at IS NULL
   `;
@@ -134,7 +138,7 @@ export async function up(sql: postgres.Sql): Promise<void> {
    * USAGE: Companion selection UI
    */
   await sql`
-    CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_companions_user_active
+    CREATE INDEX IF NOT EXISTS idx_companions_user_active
     ON companions (user_id, status, created_at DESC)
     WHERE status = 'active'
   `;
@@ -145,7 +149,7 @@ export async function up(sql: postgres.Sql): Promise<void> {
    * USAGE: Demo mode, public companion gallery
    */
   await sql`
-    CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_companions_public_active
+    CREATE INDEX IF NOT EXISTS idx_companions_public_active
     ON companions (is_public, status, created_at DESC)
     WHERE is_public = TRUE AND status = 'active'
   `;
@@ -159,7 +163,7 @@ export async function up(sql: postgres.Sql): Promise<void> {
    * This supports the JOIN in findByIdWithAvatar()
    */
   await sql`
-    CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_companion_avatars_lookup
+    CREATE INDEX IF NOT EXISTS idx_companion_avatars_lookup
     ON companion_avatars (id, companion_id)
     INCLUDE (asset_url, asset_type, is_identity_anchor)
   `;
@@ -169,7 +173,7 @@ export async function up(sql: postgres.Sql): Promise<void> {
    * QUERY: getRandomWithAnchorAndBackstory()
    */
   await sql`
-    CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_companion_avatars_identity
+    CREATE INDEX IF NOT EXISTS idx_companion_avatars_identity
     ON companion_avatars (companion_id, is_identity_anchor)
     WHERE is_identity_anchor = TRUE
   `;
@@ -184,7 +188,7 @@ export async function up(sql: postgres.Sql): Promise<void> {
    * The existing vector index is good, but add support index for filtering
    */
   await sql`
-    CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_memories_composite_search
+    CREATE INDEX IF NOT EXISTS idx_memories_composite_search
     ON memories (user_id, companion_id, status, importance DESC, created_at DESC)
     WHERE status = 'active' AND embedding IS NOT NULL
   `;
@@ -194,7 +198,7 @@ export async function up(sql: postgres.Sql): Promise<void> {
    * QUERY: memories.applyDecay()
    */
   await sql`
-    CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_memories_decay
+    CREATE INDEX IF NOT EXISTS idx_memories_decay
     ON memories (user_id, companion_id, last_accessed_at)
     WHERE status = 'active'
   `;
@@ -208,9 +212,8 @@ export async function up(sql: postgres.Sql): Promise<void> {
    * QUERY: analytics.getCurrentDAUWAUMAU()
    */
   await sql`
-    CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_sessions_dau_calculation
+    CREATE INDEX IF NOT EXISTS idx_sessions_dau_calculation
     ON sessions (started_at, user_id)
-    WHERE started_at >= CURRENT_DATE - INTERVAL '30 days'
   `;
 
   // =========================================================================
@@ -222,9 +225,9 @@ export async function up(sql: postgres.Sql): Promise<void> {
    * QUERY: Used in admin user list with stats
    */
   await sql`
-    CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_token_balances_user
+    CREATE INDEX IF NOT EXISTS idx_token_balances_user
     ON token_balances (user_id)
-    INCLUDE (balance, last_updated_at)
+    INCLUDE (balance, updated_at)
   `;
 
   // =========================================================================
@@ -288,19 +291,19 @@ export async function up(sql: postgres.Sql): Promise<void> {
 
 export async function down(sql: postgres.Sql): Promise<void> {
   // Drop indexes in reverse order
-  await sql`DROP INDEX CONCURRENTLY IF EXISTS idx_token_balances_user`;
-  await sql`DROP INDEX CONCURRENTLY IF EXISTS idx_sessions_dau_calculation`;
-  await sql`DROP INDEX CONCURRENTLY IF EXISTS idx_memories_decay`;
-  await sql`DROP INDEX CONCURRENTLY IF EXISTS idx_memories_composite_search`;
-  await sql`DROP INDEX CONCURRENTLY IF EXISTS idx_companion_avatars_identity`;
-  await sql`DROP INDEX CONCURRENTLY IF EXISTS idx_companion_avatars_lookup`;
-  await sql`DROP INDEX CONCURRENTLY IF EXISTS idx_companions_public_active`;
-  await sql`DROP INDEX CONCURRENTLY IF EXISTS idx_companions_user_active`;
-  await sql`DROP INDEX CONCURRENTLY IF EXISTS idx_user_sessions_cleanup`;
-  await sql`DROP INDEX CONCURRENTLY IF EXISTS idx_user_sessions_token_valid`;
-  await sql`DROP INDEX CONCURRENTLY IF EXISTS idx_turns_session_recent`;
-  await sql`DROP INDEX CONCURRENTLY IF EXISTS idx_sessions_companion_recent`;
-  await sql`DROP INDEX CONCURRENTLY IF EXISTS idx_sessions_user_recent`;
-  await sql`DROP INDEX CONCURRENTLY IF EXISTS idx_sessions_stale_detection`;
-  await sql`DROP INDEX CONCURRENTLY IF EXISTS idx_sessions_active_lookup`;
+  await sql`DROP INDEX IF EXISTS idx_token_balances_user`;
+  await sql`DROP INDEX IF EXISTS idx_sessions_dau_calculation`;
+  await sql`DROP INDEX IF EXISTS idx_memories_decay`;
+  await sql`DROP INDEX IF EXISTS idx_memories_composite_search`;
+  await sql`DROP INDEX IF EXISTS idx_companion_avatars_identity`;
+  await sql`DROP INDEX IF EXISTS idx_companion_avatars_lookup`;
+  await sql`DROP INDEX IF EXISTS idx_companions_public_active`;
+  await sql`DROP INDEX IF EXISTS idx_companions_user_active`;
+  await sql`DROP INDEX IF EXISTS idx_user_sessions_cleanup`;
+  await sql`DROP INDEX IF EXISTS idx_user_sessions_token_valid`;
+  await sql`DROP INDEX IF EXISTS idx_turns_session_recent`;
+  await sql`DROP INDEX IF EXISTS idx_sessions_companion_recent`;
+  await sql`DROP INDEX IF EXISTS idx_sessions_user_recent`;
+  await sql`DROP INDEX IF EXISTS idx_sessions_stale_detection`;
+  await sql`DROP INDEX IF EXISTS idx_sessions_active_lookup`;
 }

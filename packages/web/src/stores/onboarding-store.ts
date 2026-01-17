@@ -167,6 +167,10 @@ export interface OnboardingState {
   quickStartActive: boolean;
   quickStartStep: number; // 0-3 for Identity, Visuals, Archetype, Voice
 
+  // Change tracking for appearance modifications after Surprise Me
+  appearanceChangedAfterGeneration: boolean;
+  anchorAppearanceSnapshot: PhysicalAppearance | null;
+
   // Actions
   setStep: (step: number) => void;
   nextStep: () => void;
@@ -191,6 +195,8 @@ export interface OnboardingState {
   setAnchorImagesComplete: (complete: boolean) => void;
   setQuickStartActive: (active: boolean) => void;
   setQuickStartStep: (step: number) => void;
+  setAppearanceChangedAfterGeneration: (changed: boolean) => void;
+  setAnchorAppearanceSnapshot: (appearance: PhysicalAppearance | null) => void;
   reset: () => void;
 }
 
@@ -253,6 +259,8 @@ export const useOnboardingStore = create<OnboardingState>()(
       anchorImagesComplete: false,
       quickStartActive: false,
       quickStartStep: 0,
+      appearanceChangedAfterGeneration: false,
+      anchorAppearanceSnapshot: null,
 
       setStep: (step) => set({ currentStep: step }),
       nextStep: () => {
@@ -298,12 +306,47 @@ export const useOnboardingStore = create<OnboardingState>()(
           visualStyle: { ...state.visualStyle, ...style },
         })),
       setAppearance: (appearance) =>
-        set((state) => ({
-          visualStyle: {
-            ...state.visualStyle,
-            appearance: { ...state.visualStyle.appearance, ...appearance } as PhysicalAppearance,
-          },
-        })),
+        set((state) => {
+          const current = state.visualStyle.appearance;
+          const newGender = appearance.gender ?? current.gender;
+
+          // If gender changed, reset to clean state for new gender
+          if (newGender !== current.gender) {
+            const base: PhysicalAppearance = newGender === 'female'
+              ? {
+                  gender: 'female',
+                  ethnicity: current.ethnicity,
+                  bodyType: 'athletic' as const,
+                  hairColor: current.hairColor,
+                  breastSize: 'M' as const,
+                }
+              : {
+                  gender: 'male',
+                  ethnicity: current.ethnicity,
+                  bodyType: 'athletic' as const,
+                  hairColor: current.hairColor,
+                  build: 'M' as const,
+                };
+
+            return {
+              visualStyle: {
+                ...state.visualStyle,
+                appearance: { ...base, ...appearance } as PhysicalAppearance,
+              },
+              // Mark appearance as changed if generation already started
+              appearanceChangedAfterGeneration: state.generationStarted ? true : state.appearanceChangedAfterGeneration,
+            };
+          }
+
+          return {
+            visualStyle: {
+              ...state.visualStyle,
+              appearance: { ...current, ...appearance } as PhysicalAppearance,
+            },
+            // Mark appearance as changed if generation already started
+            appearanceChangedAfterGeneration: state.generationStarted ? true : state.appearanceChangedAfterGeneration,
+          };
+        }),
       setBoundaries: (boundaries) =>
         set((state) => ({
           boundaries: { ...state.boundaries, ...boundaries },
@@ -319,6 +362,8 @@ export const useOnboardingStore = create<OnboardingState>()(
       setAnchorImagesComplete: (complete) => set({ anchorImagesComplete: complete }),
       setQuickStartActive: (active) => set({ quickStartActive: active }),
       setQuickStartStep: (step) => set({ quickStartStep: step }),
+      setAppearanceChangedAfterGeneration: (changed) => set({ appearanceChangedAfterGeneration: changed }),
+      setAnchorAppearanceSnapshot: (appearance) => set({ anchorAppearanceSnapshot: appearance }),
       reset: () =>
         set({
           currentStep: 1,
@@ -344,6 +389,8 @@ export const useOnboardingStore = create<OnboardingState>()(
           anchorImagesComplete: false,
           quickStartActive: false,
           quickStartStep: 0,
+          appearanceChangedAfterGeneration: false,
+          anchorAppearanceSnapshot: null,
         }),
     }),
     {
@@ -351,3 +398,9 @@ export const useOnboardingStore = create<OnboardingState>()(
     }
   )
 );
+
+// Expose store on window for E2E testing (development only)
+if (typeof window !== 'undefined') {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  (window as any).__ONBOARDING_STORE__ = useOnboardingStore;
+}

@@ -236,6 +236,7 @@ export function Step1Welcome() {
         <Button
           size="lg"
           onClick={handleStartDesigning}
+          data-testid="start-designing"
           className="group text-xl px-12 py-8 rounded-full bg-gradient-to-r from-vibes-hot via-vibes-neon to-vibes-electric hover:shadow-[0_0_50px_rgba(168,85,247,0.5)] transition-all duration-300 hover:scale-105 active:scale-95"
         >
           Start Designing

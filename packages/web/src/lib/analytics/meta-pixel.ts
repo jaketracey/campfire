@@ -34,7 +34,11 @@ type CustomEvent =
   | 'ChatStarted'
   | 'FirstMessage'
   | 'GiftSent'
-  | 'GiftPurchased';
+  | 'GiftPurchased'
+  | 'PartnerPageView'
+  | 'PartnerCTAClick'
+  | 'PartnerCalculatorInteract'
+  | 'PartnerApplicationStart';
 
 // Parameter types for each event
 interface LeadParams {
@@ -125,6 +129,25 @@ interface GiftPurchasedParams {
   tokenCost: number;
 }
 
+interface PartnerPageViewParams {
+  source?: string;
+  affiliate_code?: string;
+}
+
+interface PartnerCTAClickParams {
+  location: 'hero' | 'calculator' | 'final' | 'floating';
+}
+
+interface PartnerCalculatorInteractParams {
+  users: number;
+  spend: number;
+  revenue: number;
+}
+
+interface PartnerApplicationStartParams {
+  affiliate_code?: string;
+}
+
 // Map event names to their parameter types
 interface EventParamsMap {
   Lead: LeadParams;
@@ -143,6 +166,10 @@ interface EventParamsMap {
   FirstMessage: FirstMessageParams;
   GiftSent: GiftSentParams;
   GiftPurchased: GiftPurchasedParams;
+  PartnerPageView: PartnerPageViewParams;
+  PartnerCTAClick: PartnerCTAClickParams;
+  PartnerCalculatorInteract: PartnerCalculatorInteractParams;
+  PartnerApplicationStart: PartnerApplicationStartParams;
 }
 
 /**
@@ -422,4 +449,41 @@ export function hasFirstMessageFired(sessionId: string): boolean {
 export function markFirstMessageFired(sessionId: string): void {
   if (typeof window === 'undefined') return;
   sessionStorage.setItem(STORAGE_KEYS.FIRST_MESSAGE_PREFIX + sessionId, 'true');
+}
+
+// ============================================================================
+// Partner Funnel Events
+// ============================================================================
+
+/**
+ * Track partner page view
+ */
+export function trackPartnerPageView(params?: { source?: string; affiliate_code?: string }): void {
+  trackEvent('ViewContent', {
+    content_type: 'partner_landing',
+    content_name: 'Partner Landing Page',
+  });
+  trackCustomEvent('PartnerPageView', params || {});
+}
+
+/**
+ * Track partner CTA click
+ */
+export function trackPartnerCTAClick(location: 'hero' | 'calculator' | 'final' | 'floating'): void {
+  trackEvent('Lead', { content_name: `partner_${location}_cta` });
+  trackCustomEvent('PartnerCTAClick', { location });
+}
+
+/**
+ * Track partner calculator interaction
+ */
+export function trackPartnerCalculatorInteract(users: number, spend: number, revenue: number): void {
+  trackCustomEvent('PartnerCalculatorInteract', { users, spend, revenue });
+}
+
+/**
+ * Track partner application start
+ */
+export function trackPartnerApplicationStart(affiliateCode?: string): void {
+  trackCustomEvent('PartnerApplicationStart', { affiliate_code: affiliateCode });
 }

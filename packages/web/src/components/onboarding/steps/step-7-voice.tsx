@@ -7,7 +7,7 @@ import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Play, Pause, ArrowRight, Loader2, Wand2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { createCompanion, streamAnchorImages, generateBackstory } from '@/lib/api';
+import { createCompanion, updateCompanion, streamAnchorImages, generateBackstory } from '@/lib/api';
 import { useToast } from '@/hooks/use-toast';
 import { useAuth } from '@/hooks/use-auth';
 import { trackOnboardingStep, trackCompanionCreated } from '@/lib/analytics/meta-pixel';
@@ -44,7 +44,18 @@ function getVoiceSampleUrl(voiceId: string): string {
 export function Step7Voice() {
   const { isAuthenticated } = useAuth();
   const state = useOnboardingStore();
-  const { voice, setVoice, nextStep, setCompanionId, setGenerationStarted, addAnchorImage, setAnchorImagesComplete } = state;
+  const {
+    voice,
+    setVoice,
+    nextStep,
+    setCompanionId,
+    setGenerationStarted,
+    addAnchorImage,
+    clearAnchorImages,
+    setAnchorImagesComplete,
+    setAppearanceChangedAfterGeneration,
+    setAnchorAppearanceSnapshot,
+  } = state;
   const { toast } = useToast();
   const [playingId, setPlayingId] = useState<string | null>(null);
   const [loadingId, setLoadingId] = useState<string | null>(null);
@@ -81,8 +92,82 @@ export function Step7Voice() {
     setIsCreating(true);
 
     try {
-      // If companion already exists (from Surprise Me in earlier step), skip creation
+      // If companion already exists (from Surprise Me in earlier step)
       if (state.companionId) {
+        // Check if appearance was changed after generation
+        if (state.appearanceChangedAfterGeneration && isAuthenticated) {
+          console.log('[Voice] Appearance changed after Surprise Me, updating companion and regenerating anchors');
+          console.log('[Voice] New appearance:', state.visualStyle.appearance);
+
+          // Update companion with new appearance via API
+          await updateCompanion(state.companionId, {
+            spec: {
+              identity: {
+                name: state.name,
+                pronouns: state.identity.pronouns,
+              },
+              personality: {
+                archetype: state.archetype?.id,
+                secondary_archetype: state.secondaryArchetype?.id,
+                traits: {
+                  warmth: state.personality.warmth / 100,
+                  energy: state.personality.energy / 100,
+                  playfulness: state.personality.playfulness / 100,
+                  formality: state.personality.formality / 100,
+                  assertiveness: state.personality.assertiveness / 100,
+                  curiosity: state.personality.curiosity / 100,
+                  empathy: state.personality.empathy / 100,
+                  spontaneity: state.personality.spontaneity / 100,
+                  optimism: state.personality.optimism / 100,
+                  directness: state.personality.directness / 100,
+                },
+              },
+              voice: {
+                provider: 'elevenlabs',
+                voice_id: voice.id,
+              },
+              visual_style: {
+                appearance: state.visualStyle.appearance,
+              },
+            },
+          });
+
+          // Clear old anchors and regenerate with new appearance
+          clearAnchorImages();
+          setAnchorAppearanceSnapshot(state.visualStyle.appearance);
+          setAppearanceChangedAfterGeneration(false);
+
+          // Start new anchor stream with current appearance
+          streamAnchorImages(
+            {
+              companionId: state.companionId,
+              appearance: state.visualStyle.appearance,
+              personality: {
+                warmth: state.personality.warmth,
+                playfulness: state.personality.playfulness,
+                directness: state.personality.directness,
+                curiosity: state.personality.curiosity,
+                empathy: state.personality.empathy,
+                assertiveness: state.personality.assertiveness,
+              },
+            },
+            {
+              onProgress: (data) => console.log('[Voice] Anchor progress:', data),
+              onAnchor: (anchor) => {
+                console.log('[Voice] Anchor received:', anchor);
+                addAnchorImage(anchor);
+              },
+              onComplete: (result) => {
+                console.log('[Voice] Anchor generation complete:', result);
+                setAnchorImagesComplete(true);
+              },
+              onError: (error) => {
+                console.error('[Voice] Anchor generation error:', error);
+                setAnchorImagesComplete(true);
+              },
+            }
+          );
+        }
         nextStep();
         return;
       }
@@ -222,7 +307,7 @@ export function Step7Voice() {
       });
       setIsCreating(false);
     }
-  }, [voice, state, coreTenets, setCompanionId, setGenerationStarted, nextStep, toast, isAuthenticated, addAnchorImage, setAnchorImagesComplete]);
+  }, [voice, state, coreTenets, setCompanionId, setGenerationStarted, nextStep, toast, isAuthenticated, addAnchorImage, clearAnchorImages, setAnchorImagesComplete, setAppearanceChangedAfterGeneration, setAnchorAppearanceSnapshot]);
 
   // Surprise Me - randomly select a voice with animation, then proceed
   const handleSurpriseMe = useCallback(async () => {
@@ -260,8 +345,81 @@ export function Step7Voice() {
     setIsCreating(true);
 
     try {
-      // If companion already exists (from Surprise Me in earlier step), skip creation
+      // If companion already exists (from Surprise Me in earlier step)
       if (state.companionId) {
+        // Check if appearance was changed after generation
+        if (state.appearanceChangedAfterGeneration && isAuthenticated) {
+          console.log('[Voice Surprise] Appearance changed after Surprise Me, updating companion and regenerating anchors');
+
+          // Update companion with new appearance via API
+          await updateCompanion(state.companionId, {
+            spec: {
+              identity: {
+                name: state.name,
+                pronouns: state.identity.pronouns,
+              },
+              personality: {
+                archetype: state.archetype?.id,
+                secondary_archetype: state.secondaryArchetype?.id,
+                traits: {
+                  warmth: state.personality.warmth / 100,
+                  energy: state.personality.energy / 100,
+                  playfulness: state.personality.playfulness / 100,
+                  formality: state.personality.formality / 100,
+                  assertiveness: state.personality.assertiveness / 100,
+                  curiosity: state.personality.curiosity / 100,
+                  empathy: state.personality.empathy / 100,
+                  spontaneity: state.personality.spontaneity / 100,
+                  optimism: state.personality.optimism / 100,
+                  directness: state.personality.directness / 100,
+                },
+              },
+              voice: {
+                provider: 'elevenlabs',
+                voice_id: targetVoice.id,
+              },
+              visual_style: {
+                appearance: state.visualStyle.appearance,
+              },
+            },
+          });
+
+          // Clear old anchors and regenerate with new appearance
+          clearAnchorImages();
+          setAnchorAppearanceSnapshot(state.visualStyle.appearance);
+          setAppearanceChangedAfterGeneration(false);
+
+          // Start new anchor stream with current appearance
+          streamAnchorImages(
+            {
+              companionId: state.companionId,
+              appearance: state.visualStyle.appearance,
+              personality: {
+                warmth: state.personality.warmth,
+                playfulness: state.personality.playfulness,
+                directness: state.personality.directness,
+                curiosity: state.personality.curiosity,
+                empathy: state.personality.empathy,
+                assertiveness: state.personality.assertiveness,
+              },
+            },
+            {
+              onProgress: (data) => console.log('[Voice Surprise] Anchor progress:', data),
+              onAnchor: (anchor) => {
+                console.log('[Voice Surprise] Anchor received:', anchor);
+                addAnchorImage(anchor);
+              },
+              onComplete: (result) => {
+                console.log('[Voice Surprise] Anchor generation complete:', result);
+                setAnchorImagesComplete(true);
+              },
+              onError: (error) => {
+                console.error('[Voice Surprise] Anchor generation error:', error);
+                setAnchorImagesComplete(true);
+              },
+            }
+          );
+        }
         nextStep();
         return;
       }
@@ -395,7 +553,7 @@ export function Step7Voice() {
       });
       setIsCreating(false);
     }
-  }, [state, coreTenets, setVoice, setCompanionId, setGenerationStarted, nextStep, toast, isAuthenticated, addAnchorImage, setAnchorImagesComplete]);
+  }, [state, coreTenets, setVoice, setCompanionId, setGenerationStarted, nextStep, toast, isAuthenticated, addAnchorImage, clearAnchorImages, setAnchorImagesComplete, setAppearanceChangedAfterGeneration, setAnchorAppearanceSnapshot]);
 
   const togglePlay = useCallback(async (id: string) => {
     // If already playing this voice, stop it
@@ -470,6 +628,7 @@ export function Step7Voice() {
             } : {}}
           >
             <Card
+              data-testid={`voice-option-${v.name}`}
               className={cn(
                 'flex items-center p-5 transition-all border-white/10 cursor-pointer overflow-hidden relative group',
                 isHighlighted
@@ -486,6 +645,7 @@ export function Step7Voice() {
                     size="icon"
                     variant="ghost"
                     disabled={loadingId === v.id}
+                    data-testid={`voice-play-${v.name}`}
                     className={cn(
                       "rounded-full h-14 w-14 aspect-square flex-shrink-0 transition-all duration-300",
                       playingId === v.id ? "bg-vibes-cyan text-black" : "bg-white/5 group-hover:bg-white/10 text-vibes-cyan"
@@ -551,6 +711,7 @@ export function Step7Voice() {
           size="lg"
           disabled={!voice || isCreating || isSurprising}
           onClick={handleProceed}
+          data-testid="review-and-ignite"
           className="group h-16 px-14 rounded-full bg-gradient-to-r from-vibes-cyan to-vibes-electric hover:shadow-[0_0_30px_rgba(6,182,212,0.3)] transition-all font-bold text-xl"
         >
           {isCreating ? (

@@ -1,5 +1,6 @@
 'use client';
 
+import { AnimatePresence } from 'framer-motion';
 import { DebugPanel } from '@/components/debug-panel';
 import { CompanionGallery, PersonalityModal, BackstoryModal } from '@/components/companion';
 import { GiftsPanel } from '@/components/gifts';
@@ -180,6 +181,8 @@ export function ChatSessionContent({
           onUserMove={chat.handleUserMove}
           onResign={chat.handleResign}
           isDemo={isDemo}
+          mobileAvatarUrl={chat.currentAvatarUrl}
+          onMobileAvatarClick={() => chat.setShowMobileAvatar(true)}
         />
 
         {/* Input Area with Mobile Action Bar */}
@@ -216,23 +219,27 @@ export function ChatSessionContent({
           />
         </div>
 
-        {/* Mobile Floating Avatar */}
-        <MobileAvatar
-          currentAvatarUrl={chat.currentAvatarUrl}
-          companionName={chat.companion?.name || 'Companion'}
-          showMobileAvatar={chat.showMobileAvatar}
-          onToggleMobileAvatar={() => chat.setShowMobileAvatar(!chat.showMobileAvatar)}
-          keyboardHeight={chat.keyboardHeight}
-          mobileAvatarPop={chat.mobileAvatarPop}
-          likeAnimationTrigger={chat.likeAnimationTrigger}
-          mobileGalleryImages={chat.mobileGalleryImages}
-          mobileGalleryIndex={chat.mobileGalleryIndex}
-          onGalleryIndexChange={chat.setMobileGalleryIndex}
-          mobileGalleryLoading={chat.mobileGalleryLoading}
-          isDemo={isDemo}
-          onRequireAuth={onRequireAuth}
-          demoAvatarTopRight={demoAvatarTopRight}
-        />
+        {/* Mobile Avatar Gallery (expanded view) */}
+        <AnimatePresence>
+          {chat.showMobileAvatar && (
+            <MobileAvatar
+              currentAvatarUrl={chat.currentAvatarUrl}
+              companionName={chat.companion?.name || 'Companion'}
+              showMobileAvatar={chat.showMobileAvatar}
+              onToggleMobileAvatar={() => chat.setShowMobileAvatar(false)}
+              keyboardHeight={chat.keyboardHeight}
+              mobileAvatarPop={chat.mobileAvatarPop}
+              likeAnimationTrigger={chat.likeAnimationTrigger}
+              mobileGalleryImages={chat.mobileGalleryImages}
+              mobileGalleryIndex={chat.mobileGalleryIndex}
+              onGalleryIndexChange={chat.setMobileGalleryIndex}
+              mobileGalleryLoading={chat.mobileGalleryLoading}
+              isDemo={isDemo}
+              onRequireAuth={onRequireAuth}
+              demoAvatarTopRight={demoAvatarTopRight}
+            />
+          )}
+        </AnimatePresence>
       </div>
 
       {/* Debug Panel */}
