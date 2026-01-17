@@ -279,7 +279,7 @@ export default function DemoChatPage() {
             animate={{ y: 0, opacity: 1 }}
             exit={{ y: 100, opacity: 0 }}
             transition={{ type: 'spring', stiffness: 200, damping: 20 }}
-            className="fixed bottom-6 left-4 right-4 lg:bottom-32 lg:left-1/2 lg:-translate-x-1/2 lg:right-auto lg:w-auto z-50 flex flex-col items-center gap-3"
+            className="fixed bottom-[190px] left-4 right-4 lg:bottom-32 lg:left-1/2 lg:-translate-x-1/2 lg:right-auto lg:w-auto z-50 flex flex-col items-center gap-3"
           >
             {/* Desktop-only feature list */}
             <motion.p
