@@ -94,7 +94,7 @@ export async function up(sql: postgres.Sql): Promise<void> {
    * INDEX: Incomplete turn detection (error recovery)
    * This already exists in migration 005, but ensure it's optimal
    */
-  -- Already exists, no action needed
+  // Already exists, no action needed
 
   // =========================================================================
   // 3. USER_SESSIONS TABLE - Authentication Hot Path
@@ -246,9 +246,9 @@ export async function up(sql: postgres.Sql): Promise<void> {
    * ORDER BY pg_relation_size(indexrelid) DESC;
    */
 
-  -- Check if idx_sessions_user_id is redundant (migration 005)
-  -- It may be redundant with idx_sessions_active_lookup and idx_sessions_user_recent
-  -- However, keeping it for now as it's small and may help simple user_id queries
+  // Check if idx_sessions_user_id is redundant (migration 005)
+  // It may be redundant with idx_sessions_active_lookup and idx_sessions_user_recent
+  // However, keeping it for now as it's small and may help simple user_id queries
 
   await sql`
     COMMENT ON INDEX idx_sessions_active_lookup IS
