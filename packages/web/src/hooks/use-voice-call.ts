@@ -172,40 +172,66 @@ export function useVoiceCall(
   }, [wsRef, handleSpeechStart, handleSpeechEnd, onError]);
 
   /**
+   * Clean up all voice call resources safely
+   */
+  const cleanupCallResources = useCallback(async () => {
+    try {
+      // Stop VAD first
+      if (vadRef.current) {
+        try {
+          vadRef.current.pause();
+          vadRef.current.destroy();
+        } catch (err) {
+          console.warn('[VoiceCall] VAD cleanup error:', err);
+        }
+        vadRef.current = null;
+      }
+
+      // Stop any playing audio
+      try {
+        audioPlayerRef.current?.stop();
+      } catch (err) {
+        console.warn('[VoiceCall] Audio player stop error:', err);
+      }
+
+      // Close audio context and await completion
+      if (audioContextRef.current) {
+        try {
+          await audioContextRef.current.close();
+        } catch (err) {
+          console.warn('[VoiceCall] AudioContext close error:', err);
+        }
+        audioContextRef.current = null;
+        analyserRef.current = null;
+      }
+    } catch (err) {
+      console.error('[VoiceCall] Cleanup error:', err);
+    }
+  }, [audioPlayerRef]);
+
+  /**
    * End the voice call
    */
-  const endCall = useCallback(() => {
+  const endCall = useCallback(async () => {
     if (!isCallActiveRef.current) return;
 
     console.log('[VoiceCall] Ending call...');
     isCallActiveRef.current = false;
 
-    // Stop VAD
-    if (vadRef.current) {
-      vadRef.current.pause();
-      vadRef.current.destroy();
-      vadRef.current = null;
+    try {
+      // Signal call end to backend first
+      wsRef.current?.endVoiceCall();
+      wsRef.current?.disableVoice();
+    } finally {
+      // Always cleanup resources even if signaling fails
+      await cleanupCallResources();
+
+      setCallState('idle');
+      setCurrentTranscript('');
+      setIsMuted(false);
+      setTokensUsed(0);
     }
-
-    // Stop any playing audio
-    audioPlayerRef.current?.stop();
-
-    // Cleanup audio context
-    if (audioContextRef.current) {
-      audioContextRef.current.close();
-      audioContextRef.current = null;
-      analyserRef.current = null;
-    }
-
-    // Signal call end to backend
-    wsRef.current?.endVoiceCall();
-    wsRef.current?.disableVoice();
-
-    setCallState('idle');
-    setCurrentTranscript('');
-    setIsMuted(false);
-    setTokensUsed(0);
-  }, [wsRef, audioPlayerRef]);
+  }, [wsRef, cleanupCallResources]);
 
   /**
    * Toggle mute state
@@ -314,15 +340,11 @@ export function useVoiceCall(
   // Cleanup on unmount
   useEffect(() => {
     return () => {
-      if (vadRef.current) {
-        vadRef.current.pause();
-        vadRef.current.destroy();
-      }
-      if (audioContextRef.current) {
-        audioContextRef.current.close();
-      }
+      // Cleanup all resources on unmount
+      // Use void to ignore promise (cleanup happens async but component is already unmounting)
+      void cleanupCallResources();
     };
-  }, []);
+  }, [cleanupCallResources]);
 
   return {
     callState,

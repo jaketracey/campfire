@@ -186,8 +186,8 @@ async function getCompanionIdentityAnchorUrl(
       // Select best anchor based on emotional state
       const selectedAnchor = selectBestAnchor(anchors, emotionalState || 'neutral');
       if (selectedAnchor) {
-        // If we have s3_key and s3_bucket (preferred: columns, fallback: metadata), generate a fresh presigned URL
-        // This avoids 403 errors from expired presigned URLs
+        // If we have s3_key and s3_bucket, build a direct S3 URL (no expiry)
+        // Requires S3 bucket to be publicly readable for companion images
         const metadata = selectedAnchor.metadata as Record<string, unknown> | null | undefined;
         const s3Key =
           selectedAnchor.s3_key ||
@@ -199,14 +199,8 @@ async function getCompanionIdentityAnchorUrl(
           (metadata?.['s3Bucket'] as string | undefined) ||
           S3_MEDIA_BUCKET;
         if (s3Key && s3Bucket) {
-          const freshUrl = await getSignedUrl(
-            s3Client,
-            new GetObjectCommand({
-              Bucket: s3Bucket,
-              Key: s3Key,
-            }),
-            { expiresIn: 3600 } // 1 hour is enough for image generation
-          );
+          // Use direct S3 URL (no expiry) - bucket must be publicly readable
+          const directUrl = `https://${s3Bucket}.s3.${S3_REGION}.amazonaws.com/${s3Key}`;
           logger.debug({
             companionId,
             anchorId: selectedAnchor.id,
@@ -215,7 +209,7 @@ async function getCompanionIdentityAnchorUrl(
             selectedEmotion: selectedAnchor.metadata?.emotionalState,
             anchorCount: anchors.length,
           }, 'Using emotion-matched identity anchor');
-          return freshUrl;
+          return directUrl;
         }
         // Fallback to stored URL if no s3_key
         if (selectedAnchor.asset_url) {

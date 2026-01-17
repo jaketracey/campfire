@@ -140,6 +140,7 @@ export class CampfireWebSocket {
   private handlers: Map<WSMessageType | '*', Set<MessageHandler>> = new Map();
   private options: CampfireWSOptions;
   private reconnectTimeout: NodeJS.Timeout | null = null;
+  private connectionTimeout: NodeJS.Timeout | null = null;
   private _isConnected = false;
   private _isAuthenticated = false;
   private _sessionId: string | null = null;
@@ -153,6 +154,9 @@ export class CampfireWebSocket {
   private _engagementScore = 0;
   // Pending messages queue for retry on iOS keyboard race condition
   private pendingMessages: Array<{ content: string }> = [];
+  // Constants for stability
+  private readonly MAX_HANDLERS_PER_TYPE = 100;
+  private readonly CONNECTION_TIMEOUT_MS = 10000;
 
   constructor(options: CampfireWSOptions = {}) {
     this.options = {
@@ -223,11 +227,28 @@ export class CampfireWebSocket {
       return;
     }
 
+    // Clean up any stale connection state before creating new connection
+    this.cleanupWebSocket();
+
     const wsUrl = getWebSocketUrl();
     console.log('[WS] Creating new WebSocket connection to', wsUrl);
     this.ws = new WebSocket(wsUrl);
 
+    // Set connection timeout to prevent hanging in CONNECTING state
+    this.connectionTimeout = setTimeout(() => {
+      if (this.ws?.readyState === WebSocket.CONNECTING) {
+        console.warn('[WS] Connection timeout, closing stale socket');
+        this.ws.close();
+        this.connectionTimeout = null;
+        // Will trigger onclose which handles reconnection
+      }
+    }, this.CONNECTION_TIMEOUT_MS);
+
     this.ws.onopen = () => {
+      if (this.connectionTimeout) {
+        clearTimeout(this.connectionTimeout);
+        this.connectionTimeout = null;
+      }
       this._isConnected = true;
       this._hasConnectedOnce = true;
       console.log('[WS] Connected');
@@ -235,13 +256,17 @@ export class CampfireWebSocket {
     };
 
     this.ws.onclose = (event) => {
+      if (this.connectionTimeout) {
+        clearTimeout(this.connectionTimeout);
+        this.connectionTimeout = null;
+      }
       this._isConnected = false;
       this._isAuthenticated = false;
       this._sessionId = null;
       console.log('[WS] Disconnected', event.code, event.reason);
       this.options.onClose?.(event);
 
-      // Auto-reconnect
+      // Auto-reconnect only for abnormal closures
       if (this.options.autoReconnect && event.code !== 1000) {
         this.scheduleReconnect();
       }
@@ -270,28 +295,56 @@ export class CampfireWebSocket {
    * Disconnect from the server
    */
   disconnect(): void {
+    // Clear all timers
     if (this.reconnectTimeout) {
       clearTimeout(this.reconnectTimeout);
       this.reconnectTimeout = null;
     }
-
-    if (this.ws) {
-      // Only close if the socket is OPEN, not if it's still CONNECTING
-      // Closing a CONNECTING socket causes "WebSocket is closed before the connection is established" error on iOS
-      // Since this is a singleton, we let CONNECTING sockets finish - the next connect() will reuse them
-      if (this.ws.readyState === WebSocket.OPEN) {
-        this.ws.close(1000, 'Client disconnect');
-        this.ws = null;
-      } else if (this.ws.readyState === WebSocket.CONNECTING) {
-        console.log('[WS] Socket still connecting, skipping disconnect to avoid iOS error');
-        // Don't null out ws - let it finish connecting for potential reuse
-        // The next connect() call will find it OPEN or will create a new one if it failed
-      } else {
-        // CLOSING or CLOSED - safe to null out
-        this.ws = null;
-      }
+    if (this.connectionTimeout) {
+      clearTimeout(this.connectionTimeout);
+      this.connectionTimeout = null;
     }
 
+    // Clean up WebSocket
+    this.cleanupWebSocket();
+
+    // Reset all state
+    this.resetState();
+  }
+
+  /**
+   * Clean up WebSocket connection safely
+   */
+  private cleanupWebSocket(): void {
+    if (!this.ws) return;
+
+    try {
+      // Remove event listeners to prevent memory leaks
+      this.ws.onopen = null;
+      this.ws.onclose = null;
+      this.ws.onerror = null;
+      this.ws.onmessage = null;
+
+      // Close if OPEN, or force close if CONNECTING after timeout
+      if (this.ws.readyState === WebSocket.OPEN) {
+        this.ws.close(1000, 'Client disconnect');
+      } else if (this.ws.readyState === WebSocket.CONNECTING) {
+        // For CONNECTING state, we used to leave it dangling
+        // Now we force close it to prevent accumulation
+        console.log('[WS] Force closing CONNECTING socket to prevent leak');
+        this.ws.close();
+      }
+    } catch (error) {
+      console.warn('[WS] Error during WebSocket cleanup:', error);
+    } finally {
+      this.ws = null;
+    }
+  }
+
+  /**
+   * Reset all internal state
+   */
+  private resetState(): void {
     this._isConnected = false;
     this._isAuthenticated = false;
     this._sessionId = null;
@@ -301,6 +354,7 @@ export class CampfireWebSocket {
     this._messagesUsed = 0;
     this._messageLimit = 0;
     this._engagementScore = 0;
+    this.pendingMessages = [];
   }
 
   /**
@@ -560,11 +614,29 @@ export class CampfireWebSocket {
     if (!this.handlers.has(type)) {
       this.handlers.set(type, new Set());
     }
-    this.handlers.get(type)!.add(handler as MessageHandler);
+
+    const handlerSet = this.handlers.get(type)!;
+
+    // Prevent memory leaks from too many handlers
+    if (handlerSet.size >= this.MAX_HANDLERS_PER_TYPE) {
+      console.warn(
+        `[WS] Too many event handlers for type "${type}" (${handlerSet.size}). ` +
+        `This may indicate a memory leak. Check that handlers are properly unsubscribed.`
+      );
+    }
+
+    handlerSet.add(handler as MessageHandler);
 
     // Return unsubscribe function
     return () => {
-      this.handlers.get(type)?.delete(handler as MessageHandler);
+      const set = this.handlers.get(type);
+      if (set) {
+        set.delete(handler as MessageHandler);
+        // Clean up empty sets to prevent memory accumulation
+        if (set.size === 0) {
+          this.handlers.delete(type);
+        }
+      }
     };
   }
 
@@ -1013,11 +1085,17 @@ export class CampfireWebSocket {
   }
 
   private scheduleReconnect(): void {
-    if (this.reconnectTimeout) return;
+    // Prevent duplicate reconnection timers
+    if (this.reconnectTimeout) {
+      console.log('[WS] Reconnection already scheduled, skipping duplicate');
+      return;
+    }
 
     console.log(`[WS] Reconnecting in ${this.options.reconnectDelay}ms...`);
     this.reconnectTimeout = setTimeout(() => {
       this.reconnectTimeout = null;
+      // Reset state before reconnecting to prevent stale data
+      this.resetState();
       this.connect();
     }, this.options.reconnectDelay);
   }

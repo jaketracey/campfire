@@ -214,6 +214,62 @@ export function useVoiceRecording(
   }, [isRecording, wsRef, chunkInterval, sendAudioChunks]);
 
   /**
+   * Clean up all audio resources safely
+   * Ensures proper cleanup order and error handling
+   */
+  const cleanupAudioResources = useCallback(async () => {
+    try {
+      // Stop chunk interval first
+      if (chunkIntervalRef.current) {
+        clearInterval(chunkIntervalRef.current);
+        chunkIntervalRef.current = null;
+      }
+
+      // Cleanup audio worklet before context
+      if (workletNodeRef.current) {
+        try {
+          workletNodeRef.current.disconnect();
+        } catch (err) {
+          console.warn('[VoiceRecording] Worklet disconnect error:', err);
+        }
+        workletNodeRef.current = null;
+      }
+
+      // Close audio context and await completion
+      if (audioContextRef.current) {
+        try {
+          // AudioContext.close() returns a promise
+          await audioContextRef.current.close();
+        } catch (err) {
+          console.warn('[VoiceRecording] AudioContext close error:', err);
+        }
+        audioContextRef.current = null;
+      }
+
+      // Stop all media stream tracks
+      if (mediaStreamRef.current) {
+        try {
+          mediaStreamRef.current.getTracks().forEach((track) => {
+            try {
+              track.stop();
+            } catch (err) {
+              console.warn('[VoiceRecording] Track stop error:', err);
+            }
+          });
+        } catch (err) {
+          console.warn('[VoiceRecording] MediaStream cleanup error:', err);
+        }
+        mediaStreamRef.current = null;
+      }
+
+      // Clear buffer
+      audioBufferRef.current = [];
+    } catch (err) {
+      console.error('[VoiceRecording] Cleanup error:', err);
+    }
+  }, []);
+
+  /**
    * Stop recording audio
    */
   const stopRecording = useCallback(async () => {
@@ -239,56 +295,27 @@ export function useVoiceRecording(
       return;
     }
 
-    // Stop chunk interval
-    if (chunkIntervalRef.current) {
-      clearInterval(chunkIntervalRef.current);
-      chunkIntervalRef.current = null;
+    try {
+      // Send any remaining audio before cleanup
+      sendAudioChunks();
+
+      // Signal voice end
+      wsRef.current?.endVoice();
+    } finally {
+      // Always cleanup resources even if sending fails
+      await cleanupAudioResources();
+      setIsRecording(false);
     }
-
-    // Send any remaining audio
-    sendAudioChunks();
-
-    // Signal voice end
-    wsRef.current?.endVoice();
-
-    // Cleanup audio worklet
-    if (workletNodeRef.current) {
-      workletNodeRef.current.disconnect();
-      workletNodeRef.current = null;
-    }
-
-    // Cleanup audio context
-    if (audioContextRef.current) {
-      audioContextRef.current.close();
-      audioContextRef.current = null;
-    }
-
-    // Stop media stream
-    if (mediaStreamRef.current) {
-      mediaStreamRef.current.getTracks().forEach((track) => track.stop());
-      mediaStreamRef.current = null;
-    }
-
-    // Clear buffer
-    audioBufferRef.current = [];
-
-    setIsRecording(false);
-  }, [isRecording, wsRef, sendAudioChunks]);
+  }, [isRecording, wsRef, sendAudioChunks, cleanupAudioResources]);
 
   // Cleanup on unmount
   useEffect(() => {
     return () => {
-      if (chunkIntervalRef.current) {
-        clearInterval(chunkIntervalRef.current);
-      }
-      if (audioContextRef.current) {
-        audioContextRef.current.close();
-      }
-      if (mediaStreamRef.current) {
-        mediaStreamRef.current.getTracks().forEach((track) => track.stop());
-      }
+      // Cleanup all resources on unmount
+      // Use void to ignore promise (cleanup happens async but component is already unmounting)
+      void cleanupAudioResources();
     };
-  }, []);
+  }, [cleanupAudioResources]);
 
   return {
     isRecording,

@@ -9,6 +9,7 @@
     "start": "node dist/index.js",
     "test": "vitest",
     "test:unit": "vitest run",
+    "test:performance": "vitest run tests/performance/worker-jobs.test.ts",
     "lint": "eslint src/",
     "typecheck": "tsc --noEmit"
   },
