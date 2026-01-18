@@ -4,7 +4,7 @@ import { useState } from 'react';
 import Link from 'next/link';
 import type { Route } from 'next';
 import { usePathname } from 'next/navigation';
-import { Users, Mail, BarChart3, Flame, LayoutDashboard, DollarSign, LifeBuoy, Server, GitBranch, Handshake, Target, Search, ChevronDown, Cpu, Terminal, Store, ScrollText } from 'lucide-react';
+import { Users, Mail, BarChart3, Flame, LayoutDashboard, DollarSign, LifeBuoy, Server, GitBranch, Handshake, Target, Search, ChevronDown, Cpu, Terminal, Store, ScrollText, Sparkles, Bot } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 interface NavItem {
@@ -30,6 +30,11 @@ const navItems: NavItem[] = [
     label: 'Users',
     href: '/admin/users' as Route,
     icon: Users,
+  },
+  {
+    label: 'Companions',
+    href: '/admin/companions' as Route,
+    icon: Bot,
   },
   {
     label: 'Invites',
@@ -97,6 +102,11 @@ const inferenceGroup: NavGroup = {
       href: '/admin/prompts' as Route,
       icon: ScrollText,
     },
+    {
+      label: 'Influencer Models',
+      href: '/admin/influencer' as Route,
+      icon: Sparkles,
+    },
   ],
 };
 
@@ -120,9 +130,9 @@ export function AdminSidebar() {
     isRoutingSectionActive;
   const [inferenceOpen, setInferenceOpen] = useState(isInferenceActive);
 
-  // Find where to insert the Inference group (after Invites)
-  const topItems = navItems.slice(0, 4); // Dashboard, Users, Invites, Support
-  const bottomItems = navItems.slice(4); // Affiliates, Analytics, Ads, SEO, Settings
+  // Find where to insert the Inference group (after Support)
+  const topItems = navItems.slice(0, 5); // Dashboard, Users, Companions, Invites, Support
+  const bottomItems = navItems.slice(5); // Affiliates, Tenants, Analytics, Ads, SEO, Logs
 
   const renderNavItem = (item: NavItem) => {
     const isActive = item.href === '/admin'
@@ -168,7 +178,7 @@ export function AdminSidebar() {
         {topItems.map(renderNavItem)}
 
         {/* Inference Group */}
-        <div className="pt-2">
+        <div>
           <button
             onClick={() => setInferenceOpen(!inferenceOpen)}
             className={cn(
@@ -220,7 +230,7 @@ export function AdminSidebar() {
         </div>
 
         {/* Bottom items */}
-        <div className="pt-2">
+        <div>
           {bottomItems.map(renderNavItem)}
         </div>
       </nav>

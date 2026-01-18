@@ -108,6 +108,9 @@ export const GatewayEnvSchema = z.object({
   ELEVENLABS_TTS_MODEL: z.string().optional(),
   ELEVENLABS_STT_MODEL: z.string().optional(),
 
+  // FAL.ai for LoRA training
+  FAL_API_KEY: z.string().optional(),
+
   PROVIDER_KEY_ENCRYPTION_SECRET: z.string().optional(),
 
   // Creator monetization

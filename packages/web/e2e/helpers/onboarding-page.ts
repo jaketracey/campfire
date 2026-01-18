@@ -4,6 +4,7 @@
  */
 
 import { Page, Locator, expect } from '@playwright/test';
+import { injectMockAuth } from './api-interceptor';
 
 export class OnboardingPage {
   readonly page: Page;
@@ -78,6 +79,9 @@ export class OnboardingPage {
   async goto() {
     await this.page.goto('/onboard');
     await this.page.waitForLoadState('networkidle');
+
+    // Inject mock authentication state into the store
+    await injectMockAuth(this.page);
 
     // Dismiss cookie consent banner if it exists
     await this.dismissCookieBanner();

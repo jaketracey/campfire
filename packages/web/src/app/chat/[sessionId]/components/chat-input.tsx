@@ -14,6 +14,7 @@ interface ChatInputProps {
   isRecording: boolean;
   voiceModeEnabled: boolean;
   hasShownPulse: boolean;
+  messageReceivedPulseTrigger: number;
 
   // Voice
   liveTranscription: string;
@@ -36,6 +37,7 @@ export function ChatInput({
   isRecording,
   voiceModeEnabled,
   hasShownPulse,
+  messageReceivedPulseTrigger,
   liveTranscription,
   voiceError,
   webcamError,
@@ -47,7 +49,7 @@ export function ChatInput({
     <div ref={inputContainerRef} className="py-4 px-0 lg:px-4 bg-background z-40">
       {/* Live transcription display */}
       {liveTranscription && (
-        <div className="w-full lg:max-w-4xl lg:mx-auto mb-2">
+        <div className="w-full lg:max-w-4xl lg:mx-auto mb-2" data-testid="live-transcription">
           <Card className="p-2 bg-muted/50 border-dashed">
             <p className="text-sm text-muted-foreground italic">{liveTranscription}</p>
           </Card>
@@ -73,24 +75,41 @@ export function ChatInput({
       )}
 
       <div className="flex gap-2 w-full lg:max-w-4xl lg:mx-auto">
-        <Input
-          ref={inputRef}
-          value={input}
-          onChange={(e) => onInputChange(e.target.value)}
-          onKeyDown={(e) => e.key === 'Enter' && !isLoading && onSend()}
-          placeholder={voiceModeEnabled ? 'Type or hold mic to speak...' : 'Type a message...'}
-          readOnly={isLoading || isRecording}
-          className={`flex-1 min-w-0 h-12 lg:h-10 text-base lg:text-sm transition-shadow duration-300 ${
-            !hasShownPulse && input.length === 0
-              ? 'focus:animate-campfire-pulse'
-              : ''
-          }`}
-        />
+        <motion.div
+          key={messageReceivedPulseTrigger}
+          className="flex-1 min-w-0 rounded-xl"
+          initial={messageReceivedPulseTrigger > 0 ? { boxShadow: '0 0 0 0 rgba(39, 35, 34, 0)' } : false}
+          animate={messageReceivedPulseTrigger > 0 ? {
+            boxShadow: [
+              '0 0 0 0 rgba(39, 35, 34, 0)',
+              '0 0 0 5px rgba(39, 35, 34, 0.9)',
+              '0 0 0 5px rgba(39, 35, 34, 0.6)',
+              '0 0 0 0 rgba(39, 35, 34, 0)',
+            ],
+          } : undefined}
+          transition={{ duration: 0.8, ease: 'easeOut' }}
+        >
+          <Input
+            ref={inputRef}
+            value={input}
+            onChange={(e) => onInputChange(e.target.value)}
+            onKeyDown={(e) => e.key === 'Enter' && !isLoading && onSend()}
+            placeholder={voiceModeEnabled ? 'Type or hold mic to speak...' : 'Type a message...'}
+            readOnly={isLoading || isRecording}
+            data-testid="chat-input"
+            className={`w-full h-12 lg:h-10 text-base lg:text-sm ${
+              !hasShownPulse && input.length === 0
+                ? 'focus:animate-campfire-pulse'
+                : ''
+            }`}
+          />
+        </motion.div>
         <Button
           onClick={onSend}
           onMouseDown={(e) => e.preventDefault()}
           disabled={!input.trim() || isLoading || isRecording}
           className="h-12 w-12 lg:h-10 lg:w-10 flex-shrink-0 rounded-full"
+          data-testid="chat-send-button"
         >
           <ArrowRight className="h-7 w-7 lg:h-5 lg:w-5" />
         </Button>
@@ -98,7 +117,7 @@ export function ChatInput({
 
       {/* TTS playback indicator */}
       {isTTSPlaying && (
-        <div className="w-full lg:max-w-4xl lg:mx-auto mt-2 flex items-center justify-center gap-2 text-sm text-muted-foreground">
+        <div className="w-full lg:max-w-4xl lg:mx-auto mt-2 flex items-center justify-center gap-2 text-sm text-muted-foreground" data-testid="tts-indicator">
           <div className="flex gap-1 items-end h-4">
             {[1, 2, 3, 4, 5].map((i) => (
               <motion.div

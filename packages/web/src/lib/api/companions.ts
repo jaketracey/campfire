@@ -4,6 +4,7 @@
  */
 
 import { get, post, patch, del } from './client';
+import type { ImageRenditions } from '@campfire/shared';
 
 /**
  * Physical appearance for companion image generation
@@ -99,6 +100,8 @@ export interface Companion {
   personality: string;
   voiceId: string | null;
   avatarUrl: string | null;
+  /** Renditions of the avatar image for optimized delivery */
+  avatarRenditions?: ImageRenditions | null;
   allowedTools: string[];
   systemPrompt?: string;
   isPublic: boolean;

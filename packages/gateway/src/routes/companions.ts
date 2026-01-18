@@ -14,6 +14,7 @@ import { db } from '../db/index.js';
 import { logger } from '../observability/logger.js';
 import type { CompanionSpec } from '../db/types.js';
 import { env } from '../env.js';
+import type { ImageRenditions } from '@campfire/shared';
 
 // Orchestrator configuration
 const ORCHESTRATOR_URL = env.ORCHESTRATOR_URL;
@@ -242,7 +243,7 @@ function mapCompanionResponse(companion: {
   is_public: boolean;
   created_at: Date;
   updated_at: Date;
-}, avatarUrl?: string | null) {
+}, avatarUrl?: string | null, avatarRenditions?: ImageRenditions | null) {
   const spec = companion.spec;
   return {
     id: companion.id,
@@ -251,6 +252,7 @@ function mapCompanionResponse(companion: {
     personality: JSON.stringify(spec?.personality || {}),
     voiceId: spec?.voice?.voice_id || null,
     avatarUrl: avatarUrl ?? null,
+    avatarRenditions: avatarRenditions ?? null,
     isPublic: companion.is_public,
     isActive: companion.status === 'active',
     status: companion.status,
@@ -330,27 +332,63 @@ async function getLatestImagesForCompanions(
 }
 
 /**
- * Get active avatar URLs for multiple companions
+ * Avatar data with URL and optional s3_key for rendition lookup
  */
-async function getAvatarUrlsForCompanions(
+interface AvatarData {
+  assetUrl: string;
+  s3Key: string | null;
+}
+
+/**
+ * Get active avatar URLs and s3_keys for multiple companions
+ */
+async function getAvatarDataForCompanions(
   companionIds: string[]
-): Promise<Map<string, string>> {
+): Promise<Map<string, AvatarData>> {
   if (companionIds.length === 0) return new Map();
 
   const results = await db.sql`
-    SELECT c.id as companion_id, a.asset_url
+    SELECT c.id as companion_id, a.asset_url, a.s3_key
     FROM companions c
     JOIN companion_avatars a ON c.active_avatar_id = a.id
     WHERE c.id = ANY(${companionIds})
   `;
 
-  const avatarMap = new Map<string, string>();
+  const avatarMap = new Map<string, AvatarData>();
   for (const row of results) {
     if (row.companion_id && row.asset_url) {
-      avatarMap.set(row.companion_id, row.asset_url);
+      avatarMap.set(row.companion_id, {
+        assetUrl: row.asset_url,
+        s3Key: row.s3_key || null,
+      });
     }
   }
   return avatarMap;
+}
+
+/**
+ * Get renditions for avatars by their s3_keys
+ * Looks up companion_images table which stores renditions
+ */
+async function getAvatarRenditionsForS3Keys(
+  s3Keys: string[]
+): Promise<Map<string, ImageRenditions>> {
+  if (s3Keys.length === 0) return new Map();
+
+  const results = await db.sql`
+    SELECT s3_key, renditions
+    FROM companion_images
+    WHERE s3_key = ANY(${s3Keys})
+      AND renditions IS NOT NULL
+  `;
+
+  const renditionsMap = new Map<string, ImageRenditions>();
+  for (const row of results) {
+    if (row.s3_key && row.renditions) {
+      renditionsMap.set(row.s3_key, row.renditions as ImageRenditions);
+    }
+  }
+  return renditionsMap;
 }
 
 /**
@@ -418,20 +456,31 @@ export async function companionsRoutes(app: FastifyInstance): Promise<void> {
     const companionIds = result.data.map((c) => c.id);
 
     // Fetch latest sessions, images, and avatars in parallel
-    const [sessionMap, imageMap, avatarMap] = await Promise.all([
+    const [sessionMap, imageMap, avatarDataMap] = await Promise.all([
       getLatestSessionsForCompanions(request.user!.userId, companionIds),
       getLatestImagesForCompanions(request.user!.userId, companionIds),
-      getAvatarUrlsForCompanions(companionIds),
+      getAvatarDataForCompanions(companionIds),
     ]);
+
+    // Collect s3_keys from avatars to fetch renditions
+    const avatarS3Keys = Array.from(avatarDataMap.values())
+      .map((data) => data.s3Key)
+      .filter((key): key is string => key !== null);
+
+    // Fetch avatar renditions
+    const avatarRenditionsMap = await getAvatarRenditionsForS3Keys(avatarS3Keys);
 
     // Map companions with session, image, and avatar data
     const companions = result.data.map((companion) => {
       const latestSession = sessionMap.get(companion.id);
       const latestImageData = imageMap.get(companion.id);
-      const avatarUrl = avatarMap.get(companion.id);
+      const avatarData = avatarDataMap.get(companion.id);
+      const avatarRenditions = avatarData?.s3Key
+        ? avatarRenditionsMap.get(avatarData.s3Key) || null
+        : null;
 
       return {
-        ...mapCompanionResponse(companion, avatarUrl),
+        ...mapCompanionResponse(companion, avatarData?.assetUrl, avatarRenditions),
         latestSessionId: latestSession?.id || null,
         latestSessionUpdatedAt: latestSession?.updatedAt || null,
         latestConversationImageUrl: latestImageData?.s3_url || null,
@@ -509,7 +558,15 @@ export async function companionsRoutes(app: FastifyInstance): Promise<void> {
       });
     }
 
-    return reply.send(mapCompanionResponse(companion, companion.activeAvatar?.asset_url));
+    // Fetch avatar renditions if s3_key is available
+    let avatarRenditions: ImageRenditions | null = null;
+    const avatarS3Key = companion.activeAvatar?.s3_key;
+    if (avatarS3Key) {
+      const renditionsMap = await getAvatarRenditionsForS3Keys([avatarS3Key]);
+      avatarRenditions = renditionsMap.get(avatarS3Key) || null;
+    }
+
+    return reply.send(mapCompanionResponse(companion, companion.activeAvatar?.asset_url, avatarRenditions));
   });
 
   /**

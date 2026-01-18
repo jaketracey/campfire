@@ -606,6 +606,147 @@ export class MemoriesService {
   getEventContext(userId: string, sessionId?: string, turnId?: string): EventContext {
     return this.events.createContextFromRequest(userId, sessionId ?? 'memory-management', turnId);
   }
+
+  // ===========================================================================
+  // Pinned Memories
+  // ===========================================================================
+
+  /**
+   * Get pinned memories for a companion.
+   * Pinned memories are always included in the context prompt.
+   */
+  async getPinnedMemories(
+    userId: string,
+    companionId: string,
+    limit: number = 10,
+    tx?: TransactionContext
+  ): Promise<MemoryWithRelevance[]> {
+    // Verify companion ownership
+    const companion = await this.companions.findById(companionId, tx);
+    if (!companion || companion.user_id !== userId) {
+      throw new Error('Companion not found');
+    }
+
+    const pinnedMemories = await this.memories.getPinnedMemories(userId, companionId, limit, tx);
+
+    // Convert to MemoryWithRelevance format (pinned = highest relevance)
+    return pinnedMemories.map(m => ({
+      ...m,
+      relevanceScore: 1.0, // Pinned memories have maximum relevance
+    }));
+  }
+
+  /**
+   * Pin a memory to always include it in context.
+   * Returns false if the limit (10 pinned memories) is reached.
+   */
+  async pinMemory(
+    userId: string,
+    memoryId: string,
+    tx?: TransactionContext
+  ): Promise<{ success: boolean; error?: string }> {
+    const memory = await this.getById(userId, memoryId, tx);
+    if (!memory) {
+      return { success: false, error: 'Memory not found' };
+    }
+
+    // Check current pinned count
+    const count = await this.memories.getPinnedCount(userId, memory.companion_id, tx);
+    if (count >= 10) {
+      return { success: false, error: 'Maximum of 10 pinned memories allowed' };
+    }
+
+    const success = await this.memories.pinMemory(memoryId, userId, memory.companion_id, tx);
+
+    if (success) {
+      logger.info({ userId, memoryId }, 'Memory pinned');
+
+      // Emit event
+      const context: EventContext = {
+        userId,
+        sessionId: 'memory-management',
+        traceId: crypto.randomUUID(),
+      };
+
+      await this.events.emit({
+        type: 'memory.pinned',
+        payload: {
+          memoryId,
+          companionId: memory.companion_id,
+          content: memory.content,
+        },
+        context,
+      });
+    }
+
+    return { success };
+  }
+
+  /**
+   * Unpin a memory.
+   */
+  async unpinMemory(
+    userId: string,
+    memoryId: string,
+    tx?: TransactionContext
+  ): Promise<void> {
+    const memory = await this.getById(userId, memoryId, tx);
+    if (!memory) {
+      throw new Error('Memory not found');
+    }
+
+    await this.memories.unpinMemory(memoryId, tx);
+
+    logger.info({ userId, memoryId }, 'Memory unpinned');
+
+    // Emit event
+    const context: EventContext = {
+      userId,
+      sessionId: 'memory-management',
+      traceId: crypto.randomUUID(),
+    };
+
+    await this.events.emit({
+      type: 'memory.unpinned',
+      payload: {
+        memoryId,
+        companionId: memory.companion_id,
+      },
+      context,
+    });
+  }
+
+  /**
+   * Reorder pinned memories.
+   * @param memoryIds - Array of memory IDs in the desired order
+   */
+  async reorderPinnedMemories(
+    userId: string,
+    companionId: string,
+    memoryIds: string[],
+    tx?: TransactionContext
+  ): Promise<void> {
+    // Verify companion ownership
+    const companion = await this.companions.findById(companionId, tx);
+    if (!companion || companion.user_id !== userId) {
+      throw new Error('Companion not found');
+    }
+
+    await this.memories.reorderPinnedMemories(userId, companionId, memoryIds, tx);
+
+    logger.info({ userId, companionId, memoryCount: memoryIds.length }, 'Pinned memories reordered');
+  }
+
+  /**
+   * Get count of pinned memories for a companion.
+   */
+  async getPinnedCount(
+    userId: string,
+    companionId: string,
+    tx?: TransactionContext
+  ): Promise<number> {
+    return this.memories.getPinnedCount(userId, companionId, tx);
+  }
 }
 
 // Singleton instance

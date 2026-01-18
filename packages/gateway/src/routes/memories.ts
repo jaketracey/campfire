@@ -396,6 +396,294 @@ export async function memoriesRoutes(app: FastifyInstance): Promise<void> {
   });
 
   // ===========================================================================
+  // Pinned Memories Routes
+  // ===========================================================================
+
+  /**
+   * GET /memories/pinned/:companionId - Get pinned memories for a companion
+   */
+  app.get('/pinned/:companionId', async (request: FastifyRequest<{ Params: { companionId: string } }>, reply: FastifyReply) => {
+    return withSpan('memories.pinned.list', async (span) => {
+      const user = request.user!;
+      const { companionId } = request.params;
+      span.setAttributes({ 'user.id': user.userId, 'companion.id': companionId });
+
+      const repo = getMemoriesRepository();
+
+      try {
+        const pinnedMemories = await repo.getPinnedMemories(user.userId, companionId);
+
+        logger.debug(
+          { userId: user.userId, companionId, count: pinnedMemories.length },
+          'Retrieved pinned memories'
+        );
+
+        return reply.send({
+          success: true,
+          data: {
+            items: pinnedMemories.map(m => ({
+              id: m.id,
+              content: m.content,
+              contentType: m.content_type,
+              importance: m.importance,
+              isPinned: m.is_pinned,
+              pinOrder: m.pin_order,
+              pinnedAt: m.pinned_at?.toISOString(),
+              createdAt: m.created_at.toISOString(),
+            })),
+            count: pinnedMemories.length,
+            maxAllowed: 10,
+          },
+        });
+      } catch (error) {
+        logger.error({ error, userId: user.userId, companionId }, 'Failed to get pinned memories');
+        throw error;
+      }
+    });
+  });
+
+  /**
+   * POST /memories/:memoryId/pin - Pin a memory
+   */
+  app.post('/:memoryId/pin', async (request: FastifyRequest<{ Params: { memoryId: string } }>, reply: FastifyReply) => {
+    return withSpan('memories.pin', async (span) => {
+      const user = request.user!;
+      const { memoryId } = request.params;
+      span.setAttributes({ 'user.id': user.userId, 'memory.id': memoryId });
+
+      const repo = getMemoriesRepository();
+
+      try {
+        // First, get the memory to verify ownership and get companionId
+        const memory = await repo.findById(memoryId);
+
+        if (!memory || memory.user_id !== user.userId) {
+          return reply.status(404).send({
+            success: false,
+            error: {
+              code: 'NOT_FOUND',
+              message: 'Memory not found',
+              timestamp: new Date().toISOString(),
+            },
+          });
+        }
+
+        // Check current pinned count
+        const pinnedCount = await repo.getPinnedCount(user.userId, memory.companion_id);
+        if (pinnedCount >= 10) {
+          return reply.status(400).send({
+            success: false,
+            error: {
+              code: 'LIMIT_EXCEEDED',
+              message: 'Maximum of 10 pinned memories allowed per companion',
+              timestamp: new Date().toISOString(),
+            },
+          });
+        }
+
+        // Pin the memory
+        const success = await repo.pinMemory(memoryId, user.userId, memory.companion_id);
+
+        if (success) {
+          logger.info({ memoryId, userId: user.userId }, 'Memory pinned');
+
+          // Emit event
+          const eventStore = getEventStore();
+          await eventStore.append({
+            eventId: nanoid(),
+            timestamp: new Date().toISOString(),
+            userId: user.userId,
+            sessionId: 'memory',
+            turnId: null,
+            traceId: request.id,
+            type: 'memory.pinned',
+            payload: {
+              memoryId,
+              companionId: memory.companion_id,
+            },
+            version: '1.0',
+            causationId: null,
+            correlationId: request.id,
+          });
+
+          return reply.send({
+            success: true,
+            data: {
+              memoryId,
+              isPinned: true,
+              pinnedCount: pinnedCount + 1,
+              maxAllowed: 10,
+            },
+          });
+        } else {
+          return reply.status(500).send({
+            success: false,
+            error: {
+              code: 'PIN_FAILED',
+              message: 'Failed to pin memory',
+              timestamp: new Date().toISOString(),
+            },
+          });
+        }
+      } catch (error) {
+        logger.error({ error, memoryId, userId: user.userId }, 'Failed to pin memory');
+        throw error;
+      }
+    });
+  });
+
+  /**
+   * DELETE /memories/:memoryId/pin - Unpin a memory
+   */
+  app.delete('/:memoryId/pin', async (request: FastifyRequest<{ Params: { memoryId: string } }>, reply: FastifyReply) => {
+    return withSpan('memories.unpin', async (span) => {
+      const user = request.user!;
+      const { memoryId } = request.params;
+      span.setAttributes({ 'user.id': user.userId, 'memory.id': memoryId });
+
+      const repo = getMemoriesRepository();
+
+      try {
+        // First, get the memory to verify ownership
+        const memory = await repo.findById(memoryId);
+
+        if (!memory || memory.user_id !== user.userId) {
+          return reply.status(404).send({
+            success: false,
+            error: {
+              code: 'NOT_FOUND',
+              message: 'Memory not found',
+              timestamp: new Date().toISOString(),
+            },
+          });
+        }
+
+        // Unpin the memory
+        await repo.unpinMemory(memoryId);
+
+        logger.info({ memoryId, userId: user.userId }, 'Memory unpinned');
+
+        // Emit event
+        const eventStore = getEventStore();
+        await eventStore.append({
+          eventId: nanoid(),
+          timestamp: new Date().toISOString(),
+          userId: user.userId,
+          sessionId: 'memory',
+          turnId: null,
+          traceId: request.id,
+          type: 'memory.unpinned',
+          payload: {
+            memoryId,
+            companionId: memory.companion_id,
+          },
+          version: '1.0',
+          causationId: null,
+          correlationId: request.id,
+        });
+
+        // Get updated count
+        const pinnedCount = await repo.getPinnedCount(user.userId, memory.companion_id);
+
+        return reply.send({
+          success: true,
+          data: {
+            memoryId,
+            isPinned: false,
+            pinnedCount,
+            maxAllowed: 10,
+          },
+        });
+      } catch (error) {
+        logger.error({ error, memoryId, userId: user.userId }, 'Failed to unpin memory');
+        throw error;
+      }
+    });
+  });
+
+  /**
+   * PUT /memories/pinned/:companionId/reorder - Reorder pinned memories
+   */
+  app.put('/pinned/:companionId/reorder', async (request: FastifyRequest<{ Params: { companionId: string } }>, reply: FastifyReply) => {
+    return withSpan('memories.pinned.reorder', async (span) => {
+      const user = request.user!;
+      const { companionId } = request.params;
+      span.setAttributes({ 'user.id': user.userId, 'companion.id': companionId });
+
+      const schema = z.object({
+        memoryIds: z.array(z.string().uuid()).min(1).max(10),
+      });
+
+      const parseResult = schema.safeParse(request.body);
+      if (!parseResult.success) {
+        return reply.status(400).send({
+          success: false,
+          error: {
+            code: 'VALIDATION_ERROR',
+            message: 'Invalid request body',
+            details: parseResult.error.flatten(),
+            timestamp: new Date().toISOString(),
+          },
+        });
+      }
+
+      const { memoryIds } = parseResult.data;
+      const repo = getMemoriesRepository();
+
+      try {
+        await repo.reorderPinnedMemories(user.userId, companionId, memoryIds);
+
+        logger.info(
+          { userId: user.userId, companionId, count: memoryIds.length },
+          'Pinned memories reordered'
+        );
+
+        return reply.send({
+          success: true,
+          data: {
+            companionId,
+            memoryIds,
+            reorderedAt: new Date().toISOString(),
+          },
+        });
+      } catch (error) {
+        logger.error({ error, userId: user.userId, companionId }, 'Failed to reorder pinned memories');
+        throw error;
+      }
+    });
+  });
+
+  /**
+   * GET /memories/pinned/:companionId/count - Get pinned memory count
+   */
+  app.get('/pinned/:companionId/count', async (request: FastifyRequest<{ Params: { companionId: string } }>, reply: FastifyReply) => {
+    return withSpan('memories.pinned.count', async (span) => {
+      const user = request.user!;
+      const { companionId } = request.params;
+      span.setAttributes({ 'user.id': user.userId, 'companion.id': companionId });
+
+      const repo = getMemoriesRepository();
+
+      try {
+        const count = await repo.getPinnedCount(user.userId, companionId);
+
+        return reply.send({
+          success: true,
+          data: {
+            companionId,
+            count,
+            maxAllowed: 10,
+            remaining: Math.max(0, 10 - count),
+          },
+        });
+      } catch (error) {
+        logger.error({ error, userId: user.userId, companionId }, 'Failed to get pinned count');
+        throw error;
+      }
+    });
+  });
+
+  // ===========================================================================
   // Internal routes (for orchestrator service)
   // ===========================================================================
 

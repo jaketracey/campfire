@@ -58,6 +58,8 @@ import { adminTenantApplicationsRoutes } from './admin-tenant-applications.js';
 import { videosRoutes, mediaRoutes } from './videos.js';
 import { adminLogsRoutes } from './admin-logs.js';
 import { adminPromptsRoutes } from './admin-prompts.js';
+import { adminInfluencerModelsRoutes } from './admin-influencer-models.js';
+import { adminCompanionsRoutes } from './admin-companions.js';
 import { logger } from '../observability/logger.js';
 
 /**
@@ -189,6 +191,12 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
 
       // Admin prompt templates routes
       await api.register(adminPromptsRoutes, { prefix: '/admin/prompts' });
+
+      // Admin influencer models routes (LoRA training)
+      await api.register(adminInfluencerModelsRoutes, { prefix: '/admin/influencer-models' });
+
+      // Admin companions management routes
+      await api.register(adminCompanionsRoutes, { prefix: '/admin/companions' });
 
       // Public SEO routes (for SSR/sitemap)
       await api.register(seoPublicRoutes, { prefix: '/public' });

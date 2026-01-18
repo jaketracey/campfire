@@ -61,6 +61,7 @@ export function ChatMessages({
     <div
       className="flex-1 overflow-y-auto py-4 px-6 lg:px-4 space-y-4 scrollbar-chat relative"
       style={{ paddingBottom: keyboardHeight > 0 ? `${keyboardHeight + 80}px` : undefined }}
+      data-testid="chat-messages"
     >
       {/* Mobile background avatar */}
       {mobileAvatarUrl && (
@@ -88,7 +89,7 @@ export function ChatMessages({
         </div>
       )}
       {messages.length === 0 && !streamingContent && !isLoading && (
-        <div className="flex items-center justify-center h-full text-muted-foreground relative z-10">
+        <div className="flex items-center justify-center h-full text-muted-foreground relative z-10" data-testid="chat-empty-state">
           Start a conversation with your companion
         </div>
       )}
@@ -114,6 +115,7 @@ export function ChatMessages({
           <div
             key={message.id}
             className={`flex relative z-10 ${isUser ? 'justify-end' : 'justify-start'}`}
+            data-testid={isUser ? 'user-message' : 'assistant-message'}
           >
             {/* Use animated segments for assistant messages with actions */}
             {!isUser && hasMultipleSegments ? (
@@ -153,7 +155,7 @@ export function ChatMessages({
 
       {/* Streaming message */}
       {streamingContent && (
-        <div className="flex justify-start relative z-10">
+        <div className="flex justify-start relative z-10" data-testid="streaming-message">
           <Card className="bg-muted p-3 max-w-[80%]">
             <p className="text-base lg:text-sm whitespace-pre-wrap">{streamingContent}</p>
           </Card>
@@ -167,6 +169,7 @@ export function ChatMessages({
           initial={{ opacity: 0, y: 5 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.15 }}
+          data-testid="typing-indicator"
         >
           <Card className={`bg-muted p-3 ${showTypingBetweenMessages ? 'mt-1' : ''}`}>
             <div className="flex gap-1">

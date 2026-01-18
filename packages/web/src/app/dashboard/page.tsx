@@ -292,7 +292,7 @@ export default function DashboardPage() {
         <div className="flex flex-col md:flex-row md:items-start justify-between gap-6">
           <div className="space-y-2">
             <h1 className="text-5xl md:text-6xl font-bold font-display tracking-tight text-white">
-              Hey <span className="text-transparent bg-clip-text bg-gradient-to-r from-campfire-400 via-campfire-500 to-campfire-600">gorgeous</span>
+              Hi, <span className="text-transparent bg-clip-text bg-gradient-to-r from-campfire-400 via-campfire-500 to-campfire-600">{(user?.displayName || user?.email?.split('@')[0] || 'there').split(' ')[0]}</span>
             </h1>
             <p className="text-gray-400 text-lg max-w-xl">
               {welcomeMessage || 'Your companions are excited to see you.'}
@@ -397,7 +397,7 @@ export default function DashboardPage() {
                   size="xl"
                   className="h-16 px-12 rounded-full bg-gradient-to-r from-campfire-500 to-campfire-600 text-white font-bold text-xl shadow-[0_0_30px_rgba(249,115,22,0.3)] hover:scale-105 transition-all"
                 >
-                  Create Your First Companion
+                  Design new companion
                 </Button>
               </CardContent>
             </Card>

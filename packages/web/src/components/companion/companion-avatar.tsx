@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { cn } from '@/lib/utils';
 import {
@@ -10,6 +10,7 @@ import {
   type EmotionalState,
   type PersonalitySliders,
 } from '@/lib/api/imagegen';
+import { getOptimalAvatarUrl, type ImageRenditions } from '@/lib/utils/image-renditions';
 
 interface CompanionAvatarProps {
   /** The current emotional state of the companion */
@@ -52,6 +53,8 @@ interface CompanionAvatarProps {
   referenceStrength?: number;
   /** Anchor image URL to show initially (skips initial generation) */
   anchorImageUrl?: string;
+  /** Renditions of the anchor image for optimized delivery */
+  anchorRenditions?: ImageRenditions | null;
   /** Generation counter - increment to trigger new generation */
   generationTrigger?: number;
   /** Scene/action description from LLM for contextual image generation */
@@ -79,11 +82,19 @@ export function CompanionAvatar({
   referenceImageUrl: externalReferenceUrl,
   referenceStrength = 0.85,
   anchorImageUrl,
+  anchorRenditions,
   generationTrigger = 0,
   sceneDescription,
 }: CompanionAvatarProps) {
+  // Compute optimal anchor URL using renditions if available
+  // Uses 'large' rendition for chat view (832x1248 → ~200KB vs 6MB original)
+  const optimalAnchorUrl = useMemo(
+    () => getOptimalAvatarUrl(anchorImageUrl, anchorRenditions, width),
+    [anchorImageUrl, anchorRenditions, width]
+  );
+
   // Use anchor image as initial display (no generation needed on mount)
-  const [currentImageUrl, setCurrentImageUrl] = useState<string | null>(anchorImageUrl || fallbackUrl || null);
+  const [currentImageUrl, setCurrentImageUrl] = useState<string | null>(optimalAnchorUrl || fallbackUrl || null);
   const [nextImageUrl, setNextImageUrl] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [isTransitioning, setIsTransitioning] = useState(false);
@@ -97,17 +108,17 @@ export function CompanionAvatar({
 
   // Sync anchor image when prop changes (e.g., when companion data loads)
   useEffect(() => {
-    if (anchorImageUrl) {
+    if (optimalAnchorUrl) {
       // Only set if we don't have a current image yet (avoid overwriting generated images)
       if (!currentImageUrl) {
-        setCurrentImageUrl(anchorImageUrl);
-      }
-      // Always update identity anchor for IP-Adapter reference
-      if (!identityAnchorUrl) {
-        setIdentityAnchorUrl(anchorImageUrl);
+        setCurrentImageUrl(optimalAnchorUrl);
       }
     }
-  }, [anchorImageUrl, currentImageUrl, identityAnchorUrl]);
+    // Always update identity anchor for IP-Adapter reference (use original URL for best quality)
+    if (anchorImageUrl && !identityAnchorUrl) {
+      setIdentityAnchorUrl(anchorImageUrl);
+    }
+  }, [optimalAnchorUrl, anchorImageUrl, currentImageUrl, identityAnchorUrl]);
 
   const generateImage = useCallback(async () => {
     console.log('[CompanionAvatar] generateImage called, isLoading:', isLoading);
@@ -270,18 +281,18 @@ export function CompanionAvatar({
   useEffect(() => {
     if (!autoRegenerate) return;
     // Skip if we have an anchor and haven't started generating yet
-    if (anchorImageUrl && lastGenerationTriggerRef.current === 0) return;
+    if (optimalAnchorUrl && lastGenerationTriggerRef.current === 0) return;
 
     const timer = setTimeout(() => {
       generateImage();
     }, debounceDelay);
 
     return () => clearTimeout(timer);
-  }, [emotionalState, personality, style, autoRegenerate, debounceDelay, generateImage, anchorImageUrl]);
+  }, [emotionalState, personality, style, autoRegenerate, debounceDelay, generateImage, optimalAnchorUrl]);
 
   // Initial load - only if no anchor image provided
   useEffect(() => {
-    if (!currentImageUrl && !isLoading && !anchorImageUrl) {
+    if (!currentImageUrl && !isLoading && !optimalAnchorUrl) {
       generateImage();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps

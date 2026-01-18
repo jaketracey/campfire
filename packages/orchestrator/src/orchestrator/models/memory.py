@@ -36,6 +36,8 @@ class LongTermMemory(BaseModel):
     created_at: datetime = Field(default_factory=datetime.utcnow)
     updated_at: datetime = Field(default_factory=datetime.utcnow)
     expires_at: datetime | None = None
+    is_pinned: bool = False
+    pin_order: int | None = None
 
     class Config:
         frozen = True

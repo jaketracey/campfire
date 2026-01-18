@@ -144,11 +144,12 @@ export default function LoginPage() {
               id="email"
               type="email"
               placeholder="you@example.com"
+              data-testid="login-email-input"
               {...register('email')}
               disabled={isLoading}
             />
             {errors.email && (
-              <p className="text-sm text-destructive">{errors.email.message}</p>
+              <p className="text-sm text-destructive" data-testid="login-email-error">{errors.email.message}</p>
             )}
           </div>
 
@@ -158,6 +159,7 @@ export default function LoginPage() {
               <Link
                 href="/forgot-password"
                 className="text-sm text-white/40 hover:text-white/60"
+                data-testid="login-forgot-password-link"
               >
                 Forgot password?
               </Link>
@@ -167,6 +169,7 @@ export default function LoginPage() {
                 id="password"
                 type={showPassword ? 'text' : 'password'}
                 placeholder="Enter your password"
+                data-testid="login-password-input"
                 {...register('password')}
                 disabled={isLoading}
               />
@@ -177,6 +180,7 @@ export default function LoginPage() {
                 className="absolute right-0 top-0 h-full px-3 py-2 hover:bg-transparent"
                 onClick={() => setShowPassword(!showPassword)}
                 disabled={isLoading}
+                data-testid="login-password-toggle"
               >
                 {showPassword ? (
                   <EyeOff className="h-4 w-4 text-muted-foreground" />
@@ -186,7 +190,7 @@ export default function LoginPage() {
               </Button>
             </div>
             {errors.password && (
-              <p className="text-sm text-destructive">{errors.password.message}</p>
+              <p className="text-sm text-destructive" data-testid="login-password-error">{errors.password.message}</p>
             )}
           </div>
         </CardContent>
@@ -197,6 +201,7 @@ export default function LoginPage() {
             variant="campfire"
             size="lg"
             disabled={isLoading}
+            data-testid="login-submit-button"
           >
             {isSubmitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
             Sign in
@@ -204,7 +209,7 @@ export default function LoginPage() {
 
           <p className="text-sm text-white/40 text-center">
             Don&apos;t have an account?{' '}
-            <Link href="/signup" className="text-campfire-400 hover:text-campfire-300 hover:underline">
+            <Link href="/signup" className="text-campfire-400 hover:text-campfire-300 hover:underline" data-testid="login-signup-link">
               Sign up
             </Link>
           </p>

@@ -18,6 +18,7 @@ class ToolType(str, Enum):
     KG_REMOVE = "kg_remove"
     IMAGE_ANALYSIS = "image_analysis"
     IMAGE_GENERATION = "image_generation"
+    VIDEO_GENERATION = "video_generation"
     VAULT_PROJECTION = "vault_projection"
     WEB_SEARCH = "web_search"
     CALENDAR = "calendar"
@@ -74,6 +75,16 @@ class ToolDefinition(BaseModel):
         }
 
 
+class ToolCallContext(BaseModel):
+    """Optional context passed to tool handlers for augmentation."""
+
+    companion_spec: dict[str, Any] | None = None
+    recent_turns: list[dict[str, Any]] | None = None
+
+    class Config:
+        frozen = True
+
+
 class ToolCall(BaseModel):
     """A request to invoke a tool."""
 
@@ -84,6 +95,7 @@ class ToolCall(BaseModel):
     session_id: UUID
     user_id: UUID
     companion_id: UUID
+    context: ToolCallContext | None = None
     created_at: datetime = Field(default_factory=datetime.utcnow)
 
     class Config:
@@ -243,6 +255,39 @@ IMAGE_GENERATION_TOOL = ToolDefinition(
     required_params=["prompt"],
     requires_confirmation=True,
     cost_estimate_usd=0.02,
+)
+
+VIDEO_GENERATION_TOOL = ToolDefinition(
+    name="video_generation",
+    tool_type=ToolType.VIDEO_GENERATION,
+    description="Generate a short video clip based on a text description, optionally animated from a source image",
+    parameters={
+        "prompt": {
+            "type": "string",
+            "description": "Text description of the motion/action for the video. Describe what should happen.",
+        },
+        "source_image_url": {
+            "type": "string",
+            "description": "Optional URL of an image to animate. If provided, creates image-to-video animation.",
+        },
+        "duration_seconds": {
+            "type": "integer",
+            "description": "Duration of the video in seconds (1-10)",
+            "default": 5,
+            "minimum": 1,
+            "maximum": 10,
+        },
+        "aspect_ratio": {
+            "type": "string",
+            "enum": ["16:9", "9:16", "1:1"],
+            "description": "Aspect ratio of the video. 16:9 for landscape, 9:16 for portrait.",
+            "default": "9:16",
+        },
+    },
+    required_params=["prompt"],
+    requires_confirmation=True,
+    cost_estimate_usd=0.25,
+    timeout_seconds=300.0,
 )
 
 VAULT_PROJECTION_TOOL = ToolDefinition(
@@ -419,6 +464,7 @@ TOOL_REGISTRY: dict[str, ToolDefinition] = {
     "kg_propose": KG_PROPOSE_TOOL,
     "image_analysis": IMAGE_ANALYSIS_TOOL,
     "image_generation": IMAGE_GENERATION_TOOL,
+    "video_generation": VIDEO_GENERATION_TOOL,
     "vault_projection": VAULT_PROJECTION_TOOL,
     "gift_generate": GIFT_GENERATE_TOOL,
     "gift_acknowledge": GIFT_ACKNOWLEDGE_TOOL,

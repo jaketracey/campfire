@@ -21,6 +21,7 @@ from orchestrator.tools.handlers import (
     MemoryReadHandler,
     MemoryWriteHandler,
     VaultProjectionHandler,
+    VideoGenerationHandler,
 )
 from orchestrator.tools.game_handlers import (
     GameMoveHandler,
@@ -67,6 +68,9 @@ class ToolRouter:
                 self.settings, self.event_emitter, self.http_client
             ),
             ImageGenerationHandler(
+                self.settings, self.event_emitter, self.http_client
+            ),
+            VideoGenerationHandler(
                 self.settings, self.event_emitter, self.http_client
             ),
             VaultProjectionHandler(

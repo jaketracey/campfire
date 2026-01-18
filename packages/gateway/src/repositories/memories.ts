@@ -28,6 +28,15 @@ export interface MemoryWithSimilarity extends Memory {
 }
 
 /**
+ * Memory with pinned information
+ */
+export interface MemoryWithPinInfo extends Memory {
+  is_pinned: boolean;
+  pin_order: number | null;
+  pinned_at: Date | null;
+}
+
+/**
  * Memory list filters
  */
 export interface MemoryListFilters extends PaginationOptions {
@@ -718,6 +727,104 @@ export class MemoriesRepository {
   }
 
   // ===========================================================================
+  // Pinned Memories
+  // ===========================================================================
+
+  /**
+   * Get all pinned memories for a user-companion pair.
+   * Pinned memories are always included in the context prompt.
+   */
+  async getPinnedMemories(
+    userId: string,
+    companionId: string,
+    limit: number = 10,
+    tx?: TransactionContext
+  ): Promise<MemoryWithPinInfo[]> {
+    const db = this.getSql(tx);
+
+    const result = await db`
+      SELECT
+        id, user_id, companion_id, content, content_type, status,
+        importance, access_count, last_accessed_at,
+        source_event_id, source_turn_id, metadata, tags,
+        valid_from, valid_until, expires_at, created_at, updated_at,
+        is_pinned, pin_order, pinned_at
+      FROM memories
+      WHERE user_id = ${userId}
+        AND companion_id = ${companionId}
+        AND is_pinned = TRUE
+        AND status = 'active'
+      ORDER BY COALESCE(pin_order, 999), pinned_at ASC
+      LIMIT ${limit}
+    `;
+
+    return result.map(row => this.mapMemoryWithPinInfo(row));
+  }
+
+  /**
+   * Pin a memory to always include it in context.
+   * Returns false if the limit (10) is reached.
+   */
+  async pinMemory(
+    memoryId: string,
+    userId: string,
+    companionId: string,
+    tx?: TransactionContext
+  ): Promise<boolean> {
+    const db = this.getSql(tx);
+
+    const result = await db`
+      SELECT pin_memory(${memoryId}, ${userId}, ${companionId}) as success
+    `;
+
+    return result[0]?.['success'] === true;
+  }
+
+  /**
+   * Unpin a memory.
+   */
+  async unpinMemory(memoryId: string, tx?: TransactionContext): Promise<void> {
+    const db = this.getSql(tx);
+    await db`SELECT unpin_memory(${memoryId})`;
+  }
+
+  /**
+   * Reorder pinned memories.
+   * @param memoryIds - Array of memory IDs in the desired order
+   */
+  async reorderPinnedMemories(
+    userId: string,
+    companionId: string,
+    memoryIds: string[],
+    tx?: TransactionContext
+  ): Promise<void> {
+    const db = this.getSql(tx);
+    await db`SELECT reorder_pinned_memories(${userId}, ${companionId}, ${memoryIds})`;
+  }
+
+  /**
+   * Get count of pinned memories for a user-companion pair.
+   */
+  async getPinnedCount(
+    userId: string,
+    companionId: string,
+    tx?: TransactionContext
+  ): Promise<number> {
+    const db = this.getSql(tx);
+
+    const result = await db`
+      SELECT COUNT(*)::int as count
+      FROM memories
+      WHERE user_id = ${userId}
+        AND companion_id = ${companionId}
+        AND is_pinned = TRUE
+        AND status = 'active'
+    `;
+
+    return result[0]?.['count'] ?? 0;
+  }
+
+  // ===========================================================================
   // Row Mapper
   // ===========================================================================
 
@@ -736,6 +843,15 @@ export class MemoriesRepository {
       expires_at: row['expires_at'] as Date | null,
       created_at: row['created_at'] as Date,
       updated_at: row['updated_at'] as Date,
+    };
+  }
+
+  private mapMemoryWithPinInfo(row: Record<string, unknown>): MemoryWithPinInfo {
+    return {
+      ...this.mapMemory(row),
+      is_pinned: row['is_pinned'] as boolean,
+      pin_order: row['pin_order'] as number | null,
+      pinned_at: row['pinned_at'] as Date | null,
     };
   }
 }

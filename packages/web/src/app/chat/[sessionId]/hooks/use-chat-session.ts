@@ -19,6 +19,7 @@ import { trackChatStarted, trackFirstMessage } from '@/lib/analytics/meta-pixel'
 import type { ActiveGame } from '@campfire/shared';
 import type { Message, ChatEvent, DemoCompanionData, ChatSessionContentProps } from '../types';
 import { detectEmotionalState, extractSceneDescription } from '../utils';
+import { getOptimalAvatarUrl } from '@/lib/utils/image-renditions';
 
 interface UseChatSessionOptions {
   sessionId: string;
@@ -154,6 +155,7 @@ export function useChatSession({
   const [keyboardHeight, setKeyboardHeight] = useState(0);
   const [inputHeight, setInputHeight] = useState(0);
   const [hasShownPulse, setHasShownPulse] = useState(false);
+  const [messageReceivedPulseTrigger, setMessageReceivedPulseTrigger] = useState(0);
 
   // Voice recording hook
   const {
@@ -480,12 +482,18 @@ export function useChatSession({
     loadGallery();
   }, [sessionId, authLoading, isAuthenticated, isDemo]);
 
-  // Fallback to companion avatar
+  // Fallback to companion avatar - use optimal rendition if available
   useEffect(() => {
     if (!currentAvatarUrl && companion?.avatarUrl) {
-      setCurrentAvatarUrl(companion.avatarUrl);
+      // Use optimized rendition for mobile background (medium size ~512px is good for most mobile screens)
+      const optimalUrl = getOptimalAvatarUrl(
+        companion.avatarUrl,
+        companion.avatarRenditions,
+        512 // Medium size for mobile background
+      );
+      setCurrentAvatarUrl(optimalUrl || companion.avatarUrl);
     }
-  }, [companion?.avatarUrl, currentAvatarUrl]);
+  }, [companion?.avatarUrl, companion?.avatarRenditions, currentAvatarUrl]);
 
   // Mobile avatar pop animation
   useEffect(() => {
@@ -635,6 +643,9 @@ export function useChatSession({
       setShowTypingBetweenMessages(false);
       setIsLoading(false);
       setCurrentEmotionalState(emotionalState);
+
+      // Trigger pulse animation on input when companion message is received
+      setMessageReceivedPulseTrigger(prev => prev + 1);
 
       const scene = imagePrompt || extractSceneDescription(content);
       setSceneDescription(scene);
@@ -1257,6 +1268,7 @@ export function useChatSession({
     keyboardHeight,
     inputHeight,
     hasShownPulse,
+    messageReceivedPulseTrigger,
     scrollToBottom,
 
     // Demo

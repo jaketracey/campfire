@@ -440,10 +440,14 @@ export function SignupModal({
         </DialogPrimitive.Overlay>
         <DialogPrimitive.Content
           ref={contentRef}
+          data-testid="signup-modal"
           className="fixed left-0 right-0 top-0 bottom-0 sm:left-[50%] sm:top-[50%] sm:bottom-auto sm:right-auto z-50 sm:translate-x-[-50%] sm:translate-y-[-50%] sm:max-w-md lg:max-w-4xl lg:min-w-[56rem] rounded-none sm:rounded-3xl border-0 bg-gradient-to-b from-background to-muted/30 p-0 overflow-hidden sm:max-h-[90vh] overflow-y-auto data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 sm:data-[state=closed]:zoom-out-95 sm:data-[state=open]:zoom-in-95"
         >
           {/* Close button */}
-          <DialogPrimitive.Close className="absolute right-4 top-4 z-10 rounded-full p-1 opacity-70 ring-offset-background transition-opacity hover:opacity-100 focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2">
+          <DialogPrimitive.Close
+            data-testid="signup-modal-close"
+            className="absolute right-4 top-4 z-10 rounded-full p-1 opacity-70 ring-offset-background transition-opacity hover:opacity-100 focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2"
+          >
             <X className="h-5 w-5" />
             <span className="sr-only">Close</span>
           </DialogPrimitive.Close>
@@ -482,10 +486,11 @@ export function SignupModal({
 
             <div className="px-6 pb-6">
               {/* Tab Switcher */}
-              <div className="flex rounded-2xl bg-muted/50 p-1.5 mb-6">
+              <div className="flex rounded-2xl bg-muted/50 p-1.5 mb-6" data-testid="signup-modal-tabs">
                 <button
                   type="button"
                   onClick={() => setMode('signup')}
+                  data-testid="signup-modal-signup-tab"
                   className={cn(
                     'flex-1 rounded-xl py-2.5 text-sm font-semibold transition-all duration-200',
                     mode === 'signup'
@@ -498,6 +503,7 @@ export function SignupModal({
                 <button
                   type="button"
                   onClick={() => setMode('login')}
+                  data-testid="signup-modal-login-tab"
                   className={cn(
                     'flex-1 rounded-xl py-2.5 text-sm font-semibold transition-all duration-200',
                     mode === 'login'
@@ -608,6 +614,7 @@ export function SignupModal({
 
                 <Button
                   type="submit"
+                  data-testid="signup-modal-submit"
                   className="w-full h-12 rounded-2xl text-base font-semibold bg-campfire-500 hover:bg-campfire-600 shadow-md shadow-campfire-500/20"
                   disabled={isSubmitting || !email || !password}
                 >

@@ -516,4 +516,52 @@ export async function knowledgeGraphRoutes(app: FastifyInstance): Promise<void> 
       });
     });
   });
+
+  /**
+   * POST /knowledge-graph/internal/neighbors - Get entity neighbors (internal use)
+   * Used by hybrid search to traverse the knowledge graph
+   */
+  app.post('/internal/neighbors', { preHandler: requireInternalService }, async (request: FastifyRequest, reply: FastifyReply) => {
+    return withSpan('kg.neighbors.internal', async (span) => {
+      const { userId, companionId, entityId, depth = 1 } = request.body as {
+        userId: string;
+        companionId: string;
+        entityId: string;
+        depth?: number;
+      };
+
+      if (!userId || !companionId || !entityId) {
+        return reply.status(400).send({
+          success: false,
+          error: { code: 'MISSING_PARAMS', message: 'userId, companionId, and entityId are required' },
+        });
+      }
+
+      // Verify entity belongs to user
+      const entity = await repo.findEntityById(entityId);
+      if (!entity || entity.user_id !== userId) {
+        return reply.status(404).send({
+          success: false,
+          error: { code: 'NOT_FOUND', message: 'Entity not found' },
+        });
+      }
+
+      // Get neighbors using existing method
+      const neighbors = await repo.getNeighbors(entityId, { depth: Math.min(depth, 2) });
+
+      // Get edges between the entity and its neighbors
+      const [outgoing, incoming] = await Promise.all([
+        repo.getOutgoingEdges(entityId, { status: 'active' }),
+        repo.getIncomingEdges(entityId, { status: 'active' }),
+      ]);
+
+      return reply.send({
+        success: true,
+        data: {
+          entities: neighbors,
+          edges: [...outgoing, ...incoming],
+        },
+      });
+    });
+  });
 }

@@ -218,11 +218,12 @@ export default function SignupPage() {
               id="name"
               type="text"
               placeholder="Your name"
+              data-testid="signup-name-input"
               {...register('name')}
               disabled={isLoading}
             />
             {errors.name && (
-              <p className="text-sm text-destructive">{errors.name.message}</p>
+              <p className="text-sm text-destructive" data-testid="signup-name-error">{errors.name.message}</p>
             )}
           </div>
 
@@ -232,11 +233,12 @@ export default function SignupPage() {
               id="email"
               type="email"
               placeholder="you@example.com"
+              data-testid="signup-email-input"
               {...register('email')}
               disabled={isLoading}
             />
             {errors.email && (
-              <p className="text-sm text-destructive">{errors.email.message}</p>
+              <p className="text-sm text-destructive" data-testid="signup-email-error">{errors.email.message}</p>
             )}
           </div>
 
@@ -247,6 +249,7 @@ export default function SignupPage() {
                 id="password"
                 type={showPassword ? 'text' : 'password'}
                 placeholder="Create a password"
+                data-testid="signup-password-input"
                 {...register('password')}
                 disabled={isLoading}
               />
@@ -257,6 +260,7 @@ export default function SignupPage() {
                 className="absolute right-0 top-0 h-full px-3 py-2 hover:bg-transparent"
                 onClick={() => setShowPassword(!showPassword)}
                 disabled={isLoading}
+                data-testid="signup-password-toggle"
               >
                 {showPassword ? (
                   <EyeOff className="h-4 w-4 text-muted-foreground" />
@@ -271,6 +275,7 @@ export default function SignupPage() {
                   <div
                     key={index}
                     className="flex items-center gap-2 text-xs"
+                    data-testid="password-strength-indicator"
                   >
                     {req.regex.test(password) ? (
                       <Check className="h-3 w-3 text-green-500" />
@@ -291,7 +296,7 @@ export default function SignupPage() {
               </div>
             )}
             {errors.password && (
-              <p className="text-sm text-destructive">
+              <p className="text-sm text-destructive" data-testid="signup-password-error">
                 {errors.password.message}
               </p>
             )}
@@ -304,6 +309,7 @@ export default function SignupPage() {
                 id="confirmPassword"
                 type={showConfirmPassword ? 'text' : 'password'}
                 placeholder="Confirm your password"
+                data-testid="signup-confirm-password-input"
                 {...register('confirmPassword')}
                 disabled={isLoading}
               />
@@ -314,6 +320,7 @@ export default function SignupPage() {
                 className="absolute right-0 top-0 h-full px-3 py-2 hover:bg-transparent"
                 onClick={() => setShowConfirmPassword(!showConfirmPassword)}
                 disabled={isLoading}
+                data-testid="signup-confirm-password-toggle"
               >
                 {showConfirmPassword ? (
                   <EyeOff className="h-4 w-4 text-muted-foreground" />
@@ -323,7 +330,7 @@ export default function SignupPage() {
               </Button>
             </div>
             {errors.confirmPassword && (
-              <p className="text-sm text-destructive">
+              <p className="text-sm text-destructive" data-testid="signup-confirm-password-error">
                 {errors.confirmPassword.message}
               </p>
             )}
@@ -338,6 +345,7 @@ export default function SignupPage() {
               }
               disabled={isLoading}
               className="border-white/30 data-[state=checked]:bg-campfire-500 data-[state=checked]:border-campfire-500"
+              data-testid="signup-terms-checkbox"
             />
             <Label
               htmlFor="terms"
@@ -364,7 +372,7 @@ export default function SignupPage() {
             </Label>
           </div>
           {errors.acceptTerms && (
-            <p className="text-sm text-destructive">
+            <p className="text-sm text-destructive" data-testid="signup-terms-error">
               {errors.acceptTerms.message}
             </p>
           )}
@@ -376,6 +384,7 @@ export default function SignupPage() {
             variant="campfire"
             size="lg"
             disabled={isLoading}
+            data-testid="signup-submit-button"
           >
             {isSubmitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
             Create account
@@ -383,7 +392,7 @@ export default function SignupPage() {
 
           <p className="text-sm text-white/40 text-center">
             Already have an account?{' '}
-            <Link href="/login" className="text-campfire-400 hover:text-campfire-300 hover:underline">
+            <Link href="/login" className="text-campfire-400 hover:text-campfire-300 hover:underline" data-testid="signup-login-link">
               Sign in
             </Link>
           </p>

@@ -261,6 +261,12 @@ export const useAuthStore = create<AuthState>()(
   )
 );
 
+// Expose store on window for E2E testing (development only)
+if (typeof window !== 'undefined') {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  (window as any).useAuthStore = useAuthStore;
+}
+
 /**
  * Get access token for API requests
  */

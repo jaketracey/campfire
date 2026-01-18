@@ -1225,13 +1225,40 @@ export async function imagegenRoutes(app: FastifyInstance): Promise<void> {
         basePromptParts.push(hairColorDesc);
       }
 
-      // Build subject description, then render base prompt template
+      // Build subject description
       const subjectDesc = basePromptParts.join(', ');
-      const { rendered: basePrompt } = await renderPromptFromDb({
-        key: 'gateway.image_anchor_base_prompt',
-        variables: { subject_desc: subjectDesc },
-      });
-      const anchorStates = ['neutral', 'happy', 'thoughtful'] as const;
+
+      // Define diverse anchor scenes - each anchor gets a different style/scenario
+      // This creates variety: portrait, lifestyle, and candid/activity shots
+      // Randomly select from scene options to add more variety across different companions
+      const sceneOptions = {
+        neutral: [
+          'Portrait photography, natural expression, soft diffused lighting, shallow depth of field, shot on 85mm lens, photorealistic, high resolution',
+          'Relaxed seated pose on a comfortable couch, casual home setting, natural window light, authentic and approachable, lifestyle photography, photorealistic',
+          'Standing with arms crossed and a confident smile, modern urban background, soft bokeh, environmental portrait, photorealistic',
+        ],
+        happy: [
+          'Candid lifestyle photography, genuine laugh, relaxed pose in a cozy cafe setting, warm ambient lighting, natural and authentic moment, shot on 50mm lens, photorealistic',
+          'Walking through a sunlit park, joyful expression, golden hour lighting, full body shot, lifestyle photography, natural and candid, photorealistic',
+          'Cooking in a bright kitchen, playful expression, warm natural light, hands busy with food prep, lifestyle moment, photorealistic',
+        ],
+        thoughtful: [
+          'Environmental portrait, gazing out a window, soft natural daylight, contemplative mood, three-quarter view, bokeh background, intimate and personal, photorealistic',
+          'Reading a book in a cozy corner, soft lamp light, peaceful and absorbed, intimate lifestyle moment, photorealistic',
+          'Sitting at a desk working on laptop, focused expression, warm office lighting, professional candid moment, photorealistic',
+        ],
+      };
+
+      // Pick a random scene for each emotional state to add variety
+      const pickRandomScene = (options: string[]) => options[Math.floor(Math.random() * options.length)]!;
+
+      const anchorScenes = [
+        { state: 'neutral' as const, scene: pickRandomScene(sceneOptions.neutral) },
+        { state: 'happy' as const, scene: pickRandomScene(sceneOptions.happy) },
+        { state: 'thoughtful' as const, scene: pickRandomScene(sceneOptions.thoughtful) },
+      ];
+
+      const anchorStates = anchorScenes.map(s => s.state);
       const generatedAnchors: AnchorImage[] = [];
       let primaryAnchorId: string | null = null;
       let primaryAnchorUrl: string | null = null;
@@ -1265,8 +1292,12 @@ export async function imagegenRoutes(app: FastifyInstance): Promise<void> {
           logger.info({ companionId, emotionalState, isPrimary, index: i }, 'Generating anchor image (SSE)');
 
           try {
+            // Use scene-specific prompt for variety (portrait, lifestyle, candid)
+            const sceneConfig = anchorScenes[i]!;
+            const scenePrompt = `${subjectDesc}. ${sceneConfig.scene}`;
+
             const fullPrompt = buildPrompt({
-              prompt: basePrompt,
+              prompt: scenePrompt,
               emotionalState,
               personality,
               style,

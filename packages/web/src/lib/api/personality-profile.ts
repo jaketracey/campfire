@@ -58,45 +58,45 @@ export async function refreshPersonalityProfile(userId: string): Promise<UserPer
  * Default welcome messages when no profile exists
  */
 const DEFAULT_WELCOME_MESSAGES = [
-  (name: string) => `Welcome back, ${name}. Your companions are waiting.`,
-  (name: string) => `Good to see you, ${name}. The fire burns bright tonight.`,
-  (name: string) => `${name}, your sanctuary awaits.`,
-  (name: string) => `Welcome, ${name}. What stories shall we share today?`,
-  (name: string) => `The campfire glows for you, ${name}.`,
-  (name: string) => `${name}, step into the warmth. Your companions remember you.`,
+  'Welcome back. Your companions are waiting.',
+  'Good to see you. The fire burns bright tonight.',
+  'Your sanctuary awaits.',
+  'What stories shall we share today?',
+  'The campfire glows for you.',
+  'Step into the warmth. Your companions remember you.',
 ];
 
 /**
  * Get a random default welcome message
  */
-export function getRandomDefaultWelcome(name: string): string {
+export function getRandomDefaultWelcome(_name?: string): string {
   const index = Math.floor(Math.random() * DEFAULT_WELCOME_MESSAGES.length);
-  return DEFAULT_WELCOME_MESSAGES[index](name);
+  return DEFAULT_WELCOME_MESSAGES[index];
 }
 
 /**
- * Greeting templates by style
+ * Greeting templates by style (name is now shown in the header)
  */
 const GREETING_TEMPLATES: Record<string, string[]> = {
   warm: [
-    'So lovely to see you again, {name}.',
-    'Welcome back, dear {name}.',
-    '{name}, it warms our hearts to see you.',
+    'So lovely to see you again.',
+    'Welcome back, we\'ve missed you.',
+    'It warms our hearts to see you.',
   ],
   playful: [
-    'Hey there, {name}! Ready for some fun?',
-    'Look who\'s back! Hey {name}!',
-    '{name}! The party can start now!',
+    'Ready for some fun?',
+    'Look who\'s back!',
+    'The party can start now!',
   ],
   formal: [
-    'Good evening, {name}. Welcome back.',
-    'Welcome, {name}. Your session awaits.',
-    'Greetings, {name}. We\'ve been expecting you.',
+    'Good evening. Welcome back.',
+    'Your session awaits.',
+    'We\'ve been expecting you.',
   ],
   friendly: [
-    'Hey {name}! Great to see you.',
-    'Welcome back, {name}!',
-    '{name}, glad you\'re here!',
+    'Great to see you!',
+    'Welcome back!',
+    'Glad you\'re here!',
   ],
 };
 
@@ -104,13 +104,12 @@ const GREETING_TEMPLATES: Record<string, string[]> = {
  * Build a personalized welcome message
  */
 export function buildPersonalizedWelcome(
-  name: string,
+  _name: string,
   profile: UserPersonalityProfile,
   companionName?: string
 ): string {
   const templates = GREETING_TEMPLATES[profile.greetingStyle] || GREETING_TEMPLATES.friendly;
-  const template = templates[Math.floor(Math.random() * templates.length)];
-  let greeting = template.replace('{name}', name);
+  let greeting = templates[Math.floor(Math.random() * templates.length)];
 
   // Add custom insight if available
   if (profile.customInsight) {

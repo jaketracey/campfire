@@ -74,7 +74,7 @@ export default function ForgotPasswordPage() {
             <Mail className="h-8 w-8 text-campfire-500" />
           </div>
           <CardTitle className="text-2xl font-bold">Check your email</CardTitle>
-          <CardDescription>
+          <CardDescription data-testid="forgot-success-message">
             We&apos;ve sent password reset instructions to{' '}
             <span className="font-medium text-foreground">{submittedEmail}</span>
           </CardDescription>
@@ -90,12 +90,14 @@ export default function ForgotPasswordPage() {
             variant="outline"
             className="w-full"
             onClick={() => setEmailSent(false)}
+            data-testid="forgot-try-different-email"
           >
             Try a different email
           </Button>
           <Link
             href="/login"
             className="flex items-center justify-center gap-2 text-sm text-muted-foreground hover:text-primary"
+            data-testid="forgot-back-to-login"
           >
             <ArrowLeft className="h-4 w-4" />
             Back to sign in
@@ -122,11 +124,12 @@ export default function ForgotPasswordPage() {
               id="email"
               type="email"
               placeholder="you@example.com"
+              data-testid="forgot-email-input"
               {...register('email')}
               disabled={isLoading}
             />
             {errors.email && (
-              <p className="text-sm text-destructive">{errors.email.message}</p>
+              <p className="text-sm text-destructive" data-testid="forgot-email-error">{errors.email.message}</p>
             )}
           </div>
         </CardContent>
@@ -137,6 +140,7 @@ export default function ForgotPasswordPage() {
             variant="campfire"
             size="lg"
             disabled={isLoading}
+            data-testid="forgot-submit-button"
           >
             {isLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
             Send reset link
@@ -144,6 +148,7 @@ export default function ForgotPasswordPage() {
           <Link
             href="/login"
             className="flex items-center justify-center gap-2 text-sm text-muted-foreground hover:text-primary"
+            data-testid="forgot-back-to-login"
           >
             <ArrowLeft className="h-4 w-4" />
             Back to sign in

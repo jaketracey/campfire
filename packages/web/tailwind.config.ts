@@ -126,12 +126,26 @@ const config: Config = {
         },
         'campfire-pulse': {
           '0%, 100%': {
-            boxShadow: '0 0 0 0 rgba(251, 146, 60, 0), 0 0 0 0 rgba(251, 191, 36, 0)',
+            boxShadow: '0 0 0 0 hsl(var(--muted) / 0)',
             borderColor: 'hsl(var(--input))',
           },
           '50%': {
-            boxShadow: '0 0 0 4px rgba(251, 146, 60, 0.3), 0 0 20px rgba(251, 191, 36, 0.4)',
-            borderColor: 'rgba(251, 146, 60, 0.8)',
+            boxShadow: '0 0 0 5px hsl(var(--muted) / 0.6)',
+            borderColor: 'hsl(var(--muted))',
+          },
+        },
+        'message-received-pulse': {
+          '0%': {
+            boxShadow: '0 0 0 0 hsl(var(--muted) / 0)',
+          },
+          '25%': {
+            boxShadow: '0 0 0 5px hsl(var(--muted) / 0.8)',
+          },
+          '50%': {
+            boxShadow: '0 0 0 5px hsl(var(--muted) / 0.5)',
+          },
+          '100%': {
+            boxShadow: '0 0 0 0 hsl(var(--muted) / 0)',
           },
         },
       },
@@ -143,6 +157,7 @@ const config: Config = {
         float: 'float 3s ease-in-out infinite',
         'float-fast': 'float-fast 2s ease-in-out infinite',
         'campfire-pulse': 'campfire-pulse 3s ease-in-out infinite',
+        'message-received-pulse': 'message-received-pulse 0.8s ease-out',
       },
     },
   },

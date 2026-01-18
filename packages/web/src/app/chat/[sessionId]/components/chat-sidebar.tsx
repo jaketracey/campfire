@@ -192,6 +192,7 @@ export function ChatSidebar({
                   sessionId={sessionId}
                   companionId={companion.id}
                   anchorImageUrl={companion.avatarUrl}
+                  anchorRenditions={companion.avatarRenditions}
                   generationTrigger={imageGenTrigger}
                   sceneDescription={sceneDescription}
                   onLoad={onAvatarLoad}
@@ -238,13 +239,9 @@ export function ChatSidebar({
 
           {/* Buttons section - fade out during companion switch */}
           <div className={`w-full transition-opacity duration-300 ${isGeneratingNewCompanion || (isDemo && isSwitchingDemoCompanion) ? 'opacity-0 pointer-events-none' : 'opacity-100'}`}>
-            {/* Voice Call Button */}
-            <div className="w-full px-2 mt-3">
+            {/* Call & Video Buttons - Side by side circles */}
+            <div className="flex items-center justify-center gap-4 mt-3">
               <CallButton onClick={onCallClick} disabled={isCallActive} />
-            </div>
-
-            {/* Video Request Button */}
-            <div className="w-full px-2 mt-2">
               <VideoRequestButton
                 onClick={() => handleDemoGuard('video', onShowVideoRequest)}
                 disabled={isCallActive}

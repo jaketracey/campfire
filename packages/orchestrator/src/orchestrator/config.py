@@ -31,10 +31,22 @@ class Settings(BaseSettings):
 
     # Gateway (internal API)
     gateway_internal_url: str = "http://localhost:3002"
+    gateway_url: str = "http://localhost:3002"  # Alias for internal URL
     internal_service_key: str = Field(
         default="dev-internal-service-key",
         validation_alias="INTERNAL_SERVICE_KEY"
     )
+
+    # Knowledge Graph Extraction
+    kg_extraction_enabled: bool = True
+    kg_extraction_model: str = "claude-3-haiku-20240307"  # Cheap/fast model
+    kg_extraction_interval: int = 3  # Extract every N turns
+    kg_extraction_auto_approve: bool = True  # Auto-approve extractions
+
+    # Session Summarization
+    session_summarization_enabled: bool = True
+    session_summarization_threshold: int = 20  # Summarize after N turns
+    session_summarization_interval: int = 20  # Re-summarize every N turns after threshold
 
     # Provider API Key Encryption (for decrypting keys stored in database)
     # NOTE: Must match gateway's default in provider-settings.ts

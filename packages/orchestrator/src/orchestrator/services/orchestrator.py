@@ -36,7 +36,7 @@ from orchestrator.routing import (
 )
 from orchestrator.models.gifts import GiftMemory, GiftRecallContext
 from orchestrator.models.memory import LongTermMemory, CompanionSelfKnowledge
-from orchestrator.models.tools import TOOL_REGISTRY, ToolCall, ToolResult
+from orchestrator.models.tools import TOOL_REGISTRY, ToolCall, ToolCallContext, ToolResult
 from orchestrator.prompts.manager import PromptManager
 from orchestrator.providers.base import LLMProvider, LLMResponse
 from orchestrator.providers.anthropic import AnthropicProvider
@@ -48,7 +48,18 @@ from orchestrator.queue import JobQueue
 from orchestrator.safety.gate import SafetyGate
 from orchestrator.services.context_builder import ContextBuilder
 from orchestrator.services.gift_recall import GiftRecallService
+from orchestrator.services.hybrid_search import (
+    get_hybrid_search_service,
+    HybridSearchService,
+    KGContextItem,
+    SearchQuery,
+)
+from orchestrator.services.kg_extraction import get_kg_extraction_service, KGExtractionService
 from orchestrator.services.routing_config_service import RoutingConfigService
+from orchestrator.services.session_summarization import (
+    get_session_summarization_service,
+    SessionSummarizationService,
+)
 from orchestrator.services.tenet_retriever import TenetRetriever
 from orchestrator.services.turn_manager import TurnManager
 from orchestrator.tools.router import ToolRouter
@@ -141,6 +152,42 @@ class ConversationOrchestrator:
 
         # Store current routing decision for use during LLM calls
         self._current_routing_decision: RoutingDecision | None = None
+
+        # Initialize KG extraction service
+        self._kg_extraction_service: KGExtractionService | None = None
+        if settings.kg_extraction_enabled:
+            self._kg_extraction_service = get_kg_extraction_service(settings)
+            logger.info(
+                "kg_extraction_enabled",
+                model=settings.kg_extraction_model,
+                interval=settings.kg_extraction_interval,
+            )
+
+        # Track last extraction turn per session for rate limiting
+        self._last_extraction_turns: dict[UUID, int] = {}
+
+        # Initialize session summarization service
+        self._summarization_service: SessionSummarizationService | None = None
+        if settings.session_summarization_enabled:
+            self._summarization_service = get_session_summarization_service(settings)
+            logger.info(
+                "session_summarization_enabled",
+                threshold=settings.session_summarization_threshold,
+                interval=settings.session_summarization_interval,
+            )
+
+        # Track last summarization turn per session
+        self._last_summarization_turns: dict[UUID, int] = {}
+
+        # Initialize hybrid search service for enhanced memory + KG retrieval
+        self._hybrid_search_service: HybridSearchService | None = None
+        if settings.kg_extraction_enabled:  # Hybrid search depends on KG being available
+            self._hybrid_search_service = get_hybrid_search_service(settings)
+            logger.info(
+                "hybrid_search_enabled",
+                kg_traversal_depth=1,
+                rrf_k=60,
+            )
 
     async def process_message(
         self,
@@ -345,6 +392,41 @@ class ConversationOrchestrator:
                     companion_id=str(companion_spec.id),
                 )
 
+            # Perform hybrid search to get KG context (if enabled)
+            kg_context: list[KGContextItem] = []
+            if self._hybrid_search_service:
+                try:
+                    search_query = SearchQuery(
+                        user_id=user_id,
+                        companion_id=companion_spec.id,
+                        query_text=user_message,
+                        limit=self.settings.memory_search_top_k,
+                        min_similarity=self.settings.memory_relevance_threshold,
+                        include_kg_context=True,
+                        kg_traversal_depth=1,
+                    )
+
+                    hybrid_result = await self._hybrid_search_service.search(search_query)
+
+                    # Use KG context from hybrid search
+                    kg_context = hybrid_result.kg_context
+
+                    if kg_context:
+                        logger.debug(
+                            "hybrid_search_kg_context",
+                            user_id=str(user_id),
+                            companion_id=str(companion_spec.id),
+                            kg_entity_count=len(kg_context),
+                            entities=[item.entity_name for item in kg_context],
+                        )
+                except Exception as e:
+                    logger.warning(
+                        "hybrid_search_failed",
+                        error=str(e),
+                        user_id=str(user_id),
+                        companion_id=str(companion_spec.id),
+                    )
+
             # Build context with situational tenets
             context = self.context_builder.build_context(
                 session_id=session_id,
@@ -360,7 +442,7 @@ class ConversationOrchestrator:
                 policy_version=self.safety_gate.policy_version,
             )
 
-            # Build messages with gift context and companion self-knowledge
+            # Build messages with gift context, companion self-knowledge, and KG context
             messages = self.context_builder.build_messages(
                 context=context,
                 current_user_message=user_message,
@@ -371,6 +453,7 @@ class ConversationOrchestrator:
                 active_game=active_game,
                 liked_content=liked_content,
                 engagement_level=engagement_level,
+                kg_context=kg_context,
             )
 
             # Get available tools
@@ -447,12 +530,28 @@ class ConversationOrchestrator:
             )
 
             # Fire-and-forget KG extraction (don't block response)
+            # Calculate turn count from recent turns for rate limiting
+            current_turn_count = len(recent_turns) + 1 if recent_turns else 1
             asyncio.create_task(
                 self._extract_knowledge_graph(
                     session_id=session_id,
                     user_id=user_id,
                     companion_spec=companion_spec,
                     turn_id=turn_id,
+                    user_message=user_message,
+                    assistant_response=cleaned_content,
+                    turn_count=current_turn_count,
+                )
+            )
+
+            # Fire-and-forget session summarization (at threshold)
+            asyncio.create_task(
+                self._summarize_session_if_needed(
+                    session_id=session_id,
+                    user_id=user_id,
+                    companion_spec=companion_spec,
+                    turn_count=current_turn_count,
+                    recent_turns=recent_turns,
                     user_message=user_message,
                     assistant_response=cleaned_content,
                 )
@@ -532,6 +631,20 @@ class ConversationOrchestrator:
                 return response, all_tool_calls, all_tool_results
 
             # Process tool calls
+            # Build context for tool handlers (e.g., for visual prompt augmentation)
+            tool_context = ToolCallContext(
+                companion_spec=context.companion_spec.model_dump(),
+                recent_turns=[
+                    {"role": "user", "content": t.user_message.content}
+                    for t in context.recent_turns[-5:]
+                    if t.user_message
+                ] + [
+                    {"role": "assistant", "content": t.assistant_message.content}
+                    for t in context.recent_turns[-5:]
+                    if t.assistant_message
+                ],
+            )
+
             tool_calls = [
                 ToolCall(
                     id=tc["id"],
@@ -541,6 +654,7 @@ class ConversationOrchestrator:
                     session_id=context.session_id,
                     user_id=context.user_id,
                     companion_id=context.companion_spec.id,
+                    context=tool_context,
                 )
                 for tc in response.tool_calls
             ]
@@ -1053,142 +1167,107 @@ class ConversationOrchestrator:
         turn_id: UUID,
         user_message: str,
         assistant_response: str,
+        turn_count: int = 1,
     ) -> None:
         """Extract entities and relationships from conversation turn.
 
         This runs asynchronously after the turn completes to avoid
-        adding latency to the user experience.
+        adding latency to the user experience. Uses KGExtractionService
+        for rate-limited, efficient extraction.
+
+        Args:
+            session_id: Current session ID
+            user_id: User ID
+            companion_spec: Companion specification
+            turn_id: ID of the current turn
+            user_message: User's message content
+            assistant_response: Assistant's response content
+            turn_count: Current turn number in session (for rate limiting)
         """
+        # Check if KG extraction is enabled globally
+        if not self._kg_extraction_service:
+            logger.debug("kg_extraction_service_not_initialized")
+            return
+
         # Check if KG extraction is enabled for this companion
         if not getattr(companion_spec, 'allow_kg_extraction', True):
             logger.debug(
-                "kg_extraction_disabled",
+                "kg_extraction_disabled_for_companion",
                 companion_id=str(companion_spec.id),
             )
             return
 
         try:
-            # Build the conversation text for extraction
-            conversation_text = f"""User: {user_message}
-Assistant: {assistant_response}"""
-
-            # Get the extraction prompt
-            extraction_prompt = self.prompt_manager.get_prompt_effective(
-                "orchestrator.kg_extraction",
-                version=self.prompt_manager.current_version,
-                companion_id=str(companion_spec.id),
-                text=conversation_text,
+            # Check rate limiting using service's should_extract heuristic
+            last_extraction_turn = self._last_extraction_turns.get(session_id)
+            should_extract = self._kg_extraction_service.should_extract(
+                user_message=user_message,
+                turn_count=turn_count,
+                last_extraction_turn=last_extraction_turn,
+                extraction_interval=self.settings.kg_extraction_interval,
             )
 
-            # Call LLM for extraction (use primary provider - typically OpenAI)
-            kg_system_prompt = self.prompt_manager.get_prompt_effective(
-                "orchestrator.kg_extraction_system_prompt",
-                version=self.prompt_manager.current_version,
-                companion_id=str(companion_spec.id),
-            )
-            messages = [
-                {"role": "system", "content": kg_system_prompt},
-                {"role": "user", "content": extraction_prompt},
-            ]
-
-            response = await self.primary_provider.generate(
-                messages=messages,
-                tools=None,
-                max_tokens=2000,
-                temperature=0.1,  # Low temperature for consistent extraction
-                response_format={"type": "json_object"},  # Force valid JSON output
-            )
-
-            # Parse the JSON response
-            try:
-                kg_data = self._extract_json_from_response(response.content)
-                if kg_data is None:
-                    logger.warning(
-                        "kg_extraction_parse_failed",
-                        error="No valid JSON found in response",
-                        content_preview=response.content[:200],
-                    )
-                    return
-            except json.JSONDecodeError as e:
-                logger.warning(
-                    "kg_extraction_parse_failed",
-                    error=str(e),
-                    content_preview=response.content[:200],
+            if not should_extract:
+                logger.debug(
+                    "kg_extraction_skipped",
+                    session_id=str(session_id),
+                    turn_count=turn_count,
+                    last_extraction_turn=last_extraction_turn,
+                    reason="rate_limited_or_not_extractable",
                 )
                 return
 
-            entities = kg_data.get("entities", [])
-            relationships = kg_data.get("relationships", [])
+            # Perform extraction using the service
+            extraction = await self._kg_extraction_service.extract_from_turn(
+                user_message=user_message,
+                assistant_message=assistant_response,
+                user_id=user_id,
+                companion_id=companion_spec.id,
+            )
 
-            if not entities and not relationships:
+            if not extraction.success:
+                logger.warning(
+                    "kg_extraction_failed",
+                    session_id=str(session_id),
+                    turn_id=str(turn_id),
+                    error=extraction.error,
+                )
+                return
+
+            if not extraction.has_extractions:
                 logger.debug(
                     "kg_extraction_empty",
                     session_id=str(session_id),
                     turn_id=str(turn_id),
                 )
+                # Still update last extraction turn to avoid repeated attempts
+                self._last_extraction_turns[session_id] = turn_count
                 return
 
-            logger.info(
-                "kg_extraction_completed",
-                session_id=str(session_id),
-                turn_id=str(turn_id),
-                entity_count=len(entities),
-                relationship_count=len(relationships),
+            # Submit extraction to gateway via service
+            submitted = await self._kg_extraction_service.submit_extraction(
+                extraction=extraction,
+                user_id=user_id,
+                companion_id=companion_spec.id,
+                session_id=session_id,
+                turn_id=turn_id,
+                auto_approve=self.settings.kg_extraction_auto_approve,
             )
 
-            # Add jobs to queue for each relationship
-            for rel in relationships:
-                source_entity = rel.get("source")
-                target_entity = rel.get("target")
-                relation_type = rel.get("type", "related_to")
+            # Update last extraction turn for rate limiting
+            self._last_extraction_turns[session_id] = turn_count
 
-                if not source_entity or not target_entity:
-                    continue
+            if submitted:
+                logger.info(
+                    "kg_extraction_submitted",
+                    session_id=str(session_id),
+                    turn_id=str(turn_id),
+                    entity_count=len(extraction.entities),
+                    relation_count=len(extraction.relations),
+                    turn_count=turn_count,
+                )
 
-                # Generate IDs for entities and edge
-                source_id = str(uuid4())
-                target_id = str(uuid4())
-                edge_id = str(uuid4())
-
-                edge_data = {
-                    "id": edge_id,
-                    "sourceEntity": source_id,
-                    "targetEntity": target_id,
-                    "relationType": relation_type,
-                    "confidence": rel.get("confidence", 0.8),
-                    "sourceEventId": str(turn_id),
-                }
-
-                entity_data = [
-                    {
-                        "id": source_id,
-                        "name": source_entity,
-                        "type": self._infer_entity_type(source_entity, entities),
-                    },
-                    {
-                        "id": target_id,
-                        "name": target_entity,
-                        "type": self._infer_entity_type(target_entity, entities),
-                    },
-                ]
-
-                # Add job to queue for worker processing
-                if self.job_queue:
-                    try:
-                        await self.job_queue.add_kg_proposal_job(
-                            user_id=str(user_id),
-                            companion_id=str(companion_spec.id),
-                            edge=edge_data,
-                            entities=entity_data,
-                        )
-                    except Exception as queue_error:
-                        logger.warning(
-                            "kg_queue_job_failed",
-                            error=str(queue_error),
-                            edge_id=edge_id,
-                        )
-
-                # Also emit event for audit/tracking
+                # Emit event for audit/tracking
                 await self.event_emitter.emit(
                     BaseEvent(
                         type=EventType.KG_PROPOSE,
@@ -1196,132 +1275,143 @@ Assistant: {assistant_response}"""
                         user_id=user_id,
                         companion_id=companion_spec.id,
                         payload={
-                            "edge": edge_data,
-                            "entities": entity_data,
+                            "entities": extraction.entities,
+                            "relations": extraction.relations,
+                            "reasoning": extraction.reasoning,
                         },
                     )
+                )
+            else:
+                logger.warning(
+                    "kg_extraction_submit_failed",
+                    session_id=str(session_id),
+                    turn_id=str(turn_id),
                 )
 
         except Exception as e:
             logger.error(
-                "kg_extraction_failed",
+                "kg_extraction_error",
                 error=str(e),
                 session_id=str(session_id),
                 turn_id=str(turn_id),
             )
 
-    def _extract_json_from_response(self, content: str) -> dict[str, Any] | None:
-        """Extract and parse JSON from LLM response, handling common issues.
-
-        Handles:
-        - Markdown code blocks (```json, ```, etc.)
-        - Unescaped newlines in string values
-        - JSON embedded in other text
-        """
-        content = content.strip()
-
-        # Strategy 1: Handle markdown code blocks
-        if content.startswith("```"):
-            # Find the end of the code block
-            lines = content.split("\n")
-            # Skip first line (```json or ```)
-            start_idx = 1
-            # Find closing ```
-            end_idx = len(lines)
-            for i in range(len(lines) - 1, 0, -1):
-                if lines[i].strip() == "```":
-                    end_idx = i
-                    break
-            content = "\n".join(lines[start_idx:end_idx]).strip()
-
-        # Strategy 2: Try direct parse first
-        try:
-            return json.loads(content)
-        except json.JSONDecodeError:
-            pass
-
-        # Strategy 3: Extract JSON object using brace matching
-        # Find first { and match to closing }
-        start = content.find("{")
-        if start == -1:
-            return None
-
-        brace_count = 0
-        in_string = False
-        escape_next = False
-        end = start
-
-        for i, char in enumerate(content[start:], start):
-            if escape_next:
-                escape_next = False
-                continue
-            if char == "\\":
-                escape_next = True
-                continue
-            if char == '"' and not escape_next:
-                in_string = not in_string
-                continue
-            if in_string:
-                continue
-            if char == "{":
-                brace_count += 1
-            elif char == "}":
-                brace_count -= 1
-                if brace_count == 0:
-                    end = i + 1
-                    break
-
-        json_str = content[start:end]
-
-        # Strategy 4: Fix unescaped newlines in string values
-        # This is a common issue where LLMs put literal newlines in strings
-        def fix_unescaped_newlines(s: str) -> str:
-            result = []
-            in_str = False
-            escape = False
-            for char in s:
-                if escape:
-                    result.append(char)
-                    escape = False
-                    continue
-                if char == "\\":
-                    result.append(char)
-                    escape = True
-                    continue
-                if char == '"':
-                    in_str = not in_str
-                    result.append(char)
-                    continue
-                if in_str and char == "\n":
-                    result.append("\\n")
-                    continue
-                result.append(char)
-            return "".join(result)
-
-        try:
-            fixed_json = fix_unescaped_newlines(json_str)
-            return json.loads(fixed_json)
-        except json.JSONDecodeError:
-            pass
-
-        # Strategy 5: Try regex to find JSON object
-        json_pattern = r'\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\}'
-        matches = re.findall(json_pattern, content, re.DOTALL)
-        for match in matches:
-            try:
-                return json.loads(match)
-            except json.JSONDecodeError:
-                continue
-
-        return None
-
-    def _infer_entity_type(
+    async def _summarize_session_if_needed(
         self,
-        entity_name: str,
-        entities: list[dict[str, Any]],
-    ) -> str:
-        """Infer entity type from extraction results."""
-        for entity in entities:
-            if entity.get("name") == entity_name or entity.get("id") == entity_name:
-                return entity.get("type", "unknown")
-        return "unknown"
+        session_id: UUID,
+        user_id: UUID,
+        companion_spec: CompanionSpec,
+        turn_count: int,
+        recent_turns: list[ConversationTurn] | None,
+        user_message: str,
+        assistant_response: str,
+    ) -> None:
+        """Summarize session if it has reached the turn threshold.
+
+        This runs asynchronously after the turn completes to avoid
+        adding latency to the user experience.
+
+        Args:
+            session_id: Current session ID
+            user_id: User ID
+            companion_spec: Companion specification
+            turn_count: Current turn number in session
+            recent_turns: Recent conversation turns
+            user_message: Current user message
+            assistant_response: Current assistant response
+        """
+        # Check if summarization service is enabled
+        if not self._summarization_service:
+            return
+
+        try:
+            # Check if we should summarize
+            last_summary_turn = self._last_summarization_turns.get(session_id)
+            should_summarize = self._summarization_service.should_summarize(
+                turn_count=turn_count,
+                threshold=self.settings.session_summarization_threshold,
+                last_summary_turn=last_summary_turn,
+                summary_interval=self.settings.session_summarization_interval,
+            )
+
+            if not should_summarize:
+                logger.debug(
+                    "session_summarization_skipped",
+                    session_id=str(session_id),
+                    turn_count=turn_count,
+                    threshold=self.settings.session_summarization_threshold,
+                )
+                return
+
+            # Build turns list for summarization
+            turns_for_summary: list[dict[str, Any]] = []
+
+            # Add recent turns
+            if recent_turns:
+                for turn in recent_turns:
+                    if turn.user_message:
+                        turns_for_summary.append({
+                            "role": "user",
+                            "content": turn.user_message.content,
+                        })
+                    if turn.assistant_message:
+                        turns_for_summary.append({
+                            "role": "assistant",
+                            "content": turn.assistant_message.content,
+                        })
+
+            # Add current turn
+            turns_for_summary.append({"role": "user", "content": user_message})
+            turns_for_summary.append({"role": "assistant", "content": assistant_response})
+
+            # Generate and submit summary
+            result = await self._summarization_service.summarize_and_store(
+                turns=turns_for_summary,
+                session_id=session_id,
+                user_id=user_id,
+                companion_name=companion_spec.name,
+            )
+
+            if result.success and result.has_summary:
+                # Update last summarization turn
+                self._last_summarization_turns[session_id] = turn_count
+
+                logger.info(
+                    "session_summarization_completed",
+                    session_id=str(session_id),
+                    turn_count=turn_count,
+                    summary_length=len(result.summary) if result.summary else 0,
+                )
+
+                # Emit event for tracking
+                await self.event_emitter.emit(
+                    BaseEvent(
+                        type=EventType.SESSION_SUMMARIZED,
+                        session_id=session_id,
+                        user_id=user_id,
+                        companion_id=companion_spec.id,
+                        payload={
+                            "turn_count": turn_count,
+                            "summary_preview": (
+                                result.summary[:200] + "..."
+                                if result.summary and len(result.summary) > 200
+                                else result.summary
+                            ),
+                            "key_facts_count": len(result.key_facts),
+                        },
+                    )
+                )
+            else:
+                logger.warning(
+                    "session_summarization_failed",
+                    session_id=str(session_id),
+                    error=result.error,
+                )
+
+        except Exception as e:
+            logger.error(
+                "session_summarization_error",
+                error=str(e),
+                session_id=str(session_id),
+                turn_count=turn_count,
+            )

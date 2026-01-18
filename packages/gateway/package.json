@@ -53,6 +53,8 @@
     "@opentelemetry/sdk-node": "^0.56.0",
     "@opentelemetry/sdk-trace-node": "^1.29.0",
     "@opentelemetry/semantic-conventions": "^1.28.0",
+    "@types/archiver": "^7.0.0",
+    "archiver": "^7.0.1",
     "bcrypt": "^6.0.0",
     "bullmq": "^5.30.0",
     "dockerode": "^4.0.9",

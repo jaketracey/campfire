@@ -14,7 +14,7 @@
 
 import { test, expect } from '@playwright/test';
 import { OnboardingPage } from '../helpers/onboarding-page';
-import { createApiInterceptor, ApiInterceptor } from '../helpers/api-interceptor';
+import { createApiInterceptor, ApiInterceptor, setupMockAuth } from '../helpers/api-interceptor';
 import {
   validateAnchorRequest,
   validateCompanionRequest,
@@ -38,6 +38,9 @@ test.describe('Surprise Me + Modifications Flow', () => {
   test.beforeEach(async ({ page }) => {
     onboardingPage = new OnboardingPage(page);
     apiInterceptor = createApiInterceptor(page);
+
+    // Setup mock authentication BEFORE setting up routes
+    await setupMockAuth(page);
 
     // Setup mock endpoints
     await apiInterceptor.mockEndpoint(
@@ -133,7 +136,7 @@ test.describe('Surprise Me + Modifications Flow', () => {
     });
 
     // CRITICAL ASSERTION: Verify anchor stream was called with NEW appearance
-    const anchorRequest = apiInterceptor.assertRequestMade('/imagegen/generate-anchors-stream', 'POST');
+    const anchorRequest = apiInterceptor.assertRequestMade('/imagegen/generate-anchors-stream', 'GET');
     validateAnchorRequest(anchorRequest.body, {
       gender: 'male',
       ethnicity: 'caucasian',

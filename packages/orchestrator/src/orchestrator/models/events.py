@@ -29,11 +29,16 @@ class EventType(str, Enum):
     KG_ADD = "kg.add"
     KG_REMOVE = "kg.remove"
 
+    # Session events
+    SESSION_SUMMARIZED = "session.summarized"
+
     # Image events
     IMAGE_ANALYSIS_REQUESTED = "image.analysis.requested"
     IMAGE_ANALYSIS_COMPLETED = "image.analysis.completed"
     IMAGE_GENERATION_TRIGGERED = "image.generation.triggered"
     IMAGE_GENERATION_COMPLETED = "image.generation.completed"
+    VIDEO_GENERATION_TRIGGERED = "video.generation.triggered"
+    VIDEO_GENERATION_COMPLETED = "video.generation.completed"
 
     # Vault events
     VAULT_PROJECTION_TRIGGERED = "vault.projection.triggered"

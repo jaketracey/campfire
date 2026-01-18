@@ -132,11 +132,11 @@ export default function TwoFactorPage() {
       <CardContent>
         <Tabs defaultValue="app" className="w-full">
           <TabsList className="grid w-full grid-cols-2">
-            <TabsTrigger value="app">
+            <TabsTrigger value="app" data-testid="mfa-authenticator-tab">
               <Smartphone className="mr-2 h-4 w-4" />
               Authenticator
             </TabsTrigger>
-            <TabsTrigger value="sms">
+            <TabsTrigger value="sms" data-testid="mfa-sms-tab">
               SMS
             </TabsTrigger>
           </TabsList>
@@ -160,6 +160,7 @@ export default function TwoFactorPage() {
                   onKeyDown={(e) => handleKeyDown(index, e)}
                   className="h-12 w-12 text-center text-lg font-semibold"
                   disabled={isLoading}
+                  data-testid="mfa-code-input"
                 />
               ))}
             </div>
@@ -184,6 +185,7 @@ export default function TwoFactorPage() {
                   onKeyDown={(e) => handleKeyDown(index, e)}
                   className="h-12 w-12 text-center text-lg font-semibold"
                   disabled={isLoading}
+                  data-testid="mfa-code-input"
                 />
               ))}
             </div>
@@ -194,6 +196,7 @@ export default function TwoFactorPage() {
                 size="sm"
                 onClick={handleResend}
                 disabled={isLoading}
+                data-testid="mfa-resend-button"
               >
                 Didn&apos;t receive a code? Resend
               </Button>
@@ -208,6 +211,7 @@ export default function TwoFactorPage() {
           variant="campfire"
           size="lg"
           disabled={isLoading || code.join('').length !== 6}
+          data-testid="mfa-verify-button"
         >
           {isLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
           Verify
@@ -215,6 +219,7 @@ export default function TwoFactorPage() {
         <Link
           href="/login"
           className="flex items-center justify-center gap-2 text-sm text-muted-foreground hover:text-primary"
+          data-testid="mfa-back-to-login"
         >
           <ArrowLeft className="h-4 w-4" />
           Back to sign in

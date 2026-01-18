@@ -210,6 +210,7 @@ export function ChatSessionContent({
             isRecording={chat.isRecording}
             voiceModeEnabled={chat.voiceModeEnabled}
             hasShownPulse={chat.hasShownPulse}
+            messageReceivedPulseTrigger={chat.messageReceivedPulseTrigger}
             liveTranscription={chat.liveTranscription}
             voiceError={chat.voiceError}
             webcamError={chat.webcamError}

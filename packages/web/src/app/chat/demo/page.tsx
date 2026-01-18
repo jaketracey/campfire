@@ -294,6 +294,7 @@ export default function DemoChatPage() {
             <Button
               onClick={handleDesignCompanion}
               size="lg"
+              data-testid="design-companion-cta"
               className="w-full lg:w-auto h-14 lg:h-16 px-8 lg:px-12 rounded-2xl bg-gradient-to-r from-campfire-500 via-rose-500 to-orange-500 hover:from-campfire-600 hover:via-rose-600 hover:to-orange-600 shadow-[0_0_30px_rgba(249,115,22,0.4)] hover:shadow-[0_0_50px_rgba(249,115,22,0.6)] transition-all duration-300 text-lg lg:text-xl font-bold"
             >
               Design Your Own Companion

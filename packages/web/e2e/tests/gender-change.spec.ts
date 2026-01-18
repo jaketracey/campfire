@@ -10,7 +10,7 @@
 
 import { test, expect } from '@playwright/test';
 import { OnboardingPage } from '../helpers/onboarding-page';
-import { createApiInterceptor, ApiInterceptor } from '../helpers/api-interceptor';
+import { createApiInterceptor, ApiInterceptor, setupMockAuth } from '../helpers/api-interceptor';
 import { validateGenderSpecificFields, validateAnchorRequest } from '../helpers/image-validators';
 import {
   mockFemaleIdentity,
@@ -28,6 +28,9 @@ test.describe('Gender Change Field Validation', () => {
   test.beforeEach(async ({ page }) => {
     onboardingPage = new OnboardingPage(page);
     apiInterceptor = createApiInterceptor(page);
+
+    // Setup mock authentication BEFORE setting up routes
+    await setupMockAuth(page);
 
     // Setup basic mock endpoints
     await apiInterceptor.mockEndpoint(
@@ -128,7 +131,7 @@ test.describe('Gender Change Field Validation', () => {
       await onboardingPage.clickReviewAndIgnite();
 
       // Verify anchor request has male fields
-      const anchorRequest = apiInterceptor.assertRequestMade('/imagegen/generate-anchors-stream', 'POST');
+      const anchorRequest = apiInterceptor.assertRequestMade('/imagegen/generate-anchors-stream', 'GET');
 
       validateAnchorRequest(anchorRequest.body, {
         gender: 'male',
@@ -222,7 +225,7 @@ test.describe('Gender Change Field Validation', () => {
       await onboardingPage.clickReviewAndIgnite();
 
       // Verify anchor request has female fields
-      const anchorRequest = apiInterceptor.assertRequestMade('/imagegen/generate-anchors-stream', 'POST');
+      const anchorRequest = apiInterceptor.assertRequestMade('/imagegen/generate-anchors-stream', 'GET');
 
       validateAnchorRequest(anchorRequest.body, {
         gender: 'female',

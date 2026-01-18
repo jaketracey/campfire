@@ -540,7 +540,11 @@ class ImageAnalysisHandler(ToolHandler):
 
 
 class ImageGenerationHandler(ToolHandler):
-    """Handler for generating images."""
+    """Handler for generating images.
+
+    This handler augments image prompts with character visual details
+    from the companion spec to maintain visual consistency.
+    """
 
     def __init__(
         self,
@@ -553,10 +557,20 @@ class ImageGenerationHandler(ToolHandler):
         self.http_client = http_client
         self._fal_provider: Any = None
         self._replicate_provider: Any = None
+        self._visual_augmenter: Any = None
 
     @property
     def name(self) -> str:
         return "image_generation"
+
+    def _get_visual_augmenter(self) -> Any:
+        """Lazy initialize visual prompt augmenter."""
+        if self._visual_augmenter is None:
+            from orchestrator.services.visual_prompt_augmenter import (
+                get_visual_prompt_augmenter,
+            )
+            self._visual_augmenter = get_visual_prompt_augmenter()
+        return self._visual_augmenter
 
     def _get_fal_provider(self) -> Any:
         """Lazy initialize FAL provider."""
@@ -581,8 +595,29 @@ class ImageGenerationHandler(ToolHandler):
             style = tool_call.arguments.get("style", "realistic")
             size = tool_call.arguments.get("size", "512x512")
 
+            # Augment prompt with character visual details if context is available
+            augmented_prompt = prompt
+            negative_prompt = None
+            if tool_call.context:
+                augmenter = self._get_visual_augmenter()
+                augmented_prompt = augmenter.augment_prompt(
+                    base_prompt=prompt,
+                    companion_spec=tool_call.context.companion_spec,
+                    recent_turns=tool_call.context.recent_turns,
+                )
+                negative_prompt = augmenter.build_negative_prompt(
+                    companion_spec=tool_call.context.companion_spec,
+                )
+                logger.info(
+                    "prompt_augmented_for_image_generation",
+                    original_length=len(prompt),
+                    augmented_length=len(augmented_prompt),
+                )
+
             # Generate image using FAL (preferred) or Replicate (fallback)
-            result = await self._generate_image(prompt, style, size)
+            result = await self._generate_image(
+                augmented_prompt, style, size, negative_prompt
+            )
             image_url = result.get("image_url", "")
 
             duration_ms = (time.time() - start_time) * 1000
@@ -596,7 +631,13 @@ class ImageGenerationHandler(ToolHandler):
                     companion_id=tool_call.companion_id,
                     tool_name=self.name,
                     tool_call_id=tool_call.id,
-                    input_params={"prompt": prompt, "style": style, "size": size},
+                    input_params={
+                        "prompt": prompt,
+                        "augmented_prompt": augmented_prompt,
+                        "style": style,
+                        "size": size,
+                        "was_augmented": augmented_prompt != prompt,
+                    },
                     output={"image_url": image_url, "provider": result.get("provider")},
                     duration_ms=duration_ms,
                 )
@@ -609,7 +650,11 @@ class ImageGenerationHandler(ToolHandler):
                 output=f"Image generated: {image_url}",
                 duration_ms=duration_ms,
                 cost_usd=0.02,
-                metadata={"image_url": image_url, "provider": result.get("provider")},
+                metadata={
+                    "image_url": image_url,
+                    "provider": result.get("provider"),
+                    "was_augmented": augmented_prompt != prompt,
+                },
             )
 
         except Exception as e:
@@ -629,8 +674,16 @@ class ImageGenerationHandler(ToolHandler):
         prompt: str,
         style: str,
         size: str,
+        negative_prompt: str | None = None,
     ) -> dict[str, Any]:
-        """Generate image using FAL (preferred) or Replicate (fallback)."""
+        """Generate image using FAL (preferred) or Replicate (fallback).
+
+        Args:
+            prompt: The augmented image prompt
+            style: Image style (realistic, artistic, etc.)
+            size: Image dimensions
+            negative_prompt: Optional negative prompt for exclusions
+        """
         # Try FAL first (preferred provider)
         fal = self._get_fal_provider()
         if fal:
@@ -639,6 +692,7 @@ class ImageGenerationHandler(ToolHandler):
                     prompt=prompt,
                     size=size,
                     style=style,
+                    negative_prompt=negative_prompt,
                 )
                 return {**result, "provider": "fal"}
             except Exception as e:
@@ -651,6 +705,7 @@ class ImageGenerationHandler(ToolHandler):
                 prompt=prompt,
                 size=size,
                 style=style,
+                negative_prompt=negative_prompt,
             )
             return {**result, "provider": "replicate"}
 
@@ -658,6 +713,203 @@ class ImageGenerationHandler(ToolHandler):
         raise RuntimeError(
             "No image generation provider configured. "
             "Set FAL_API_KEY or REPLICATE_API_TOKEN in environment."
+        )
+
+
+class VideoGenerationHandler(ToolHandler):
+    """Handler for generating videos.
+
+    This handler generates videos using FAL video models, with optional
+    visual prompt augmentation to maintain character consistency.
+    """
+
+    def __init__(
+        self,
+        settings: Settings,
+        event_emitter: EventEmitter,
+        http_client: httpx.AsyncClient,
+    ):
+        self.settings = settings
+        self.event_emitter = event_emitter
+        self.http_client = http_client
+        self._fal_video_provider: Any = None
+        self._visual_augmenter: Any = None
+
+    @property
+    def name(self) -> str:
+        return "video_generation"
+
+    def _get_visual_augmenter(self) -> Any:
+        """Lazy initialize visual prompt augmenter."""
+        if self._visual_augmenter is None:
+            from orchestrator.services.visual_prompt_augmenter import (
+                get_visual_prompt_augmenter,
+            )
+            self._visual_augmenter = get_visual_prompt_augmenter()
+        return self._visual_augmenter
+
+    def _get_fal_video_provider(self) -> Any:
+        """Lazy initialize FAL video provider."""
+        if self._fal_video_provider is None and self.settings.fal_api_key:
+            from orchestrator.providers.fal_video import FalVideoProvider
+            self._fal_video_provider = FalVideoProvider(self.settings)
+        return self._fal_video_provider
+
+    async def execute(self, tool_call: ToolCall) -> ToolResult:
+        """Execute video generation."""
+        start_time = time.time()
+
+        try:
+            prompt = tool_call.arguments.get("prompt", "")
+            source_image_url = tool_call.arguments.get("source_image_url")
+            duration_seconds = tool_call.arguments.get("duration_seconds", 5)
+            aspect_ratio = tool_call.arguments.get("aspect_ratio", "9:16")
+
+            # Calculate dimensions from aspect ratio
+            width, height = self._parse_aspect_ratio(aspect_ratio)
+
+            # Augment prompt with character visual details if context is available
+            augmented_prompt = prompt
+            if tool_call.context:
+                augmenter = self._get_visual_augmenter()
+                augmented_prompt = augmenter.augment_prompt(
+                    base_prompt=prompt,
+                    companion_spec=tool_call.context.companion_spec,
+                    recent_turns=tool_call.context.recent_turns,
+                )
+                logger.info(
+                    "video_prompt_augmented",
+                    original_length=len(prompt),
+                    augmented_length=len(augmented_prompt),
+                )
+
+            # Generate video
+            result = await self._generate_video(
+                prompt=augmented_prompt,
+                source_image_url=source_image_url,
+                duration_seconds=duration_seconds,
+                width=width,
+                height=height,
+            )
+
+            duration_ms = (time.time() - start_time) * 1000
+
+            # Emit event
+            await self.event_emitter.emit(
+                ToolEvent(
+                    type=EventType.TOOL_COMPLETED,
+                    session_id=tool_call.session_id,
+                    user_id=tool_call.user_id,
+                    companion_id=tool_call.companion_id,
+                    tool_name=self.name,
+                    tool_call_id=tool_call.id,
+                    input_params={
+                        "prompt": prompt,
+                        "augmented_prompt": augmented_prompt,
+                        "duration_seconds": duration_seconds,
+                        "aspect_ratio": aspect_ratio,
+                        "has_source_image": source_image_url is not None,
+                        "was_augmented": augmented_prompt != prompt,
+                    },
+                    output={
+                        "video_url": result.video_url,
+                        "thumbnail_url": result.thumbnail_url,
+                    },
+                    duration_ms=duration_ms,
+                )
+            )
+
+            # Format output for the model
+            output = (
+                f"Video generated successfully!\n"
+                f"Duration: {result.duration_seconds}s\n"
+                f"Video URL: {result.video_url}"
+            )
+
+            return ToolResult(
+                tool_call_id=tool_call.id,
+                name=self.name,
+                success=True,
+                output=output,
+                duration_ms=duration_ms,
+                cost_usd=0.25,  # Estimate based on duration
+                metadata={
+                    "video_url": result.video_url,
+                    "thumbnail_url": result.thumbnail_url,
+                    "duration_seconds": result.duration_seconds,
+                    "width": result.width,
+                    "height": result.height,
+                    "was_augmented": augmented_prompt != prompt,
+                },
+            )
+
+        except Exception as e:
+            logger.exception("video_generation_failed", error=str(e))
+            duration_ms = (time.time() - start_time) * 1000
+
+            return ToolResult(
+                tool_call_id=tool_call.id,
+                name=self.name,
+                success=False,
+                error=str(e),
+                duration_ms=duration_ms,
+            )
+
+    def _parse_aspect_ratio(self, aspect_ratio: str) -> tuple[int, int]:
+        """Parse aspect ratio string to width and height.
+
+        Args:
+            aspect_ratio: String like "16:9" or "9:16"
+
+        Returns:
+            Tuple of (width, height) in pixels.
+        """
+        if aspect_ratio == "16:9":
+            return (1920, 1080)
+        elif aspect_ratio == "9:16":
+            return (1080, 1920)
+        elif aspect_ratio == "1:1":
+            return (1080, 1080)
+        else:
+            # Default to portrait
+            return (1080, 1920)
+
+    async def _generate_video(
+        self,
+        prompt: str,
+        source_image_url: str | None,
+        duration_seconds: int,
+        width: int,
+        height: int,
+    ) -> Any:
+        """Generate video using FAL provider.
+
+        Args:
+            prompt: The motion/action description
+            source_image_url: Optional source image for image-to-video
+            duration_seconds: Target video duration
+            width: Video width
+            height: Video height
+
+        Returns:
+            VideoResult from the provider.
+
+        Raises:
+            RuntimeError: If no provider is configured.
+        """
+        provider = self._get_fal_video_provider()
+        if not provider:
+            raise RuntimeError(
+                "No video generation provider configured. "
+                "Set FAL_API_KEY in environment."
+            )
+
+        return await provider.generate(
+            prompt=prompt,
+            source_image_url=source_image_url,
+            duration_seconds=duration_seconds,
+            width=width,
+            height=height,
         )
 
 

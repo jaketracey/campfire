@@ -18,6 +18,10 @@ from orchestrator.models.conversation import (
 )
 from orchestrator.models.gifts import GiftMemory, GiftRecallContext
 from orchestrator.models.memory import LongTermMemory, MemoryQuery, CompanionSelfKnowledge
+from orchestrator.services.hybrid_search import KGContextItem
+from orchestrator.services.lorebook import LorebookMatch
+from orchestrator.services.hierarchical_memory import HierarchicalRetrievalResult
+from orchestrator.services.memory_conflict import MemoryWithValidity
 from orchestrator.prompts.manager import PromptManager
 
 logger = structlog.get_logger()
@@ -86,6 +90,10 @@ class ContextBuilder:
         active_game: dict | None = None,
         liked_content: list[dict] | None = None,
         engagement_level: str | None = None,
+        kg_context: list[KGContextItem] | None = None,
+        lorebook_matches: list[LorebookMatch] | None = None,
+        hierarchical_memory: HierarchicalRetrievalResult | None = None,
+        historical_memories: list[MemoryWithValidity] | None = None,
         prompt_version: str = "1.0.0",
     ) -> str:
         """Build the system prompt from companion spec and context."""
@@ -160,6 +168,26 @@ class ContextBuilder:
             memory_context = self._format_memories(long_term_memories)
             full_prompt += f"\n\n{memory_context}"
 
+        # Add knowledge graph context if available
+        if kg_context:
+            kg_context_section = self._format_kg_context(kg_context)
+            full_prompt += f"\n\n{kg_context_section}"
+
+        # Add lorebook/world info context if available
+        if lorebook_matches:
+            lorebook_section = self._format_lorebook_context(lorebook_matches)
+            full_prompt += f"\n\n{lorebook_section}"
+
+        # Add hierarchical memory context if available
+        if hierarchical_memory:
+            hierarchical_section = self._format_hierarchical_memory(hierarchical_memory)
+            full_prompt += f"\n\n{hierarchical_section}"
+
+        # Add historical/invalidated memories context if available
+        if historical_memories:
+            historical_section = self._format_historical_memories(historical_memories)
+            full_prompt += f"\n\n{historical_section}"
+
         # Add gift memories if available
         if gift_memories:
             gift_context = self._format_gift_context(gift_memories)
@@ -203,6 +231,10 @@ class ContextBuilder:
         user_image_url: str | None = None,
         liked_content: list[dict] | None = None,
         engagement_level: str | None = None,
+        kg_context: list[KGContextItem] | None = None,
+        lorebook_matches: list[LorebookMatch] | None = None,
+        hierarchical_memory: HierarchicalRetrievalResult | None = None,
+        historical_memories: list[MemoryWithValidity] | None = None,
     ) -> list[dict[str, Any]]:
         """Build the message list for the model API call."""
         messages: list[dict[str, Any]] = []
@@ -220,6 +252,10 @@ class ContextBuilder:
             active_game=active_game,
             liked_content=liked_content,
             engagement_level=engagement_level,
+            kg_context=kg_context,
+            lorebook_matches=lorebook_matches,
+            hierarchical_memory=hierarchical_memory,
+            historical_memories=historical_memories,
             prompt_version=context.prompt_version,
         )
         messages.append({"role": "system", "content": system_prompt})
@@ -337,14 +373,215 @@ class ContextBuilder:
         return "\n".join(lines)
 
     def _format_memories(self, memories: list[LongTermMemory]) -> str:
-        """Format long-term memories for context."""
+        """Format long-term memories for context.
+
+        Pinned memories are always included first and marked as critical facts.
+        Regular memories follow based on relevance scoring.
+        """
         if not memories:
             return ""
 
+        # Separate pinned and regular memories
+        pinned_memories = [m for m in memories if m.is_pinned]
+        regular_memories = [m for m in memories if not m.is_pinned]
+
+        # Sort pinned memories by pin_order
+        pinned_memories.sort(key=lambda m: m.pin_order if m.pin_order is not None else 999)
+
         lines = ["<long_term_memories>"]
-        for memory in memories:
-            lines.append(f"- [{memory.memory_type.value}] {memory.content}")
+
+        # Add pinned memories first with special marker
+        if pinned_memories:
+            lines.append("")
+            lines.append("## Critical Facts (Always Remember)")
+            lines.append("These are pinned memories - essential facts you must keep in mind:")
+            for memory in pinned_memories:
+                lines.append(f"- [{memory.memory_type.value}] {memory.content}")
+            lines.append("")
+
+        # Add regular memories
+        if regular_memories:
+            if pinned_memories:
+                lines.append("## Relevant Context")
+            for memory in regular_memories:
+                lines.append(f"- [{memory.memory_type.value}] {memory.content}")
+
         lines.append("</long_term_memories>")
+
+        return "\n".join(lines)
+
+    def _format_kg_context(self, kg_context: list[KGContextItem]) -> str:
+        """Format knowledge graph context for the system prompt.
+
+        This section provides entity and relationship context from the knowledge
+        graph to help the companion understand the broader context of entities
+        mentioned in the conversation.
+
+        Args:
+            kg_context: List of KG context items with entity relationships.
+
+        Returns:
+            Formatted string for prompt injection.
+        """
+        if not kg_context:
+            return ""
+
+        lines = ["<knowledge_graph_context>"]
+        lines.append("Relevant entities from your knowledge:")
+        lines.append("")
+
+        for item in kg_context:
+            # Mark entities related to user with special indicator
+            user_marker = " ⭐ (related to user)" if item.connected_to_user else ""
+            lines.append(f"- **{item.entity_name}** ({item.entity_type}){user_marker}")
+
+            # Add connected entities if present
+            if item.connected_entities:
+                # Limit to 5 connected entities to avoid prompt bloat
+                connected = item.connected_entities[:5]
+                connected_str = ", ".join(connected)
+                if len(item.connected_entities) > 5:
+                    connected_str += f" (+{len(item.connected_entities) - 5} more)"
+                lines.append(f"  Connected to: {connected_str}")
+
+        lines.append("")
+        lines.append(
+            "Use this context to provide richer, more informed responses. "
+            "Entities marked with ⭐ are especially relevant to the user."
+        )
+        lines.append("</knowledge_graph_context>")
+
+        return "\n".join(lines)
+
+    def _format_lorebook_context(self, matches: list[LorebookMatch]) -> str:
+        """Format lorebook/world info context for the system prompt.
+
+        Lorebook entries provide keyword-triggered world information that helps
+        maintain consistent lore and world-building in conversations.
+
+        Args:
+            matches: List of matched lorebook entries.
+
+        Returns:
+            Formatted string for prompt injection.
+        """
+        if not matches:
+            return ""
+
+        lines = ["<lorebook_context>"]
+        lines.append("World information relevant to this conversation:")
+        lines.append("")
+
+        for match in matches:
+            entry = match.entry
+            lines.append(f"**{entry.name}**")
+            lines.append(entry.content)
+            lines.append("")
+
+        lines.append(
+            "Use this world information naturally in your responses when relevant. "
+            "Do not explicitly reference that you have 'lore' or 'world info'."
+        )
+        lines.append("</lorebook_context>")
+
+        return "\n".join(lines)
+
+    def _format_hierarchical_memory(
+        self, result: HierarchicalRetrievalResult | None
+    ) -> str:
+        """Format hierarchical memory retrieval result for the system prompt.
+
+        Includes both L1 individual memories and L2 cluster summaries for
+        broader contextual understanding.
+
+        Args:
+            result: The hierarchical retrieval result.
+
+        Returns:
+            Formatted string for prompt injection.
+        """
+        if not result:
+            return ""
+
+        if not result.l1_memories and not result.l2_clusters:
+            return ""
+
+        lines = ["<hierarchical_memories>"]
+
+        # Add L1 memories (specific facts)
+        if result.l1_memories:
+            lines.append("Specific memories about the user:")
+            for memory in result.l1_memories:
+                content = memory.get("content", "")
+                if content:
+                    lines.append(f"- {content}")
+            lines.append("")
+
+        # Add L2 cluster context (broader themes)
+        if result.l2_clusters:
+            lines.append("Broader context from memory clusters:")
+            for cluster in result.l2_clusters:
+                lines.append(f"- **{cluster.name}**: {cluster.summary}")
+            lines.append("")
+
+        lines.append("</hierarchical_memories>")
+
+        return "\n".join(lines)
+
+    def _format_historical_memories(
+        self, memories: list[MemoryWithValidity]
+    ) -> str:
+        """Format historical/invalidated memories for the system prompt.
+
+        Historical memories are facts that were once true but have been
+        superseded by newer information. They enable "you used to..." type
+        responses and maintain context about how things have changed.
+
+        Args:
+            memories: List of invalidated memories with validity periods.
+
+        Returns:
+            Formatted string for prompt injection.
+        """
+        if not memories:
+            return ""
+
+        # Filter to only include invalidated memories
+        invalidated = [m for m in memories if not m.is_currently_valid]
+
+        if not invalidated:
+            return ""
+
+        lines = ["<historical_context>"]
+        lines.append("Previously known facts (no longer current):")
+        lines.append("Use these for 'you used to...' type responses when relevant.")
+        lines.append("")
+
+        for memory in invalidated:
+            # Calculate time since invalidation
+            if memory.valid_until:
+                from datetime import datetime
+                time_since = datetime.utcnow() - memory.valid_until
+
+                if time_since.days > 365:
+                    time_phrase = f"{time_since.days // 365}+ year(s) ago"
+                elif time_since.days > 30:
+                    time_phrase = f"{time_since.days // 30} month(s) ago"
+                elif time_since.days > 0:
+                    time_phrase = f"{time_since.days} day(s) ago"
+                else:
+                    time_phrase = "recently"
+
+                lines.append(f"- [{memory.memory_type}] (changed {time_phrase}): {memory.content}")
+            else:
+                lines.append(f"- [{memory.memory_type}] (past): {memory.content}")
+
+        lines.append("")
+        lines.append(
+            "Reference these naturally when the user asks about past situations "
+            "or when relevant changes come up in conversation."
+        )
+        lines.append("</historical_context>")
 
         return "\n".join(lines)
 
