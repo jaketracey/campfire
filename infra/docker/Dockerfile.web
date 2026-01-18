@@ -40,6 +40,8 @@ COPY --from=deps /app/node_modules ./node_modules
 COPY --from=deps /app/packages/shared/node_modules ./packages/shared/node_modules
 COPY --from=deps /app/packages/web/node_modules ./packages/web/node_modules
 
+# Copy workspace config for pnpm to understand package structure
+COPY package.json pnpm-workspace.yaml ./
 COPY packages/shared ./packages/shared
 COPY packages/web ./packages/web
 COPY tsconfig.json tsconfig.base.json ./
