@@ -4,7 +4,7 @@ import { motion } from 'framer-motion';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card } from '@/components/ui/card';
-import { ArrowRight } from 'lucide-react';
+import { ArrowRight, SkipForward } from 'lucide-react';
 
 interface ChatInputProps {
   input: string;
@@ -24,6 +24,11 @@ interface ChatInputProps {
   // TTS
   isTTSPlaying: boolean;
 
+  // Companion switching (mobile)
+  onSwitchCompanion?: () => void;
+  isSwitchingCompanion?: boolean;
+  isDemo?: boolean;
+
   // Refs
   inputRef: React.RefObject<HTMLInputElement | null>;
   inputContainerRef: React.RefObject<HTMLDivElement | null>;
@@ -42,6 +47,9 @@ export function ChatInput({
   voiceError,
   webcamError,
   isTTSPlaying,
+  onSwitchCompanion,
+  isSwitchingCompanion,
+  isDemo,
   inputRef,
   inputContainerRef,
 }: ChatInputProps) {
@@ -113,6 +121,19 @@ export function ChatInput({
         >
           <ArrowRight className="h-7 w-7 lg:h-5 lg:w-5" />
         </Button>
+        {/* Next companion button - mobile only */}
+        {onSwitchCompanion && !isDemo && (
+          <Button
+            onClick={onSwitchCompanion}
+            onMouseDown={(e) => e.preventDefault()}
+            disabled={isSwitchingCompanion}
+            variant="outline"
+            className="h-12 w-12 flex-shrink-0 rounded-full lg:hidden"
+            data-testid="next-companion-button"
+          >
+            <SkipForward className={`h-6 w-6 ${isSwitchingCompanion ? 'animate-pulse' : ''}`} />
+          </Button>
+        )}
       </div>
 
       {/* TTS playback indicator */}

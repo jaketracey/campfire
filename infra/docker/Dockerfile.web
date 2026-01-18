@@ -67,15 +67,9 @@ ENV NEXT_PUBLIC_GATEWAY_URL=$NEXT_PUBLIC_GATEWAY_URL \
 # Build shared package first
 RUN pnpm --filter shared build
 
-# Build web app
+# Build web app from package directory
 WORKDIR /app/packages/web
-
-# Debug: Show the environment and file structure
-RUN echo "=== Current working directory ===" && pwd && \
-    echo "=== Files in src/env ===" && ls -la src/env/ && \
-    echo "=== tsconfig.json paths ===" && cat tsconfig.json | grep -A 10 '"paths"' && \
-    echo "=== Building Next.js ===" && \
-    NEXT_TELEMETRY_DISABLED=1 npx next build --debug
+RUN pnpm build
 
 # -----------------------------------------------------------------------------
 # Stage 4: Production - Minimal production image with standalone output

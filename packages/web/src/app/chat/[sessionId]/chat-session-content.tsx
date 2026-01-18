@@ -215,6 +215,9 @@ export function ChatSessionContent({
             voiceError={chat.voiceError}
             webcamError={chat.webcamError}
             isTTSPlaying={chat.isTTSPlaying}
+            onSwitchCompanion={chat.handleSwitchCompanion}
+            isSwitchingCompanion={chat.isGeneratingNewCompanion}
+            isDemo={isDemo}
             inputRef={chat.inputRef}
             inputContainerRef={chat.inputContainerRef}
           />
