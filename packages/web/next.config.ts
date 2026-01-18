@@ -83,6 +83,11 @@ const nextConfig: NextConfig = {
   experimental: {
     turbopackFileSystemCacheForDev: true,
   },
+  turbopack: {
+    // Set to monorepo root for shared package access
+    // In Docker, monorepo root is /app. Locally, use relative path.
+    root: process.env.DOCKER_BUILD === '1' ? '/app' : '../..',
+  },
 };
 
 export default nextConfig;

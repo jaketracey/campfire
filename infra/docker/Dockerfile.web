@@ -67,8 +67,9 @@ ENV NEXT_PUBLIC_GATEWAY_URL=$NEXT_PUBLIC_GATEWAY_URL \
 # Build shared package first
 RUN pnpm --filter shared build
 
-# Build web app directly with npx to ensure correct working directory context
+# Build web app with correct turbopack.root for monorepo
 WORKDIR /app/packages/web
+ENV DOCKER_BUILD=1
 RUN npx next build
 
 # -----------------------------------------------------------------------------
