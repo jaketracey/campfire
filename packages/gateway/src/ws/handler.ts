@@ -1998,7 +1998,18 @@ async function handleVoiceCallStart(client: ConnectedClient): Promise<void> {
 
   // Start billing interval - deduct 1 token per second
   client.voiceCallBillingInterval = setInterval(async () => {
-    await deductVoiceCallToken(client);
+    try {
+      await deductVoiceCallToken(client);
+    } catch (error) {
+      logger.error(
+        { clientId: client.id, sessionId, error },
+        'Error deducting voice call token'
+      );
+      // End the call on billing error to prevent further issues
+      await handleVoiceCallEnd(client).catch((endError) => {
+        logger.error({ clientId: client.id, error: endError }, 'Failed to end voice call after billing error');
+      });
+    }
   }, 1000);
 
   send(client, {
