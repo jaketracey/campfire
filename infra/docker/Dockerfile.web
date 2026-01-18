@@ -64,11 +64,12 @@ ENV NEXT_PUBLIC_GATEWAY_URL=$NEXT_PUBLIC_GATEWAY_URL \
     NEXT_PUBLIC_GOOGLE_OAUTH_CLIENT_ID=$NEXT_PUBLIC_GOOGLE_OAUTH_CLIENT_ID \
     NEXT_PUBLIC_FLOWGUARD_SHOP_ID=$NEXT_PUBLIC_FLOWGUARD_SHOP_ID
 
-# Build shared package first, then web
-# Note: Next.js path aliases require building from the package directory
+# Build shared package first
 RUN pnpm --filter shared build
+
+# Build web app directly with npx to ensure correct working directory context
 WORKDIR /app/packages/web
-RUN pnpm build
+RUN npx next build
 
 # -----------------------------------------------------------------------------
 # Stage 4: Production - Minimal production image with standalone output
