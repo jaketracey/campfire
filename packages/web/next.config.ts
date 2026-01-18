@@ -83,13 +83,6 @@ const nextConfig: NextConfig = {
   experimental: {
     turbopackFileSystemCacheForDev: true,
   },
-  turbopack: {
-    // Use absolute path for Docker compatibility
-    // In Docker, CWD is /app/packages/web and monorepo root is /app
-    root: process.cwd().endsWith('/packages/web')
-      ? process.cwd().replace('/packages/web', '')
-      : process.cwd(),
-  },
 };
 
 export default nextConfig;
