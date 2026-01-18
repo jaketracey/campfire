@@ -63,8 +63,10 @@ ENV NEXT_PUBLIC_GATEWAY_URL=$NEXT_PUBLIC_GATEWAY_URL \
     NEXT_PUBLIC_FLOWGUARD_SHOP_ID=$NEXT_PUBLIC_FLOWGUARD_SHOP_ID
 
 # Build shared package first, then web
-RUN pnpm --filter shared build && \
-    pnpm --filter web build
+# Note: Next.js path aliases require building from the package directory
+RUN pnpm --filter shared build
+WORKDIR /app/packages/web
+RUN pnpm build
 
 # -----------------------------------------------------------------------------
 # Stage 4: Production - Minimal production image with standalone output
