@@ -84,8 +84,9 @@ const nextConfig: NextConfig = {
     turbopackFileSystemCacheForDev: true,
   },
   turbopack: {
-    // Monorepo root - relative from packages/web
-    root: '../..',
+    // In Docker builds, use absolute path to monorepo root
+    // In local dev, resolve relative path
+    root: process.env.DOCKER_BUILD === '1' ? '/app' : '../..',
   },
 };
 
