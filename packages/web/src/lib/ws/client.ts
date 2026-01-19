@@ -3,7 +3,7 @@
  * Real-time communication with the gateway.
  */
 
-import { publicEnv } from '@/env/public';
+import { publicEnv } from '../../env/public';
 
 // Dynamically determine WebSocket URL based on environment
 // - Explicit NEXT_PUBLIC_WS_URL takes priority

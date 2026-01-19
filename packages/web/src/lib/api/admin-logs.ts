@@ -5,7 +5,7 @@
 
 import { get } from './client';
 import { getAccessToken } from '@/stores/auth-store';
-import { publicEnv } from '@/env/public';
+import { publicEnv } from '../../env/public';
 
 // ============================================================================
 // Types

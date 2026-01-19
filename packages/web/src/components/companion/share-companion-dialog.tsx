@@ -15,7 +15,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
 import { updateCompanion } from '@/lib/api/companions';
-import { publicEnv } from '@/env/public';
+import { publicEnv } from '../../env/public';
 
 interface ShareCompanionDialogProps {
   companionId: string;

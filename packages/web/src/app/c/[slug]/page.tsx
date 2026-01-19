@@ -1,7 +1,7 @@
 import { Metadata } from 'next';
 import { notFound } from 'next/navigation';
 import { CompanionProfile } from '@/components/seo/companion-profile';
-import { serverEnv } from '@/env/server';
+import { serverEnv } from '../../../env/server';
 import { getRequestBaseUrl } from '@/lib/request-base-url';
 
 interface PageProps {

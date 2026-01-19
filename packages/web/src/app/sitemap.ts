@@ -1,5 +1,5 @@
 import { MetadataRoute } from 'next';
-import { serverEnv } from '@/env/server';
+import { serverEnv } from '../env/server';
 
 // Gateway URL for fetching published pages
 const GATEWAY_URL = serverEnv.GATEWAY_URL;

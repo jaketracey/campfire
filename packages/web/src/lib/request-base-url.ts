@@ -1,7 +1,7 @@
 import 'server-only';
 
 import { headers } from 'next/headers';
-import { serverEnv } from '@/env/server';
+import { serverEnv } from '../env/server';
 
 export async function getRequestBaseUrl(): Promise<string> {
   const h = await headers();

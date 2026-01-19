@@ -4,7 +4,7 @@
  */
 
 import { getAccessToken } from '@/stores/auth-store';
-import { publicEnv } from '@/env/public';
+import { publicEnv } from '../../env/public';
 
 // API base URL - on localhost go direct to gateway, otherwise use relative (nginx proxies)
 function getApiBaseUrl(): string {

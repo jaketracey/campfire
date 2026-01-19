@@ -4,7 +4,7 @@ import { useCallback, useEffect, useState, useRef } from 'react';
 import { Button } from '@/components/ui/button';
 import { Loader2 } from 'lucide-react';
 import { isNativeApp, requestNativeGoogleAuth } from '@/lib/native-bridge';
-import { publicEnv } from '@/env/public';
+import { publicEnv } from '../../env/public';
 
 declare global {
   interface Window {
