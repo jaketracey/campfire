@@ -250,3 +250,6 @@ reports/
 # Claude Code local settings
 .claude/settings.local.json
 .claude/*.local.json
+
+# Exception for Next.js env config module
+!packages/web/src/env/

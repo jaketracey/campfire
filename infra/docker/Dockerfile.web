@@ -65,12 +65,6 @@ ENV NEXT_PUBLIC_GATEWAY_URL=$NEXT_PUBLIC_GATEWAY_URL \
     NEXT_PUBLIC_FLOWGUARD_SHOP_ID=$NEXT_PUBLIC_FLOWGUARD_SHOP_ID \
     DOCKER_BUILD=1
 
-# Debug: Verify files are copied
-RUN echo "=== Debug: Verifying files ===" && \
-    ls -la /app/packages/web/src/ && \
-    ls -la /app/packages/web/src/env/ && \
-    cat /app/packages/web/src/env/server.ts | head -5
-
 # Build shared package first
 RUN pnpm --filter shared build
 
