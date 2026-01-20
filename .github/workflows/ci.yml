@@ -171,7 +171,7 @@ jobs:
             ${{ runner.os }}-turbo-
 
       - name: Download shared build
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v7
         with:
           name: shared-dist
           path: packages/shared/dist
@@ -224,7 +224,7 @@ jobs:
             ${{ runner.os }}-turbo-
 
       - name: Download shared build
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v7
         with:
           name: shared-dist
           path: packages/shared/dist
@@ -277,7 +277,7 @@ jobs:
             ${{ runner.os }}-turbo-
 
       - name: Download shared build
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v7
         with:
           name: shared-dist
           path: packages/shared/dist
@@ -363,7 +363,7 @@ jobs:
             ${{ runner.os }}-turbo-
 
       - name: Download shared build
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v7
         with:
           name: shared-dist
           path: packages/shared/dist
