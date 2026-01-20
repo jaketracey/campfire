@@ -74,7 +74,7 @@ jobs:
           build-args: |
             NEXT_PUBLIC_GATEWAY_URL=https://ignite.cam
             NEXT_PUBLIC_WS_URL=wss://ignite.cam/ws
-            NEXT_PUBLIC_GOOGLE_OAUTH_CLIENT_ID=444645280616-0a8ne01nd6qpgai8kqq5m22u9cdbj41p.apps.googleusercontent.com
+            NEXT_PUBLIC_GOOGLE_OAUTH_CLIENT_ID=${{ secrets.GOOGLE_OAUTH_CLIENT_ID }}
             NEXT_PUBLIC_FLOWGUARD_SHOP_ID=${{ secrets.FLOWGUARD_SHOP_ID }}
 
   # Note: Deploy must be triggered manually or via workflow_run
