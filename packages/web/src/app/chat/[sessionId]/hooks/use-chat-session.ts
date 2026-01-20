@@ -298,15 +298,22 @@ export function useChatSession({
         const vv = window.visualViewport;
         if (!vv) return;
 
+        // Check if we're on mobile/tablet (below lg breakpoint)
+        const isMobile = window.innerWidth < 1024;
+
         const kbHeight = window.innerHeight - vv.height;
-        setKeyboardHeight(kbHeight);
+        // Only consider keyboard "open" if height difference is significant (> 50px)
+        // This avoids false positives from browser chrome or floating-point differences
+        const hasKeyboard = kbHeight > 50;
+        setKeyboardHeight(hasKeyboard ? kbHeight : 0);
 
         if (inputContainerRef.current) {
           // Measure input height before changing position
           const height = inputContainerRef.current.offsetHeight;
           setInputHeight(height);
 
-          if (kbHeight > 0) {
+          // Only apply fixed positioning on mobile when keyboard is open
+          if (isMobile && hasKeyboard) {
             inputContainerRef.current.style.position = 'fixed';
             inputContainerRef.current.style.bottom = `${kbHeight}px`;
             inputContainerRef.current.style.left = '0';

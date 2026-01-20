@@ -1297,8 +1297,9 @@ async function handleUserMessage(
             }
 
             if (data.startsWith('[ERROR]')) {
-              logger.error({ error: data }, 'Orchestrator stream error');
-              sendError(client, 'AI processing error');
+              const errorMessage = data.slice(8).trim() || 'Unknown error'; // Remove [ERROR] prefix
+              logger.error({ error: errorMessage }, 'Orchestrator stream error');
+              sendError(client, `AI processing error: ${errorMessage}`, 'ORCHESTRATOR_ERROR');
               return;
             }
 

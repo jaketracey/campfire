@@ -185,8 +185,8 @@ export function ChatSessionContent({
           onMobileAvatarClick={() => chat.setShowMobileAvatar(true)}
         />
 
-        {/* Input Area with Mobile Action Bar */}
-        <div ref={chat.inputContainerRef} className="py-4 px-6 lg:px-4 bg-background z-40">
+        {/* Input Area with Mobile Action Bar - Fixed on mobile/tablet, static on desktop */}
+        <div ref={chat.inputContainerRef} className="py-4 px-6 lg:px-4 bg-background z-40 fixed bottom-0 left-0 right-0 lg:relative lg:bottom-auto lg:left-auto lg:right-auto">
           {/* Mobile Action Bar */}
           <MobileActionBar
             backstoryData={chat.backstoryData}

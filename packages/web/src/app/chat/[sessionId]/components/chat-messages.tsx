@@ -59,7 +59,7 @@ export function ChatMessages({
 }: ChatMessagesProps) {
   return (
     <div
-      className="flex-1 overflow-y-auto py-4 px-6 lg:px-4 space-y-4 scrollbar-chat relative"
+      className="flex-1 overflow-y-auto py-4 px-6 lg:px-4 space-y-4 scrollbar-chat relative pb-36 lg:pb-4"
       style={{ paddingBottom: keyboardHeight > 0 ? `${keyboardHeight + 80}px` : undefined }}
       data-testid="chat-messages"
     >
@@ -73,7 +73,13 @@ export function ChatMessages({
             className="absolute inset-0 bg-cover bg-center bg-no-repeat"
             style={{ backgroundImage: `url(${mobileAvatarUrl})` }}
           />
-          <div className="absolute inset-0 bg-background/85 backdrop-blur-[2px]" />
+          {/* Animated overlay - starts bright (20% opacity) then darkens to 85% */}
+          <motion.div
+            className="absolute inset-0 bg-background"
+            initial={{ opacity: 0.2 }}
+            animate={{ opacity: 0.85 }}
+            transition={{ duration: 2, ease: 'easeOut' }}
+          />
           {/* Clickable overlay to expand avatar */}
           <button
             onClick={onMobileAvatarClick}
