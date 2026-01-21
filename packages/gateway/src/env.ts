@@ -83,6 +83,9 @@ export const GatewayEnvSchema = z.object({
   OTEL_EXPORTER_OTLP_ENDPOINT: z.string().url().default('http://localhost:4318'),
   OTEL_ENABLED: BoolSchema.default(true),
 
+  // Sentry Error Monitoring
+  SENTRY_DSN: z.string().url().optional(),
+
   // Optional integrations
   GOOGLE_OAUTH_CLIENT_ID: z.string().optional(),
   GOOGLE_ADS_CLIENT_ID: z.string().optional(),
@@ -112,6 +115,9 @@ export const GatewayEnvSchema = z.object({
   FAL_API_KEY: z.string().optional(),
 
   PROVIDER_KEY_ENCRYPTION_SECRET: z.string().optional(),
+
+  // Database Seeding (Development Only)
+  SEED_ADMIN_PASSWORD: z.string().min(12).optional(),
 
   // Creator monetization
   CREATOR_TOKEN_VALUE_CENTS: IntSchema.pipe(z.number().int().positive()).default(10),

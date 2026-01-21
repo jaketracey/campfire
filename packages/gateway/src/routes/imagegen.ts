@@ -6,7 +6,7 @@
 
 import type { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
 import { createHash } from 'crypto';
-import { S3Client, PutObjectCommand, GetObjectCommand } from '@aws-sdk/client-s3';
+import { PutObjectCommand, GetObjectCommand } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { requireAuth } from '../middleware/auth.js';
 import { logger } from '../observability/logger.js';
@@ -23,16 +23,15 @@ import { getRenditionKeyPrefix, type ImageRenditions } from '@campfire/shared';
 import { getLLMUsageService } from '../services/llm-usage.js';
 import { renderPromptFromDb } from '../services/prompt-runtime.js';
 import { env } from '../env.js';
+import { getS3Client, getMediaBucket } from '../utils/storage.js';
 
 // Orchestrator configuration
 const ORCHESTRATOR_URL = env.ORCHESTRATOR_URL;
 
-// S3 configuration
-const S3_MEDIA_BUCKET = env.S3_MEDIA_BUCKET;
+// S3 configuration - use shared client
+const S3_MEDIA_BUCKET = getMediaBucket();
 const S3_REGION = env.AWS_REGION;
-
-// Initialize S3 client
-const s3Client = new S3Client({ region: S3_REGION });
+const s3Client = getS3Client();
 
 interface ImageGenRequest {
   prompt: string;
@@ -1057,6 +1056,7 @@ export async function imagegenRoutes(app: FastifyInstance): Promise<void> {
           }
 
           // Queue rendition processing for anchor images
+          // Pass explicit keyPrefix since anchor path structure differs from standard sessions
           if (imageId) {
             enqueueImageRenditionJob({
               originalS3Key: s3Key,
@@ -1067,6 +1067,7 @@ export async function imagegenRoutes(app: FastifyInstance): Promise<void> {
               imageId,
               isAnchor: true,
               companionId,
+              keyPrefix, // Use the same prefix as the original upload
             }).catch((err) => {
               logger.warn({ error: err, imageId }, 'Failed to queue anchor rendition job');
             });
@@ -1408,6 +1409,7 @@ export async function imagegenRoutes(app: FastifyInstance): Promise<void> {
             }
 
             // Queue rendition processing for anchor images
+            // Pass explicit keyPrefix since anchor path structure differs from standard sessions
             if (imageId) {
               enqueueImageRenditionJob({
                 originalS3Key: s3Key,
@@ -1418,6 +1420,7 @@ export async function imagegenRoutes(app: FastifyInstance): Promise<void> {
                 imageId,
                 isAnchor: true,
                 companionId,
+                keyPrefix, // Use the same prefix as the original upload
               }).catch((err) => {
                 logger.warn({ error: err, imageId }, 'Failed to queue anchor rendition job (SSE)');
               });

@@ -793,6 +793,16 @@ export class UsersRepository {
     }
   }
 
+  async updateMFALastUsed(id: string, tx?: TransactionContext): Promise<void> {
+    const db = this.getSql(tx);
+
+    await db`
+      UPDATE user_mfa
+      SET last_used_at = NOW()
+      WHERE id = ${id}
+    `;
+  }
+
   // ===========================================================================
   // User Sessions
   // ===========================================================================

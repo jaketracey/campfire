@@ -10,11 +10,17 @@ import rateLimit from '@fastify/rate-limit';
 import websocket from '@fastify/websocket';
 import { logger, withContext, type RequestContext } from './observability/logger.js';
 import { initTracing, shutdownTracing } from './observability/tracing.js';
+import { initSentry, captureException, flushSentry, closeSentry, setUser } from './observability/sentry.js';
 import { getDatabase, closeDatabase, checkDatabaseHealth } from './db/client.js';
 import { registerRoutes } from './routes/index.js';
 import { registerWebSocketHandler } from './ws/handler.js';
 import { nanoid } from 'nanoid';
 import { env } from './env.js';
+
+// Initialize Sentry early for error capture (production only)
+if (env.NODE_ENV === 'production') {
+  initSentry();
+}
 
 // Initialize tracing before anything else
 if (env.NODE_ENV === 'production') {
@@ -111,6 +117,16 @@ app.addHook('onResponse', async (request, reply) => {
 
 // Error handler
 app.setErrorHandler((error: Error & { statusCode?: number }, request, reply) => {
+  // Capture error to Sentry for 5xx errors
+  const statusCode = error.statusCode ?? 500;
+  if (statusCode >= 500) {
+    captureException(error, {
+      method: request.method,
+      url: request.url,
+      statusCode,
+    });
+  }
+
   logger.error(
     {
       err: error,
@@ -210,6 +226,12 @@ async function shutdown(signal: string) {
       await shutdownTracing();
     }
 
+    // Flush and close Sentry
+    if (env.NODE_ENV === 'production') {
+      await flushSentry(2000);
+      await closeSentry();
+    }
+
     logger.info('Graceful shutdown complete');
     process.exit(0);
   } catch (error) {
@@ -223,13 +245,19 @@ process.on('SIGTERM', () => shutdown('SIGTERM'));
 process.on('SIGINT', () => shutdown('SIGINT'));
 
 // Uncaught exception handler
-process.on('uncaughtException', (error) => {
+process.on('uncaughtException', async (error) => {
   logger.fatal({ err: error }, 'Uncaught exception');
+  captureException(error, { type: 'uncaughtException' });
+  await flushSentry(2000);
   process.exit(1);
 });
 
-process.on('unhandledRejection', (reason) => {
+process.on('unhandledRejection', async (reason) => {
   logger.fatal({ err: reason }, 'Unhandled rejection');
+  if (reason instanceof Error) {
+    captureException(reason, { type: 'unhandledRejection' });
+  }
+  await flushSentry(2000);
   process.exit(1);
 });
 

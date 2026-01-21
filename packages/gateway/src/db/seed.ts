@@ -15,6 +15,7 @@
 
 import { createPool, closePool } from './pool.js';
 import type postgres from 'postgres';
+import { hashPassword } from '../utils/password.js';
 
 const TEST_PASSWORD_HASH = '$argon2id$v=19$m=65536,t=3,p=4$AAAAAAAAAAAAAAAAAAAAAA$AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
 
@@ -85,37 +86,46 @@ async function seed(sql: postgres.Sql): Promise<SeedData> {
   // =========================================================================
   console.log('[Seed] Creating admin user...');
 
-  // Password: admin1234
-  const adminPasswordHash = '$2b$12$OYsKLLAS2zf9qm4zzFlwv.eG.KwhzNqEWv44tQ6o0divse3U8aDtu';
+  const adminPassword = process.env.SEED_ADMIN_PASSWORD;
+  if (!adminPassword) {
+    console.warn('[Seed] SEED_ADMIN_PASSWORD not set - skipping admin user creation');
+    console.warn('[Seed] To create admin user, set SEED_ADMIN_PASSWORD env var (min 12 chars)');
+  } else {
+    if (adminPassword.length < 12) {
+      throw new Error('[Seed] SEED_ADMIN_PASSWORD must be at least 12 characters');
+    }
 
-  await sql`
-    INSERT INTO users (id, email, password_hash, email_verified, status, role)
-    VALUES (
-      '00000000-0000-0000-0000-000000000100',
-      'admin@example.com',
-      ${adminPasswordHash},
-      TRUE,
-      'active',
-      'admin'
-    )
-    ON CONFLICT (email_normalized) DO UPDATE SET
-      password_hash = EXCLUDED.password_hash,
-      role = EXCLUDED.role
-  `;
+    const adminPasswordHash = await hashPassword(adminPassword);
 
-  await sql`
-    INSERT INTO user_profiles (user_id, display_name, timezone, locale, preferences)
-    VALUES (
-      '00000000-0000-0000-0000-000000000100',
-      'Admin User',
-      'America/New_York',
-      'en-US',
-      '{"theme": "dark", "notifications": true}'
-    )
-    ON CONFLICT (user_id) DO UPDATE SET display_name = EXCLUDED.display_name
-  `;
+    await sql`
+      INSERT INTO users (id, email, password_hash, email_verified, status, role)
+      VALUES (
+        '00000000-0000-0000-0000-000000000100',
+        'admin@example.com',
+        ${adminPasswordHash},
+        TRUE,
+        'active',
+        'admin'
+      )
+      ON CONFLICT (email_normalized) DO UPDATE SET
+        password_hash = EXCLUDED.password_hash,
+        role = EXCLUDED.role
+    `;
 
-  console.log('[Seed] Created admin user: admin@example.com / admin1234');
+    await sql`
+      INSERT INTO user_profiles (user_id, display_name, timezone, locale, preferences)
+      VALUES (
+        '00000000-0000-0000-0000-000000000100',
+        'Admin User',
+        'America/New_York',
+        'en-US',
+        '{"theme": "dark", "notifications": true}'
+      )
+      ON CONFLICT (user_id) DO UPDATE SET display_name = EXCLUDED.display_name
+    `;
+
+    console.log('[Seed] Created admin user: admin@example.com (password from SEED_ADMIN_PASSWORD)');
+  }
 
   // =========================================================================
   // Companions

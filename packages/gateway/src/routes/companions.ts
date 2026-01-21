@@ -6,6 +6,8 @@
 import type { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
 import { z } from 'zod';
 import { nanoid } from 'nanoid';
+import { GetObjectCommand } from '@aws-sdk/client-s3';
+import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { requireAuth } from '../middleware/auth.js';
 import { getCompanionsRepository } from '../repositories/companions.js';
 import { getSessionsRepository } from '../repositories/sessions.js';
@@ -14,7 +16,12 @@ import { db } from '../db/index.js';
 import { logger } from '../observability/logger.js';
 import type { CompanionSpec } from '../db/types.js';
 import { env } from '../env.js';
-import type { ImageRenditions } from '@campfire/shared';
+import { getS3Client, getMediaBucket } from '../utils/storage.js';
+import type { ImageRenditions, RenditionFormats, RenditionFile } from '@campfire/shared';
+
+// S3 configuration for signing rendition URLs
+const S3_MEDIA_BUCKET = getMediaBucket();
+const s3Client = getS3Client();
 
 // Orchestrator configuration
 const ORCHESTRATOR_URL = env.ORCHESTRATOR_URL;
@@ -298,11 +305,12 @@ async function getLatestSessionsForCompanions(
  */
 interface LatestImageData {
   s3_url: string;
-  renditions: Record<string, unknown> | null;
+  renditions: ImageRenditions | null;
 }
 
 /**
  * Get latest image for each companion from conversations
+ * Signs all rendition URLs on-the-fly since the bucket requires presigned access
  */
 async function getLatestImagesForCompanions(
   userId: string,
@@ -320,14 +328,21 @@ async function getLatestImagesForCompanions(
   `;
 
   const imageMap = new Map<string, LatestImageData>();
-  for (const row of results) {
-    if (row.companion_id) {
-      imageMap.set(row.companion_id, {
-        s3_url: row.s3_url,
-        renditions: row.renditions as Record<string, unknown> | null,
-      });
-    }
-  }
+
+  // Sign URLs in parallel for all renditions
+  await Promise.all(
+    results.map(async (row) => {
+      if (row.companion_id) {
+        const renditions = row.renditions as ImageRenditions | null;
+        const signedRenditions = renditions ? await signRenditionUrls(renditions) : null;
+        imageMap.set(row.companion_id, {
+          s3_url: row.s3_url,
+          renditions: signedRenditions,
+        });
+      }
+    })
+  );
+
   return imageMap;
 }
 
@@ -367,8 +382,59 @@ async function getAvatarDataForCompanions(
 }
 
 /**
+ * Sign a single rendition file's URL
+ */
+async function signRenditionUrl(s3Key: string): Promise<string> {
+  return getSignedUrl(
+    s3Client,
+    new GetObjectCommand({ Bucket: S3_MEDIA_BUCKET, Key: s3Key }),
+    { expiresIn: 604800 } // 7 days
+  );
+}
+
+/**
+ * Sign all URLs in a RenditionFormats object
+ */
+async function signRenditionFormats(formats: RenditionFormats): Promise<RenditionFormats> {
+  const signed: RenditionFormats = {};
+
+  for (const [format, file] of Object.entries(formats)) {
+    if (file && file.s3Key) {
+      const signedUrl = await signRenditionUrl(file.s3Key);
+      signed[format as keyof RenditionFormats] = {
+        ...file,
+        url: signedUrl,
+      };
+    }
+  }
+
+  return signed;
+}
+
+/**
+ * Sign all URLs in an ImageRenditions object
+ * The worker stores unsigned direct S3 URLs, so we need to sign them on-the-fly
+ */
+async function signRenditionUrls(renditions: ImageRenditions): Promise<ImageRenditions> {
+  const signed: ImageRenditions = {};
+  const sizes = ['thumb', 'small', 'medium', 'large', 'original'] as const;
+
+  await Promise.all(
+    sizes.map(async (size) => {
+      const formats = renditions[size];
+      if (formats) {
+        signed[size] = await signRenditionFormats(formats);
+      }
+    })
+  );
+
+  return signed;
+}
+
+/**
  * Get renditions for avatars by their s3_keys
  * Looks up companion_images table which stores renditions
+ * Signs all URLs on-the-fly since the bucket requires presigned access
  */
 async function getAvatarRenditionsForS3Keys(
   s3Keys: string[]
@@ -383,11 +449,17 @@ async function getAvatarRenditionsForS3Keys(
   `;
 
   const renditionsMap = new Map<string, ImageRenditions>();
-  for (const row of results) {
-    if (row.s3_key && row.renditions) {
-      renditionsMap.set(row.s3_key, row.renditions as ImageRenditions);
-    }
-  }
+
+  // Sign URLs in parallel for all renditions
+  await Promise.all(
+    results.map(async (row) => {
+      if (row.s3_key && row.renditions) {
+        const signedRenditions = await signRenditionUrls(row.renditions as ImageRenditions);
+        renditionsMap.set(row.s3_key, signedRenditions);
+      }
+    })
+  );
+
   return renditionsMap;
 }
 

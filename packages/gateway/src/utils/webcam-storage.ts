@@ -3,17 +3,16 @@
  * Handles S3 uploads for webcam frames captured during chat sessions.
  */
 
-import { S3Client, PutObjectCommand, GetObjectCommand } from '@aws-sdk/client-s3';
+import { PutObjectCommand, GetObjectCommand } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { logger } from '../observability/logger.js';
 import { env } from '../env.js';
+import { getS3Client, getMediaBucket } from './storage.js';
 
-// S3 configuration
-const S3_MEDIA_BUCKET = env.S3_MEDIA_BUCKET;
+// S3 configuration - use shared client
+const S3_MEDIA_BUCKET = getMediaBucket();
 const S3_REGION = env.AWS_REGION;
-
-// Initialize S3 client
-const s3Client = new S3Client({ region: S3_REGION });
+const s3Client = getS3Client();
 
 export interface WebcamFrameUploadResult {
   s3Key: string;

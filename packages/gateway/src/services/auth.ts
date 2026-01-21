@@ -12,6 +12,7 @@ import { env } from '../env.js';
 import type { User, UserStatus, MFAMethod } from '../db/types.js';
 import type { TransactionContext } from '../repositories/types.js';
 import { hashPassword, verifyPassword } from '../utils/password.js';
+import { verifyTOTPCode } from '../utils/totp.js';
 
 // ============================================================================
 // Validation Schemas
@@ -693,10 +694,39 @@ export class AuthService {
       return true; // No MFA configured
     }
 
-    // In a real implementation, verify the code against the secret
-    // For TOTP, use a library like 'otplib'
-    // For now, just check if code is provided
-    return code.length === 6 && /^\d+$/.test(code);
+    // Validate code format first
+    if (!code || code.length !== 6 || !/^\d{6}$/.test(code)) {
+      return false;
+    }
+
+    // Find TOTP method and verify against secret
+    const totpMethod = mfaMethods.find(m => m.method === 'totp');
+    if (totpMethod) {
+      const secret = totpMethod.secret_encrypted;
+
+      if (!secret) {
+        logger.error({ userId, method: 'totp' }, 'TOTP secret not found for user');
+        return false;
+      }
+
+      const isValid = verifyTOTPCode(code, secret);
+
+      if (isValid) {
+        // Update last_used_at timestamp
+        await this.users.updateMFALastUsed(totpMethod.id, tx);
+      }
+
+      return isValid;
+    }
+
+    // SMS/email MFA not yet implemented - reject for security
+    const otherMethod = mfaMethods.find(m => m.method === 'sms' || m.method === 'email');
+    if (otherMethod) {
+      logger.warn({ userId, method: otherMethod.method }, 'MFA method not yet implemented');
+      return false;
+    }
+
+    return false;
   }
 
   private async hashToken(token: string): Promise<string> {

@@ -5,7 +5,7 @@
 
 import type { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
 import { z } from 'zod';
-import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3';
+import { PutObjectCommand } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { requireAdmin } from '../middleware/auth.js';
 import { logger } from '../observability/logger.js';
@@ -16,14 +16,13 @@ import {
 } from '../services/creative.js';
 import type { UUID } from '../db/types.js';
 import { env } from '../env.js';
+import { getS3Client, getMediaBucket, getCdnUrl, buildMediaUrl } from '../utils/storage.js';
 
-// S3 configuration
-const S3_MEDIA_BUCKET = env.S3_MEDIA_BUCKET;
+// S3 configuration - use shared client
+const S3_MEDIA_BUCKET = getMediaBucket();
 const S3_REGION = env.AWS_REGION;
-const S3_CDN_URL = env.S3_CDN_URL || `https://${S3_MEDIA_BUCKET}.s3.${S3_REGION}.amazonaws.com`;
-
-// Initialize S3 client
-const s3Client = new S3Client({ region: S3_REGION });
+const S3_CDN_URL = getCdnUrl() || `https://${S3_MEDIA_BUCKET}.s3.${S3_REGION}.amazonaws.com`;
+const s3Client = getS3Client();
 
 // ============================================================================
 // Request Schemas

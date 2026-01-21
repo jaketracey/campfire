@@ -48,12 +48,31 @@ import { env } from '../env.js';
 const NODE_ENV = env.NODE_ENV;
 const ORCHESTRATOR_URL = env.ORCHESTRATOR_URL;
 
-// SECURITY: Encryption key required in production - no defaults allowed
+// SECURITY: Encryption key required in production - deterministic dev key for non-production
+import crypto from 'crypto';
+
 const providerKeyEncryptionSecretValue = env.PROVIDER_KEY_ENCRYPTION_SECRET;
 if (!providerKeyEncryptionSecretValue && NODE_ENV === 'production') {
   throw new Error('FATAL: PROVIDER_KEY_ENCRYPTION_SECRET environment variable is required in production');
 }
-const PROVIDER_KEY_ENCRYPTION_SECRET = providerKeyEncryptionSecretValue ?? 'dev-only-encryption-key-not-for-production';
+
+let PROVIDER_KEY_ENCRYPTION_SECRET: string;
+if (providerKeyEncryptionSecretValue) {
+  PROVIDER_KEY_ENCRYPTION_SECRET = providerKeyEncryptionSecretValue;
+} else {
+  // In development/test: Generate a deterministic key based on machine-specific data
+  // This ensures consistency within a dev session but varies across machines
+  const machineId = process.env.USER || process.env.USERNAME || 'dev';
+  const dbName = env.DATABASE_NAME || 'campfire';
+  const deterministicSeed = `campfire-dev-${machineId}-${dbName}`;
+  PROVIDER_KEY_ENCRYPTION_SECRET = crypto.createHash('sha256').update(deterministicSeed).digest('hex');
+
+  logger.warn(
+    { environment: NODE_ENV },
+    'PROVIDER_KEY_ENCRYPTION_SECRET not set - using derived development key. ' +
+    'Set PROVIDER_KEY_ENCRYPTION_SECRET for data portability between sessions.'
+  );
+}
 
 // ============================================================================
 // Validation Schemas

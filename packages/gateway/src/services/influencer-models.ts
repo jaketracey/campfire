@@ -5,7 +5,6 @@
 
 import { z } from 'zod';
 import {
-  S3Client,
   PutObjectCommand,
   GetObjectCommand,
   DeleteObjectCommand,
@@ -15,6 +14,7 @@ import archiver from 'archiver';
 import { Readable } from 'stream';
 import { logger } from '../observability/logger.js';
 import { env } from '../env.js';
+import { getS3Client, getMediaBucket } from '../utils/storage.js';
 import {
   getInfluencerModelsRepository,
   type InfluencerModel,
@@ -121,7 +121,7 @@ interface FalInferenceResponse {
 
 export class InfluencerModelsService {
   private repo = getInfluencerModelsRepository();
-  private s3Client = new S3Client({ region: S3_REGION });
+  private s3Client = getS3Client();
 
   // =========================================================================
   // CRUD Operations
