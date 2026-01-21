@@ -50,7 +50,7 @@
     "@opentelemetry/instrumentation-fastify": "^0.42.0",
     "@opentelemetry/instrumentation-pg": "^0.48.0",
     "@opentelemetry/resources": "^1.29.0",
-    "@opentelemetry/sdk-node": "^0.56.0",
+    "@opentelemetry/sdk-node": "^0.210.0",
     "@opentelemetry/sdk-trace-node": "^1.29.0",
     "@opentelemetry/semantic-conventions": "^1.28.0",
     "@sentry/node": "^10.35.0",
