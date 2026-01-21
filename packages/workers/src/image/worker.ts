@@ -103,6 +103,7 @@ export class ImageRenditionWorker {
       cacheKey,
       imageId,
       isAnchor,
+      keyPrefix: explicitKeyPrefix,
     } = data;
 
     this.config.logger.info(
@@ -126,7 +127,8 @@ export class ImageRenditionWorker {
     });
 
     // Upload all renditions to S3
-    const keyPrefix = getRenditionKeyPrefix(userId, sessionId, cacheKey);
+    // Use explicit keyPrefix if provided (for anchor images), otherwise construct from path components
+    const keyPrefix = explicitKeyPrefix || getRenditionKeyPrefix(userId, sessionId, cacheKey);
     await this.uploadRenditions(bucket, keyPrefix, renditions);
 
     // Group renditions into structured object

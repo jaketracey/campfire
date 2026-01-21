@@ -98,6 +98,12 @@ export interface ImageRenditionJobData {
   isAnchor?: boolean;
   /** Companion ID if this is a companion image */
   companionId?: string;
+  /**
+   * Optional explicit key prefix for renditions.
+   * If provided, overrides the default path construction from userId/sessionId/cacheKey.
+   * Use this for anchor images where the path structure differs.
+   */
+  keyPrefix?: string;
 }
 
 /**
