@@ -94,7 +94,7 @@ class OpenAIProvider(LLMProvider):
         # Build request parameters
         params: dict[str, Any] = {
             "model": self.default_model,
-            "max_tokens": max_tokens or self.max_tokens,
+            "max_completion_tokens": max_tokens or self.max_tokens,
             "temperature": temperature,
             "messages": openai_messages,
         }
@@ -174,7 +174,7 @@ class OpenAIProvider(LLMProvider):
         # Build request parameters
         params: dict[str, Any] = {
             "model": self.default_model,
-            "max_tokens": max_tokens or self.max_tokens,
+            "max_completion_tokens": max_tokens or self.max_tokens,
             "temperature": temperature,
             "messages": openai_messages,
             "stream": True,
