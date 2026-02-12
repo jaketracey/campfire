@@ -179,6 +179,35 @@ function detectImageIntent(message: string): ImageIntentDecision {
   return { shouldGenerateImage: false, confidence: 0.05 };
 }
 
+function extractConfiguredAllowedTools(spec: Record<string, unknown> | null | undefined): string[] {
+  if (!spec || typeof spec !== 'object') {
+    return [];
+  }
+
+  const normalized = new Set<string>();
+  const collect = (value: unknown) => {
+    if (!Array.isArray(value)) return;
+    for (const item of value) {
+      if (typeof item === 'string' && item.trim()) {
+        normalized.add(item.trim());
+      }
+    }
+  };
+
+  collect(spec['allowed_tools']);
+  collect(spec['allowedTools']);
+  collect(spec['tools']);
+
+  const toolsConfig = spec['tooling'];
+  if (toolsConfig && typeof toolsConfig === 'object') {
+    collect((toolsConfig as Record<string, unknown>)['allowed_tools']);
+    collect((toolsConfig as Record<string, unknown>)['allowedTools']);
+    collect((toolsConfig as Record<string, unknown>)['tools']);
+  }
+
+  return Array.from(normalized);
+}
+
 /**
  * WebSocket message types
  */
@@ -1051,9 +1080,29 @@ async function handleUserMessage(
     const userSafetyLevel = (userProfile?.preferences as Record<string, unknown> | undefined)?.safetyLevel as string | undefined;
     const companionSafetyLevel = mapContentRatingToSafetyLevel(spec?.boundaries?.content_rating);
     const effectiveSafetyLevel = getEffectiveSafetyLevel(userSafetyLevel, companionSafetyLevel);
+    const visualIntent = detectImageIntent(payload.content);
+    const configuredAllowedTools = extractConfiguredAllowedTools(
+      spec as unknown as Record<string, unknown> | null | undefined
+    );
+    const allowedTools = new Set(configuredAllowedTools);
+
+    if (visualIntent.shouldGenerateImage) {
+      allowedTools.add('image_generation');
+    }
+
+    const allowedToolsList = Array.from(allowedTools);
+    const allowImagePromptFallback = !allowedToolsList.includes('image_generation');
 
     logger.debug(
-      { userId, companionId, userSafetyLevel, companionSafetyLevel, effectiveSafetyLevel },
+      {
+        userId,
+        companionId,
+        userSafetyLevel,
+        companionSafetyLevel,
+        effectiveSafetyLevel,
+        visualIntent,
+        allowedTools: allowedToolsList,
+      },
       'Computed effective safety level'
     );
 
@@ -1076,8 +1125,8 @@ async function handleUserMessage(
         companion as unknown as { name: string; spec: Record<string, unknown> | null }
       ),
       safety_level: effectiveSafetyLevel,
-      allowed_tools: [],
-      can_generate_image_prompts: true,
+      allowed_tools: allowedToolsList,
+      can_generate_image_prompts: allowImagePromptFallback,
       max_context_turns: 20,
       temperature: 0.7,
       version: companion.spec_version,
@@ -1291,8 +1340,8 @@ async function handleUserMessage(
 
     // 8. Stream SSE response to WebSocket client
     let fullContent = '';
-    const visualIntent = detectImageIntent(payload.content);
     let imagePrompt: string | undefined;
+    let generatedImageUrl: string | undefined;
     let shouldGenerateImage = visualIntent.shouldGenerateImage;
     let imageIntentConfidence = visualIntent.confidence;
     let multiMessageSent = false; // Track if we sent multi-messages (skip final agent_message_end)
@@ -1353,6 +1402,7 @@ async function handleUserMessage(
                 const metadataJson = data.slice(10); // Remove [METADATA] prefix
                 const metadata = JSON.parse(metadataJson) as {
                   image_prompt?: string;
+                  generated_image_url?: string;
                   should_generate_image?: boolean;
                   intent_confidence?: number;
                 };
@@ -1369,6 +1419,9 @@ async function handleUserMessage(
                 }
                 if (typeof metadata.should_generate_image === 'boolean') {
                   shouldGenerateImage = metadata.should_generate_image;
+                }
+                if (metadata.generated_image_url) {
+                  generatedImageUrl = metadata.generated_image_url;
                 }
                 if (typeof metadata.intent_confidence === 'number') {
                   imageIntentConfidence = Math.max(0, Math.min(1, metadata.intent_confidence));
@@ -1460,6 +1513,7 @@ async function handleUserMessage(
                     isReaction: endData.is_reaction,
                     turnId: turn.id,
                     imagePrompt: endData.companion_id === companionId && !endData.is_reaction ? imagePrompt : undefined,
+                    generatedImageUrl: endData.companion_id === companionId && !endData.is_reaction ? generatedImageUrl : undefined,
                     shouldGenerateImage: endData.companion_id === companionId && !endData.is_reaction ? shouldGenerateImage : false,
                     imageIntentConfidence: endData.companion_id === companionId && !endData.is_reaction ? imageIntentConfidence : 0,
                   },
@@ -1503,6 +1557,7 @@ async function handleUserMessage(
                     sessionId,
                     turnId: turn.id,
                     imagePrompt: messageData.is_last ? imagePrompt : undefined,
+                    generatedImageUrl: messageData.is_last ? generatedImageUrl : undefined,
                     shouldGenerateImage: messageData.is_last ? shouldGenerateImage : false,
                     imageIntentConfidence: messageData.is_last ? imageIntentConfidence : 0,
                     sequence: {
@@ -1649,6 +1704,7 @@ async function handleUserMessage(
           sessionId,
           turnId: turn.id,
           imagePrompt: imagePrompt,
+          generatedImageUrl,
           shouldGenerateImage,
           imageIntentConfidence,
         },

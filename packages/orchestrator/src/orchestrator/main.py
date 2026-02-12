@@ -162,6 +162,47 @@ def detect_visual_intent(text: str) -> tuple[bool, float]:
     return False, 0.05
 
 
+def extract_image_tool_metadata(turn: ConversationTurn) -> tuple[str | None, str | None]:
+    """Extract image prompt and generated image URL from image_generation tool activity."""
+    image_prompt: str | None = None
+    generated_image_url: str | None = None
+
+    for tool_call in reversed(turn.tool_calls):
+        if not isinstance(tool_call, dict):
+            continue
+        if tool_call.get("name") != "image_generation":
+            continue
+
+        arguments = tool_call.get("arguments")
+        if isinstance(arguments, dict):
+            prompt = arguments.get("prompt")
+            if isinstance(prompt, str) and prompt.strip():
+                image_prompt = prompt.strip()
+                break
+
+    for tool_result in reversed(turn.tool_results):
+        if not isinstance(tool_result, dict):
+            continue
+        if tool_result.get("name") != "image_generation":
+            continue
+
+        metadata = tool_result.get("metadata")
+        if isinstance(metadata, dict):
+            image_url = metadata.get("image_url")
+            if isinstance(image_url, str) and image_url.strip():
+                generated_image_url = image_url.strip()
+                break
+
+        output = tool_result.get("output")
+        if isinstance(output, str):
+            url_match = re.search(r"https?://\S+", output)
+            if url_match:
+                generated_image_url = url_match.group(0).rstrip(".,)")
+                break
+
+    return image_prompt, generated_image_url
+
+
 # Request/Response models
 class CompanionSelfKnowledge(BaseModel):
     """A piece of self-knowledge from the companion's Knowledge Graph."""
@@ -1183,6 +1224,9 @@ async def stream_message(request: StreamMessageRequest) -> StreamingResponse:
                     content = result.assistant_message.content
                     # Parse multi-messages from the content
                     messages, image_prompt = app_state.orchestrator._parse_multi_messages(content)
+                    tool_image_prompt, generated_image_url = extract_image_tool_metadata(result)
+                    if not image_prompt and tool_image_prompt:
+                        image_prompt = tool_image_prompt
                     import json
 
                     if len(messages) > 1:
@@ -1192,6 +1236,9 @@ async def stream_message(request: StreamMessageRequest) -> StreamingResponse:
                         }
                         if image_prompt:
                             metadata["image_prompt"] = image_prompt
+                        if generated_image_url:
+                            metadata["generated_image_url"] = generated_image_url
+                            metadata["should_generate_image"] = False
                         yield f"data: [METADATA]{json.dumps(metadata)}\n\n"
 
                         # Multi-message response
@@ -1216,6 +1263,9 @@ async def stream_message(request: StreamMessageRequest) -> StreamingResponse:
                         }
                         if image_prompt:
                             metadata["image_prompt"] = image_prompt
+                        if generated_image_url:
+                            metadata["generated_image_url"] = generated_image_url
+                            metadata["should_generate_image"] = False
                         yield f"data: [METADATA]{json.dumps(metadata)}\n\n"
 
                 # Send model/usage info before DONE

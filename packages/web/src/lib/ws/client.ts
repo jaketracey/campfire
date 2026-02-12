@@ -676,6 +676,7 @@ export class CampfireWebSocket {
     handler: (
       content: string,
       imagePrompt?: string,
+      generatedImageUrl?: string,
       shouldGenerateImage?: boolean,
       imageIntentConfidence?: number,
       sequence?: { index: number; total: number; isLast: boolean; typingDelayMs?: number },
@@ -685,6 +686,7 @@ export class CampfireWebSocket {
     return this.on<{
       content: string;
       imagePrompt?: string;
+      generatedImageUrl?: string;
       shouldGenerateImage?: boolean;
       imageIntentConfidence?: number;
       sequence?: { index: number; total: number; isLast: boolean; typingDelayMs?: number };
@@ -693,6 +695,7 @@ export class CampfireWebSocket {
       handler(
         msg.payload.content,
         msg.payload.imagePrompt,
+        msg.payload.generatedImageUrl,
         msg.payload.shouldGenerateImage,
         msg.payload.imageIntentConfidence,
         msg.payload.sequence,
@@ -898,6 +901,7 @@ export class CampfireWebSocket {
       isReaction: boolean;
       turnId: string;
       imagePrompt?: string;
+      generatedImageUrl?: string;
       shouldGenerateImage?: boolean;
       imageIntentConfidence?: number;
     }) => void
@@ -909,6 +913,7 @@ export class CampfireWebSocket {
       isReaction: boolean;
       turnId: string;
       imagePrompt?: string;
+      generatedImageUrl?: string;
       shouldGenerateImage?: boolean;
       imageIntentConfidence?: number;
     }>('companion_message_end', (msg) => {

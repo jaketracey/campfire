@@ -1,5 +1,9 @@
 """Tests for orchestrator response parsing helpers."""
 
+from types import SimpleNamespace
+
+from orchestrator.main import extract_image_tool_metadata
+from orchestrator.models.tools import ToolResult
 from orchestrator.services.orchestrator import ConversationOrchestrator
 
 
@@ -52,3 +56,38 @@ def test_parse_multi_messages_falls_back_to_xml_format() -> None:
 
     assert messages == ["One", "Two"]
     assert image_prompt == "neon portrait"
+
+
+def test_serialize_tool_result_includes_metadata() -> None:
+    orchestrator = _make_orchestrator()
+    tool_result = ToolResult(
+        tool_call_id="call-1",
+        name="image_generation",
+        success=True,
+        output="Image generated: https://example.com/image.png",
+        metadata={"image_url": "https://example.com/image.png", "provider": "fal"},
+    )
+
+    serialized = orchestrator._serialize_tool_result(tool_result)
+
+    assert serialized["metadata"] == {
+        "image_url": "https://example.com/image.png",
+        "provider": "fal",
+    }
+
+
+def test_extract_image_tool_metadata_from_turn() -> None:
+    turn = SimpleNamespace(
+        tool_calls=[
+            {"name": "memory_read", "arguments": {"query": "test"}},
+            {"name": "image_generation", "arguments": {"prompt": "cinematic portrait near campfire"}},
+        ],
+        tool_results=[
+            {"name": "image_generation", "metadata": {"image_url": "https://example.com/generated.png"}},
+        ],
+    )
+
+    image_prompt, generated_image_url = extract_image_tool_metadata(turn)  # type: ignore[arg-type]
+
+    assert image_prompt == "cinematic portrait near campfire"
+    assert generated_image_url == "https://example.com/generated.png"

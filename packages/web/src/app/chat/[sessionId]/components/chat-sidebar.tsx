@@ -183,6 +183,7 @@ export function ChatSidebar({
                 aria-label="View gallery"
               >
                 <CompanionAvatar
+                  key={currentAvatarUrl || companion.avatarUrl}
                   emotionalState={currentEmotionalState}
                   customPrompt={customPrompt}
                   width={avatarDimensions.genWidth}
@@ -193,7 +194,7 @@ export function ChatSidebar({
                   userId={userId}
                   sessionId={sessionId}
                   companionId={companion.id}
-                  anchorImageUrl={companion.avatarUrl}
+                  anchorImageUrl={currentAvatarUrl || companion.avatarUrl}
                   anchorRenditions={companion.avatarRenditions}
                   generationTrigger={imageGenTrigger}
                   sceneDescription={sceneDescription}

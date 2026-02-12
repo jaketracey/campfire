@@ -618,7 +618,7 @@ export function useChatSession({
       setStreamingContent((prev) => prev + chunk);
     });
 
-    const unsubEnd = ws.onAgentMessageEnd((content, imagePrompt, shouldGenerateImage, imageIntentConfidence, sequence, turnId) => {
+    const unsubEnd = ws.onAgentMessageEnd((content, imagePrompt, generatedImageUrl, shouldGenerateImage, imageIntentConfidence, sequence, turnId) => {
       const emotionalState = detectEmotionalState(content);
 
       let messageId: string;
@@ -654,14 +654,19 @@ export function useChatSession({
       // Trigger pulse animation on input when companion message is received
       setMessageReceivedPulseTrigger(prev => prev + 1);
 
-      const shouldTriggerImage = Boolean(shouldGenerateImage)
-        && (imageIntentConfidence ?? 0) >= IMAGE_INTENT_THRESHOLD;
-      if (shouldTriggerImage) {
-        const scene = imagePrompt || extractSceneDescription(content);
-        if (scene) {
-          setSceneDescription(scene);
-          setImageTurnId(turnId);
-          setImageGenTrigger((prev) => prev + 1);
+      if (generatedImageUrl) {
+        setCurrentAvatarUrl(generatedImageUrl);
+        setImageTurnId(turnId);
+      } else {
+        const shouldTriggerImage = Boolean(shouldGenerateImage)
+          && (imageIntentConfidence ?? 0) >= IMAGE_INTENT_THRESHOLD;
+        if (shouldTriggerImage) {
+          const scene = imagePrompt || extractSceneDescription(content);
+          if (scene) {
+            setSceneDescription(scene);
+            setImageTurnId(turnId);
+            setImageGenTrigger((prev) => prev + 1);
+          }
         }
       }
       setDebugRefreshTrigger((prev) => prev + 1);
@@ -790,6 +795,7 @@ export function useChatSession({
       isReaction,
       turnId,
       imagePrompt,
+      generatedImageUrl,
       shouldGenerateImage,
       imageIntentConfidence,
     }) => {
@@ -822,14 +828,19 @@ export function useChatSession({
 
       if (!isReaction && companionId === hostCompanionId) {
         setCurrentEmotionalState(emotionalState);
-        const shouldTriggerImage = Boolean(shouldGenerateImage)
-          && (imageIntentConfidence ?? 0) >= IMAGE_INTENT_THRESHOLD;
-        if (shouldTriggerImage) {
-          const scene = imagePrompt || extractSceneDescription(content);
-          if (scene) {
-            setSceneDescription(scene);
-            setImageTurnId(turnId);
-            setImageGenTrigger((prev) => prev + 1);
+        if (generatedImageUrl) {
+          setCurrentAvatarUrl(generatedImageUrl);
+          setImageTurnId(turnId);
+        } else {
+          const shouldTriggerImage = Boolean(shouldGenerateImage)
+            && (imageIntentConfidence ?? 0) >= IMAGE_INTENT_THRESHOLD;
+          if (shouldTriggerImage) {
+            const scene = imagePrompt || extractSceneDescription(content);
+            if (scene) {
+              setSceneDescription(scene);
+              setImageTurnId(turnId);
+              setImageGenTrigger((prev) => prev + 1);
+            }
           }
         }
       }

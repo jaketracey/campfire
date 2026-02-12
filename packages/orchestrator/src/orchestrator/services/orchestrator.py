@@ -1019,6 +1019,7 @@ class ConversationOrchestrator:
             "error": tool_result.error,
             "duration_ms": tool_result.duration_ms,
             "cost_usd": tool_result.cost_usd,
+            "metadata": tool_result.metadata,
         }
 
     async def _emit_cost_tracking_event(
