@@ -61,8 +61,9 @@ export class VoiceService {
       return false;
     }
 
-    // Close existing session if any
-    await this.stopSTTSession(clientId);
+    // Close existing session if any (synchronous — no await to avoid yielding
+    // to the event loop before the new session is registered in the map)
+    this.stopSTTSession(clientId);
 
     try {
       const wsUrl = `wss://api.elevenlabs.io/v1/speech-to-text/realtime?model_id=${ELEVENLABS_STT_MODEL}`;
@@ -158,6 +159,7 @@ export class VoiceService {
     const session = this.sttSessions.get(clientId);
 
     if (!session) {
+      logger.warn({ clientId }, 'No STT session found for audio chunk — dropped');
       return false;
     }
 
@@ -169,6 +171,7 @@ export class VoiceService {
       if (!session.isConnected) {
         // Buffer audio until WS connects
         session.pendingAudioChunks.push(chunk);
+        logger.debug({ clientId, buffered: session.pendingAudioChunks.length }, 'Buffered audio chunk (WS connecting)');
         return true;
       }
 
