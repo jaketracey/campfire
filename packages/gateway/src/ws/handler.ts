@@ -2603,14 +2603,23 @@ async function handleVoiceEnd(client: ConnectedClient): Promise<void> {
 
   const voiceService = getVoiceService();
 
-  // Signal end of audio
+  // Signal end of audio (will buffer if WS still connecting)
   voiceService.endSTTAudio(client.id);
 
-  // Wait a moment for final transcription
-  await new Promise((resolve) => setTimeout(resolve, 500));
+  // Wait for STT session to finish (WS may still be connecting + processing)
+  // Poll until session is gone (closed by ElevenLabs after processing) or timeout
+  const maxWait = 15000; // 15 seconds max (WS connect can take 7s + processing time)
+  const pollInterval = 200;
+  let waited = 0;
+  while (waited < maxWait && voiceService.hasSTTSession(client.id)) {
+    await new Promise((resolve) => setTimeout(resolve, pollInterval));
+    waited += pollInterval;
+  }
 
-  // Stop STT session
-  await voiceService.stopSTTSession(client.id);
+  // Force stop if still running after timeout
+  if (voiceService.hasSTTSession(client.id)) {
+    await voiceService.stopSTTSession(client.id);
+  }
 
   const transcription = client.voiceTranscription.trim();
 

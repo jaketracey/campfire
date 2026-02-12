@@ -29,6 +29,8 @@ export interface STTSession {
   isConnected: boolean;
   onTranscription: (text: string, isFinal: boolean) => void;
   onError: (error: string) => void;
+  pendingAudioChunks: string[];
+  pendingEnd: boolean;
 }
 
 export interface TTSOptions {
@@ -76,11 +78,13 @@ export class VoiceService {
         isConnected: false,
         onTranscription,
         onError,
+        pendingAudioChunks: [],
+        pendingEnd: false,
       };
 
       ws.on('open', () => {
         session.isConnected = true;
-        logger.info({ clientId }, 'STT session connected');
+        logger.info({ clientId, bufferedChunks: session.pendingAudioChunks.length }, 'STT session connected');
 
         // Send initial configuration
         ws.send(
@@ -91,6 +95,23 @@ export class VoiceService {
             language: 'en',
           })
         );
+
+        // Flush any buffered audio chunks that arrived before connection
+        for (const chunk of session.pendingAudioChunks) {
+          ws.send(
+            JSON.stringify({
+              type: 'audio',
+              data: chunk,
+            })
+          );
+        }
+        session.pendingAudioChunks = [];
+
+        // If voice_end arrived before connection, send end signal now
+        if (session.pendingEnd) {
+          ws.send(JSON.stringify({ type: 'end' }));
+          session.pendingEnd = false;
+        }
       });
 
       ws.on('message', (data: Buffer) => {
@@ -136,19 +157,26 @@ export class VoiceService {
   sendAudioToSTT(clientId: string, base64AudioData: string): boolean {
     const session = this.sttSessions.get(clientId);
 
-    if (!session || !session.isConnected) {
+    if (!session) {
       return false;
     }
 
     try {
       // Decode base64 to buffer
       const audioBuffer = Buffer.from(base64AudioData, 'base64');
+      const chunk = audioBuffer.toString('base64');
+
+      if (!session.isConnected) {
+        // Buffer audio until WS connects
+        session.pendingAudioChunks.push(chunk);
+        return true;
+      }
 
       // Send audio chunk
       session.ws.send(
         JSON.stringify({
           type: 'audio',
-          data: audioBuffer.toString('base64'),
+          data: chunk,
         })
       );
 
@@ -165,8 +193,14 @@ export class VoiceService {
   endSTTAudio(clientId: string): boolean {
     const session = this.sttSessions.get(clientId);
 
-    if (!session || !session.isConnected) {
+    if (!session) {
       return false;
+    }
+
+    if (!session.isConnected) {
+      // Buffer end signal until WS connects
+      session.pendingEnd = true;
+      return true;
     }
 
     try {
@@ -176,6 +210,13 @@ export class VoiceService {
       logger.error({ clientId, err }, 'Failed to end STT audio');
       return false;
     }
+  }
+
+  /**
+   * Check if an STT session exists for a client
+   */
+  hasSTTSession(clientId: string): boolean {
+    return this.sttSessions.has(clientId);
   }
 
   /**
