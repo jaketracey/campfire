@@ -140,7 +140,11 @@ export class VoiceService {
       ws.on('close', (code, reason) => {
         session.isConnected = false;
         logger.info({ clientId, code, reason: reason.toString() }, 'STT session closed');
-        this.sttSessions.delete(clientId);
+        // Only delete from map if this session is still the current one
+        // (a new startSTTSession call may have already replaced it)
+        if (this.sttSessions.get(clientId) === session) {
+          this.sttSessions.delete(clientId);
+        }
       });
 
       this.sttSessions.set(clientId, session);
