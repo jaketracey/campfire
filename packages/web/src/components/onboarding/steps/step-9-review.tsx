@@ -3,20 +3,21 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useOnboardingStore } from '@/stores/onboarding-store';
 import { Button } from '@/components/ui/button';
-import { Flame } from 'lucide-react';
+import { Flame, Loader2 } from 'lucide-react';
 import { useRouter } from 'next/navigation';
-import Link from 'next/link';
 import { useToast } from '@/hooks/use-toast';
 import { createSession, streamAnchorImages, generateBackstory, type AnchorImage, type GenerateBackstoryResult } from '@/lib/api';
 import Image from 'next/image';
 import { motion, AnimatePresence } from 'framer-motion';
-import { trackOnboardingStep, trackOnboardingComplete, trackEvent } from '@/lib/analytics/meta-pixel';
+import { useAuth } from '@/hooks/use-auth';
+import { trackOnboardingStep, trackOnboardingComplete } from '@/lib/analytics/meta-pixel';
 
 type RevealPhase = 'loading' | 'backstory' | 'images' | 'ready';
 
 export function Step9Review() {
   const router = useRouter();
   const { toast } = useToast();
+  const { isAuthenticated } = useAuth();
   const state = useOnboardingStore();
   const {
     companionId,
@@ -24,8 +25,10 @@ export function Step9Review() {
     setSessionId: storeSetSessionId,
     anchorImages: storeAnchorImages,
     anchorImagesComplete: storeAnchorImagesComplete,
+    anchorStreamStarted,
     addAnchorImage,
     setAnchorImagesComplete,
+    setAnchorStreamStarted,
   } = state;
 
   const [revealPhase, setRevealPhase] = useState<RevealPhase>('loading');
@@ -37,8 +40,11 @@ export function Step9Review() {
   const imagesGenerated = storeAnchorImagesComplete || localImagesGenerated;
   const [localSessionId, setLocalSessionId] = useState<string | null>(storedSessionId);
   const [visibleImageCount, setVisibleImageCount] = useState(0);
+  const [isPreparingSession, setIsPreparingSession] = useState(false);
+  const [sessionError, setSessionError] = useState<string | null>(null);
   const hasConnectedRef = useRef(false);
   const hasTrackedRef = useRef(false);
+  const streamCleanupRef = useRef<(() => void) | null>(null);
 
   // Track step on mount
   useEffect(() => {
@@ -48,19 +54,29 @@ export function Step9Review() {
     }
   }, []);
 
-  // Auto-connect to generation stream on mount (skip if we already have images from Surprise Me)
+  useEffect(() => {
+    return () => {
+      if (streamCleanupRef.current) {
+        streamCleanupRef.current();
+        streamCleanupRef.current = null;
+        setAnchorStreamStarted(false);
+      }
+    };
+  }, [setAnchorStreamStarted]);
+
+  // Auto-connect to generation stream on mount.
+  // If a stream is already in-flight from an earlier step, do not start another one.
   useEffect(() => {
     if (!companionId || hasConnectedRef.current) return;
     hasConnectedRef.current = true;
 
-    // If we already have images from Surprise Me, skip streaming
-    if (storeAnchorImages.length > 0) {
-      console.log('[Review] Using pre-generated images from Surprise Me:', storeAnchorImages.length);
-      // Images are already in the store, no need to stream
-    } else {
+    const shouldStartStream = storeAnchorImages.length === 0 && !storeAnchorImagesComplete && !anchorStreamStarted;
+
+    if (shouldStartStream) {
       // Connect to anchor image stream
       console.log('[Review] Starting anchor image stream');
-      streamAnchorImages(
+      setAnchorStreamStarted(true);
+      streamCleanupRef.current = streamAnchorImages(
         {
           companionId: companionId,
           appearance: state.visualStyle.appearance,
@@ -87,16 +103,21 @@ export function Step9Review() {
             console.log('Anchor generation complete:', result);
             setLocalImagesGenerated(true);
             setAnchorImagesComplete(true);
+            setAnchorStreamStarted(false);
           },
           onError: (error) => {
             console.error('Anchor generation error:', error);
-            if (error.partialAnchors && error.partialAnchors.length > 0) {
-              setLocalImagesGenerated(true);
-              setAnchorImagesComplete(true);
-            }
+            setLocalImagesGenerated(true);
+            setAnchorImagesComplete(true);
+            setAnchorStreamStarted(false);
           },
         }
       );
+    } else {
+      console.log('[Review] Reusing existing anchor generation state');
+      if (storeAnchorImagesComplete) {
+        setAnchorStreamStarted(false);
+      }
     }
 
     // Generate backstory
@@ -120,7 +141,16 @@ export function Step9Review() {
       // Still allow progression even without backstory
       setBackstoryResult({ backstory: '', motivations: [], keyMemories: [], personalityQuirks: [], latencyMs: 0 });
     });
-  }, [companionId, state, storeAnchorImages.length, addAnchorImage, setAnchorImagesComplete, toast]);
+  }, [
+    companionId,
+    state,
+    storeAnchorImages.length,
+    storeAnchorImagesComplete,
+    anchorStreamStarted,
+    addAnchorImage,
+    setAnchorImagesComplete,
+    setAnchorStreamStarted,
+  ]);
 
   // Phase transitions
   useEffect(() => {
@@ -131,13 +161,13 @@ export function Step9Review() {
 
   // Transition from backstory to images after delay
   useEffect(() => {
-    if (revealPhase === 'backstory' && generatedAnchors.length > 0) {
+    if (revealPhase === 'backstory' && (generatedAnchors.length > 0 || imagesGenerated)) {
       const timer = setTimeout(() => {
-        setRevealPhase('images');
+        setRevealPhase(generatedAnchors.length > 0 ? 'images' : 'ready');
       }, 3000); // 3 seconds to read backstory
       return () => clearTimeout(timer);
     }
-  }, [revealPhase, generatedAnchors.length]);
+  }, [revealPhase, generatedAnchors.length, imagesGenerated]);
 
   // Stagger image reveals
   useEffect(() => {
@@ -159,27 +189,39 @@ export function Step9Review() {
     }
   }, [revealPhase, visibleImageCount, generatedAnchors.length, imagesGenerated]);
 
-  // Create session when we have content
-  useEffect(() => {
-    if (!companionId || localSessionId) return;
-    if (generatedAnchors.length === 0 && !imagesGenerated) return;
+  const createSessionForCompanion = useCallback(async () => {
+    if (!companionId || localSessionId || isPreparingSession) return;
 
-    createSession({
-      companionId: companionId,
-      title: `Chat with ${state.name}`,
-    }).then((session) => {
+    setIsPreparingSession(true);
+    setSessionError(null);
+
+    try {
+      const session = await createSession({
+        companionId: companionId,
+        title: `Chat with ${state.name}`,
+      });
       console.log('Session created:', session);
       setLocalSessionId(session.id);
       storeSetSessionId(session.id);
-    }).catch((error) => {
+    } catch (error) {
       console.error('Failed to create session:', error);
+      setSessionError('Failed to prepare chat.');
       toast({
         title: 'Error',
         description: 'Failed to prepare chat. Please try again.',
         variant: 'destructive',
       });
-    });
-  }, [companionId, generatedAnchors.length, imagesGenerated, localSessionId, state.name, storeSetSessionId, toast]);
+    } finally {
+      setIsPreparingSession(false);
+    }
+  }, [companionId, localSessionId, isPreparingSession, state.name, storeSetSessionId, toast]);
+
+  // Create session when we have enough generated content to continue.
+  useEffect(() => {
+    if (!companionId || localSessionId || isPreparingSession || sessionError) return;
+    if (generatedAnchors.length === 0 && !imagesGenerated) return;
+    void createSessionForCompanion();
+  }, [companionId, localSessionId, isPreparingSession, sessionError, generatedAnchors.length, imagesGenerated, createSessionForCompanion]);
 
   // Handle ignite
   const handleIgnite = useCallback(() => {
@@ -189,6 +231,30 @@ export function Step9Review() {
     state.reset();
     router.push(`/chat/${localSessionId}`);
   }, [localSessionId, state, router]);
+
+  if (!companionId) {
+    return (
+      <div className="min-h-[60vh] flex flex-col items-center justify-center text-center gap-6 px-4">
+        <h2 className="text-3xl font-bold font-display text-white">Finish Setup First</h2>
+        <p className="text-gray-400 max-w-md">
+          We couldn&apos;t find a companion to review yet. Return to onboarding and complete voice selection.
+        </p>
+        <Button
+          size="lg"
+          onClick={() => {
+            if (isAuthenticated) {
+              router.push('/onboard?step=5');
+            } else {
+              router.push('/signup?returnTo=/onboard');
+            }
+          }}
+          className="h-14 px-10 rounded-full bg-gradient-to-r from-vibes-cyan to-vibes-electric font-bold"
+        >
+          {isAuthenticated ? 'Back to Voice Step' : 'Sign Up to Continue'}
+        </Button>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-[70vh] flex flex-col items-center pt-16 md:pt-24">
@@ -388,27 +454,47 @@ export function Step9Review() {
 
             {/* IGNITE Button */}
             <AnimatePresence>
-              {revealPhase === 'ready' && localSessionId && (
+              {revealPhase === 'ready' && (localSessionId || isPreparingSession || !!sessionError) && (
                 <motion.div
                   initial={{ y: 50, opacity: 0, scale: 0.9 }}
                   animate={{ y: 0, opacity: 1, scale: 1 }}
                   transition={{ type: 'spring', stiffness: 150, damping: 15, delay: 0.3 }}
                   className="mt-10"
                 >
-                  <Button
-                    size="lg"
-                    onClick={handleIgnite}
-                    data-testid="ignite-button"
-                    className="h-20 px-16 text-2xl font-bold rounded-2xl bg-gradient-to-r from-orange-500 via-red-500 to-pink-500 hover:from-orange-400 hover:via-red-400 hover:to-pink-400 shadow-[0_0_40px_rgba(239,68,68,0.5)] hover:shadow-[0_0_60px_rgba(239,68,68,0.7)] transition-all duration-300 hover:scale-105 active:scale-95"
-                  >
-                    <Flame className="mr-3 h-8 w-8" />
-                    IGNITE
-                  </Button>
-                  <p className="text-xs text-center text-gray-500 mt-6">
-                    By igniting {state.name}, you agree to our{' '}
-                    <a href="/terms" className="underline hover:text-gray-300 transition-colors">Terms</a> and{' '}
-                    <a href="/privacy" className="underline hover:text-gray-300 transition-colors">Privacy Policy</a>.
-                  </p>
+                  {localSessionId ? (
+                    <>
+                      <Button
+                        size="lg"
+                        onClick={handleIgnite}
+                        data-testid="ignite-button"
+                        className="h-20 px-16 text-2xl font-bold rounded-2xl bg-gradient-to-r from-orange-500 via-red-500 to-pink-500 hover:from-orange-400 hover:via-red-400 hover:to-pink-400 shadow-[0_0_40px_rgba(239,68,68,0.5)] hover:shadow-[0_0_60px_rgba(239,68,68,0.7)] transition-all duration-300 hover:scale-105 active:scale-95"
+                      >
+                        <Flame className="mr-3 h-8 w-8" />
+                        IGNITE
+                      </Button>
+                      <p className="text-xs text-center text-gray-500 mt-6">
+                        By igniting {state.name}, you agree to our{' '}
+                        <a href="/terms" className="underline hover:text-gray-300 transition-colors">Terms</a> and{' '}
+                        <a href="/privacy" className="underline hover:text-gray-300 transition-colors">Privacy Policy</a>.
+                      </p>
+                    </>
+                  ) : isPreparingSession ? (
+                    <div className="flex items-center justify-center gap-3 text-gray-300">
+                      <Loader2 className="h-5 w-5 animate-spin" />
+                      <span>Preparing your chat...</span>
+                    </div>
+                  ) : (
+                    <div className="flex flex-col items-center gap-4">
+                      <p className="text-sm text-red-300">{sessionError}</p>
+                      <Button
+                        size="lg"
+                        onClick={() => void createSessionForCompanion()}
+                        className="h-14 px-8 rounded-full bg-gradient-to-r from-vibes-cyan to-vibes-electric font-bold"
+                      >
+                        Retry Chat Setup
+                      </Button>
+                    </div>
+                  )}
                 </motion.div>
               )}
             </AnimatePresence>

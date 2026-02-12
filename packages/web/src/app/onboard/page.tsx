@@ -104,9 +104,9 @@ export default function OnboardingPage() {
             <div className="flex justify-between mb-2">
               {STEP_LABELS.map((label, index) => {
                 const stepNumber = index + 2; // Steps 2-6 (step 1 is welcome)
-                const isCompleted = index < currentStep - 1;
+                const isCompleted = stepNumber < currentStep;
                 const isCurrent = stepNumber === currentStep;
-                const canNavigate = isCompleted;
+                const canNavigate = stepNumber < currentStep;
 
                 return (
                   <button

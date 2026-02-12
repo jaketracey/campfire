@@ -378,8 +378,10 @@ export function streamAnchorImages(
   const url = `${baseUrl}/api/v1/imagegen/generate-anchors-stream?${params.toString()}`;
   console.log('[SSE] URL:', url);
 
-  // Create EventSource with auth header via fetch
+  // Create SSE stream with fetch + reader so we can attach auth headers.
   let aborted = false;
+  const controller = new AbortController();
+  let reader: ReadableStreamDefaultReader<Uint8Array> | null = null;
 
   const connectSSE = async () => {
     try {
@@ -391,6 +393,7 @@ export function streamAnchorImages(
           'Authorization': `Bearer ${token}`,
           'Accept': 'text/event-stream',
         },
+        signal: controller.signal,
       });
 
       console.log('[SSE] Response status:', response.status, 'Content-Type:', response.headers.get('content-type'));
@@ -416,7 +419,7 @@ export function streamAnchorImages(
         console.warn('[SSE] Unexpected content type:', contentType);
       }
 
-      const reader = response.body?.getReader();
+      reader = response.body?.getReader() ?? null;
       if (!reader) {
         throw new Error('No response body');
       }
@@ -479,29 +482,30 @@ export function streamAnchorImages(
         }
       }
     } catch (error) {
+      if (aborted || controller.signal.aborted) {
+        return;
+      }
       console.error('[SSE] Error:', error);
-      if (!aborted) {
-        let message = 'Unknown error';
-        if (error instanceof Error) {
-          message = error.message;
-        } else if (typeof error === 'string') {
-          message = error;
-        } else if (error && typeof error === 'object') {
-          // Check for common error properties
-          const errObj = error as Record<string, unknown>;
-          if (typeof errObj.message === 'string') {
-            message = errObj.message;
-          } else if (typeof errObj.error === 'string') {
-            message = errObj.error;
-          } else {
-            const json = JSON.stringify(error);
-            if (json && json !== '{}') {
-              message = json;
-            }
+      let message = 'Unknown error';
+      if (error instanceof Error) {
+        message = error.message;
+      } else if (typeof error === 'string') {
+        message = error;
+      } else if (error && typeof error === 'object') {
+        // Check for common error properties
+        const errObj = error as Record<string, unknown>;
+        if (typeof errObj.message === 'string') {
+          message = errObj.message;
+        } else if (typeof errObj.error === 'string') {
+          message = errObj.error;
+        } else {
+          const json = JSON.stringify(error);
+          if (json && json !== '{}') {
+            message = json;
           }
         }
-        callbacks.onError?.({ message });
       }
+      callbacks.onError?.({ message });
     }
   };
 
@@ -510,5 +514,11 @@ export function streamAnchorImages(
   // Return cleanup function
   return () => {
     aborted = true;
+    controller.abort();
+    if (reader) {
+      void reader.cancel().catch(() => {
+        // Reader may already be closed; ignore.
+      });
+    }
   };
 }

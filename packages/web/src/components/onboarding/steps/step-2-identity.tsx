@@ -76,6 +76,7 @@ export function Step2Identity() {
     addAnchorImage,
     clearAnchorImages,
     setAnchorImagesComplete,
+    setAnchorStreamStarted,
     setAnchorAppearanceSnapshot,
     setAppearanceChangedAfterGeneration,
   } = store;
@@ -83,6 +84,7 @@ export function Step2Identity() {
   const [justGenerated, setJustGenerated] = useState(false);
   const [hasGenerated, setHasGenerated] = useState(false);
   const hasTrackedRef = useRef(false);
+  const anchorStreamCleanupRef = useRef<(() => void) | null>(null);
 
   // Track step on mount
   useEffect(() => {
@@ -91,6 +93,20 @@ export function Step2Identity() {
       hasTrackedRef.current = true;
     }
   }, []);
+
+  useEffect(() => {
+    return () => {
+      if (typeof window !== 'undefined' && window.location.pathname.startsWith('/onboard')) {
+        // Preserve background generation while advancing through onboarding steps.
+        return;
+      }
+      if (anchorStreamCleanupRef.current) {
+        anchorStreamCleanupRef.current();
+        anchorStreamCleanupRef.current = null;
+        setAnchorStreamStarted(false);
+      }
+    };
+  }, [setAnchorStreamStarted]);
 
   const {
     register,
@@ -246,11 +262,17 @@ export function Step2Identity() {
         setAnchorAppearanceSnapshot(visualStyle.appearance);
         // Reset the change flag since we're generating fresh
         setAppearanceChangedAfterGeneration(false);
+        setAnchorStreamStarted(true);
+
+        if (anchorStreamCleanupRef.current) {
+          anchorStreamCleanupRef.current();
+          anchorStreamCleanupRef.current = null;
+        }
 
         // Start streaming anchor images in the background with LLM-generated appearance
         console.log('[SurpriseMe] Starting anchor image generation for companion:', companion.id);
         console.log('[SurpriseMe] Anchor appearance snapshot:', visualStyle.appearance);
-        streamAnchorImages(
+        anchorStreamCleanupRef.current = streamAnchorImages(
           {
             companionId: companion.id,
             appearance: visualStyle.appearance,
@@ -273,11 +295,13 @@ export function Step2Identity() {
             },
             onComplete: (result) => {
               console.log('[SurpriseMe] Anchor generation complete:', result);
+              setAnchorStreamStarted(false);
               setAnchorImagesComplete(true);
             },
             onError: (error) => {
               console.error('[SurpriseMe] Anchor generation error:', error);
               // Still mark as complete so we can proceed with any partial results
+              setAnchorStreamStarted(false);
               setAnchorImagesComplete(true);
             },
           }

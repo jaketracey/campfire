@@ -45,6 +45,7 @@ interface GeneratedCompanionData {
   visualStyle: {
     appearance: CompanionAppearance;
   };
+  pronouns: string;
   voice: {
     id: string;
     name: string;
@@ -181,7 +182,7 @@ export function QuickStartCarousel({
           <IdentityDisplay
             key="identity"
             name={companionName}
-            pronouns="they/them"
+            pronouns={generatedData.pronouns}
             backstory={backstory}
             onComplete={handleSectionComplete}
             autoAdvance={autoAdvance}

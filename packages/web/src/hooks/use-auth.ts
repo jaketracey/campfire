@@ -28,6 +28,13 @@ export function useAuth() {
 
   const isAuthenticated = !!accessToken && !!user;
 
+  const getSafeReturnPath = useCallback((returnTo?: string | null): string | null => {
+    if (!returnTo) return null;
+    if (!returnTo.startsWith('/')) return null;
+    if (returnTo.startsWith('//')) return null;
+    return returnTo;
+  }, []);
+
   const login = useCallback(
     async (credentials: LoginCredentials) => {
       setLoading(true);
@@ -61,7 +68,7 @@ export function useAuth() {
   );
 
   const signup = useCallback(
-    async (credentials: SignupCredentials) => {
+    async (credentials: SignupCredentials, options?: { returnTo?: string | null }) => {
       setLoading(true);
       try {
         const response = await authApi.signup(credentials);
@@ -81,14 +88,15 @@ export function useAuth() {
         // Set welcome transition flag for the destination page
         setWelcomeTransition({ type: 'signup', provider: 'email' });
 
-        router.push('/onboard');
+        const redirectPath = (getSafeReturnPath(options?.returnTo) || '/onboard') as Route;
+        router.push(redirectPath);
         return { success: true };
       } catch (error) {
         setLoading(false);
         throw error;
       }
     },
-    [router, setSession, setLoading]
+    [router, setSession, setLoading, getSafeReturnPath]
   );
 
   const logout = useCallback(async () => {
@@ -128,7 +136,11 @@ export function useAuth() {
   }, [refreshToken, clearSession, updateTokens]);
 
   const loginWithGoogle = useCallback(
-    async (credentials: GoogleAuthCredentials, isSignup: boolean = false) => {
+    async (
+      credentials: GoogleAuthCredentials,
+      isSignup: boolean = false,
+      options?: { returnTo?: string | null }
+    ) => {
       setLoading(true);
       try {
         const response = await authApi.googleAuth(credentials);
@@ -145,7 +157,8 @@ export function useAuth() {
         // Navigate to onboarding for new signups, dashboard for logins
         // We determine if it's a new user by checking if they have a displayName
         const isNewUser = isSignup || !user.displayName;
-        const redirectPath = isNewUser ? '/onboard' : '/dashboard';
+        const safeReturnPath = getSafeReturnPath(options?.returnTo);
+        const redirectPath = (isNewUser ? (safeReturnPath || '/onboard') : '/dashboard') as Route;
 
         // Track signup conversion for new users
         if (isNewUser) {
@@ -165,7 +178,7 @@ export function useAuth() {
         throw error;
       }
     },
-    [router, setSession, setLoading]
+    [router, setSession, setLoading, getSafeReturnPath]
   );
 
   return {

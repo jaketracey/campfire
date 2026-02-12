@@ -67,6 +67,7 @@ export default function SignupPage() {
   const [isGoogleLoading, setIsGoogleLoading] = useState(false);
 
   const isLoading = authLoading || isSubmitting || isGoogleLoading;
+  const returnTo = searchParams.get('returnTo');
 
   // Extract UTM parameters from URL
   const utmParams = useMemo<UtmParams>(() => {
@@ -109,7 +110,7 @@ export default function SignupPage() {
       setIsGoogleLoading(true);
       try {
         const params = getUtmParams();
-        await loginWithGoogle({ idToken, utmParams: params }, true);
+        await loginWithGoogle({ idToken, utmParams: params }, true, { returnTo });
         toast({
           title: 'Account created!',
           description: 'Welcome to Ignite.',
@@ -126,7 +127,7 @@ export default function SignupPage() {
         setIsGoogleLoading(false);
       }
     },
-    [loginWithGoogle, toast, getUtmParams]
+    [loginWithGoogle, toast, getUtmParams, returnTo]
   );
 
   const handleGoogleError = useCallback(
@@ -165,7 +166,7 @@ export default function SignupPage() {
         password: data.password,
         displayName: data.name,
         utmParams: params,
-      });
+      }, { returnTo });
 
       toast({
         title: 'Account created!',

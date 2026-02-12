@@ -80,12 +80,14 @@ export function CompanionBackground() {
                     className="companion-row flex gap-12 whitespace-nowrap"
                     style={{ width: 'fit-content' }}
                 >
-                    {/* Create enough clones for seamless loop */}
-                    {[...COMPANIONS, ...COMPANIONS, ...COMPANIONS, ...COMPANIONS].map((img, i) => (
+                    {/* Duplicate once for seamless horizontal loop */}
+                    {[...COMPANIONS, ...COMPANIONS].map((img, i) => (
                         <div key={i} className="w-56 h-80 md:w-72 md:h-[420px] relative flex-shrink-0 grayscale">
                             <img
                                 src={`/images/companions/${img}`}
                                 alt=""
+                                loading="lazy"
+                                decoding="async"
                                 className="w-full h-full object-cover rounded-3xl border border-white/10"
                             />
                         </div>

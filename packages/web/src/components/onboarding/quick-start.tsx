@@ -256,6 +256,7 @@ export function QuickStart({ onBack }: QuickStartProps) {
   }, [isTransitioning, generatedCompanion, navigateToPhase]);
   const [apiPromise, setApiPromise] = useState<Promise<{ companionId: string; sessionId: string }> | null>(null);
   const nameInputRef = useRef<HTMLInputElement>(null);
+  const streamCleanupRef = useRef<(() => void) | null>(null);
 
   // Review screen state
   const [revealPhase, setRevealPhase] = useState<RevealPhase>('loading');
@@ -268,6 +269,7 @@ export function QuickStart({ onBack }: QuickStartProps) {
     register,
     handleSubmit,
     watch,
+    setValue,
     formState: { errors, isValid },
   } = useForm<QuickStartFormValues>({
     resolver: zodResolver(quickStartSchema),
@@ -278,6 +280,7 @@ export function QuickStart({ onBack }: QuickStartProps) {
   });
 
   const companionName = watch('name');
+  const hasRestoredPendingRef = useRef(false);
 
   // Focus name input on mount
   useEffect(() => {
@@ -285,6 +288,15 @@ export function QuickStart({ onBack }: QuickStartProps) {
       nameInputRef.current?.focus();
     }
   }, [step]);
+
+  useEffect(() => {
+    return () => {
+      if (streamCleanupRef.current) {
+        streamCleanupRef.current();
+        streamCleanupRef.current = null;
+      }
+    };
+  }, []);
 
   // Start API calls in background while carousel plays
   const startApiCalls = useCallback(async (name: string, randomCompanion: GeneratedCompanionData) => {
@@ -334,7 +346,12 @@ export function QuickStart({ onBack }: QuickStartProps) {
     const firstAnchorPromise = new Promise<void>((resolve, reject) => {
       let resolved = false;
 
-      streamAnchorImages(
+      if (streamCleanupRef.current) {
+        streamCleanupRef.current();
+        streamCleanupRef.current = null;
+      }
+
+      streamCleanupRef.current = streamAnchorImages(
         {
           companionId: companion.id,
           appearance: randomCompanion.visualStyle.appearance,
@@ -363,6 +380,7 @@ export function QuickStart({ onBack }: QuickStartProps) {
           },
           onComplete: (result) => {
             console.log('[QuickStart] Anchor generation complete:', result);
+            streamCleanupRef.current = null;
             // Also resolve on complete in case no anchors were received
             if (!resolved) {
               resolved = true;
@@ -371,6 +389,7 @@ export function QuickStart({ onBack }: QuickStartProps) {
           },
           onError: (error) => {
             console.error('[QuickStart] Anchor generation error:', error);
+            streamCleanupRef.current = null;
             // Resolve even on error so we don't block forever
             if (!resolved) {
               resolved = true;
@@ -430,6 +449,50 @@ export function QuickStart({ onBack }: QuickStartProps) {
 
     return { companionId: companion.id, sessionId: session.id };
   }, []);
+
+  // Restore pending quick-start data after signup and continue creation.
+  useEffect(() => {
+    if (hasRestoredPendingRef.current || !isAuthenticated) return;
+
+    const pendingRaw = sessionStorage.getItem('pendingQuickStart');
+    if (!pendingRaw) return;
+
+    hasRestoredPendingRef.current = true;
+    sessionStorage.removeItem('pendingQuickStart');
+
+    try {
+      const parsed = JSON.parse(pendingRaw) as { name?: string; companion?: GeneratedCompanionData };
+      if (!parsed.name || !parsed.companion) return;
+
+      setValue('name', parsed.name, { shouldValidate: true });
+      setGeneratedCompanion(parsed.companion);
+      navigateToPhase('creating');
+      setRevealPhase('loading');
+      setBackstoryResult(null);
+      setAnchorImages([]);
+      setVisibleImageCount(0);
+      setSessionId(null);
+      setIsCreating(true);
+
+      const promise = startApiCalls(parsed.name, parsed.companion);
+      setApiPromise(promise);
+      promise
+        .then(() => setIsCreating(false))
+        .catch((error) => {
+          console.error('Restored quick start creation failed:', error);
+          toast({
+            title: 'Creation failed',
+            description: 'Something went wrong. Please try again.',
+            variant: 'destructive',
+          });
+          setIsCreating(false);
+          navigateToPhase(null);
+          setApiPromise(null);
+        });
+    } catch {
+      // Ignore malformed session payloads.
+    }
+  }, [isAuthenticated, navigateToPhase, setValue, startApiCalls, toast]);
 
   // Handle name submission - generate companion data and optionally start API calls
   const onNameSubmit = useCallback(async () => {
@@ -625,7 +688,7 @@ export function QuickStart({ onBack }: QuickStartProps) {
           companion: generatedCompanion,
         }));
       }
-      router.push('/signup?returnTo=/onboard');
+      router.push('/signup?returnTo=/onboard/quick');
       return;
     }
 

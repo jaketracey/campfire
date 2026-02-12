@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useCallback, useEffect, useRef } from 'react';
+import { useState, useCallback, useEffect, useRef, type KeyboardEvent } from 'react';
 import { useOnboardingStore } from '@/stores/onboarding-store';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardTitle } from '@/components/ui/card';
@@ -163,6 +163,28 @@ export function Step4Archetype() {
     nextStep();
   }, [setArchetype, setSecondaryArchetype, nextStep]);
 
+  const handlePrimaryKeyDown = useCallback((event: KeyboardEvent<HTMLDivElement>, archetypeId: string) => {
+    if (isSurprising) return;
+    if (event.key === 'Enter' || event.key === ' ') {
+      event.preventDefault();
+      const selected = archetypes.find((type) => type.id === archetypeId);
+      if (selected) {
+        setArchetype(selected);
+      }
+    }
+  }, [isSurprising, setArchetype]);
+
+  const handleSecondaryKeyDown = useCallback((event: KeyboardEvent<HTMLDivElement>, archetypeId: string) => {
+    if (isSurprising) return;
+    if (event.key === 'Enter' || event.key === ' ') {
+      event.preventDefault();
+      const selected = archetypes.find((type) => type.id === archetypeId);
+      if (selected) {
+        setSecondaryArchetype(secondaryArchetype?.id === selected.id ? null : selected);
+      }
+    }
+  }, [isSurprising, secondaryArchetype?.id, setSecondaryArchetype]);
+
   return (
     <div className="space-y-8">
       <div className="text-left md:text-center space-y-3">
@@ -220,6 +242,10 @@ export function Step4Archetype() {
               } : {}}
             >
               <Card
+                role="button"
+                tabIndex={isSurprising ? -1 : 0}
+                aria-pressed={isSelected}
+                aria-label={`Select primary archetype ${type.name}`}
                 className={cn(
                   'cursor-pointer transition-all border-white/10 h-full',
                   isHighlighted
@@ -229,6 +255,7 @@ export function Step4Archetype() {
                     : 'bg-white/[0.01] hover:bg-white/[0.03] hover:border-white/20'
                 )}
                 onClick={() => !isSurprising && setArchetype(type)}
+                onKeyDown={(event) => handlePrimaryKeyDown(event, type.id)}
               >
                 <CardContent className="p-4">
                   <div className="text-3xl mb-2 filter drop-shadow-[0_0_10px_rgba(255,255,255,0.2)]">
@@ -289,6 +316,10 @@ export function Step4Archetype() {
                     } : {}}
                   >
                     <Card
+                      role="button"
+                      tabIndex={isSurprising ? -1 : 0}
+                      aria-pressed={isSelected}
+                      aria-label={`Select secondary archetype ${type.name}`}
                       className={cn(
                         'cursor-pointer transition-all border-white/10',
                         isHighlighted
@@ -302,6 +333,7 @@ export function Step4Archetype() {
                           secondaryArchetype?.id === type.id ? null : type
                         )
                       }
+                      onKeyDown={(event) => handleSecondaryKeyDown(event, type.id)}
                     >
                       <CardContent className="p-3 text-center">
                         <div className="text-xl">{type.icon}</div>

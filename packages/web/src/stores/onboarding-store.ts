@@ -162,6 +162,7 @@ export interface OnboardingState {
   // Anchor image state (for early generation during Surprise Me)
   anchorImages: AnchorImage[];
   anchorImagesComplete: boolean;
+  anchorStreamStarted: boolean;
 
   // Quick start state (for stepper positioning)
   quickStartActive: boolean;
@@ -193,6 +194,7 @@ export interface OnboardingState {
   addAnchorImage: (anchor: AnchorImage) => void;
   clearAnchorImages: () => void;
   setAnchorImagesComplete: (complete: boolean) => void;
+  setAnchorStreamStarted: (started: boolean) => void;
   setQuickStartActive: (active: boolean) => void;
   setQuickStartStep: (step: number) => void;
   setAppearanceChangedAfterGeneration: (changed: boolean) => void;
@@ -257,6 +259,7 @@ export const useOnboardingStore = create<OnboardingState>()(
       generationStarted: false,
       anchorImages: [],
       anchorImagesComplete: false,
+      anchorStreamStarted: false,
       quickStartActive: false,
       quickStartStep: 0,
       appearanceChangedAfterGeneration: false,
@@ -358,8 +361,9 @@ export const useOnboardingStore = create<OnboardingState>()(
         set((state) => ({
           anchorImages: [...state.anchorImages, anchor],
         })),
-      clearAnchorImages: () => set({ anchorImages: [], anchorImagesComplete: false }),
+      clearAnchorImages: () => set({ anchorImages: [], anchorImagesComplete: false, anchorStreamStarted: false }),
       setAnchorImagesComplete: (complete) => set({ anchorImagesComplete: complete }),
+      setAnchorStreamStarted: (started) => set({ anchorStreamStarted: started }),
       setQuickStartActive: (active) => set({ quickStartActive: active }),
       setQuickStartStep: (step) => set({ quickStartStep: step }),
       setAppearanceChangedAfterGeneration: (changed) => set({ appearanceChangedAfterGeneration: changed }),
@@ -387,6 +391,7 @@ export const useOnboardingStore = create<OnboardingState>()(
           generationStarted: false,
           anchorImages: [],
           anchorImagesComplete: false,
+          anchorStreamStarted: false,
           quickStartActive: false,
           quickStartStep: 0,
           appearanceChangedAfterGeneration: false,
