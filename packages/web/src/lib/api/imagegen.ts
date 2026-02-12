@@ -25,6 +25,7 @@ export interface ImageGenRequest {
   cacheKey?: string;
   userId?: string;
   sessionId?: string;
+  turnId?: string;
   companionId?: string;
   saveToS3?: boolean;
   referenceImageUrl?: string;  // Identity anchor for character consistency
@@ -46,6 +47,7 @@ export interface GalleryImage {
   id: string;
   user_id: string;
   session_id: string;
+  turn_id?: string | null;
   companion_id: string | null;
   s3_key: string;
   s3_url: string;
@@ -96,10 +98,21 @@ export interface GenerateAnchorsResult {
  * Uses a 120 second timeout to allow for ComfyUI generation
  */
 export async function generateCompanionImage(
-  request: ImageGenRequest
+  request: ImageGenRequest,
+  options?: { signal?: AbortSignal }
 ): Promise<ImageGenResult> {
   const controller = new AbortController();
+  let timedOut = false;
+  const handleExternalAbort = () => controller.abort();
+  if (options?.signal) {
+    if (options.signal.aborted) {
+      controller.abort();
+    } else {
+      options.signal.addEventListener('abort', handleExternalAbort, { once: true });
+    }
+  }
   const timeoutId = setTimeout(() => {
+    timedOut = true;
     console.warn('[ImageGen] Request timed out after 120s');
     controller.abort();
   }, 120000); // 120s timeout to match orchestrator max_wait
@@ -137,11 +150,18 @@ export async function generateCompanionImage(
   } catch (error) {
     clearTimeout(timeoutId);
     if (error instanceof Error && error.name === 'AbortError') {
-      console.error('[ImageGen] Request aborted (timeout)');
-      throw new Error('Image generation timed out after 120 seconds');
+      if (timedOut) {
+        console.error('[ImageGen] Request aborted (timeout)');
+        throw new Error('Image generation timed out after 120 seconds');
+      }
+      throw error;
     }
     console.error('[ImageGen] Generation failed:', error);
     throw error;
+  } finally {
+    if (options?.signal) {
+      options.signal.removeEventListener('abort', handleExternalAbort);
+    }
   }
 }
 

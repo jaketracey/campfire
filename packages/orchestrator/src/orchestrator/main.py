@@ -132,6 +132,36 @@ def parse_llm_json(text: str, fallback: dict | None = None) -> dict:
         raise
 
 
+def detect_visual_intent(text: str) -> tuple[bool, float]:
+    """Detect whether user message likely requests an image update."""
+    normalized = text.strip().lower()
+    if not normalized:
+        return False, 0.0
+
+    explicit_patterns = [
+        r"\bshow me\b",
+        r"\blet me see\b",
+        r"\bcan i see\b",
+        r"\bselfie\b",
+        r"\bphoto\b",
+        r"\bpicture\b",
+        r"\bwhat do you look like\b",
+        r"\bwhat are you wearing\b",
+    ]
+    if any(re.search(pattern, normalized) for pattern in explicit_patterns):
+        return True, 0.95
+
+    weak_patterns = [
+        r"\boutfit\b",
+        r"\bpose\b",
+        r"\blook\b.*\blike\b",
+    ]
+    if any(re.search(pattern, normalized) for pattern in weak_patterns):
+        return True, 0.65
+
+    return False, 0.05
+
+
 # Request/Response models
 class CompanionSelfKnowledge(BaseModel):
     """A piece of self-knowledge from the companion's Knowledge Graph."""
@@ -1045,6 +1075,7 @@ async def stream_message(request: StreamMessageRequest) -> StreamingResponse:
                 message_length=len(request.user_message),
                 recent_turns_count=len(request.recent_turns) if request.recent_turns else 0,
             )
+            requested_image, intent_confidence = detect_visual_intent(request.user_message)
 
             result = await app_state.orchestrator.process_message(
                 session_id=request.session_id,
@@ -1086,6 +1117,26 @@ async def stream_message(request: StreamMessageRequest) -> StreamingResponse:
                 # Emit [MESSAGE] events for multi-message responses
                 if len(messages) > 1:
                     import json
+                    metadata = {
+                        "should_generate_image": requested_image,
+                        "intent_confidence": intent_confidence,
+                    }
+                    if image_prompt:
+                        metadata["image_prompt"] = image_prompt
+
+                    # Send metadata before [MESSAGE] events so downstream can
+                    # attach prompt/intent to the final streamed message.
+                    yield f"data: [METADATA]{json.dumps(metadata)}\n\n"
+
+                    if image_prompt:
+                        logger.info(
+                            "sending_image_prompt_metadata",
+                            image_prompt_length=len(image_prompt),
+                            image_prompt=image_prompt[:200],
+                            should_generate_image=requested_image,
+                            intent_confidence=intent_confidence,
+                        )
+
                     for i, msg in enumerate(messages):
                         # Calculate typing delay: 500ms base + 10ms per char, capped at 3s
                         delay_ms = min(3000, 500 + len(msg) * 10) if i < len(messages) - 1 else 0
@@ -1097,27 +1148,23 @@ async def stream_message(request: StreamMessageRequest) -> StreamingResponse:
                             "is_last": i == len(messages) - 1,
                         }
                         yield f"data: [MESSAGE]{json.dumps(msg_data)}\n\n"
-
-                    # Send image_prompt after all messages
-                    if image_prompt:
-                        metadata = {"image_prompt": image_prompt}
-                        logger.info(
-                            "sending_image_prompt_metadata",
-                            image_prompt_length=len(image_prompt),
-                            image_prompt=image_prompt[:200],
-                        )
-                        yield f"data: [METADATA]{json.dumps(metadata)}\n\n"
                 else:
                     # Single message - send image_prompt metadata if present
+                    import json
+                    metadata = {
+                        "should_generate_image": requested_image,
+                        "intent_confidence": intent_confidence,
+                    }
                     if image_prompt:
-                        import json
-                        metadata = {"image_prompt": image_prompt}
+                        metadata["image_prompt"] = image_prompt
                         logger.info(
                             "sending_image_prompt_metadata",
                             image_prompt_length=len(image_prompt),
                             image_prompt=image_prompt[:200],
+                            should_generate_image=requested_image,
+                            intent_confidence=intent_confidence,
                         )
-                        yield f"data: [METADATA]{json.dumps(metadata)}\n\n"
+                    yield f"data: [METADATA]{json.dumps(metadata)}\n\n"
 
                 # Send model/usage info before DONE
                 model_info = app_state.orchestrator.get_last_model_info()
@@ -1139,6 +1186,14 @@ async def stream_message(request: StreamMessageRequest) -> StreamingResponse:
                     import json
 
                     if len(messages) > 1:
+                        metadata = {
+                            "should_generate_image": requested_image,
+                            "intent_confidence": intent_confidence,
+                        }
+                        if image_prompt:
+                            metadata["image_prompt"] = image_prompt
+                        yield f"data: [METADATA]{json.dumps(metadata)}\n\n"
+
                         # Multi-message response
                         for i, msg in enumerate(messages):
                             delay_ms = min(3000, 500 + len(msg) * 10) if i < len(messages) - 1 else 0
@@ -1155,10 +1210,12 @@ async def stream_message(request: StreamMessageRequest) -> StreamingResponse:
                         # Escape newlines to prevent breaking SSE format
                         escaped_msg = messages[0].replace('\n', '\\n')
                         yield f"data: {escaped_msg}\n\n"
-
-                    # Send image_prompt as metadata event if present
-                    if image_prompt:
-                        metadata = {"image_prompt": image_prompt}
+                        metadata = {
+                            "should_generate_image": requested_image,
+                            "intent_confidence": intent_confidence,
+                        }
+                        if image_prompt:
+                            metadata["image_prompt"] = image_prompt
                         yield f"data: [METADATA]{json.dumps(metadata)}\n\n"
 
                 # Send model/usage info before DONE

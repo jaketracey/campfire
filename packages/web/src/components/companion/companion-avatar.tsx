@@ -30,7 +30,7 @@ interface CompanionAvatarProps {
   /** Whether to show loading skeleton */
   showSkeleton?: boolean;
   /** Callback when image is loaded */
-  onLoad?: (imageUrl: string, cacheKey: string) => void;
+  onLoad?: (imageUrl: string, cacheKey: string, turnId?: string) => void;
   /** Callback on error */
   onError?: (error: Error) => void;
   /** Use a specific cached image */
@@ -59,6 +59,8 @@ interface CompanionAvatarProps {
   generationTrigger?: number;
   /** Scene/action description from LLM for contextual image generation */
   sceneDescription?: string;
+  /** Turn ID that the generated image corresponds to */
+  turnId?: string;
 }
 
 export function CompanionAvatar({
@@ -85,6 +87,7 @@ export function CompanionAvatar({
   anchorRenditions,
   generationTrigger = 0,
   sceneDescription,
+  turnId,
 }: CompanionAvatarProps) {
   // Compute optimal anchor URL using renditions if available
   // Uses 'large' rendition for chat view (832x1248 → ~200KB vs 6MB original)
@@ -105,6 +108,9 @@ export function CompanionAvatar({
   // Track generation trigger to only generate when explicitly requested
   // Using a ref instead of state to prevent re-renders from clearing the timeout
   const lastGenerationTriggerRef = useRef(0);
+  const generationSequenceRef = useRef(0);
+  const inFlightControllerRef = useRef<AbortController | null>(null);
+  const transitionTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Sync anchor image when prop changes (e.g., when companion data loads)
   useEffect(() => {
@@ -121,27 +127,27 @@ export function CompanionAvatar({
   }, [optimalAnchorUrl, anchorImageUrl, currentImageUrl, identityAnchorUrl]);
 
   const generateImage = useCallback(async () => {
-    console.log('[CompanionAvatar] generateImage called, isLoading:', isLoading);
-    if (isLoading) {
-      console.log('[CompanionAvatar] Skipping generation - already loading');
-      return;
+    const generationId = generationSequenceRef.current + 1;
+    generationSequenceRef.current = generationId;
+
+    if (transitionTimeoutRef.current) {
+      clearTimeout(transitionTimeoutRef.current);
+      transitionTimeoutRef.current = null;
+      setIsTransitioning(false);
+      setNextImageUrl(null);
     }
+
+    inFlightControllerRef.current?.abort();
+    const controller = new AbortController();
+    inFlightControllerRef.current = controller;
 
     setIsLoading(true);
     setError(null);
 
     try {
-      // Build prompt: use companion's imagePrompt directly if available
-      // The companion provides the full scene description; IP-Adapter preserves identity
-      let promptToUse: string;
-
-      if (sceneDescription) {
-        // Companion provided the full prompt - use it directly
-        promptToUse = sceneDescription;
-      } else {
-        // Fallback to old behavior for older messages or when no prompt provided
-        promptToUse = customPrompt || getBasePrompt(style);
-      }
+      // Build prompt: use companion's imagePrompt directly if available.
+      // Fallback to baseline portrait prompt for backwards compatibility.
+      const promptToUse = sceneDescription || customPrompt || getBasePrompt(style);
 
       const request: ImageGenRequest = {
         prompt: promptToUse,
@@ -153,89 +159,72 @@ export function CompanionAvatar({
         cacheKey: initialCacheKey,
         userId,
         sessionId,
+        turnId,
         companionId,
         saveToS3: !!(userId && sessionId),
-        // Let the gateway fetch a fresh presigned URL for the identity anchor
-        // This avoids 403 errors from expired presigned URLs
+        // Let the gateway select an anchor; avoids client-side URL expiry issues.
         referenceStrength: companionId ? referenceStrength : undefined,
       };
 
-      console.log('[CompanionAvatar] Generating image with request:', {
-        prompt: promptToUse.slice(0, 100) + '...',
-        emotionalState,
-        companionId,
-        referenceStrength: request.referenceStrength,
-        userId,
-        sessionId,
-      });
-
-      console.log('[CompanionAvatar] Calling generateCompanionImage API...');
       const startTime = Date.now();
-      const result = await generateCompanionImage(request);
+      const result = await generateCompanionImage(request, { signal: controller.signal });
       console.log('[CompanionAvatar] API call completed in', Date.now() - startTime, 'ms');
 
-      console.log('[CompanionAvatar] Image generated:', {
-        imageUrl: result.imageUrl?.slice(0, 50),
-        latencyMs: result.latencyMs,
-        cached: result.cached,
-      });
+      // Ignore stale responses from cancelled/replaced generations.
+      if (generationSequenceRef.current !== generationId) {
+        return;
+      }
 
-      // If this is the first successful generation with S3, use it as identity anchor
       if (!identityAnchorUrl && result.s3Key && result.imageUrl) {
         setIdentityAnchorUrl(result.imageUrl);
       }
 
-      // Preload the new image before transitioning
-      // This keeps the blur visible until the image is fully loaded
-      const preloadImage = (url: string): Promise<void> => {
-        return new Promise((resolve, reject) => {
-          const img = new Image();
-          img.onload = () => resolve();
-          img.onerror = () => reject(new Error('Failed to preload image'));
-          img.src = url;
-        });
-      };
+      // Preload the image before showing transition to avoid flashes.
+      await new Promise<void>((resolve, reject) => {
+        const img = new Image();
+        img.onload = () => resolve();
+        img.onerror = () => reject(new Error('Failed to preload image'));
+        img.src = result.imageUrl;
+      });
 
-      console.log('[CompanionAvatar] Preloading new image...', result.imageUrl?.slice(0, 50));
-      await preloadImage(result.imageUrl);
-      console.log('[CompanionAvatar] Image preloaded successfully');
+      if (generationSequenceRef.current !== generationId) {
+        return;
+      }
 
-      // If we already have an image, do a crossfade
       if (currentImageUrl && result.imageUrl !== currentImageUrl) {
-        console.log('[CompanionAvatar] Starting crossfade transition', {
-          currentImageUrl: currentImageUrl?.slice(0, 50),
-          newImageUrl: result.imageUrl?.slice(0, 50),
-        });
         setNextImageUrl(result.imageUrl);
         setIsTransitioning(true);
-        // Now that image is preloaded, we can remove the loading blur
-        setIsLoading(false);
 
-        // After transition completes, swap the images
-        setTimeout(() => {
-          console.log('[CompanionAvatar] Crossfade timeout fired, swapping images');
+        transitionTimeoutRef.current = setTimeout(() => {
+          if (generationSequenceRef.current !== generationId) {
+            return;
+          }
           setCurrentImageUrl(result.imageUrl);
           setNextImageUrl(null);
           setIsTransitioning(false);
-          console.log('[CompanionAvatar] Crossfade complete');
-        }, 500); // Match the fade duration
+          transitionTimeoutRef.current = null;
+        }, 500);
       } else {
-        console.log('[CompanionAvatar] No crossfade needed, setting image directly', {
-          hadPreviousImage: !!currentImageUrl,
-          newImageUrl: result.imageUrl?.slice(0, 50),
-        });
         setCurrentImageUrl(result.imageUrl);
-        setIsLoading(false);
       }
 
       setCurrentCacheKey(result.cacheKey);
-      onLoad?.(result.imageUrl, result.cacheKey);
+      onLoad?.(result.imageUrl, result.cacheKey, turnId);
     } catch (err) {
-      console.error('[CompanionAvatar] Image generation failed:', err);
-      const error = err instanceof Error ? err : new Error('Failed to generate image');
-      setError(error);
-      onError?.(error);
-      setIsLoading(false);
+      const isAbortError = err instanceof Error && err.name === 'AbortError';
+      if (!isAbortError && generationSequenceRef.current === generationId) {
+        console.error('[CompanionAvatar] Image generation failed:', err);
+        const error = err instanceof Error ? err : new Error('Failed to generate image');
+        setError(error);
+        onError?.(error);
+      }
+    } finally {
+      if (inFlightControllerRef.current === controller) {
+        inFlightControllerRef.current = null;
+      }
+      if (generationSequenceRef.current === generationId) {
+        setIsLoading(false);
+      }
     }
   }, [
     customPrompt,
@@ -246,11 +235,11 @@ export function CompanionAvatar({
     height,
     initialCacheKey,
     currentImageUrl,
-    isLoading,
     onLoad,
     onError,
     userId,
     sessionId,
+    turnId,
     companionId,
     identityAnchorUrl,
     referenceStrength,
@@ -289,6 +278,15 @@ export function CompanionAvatar({
 
     return () => clearTimeout(timer);
   }, [emotionalState, personality, style, autoRegenerate, debounceDelay, generateImage, optimalAnchorUrl]);
+
+  useEffect(() => {
+    return () => {
+      inFlightControllerRef.current?.abort();
+      if (transitionTimeoutRef.current) {
+        clearTimeout(transitionTimeoutRef.current);
+      }
+    };
+  }, []);
 
   // Initial load - only if no anchor image provided
   useEffect(() => {

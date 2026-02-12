@@ -29,7 +29,8 @@ interface ChatSidebarProps {
   avatarDimensions: { width: number; height: number; genWidth: number; genHeight: number };
   imageGenTrigger: number;
   sceneDescription?: string;
-  onAvatarLoad: (imageUrl: string) => void;
+  imageTurnId?: string;
+  onAvatarLoad: (imageUrl: string, cacheKey?: string, turnId?: string) => void;
 
   // Session
   sessionId: string;
@@ -93,6 +94,7 @@ export function ChatSidebar({
   avatarDimensions,
   imageGenTrigger,
   sceneDescription,
+  imageTurnId,
   onAvatarLoad,
   sessionId,
   userId,
@@ -195,6 +197,7 @@ export function ChatSidebar({
                   anchorRenditions={companion.avatarRenditions}
                   generationTrigger={imageGenTrigger}
                   sceneDescription={sceneDescription}
+                  turnId={imageTurnId}
                   onLoad={onAvatarLoad}
                 />
                 <LikeHeartsAnimation trigger={likeAnimationTrigger} />

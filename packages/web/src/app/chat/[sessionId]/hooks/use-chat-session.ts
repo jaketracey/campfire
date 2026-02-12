@@ -30,6 +30,8 @@ interface UseChatSessionOptions {
   onRequireAuth?: ChatSessionContentProps['onRequireAuth'];
 }
 
+const IMAGE_INTENT_THRESHOLD = 0.6;
+
 export function useChatSession({
   sessionId,
   isDemo,
@@ -100,6 +102,7 @@ export function useChatSession({
   );
   const [galleryImages, setGalleryImages] = useState<GalleryImage[]>([]);
   const [sceneDescription, setSceneDescription] = useState<string | undefined>(undefined);
+  const [imageTurnId, setImageTurnId] = useState<string | undefined>(undefined);
   const prevAvatarUrlRef = useRef<string | null>(null);
   const hasFiredChatStarted = useRef(false);
   const hasFiredFirstMessage = useRef(false);
@@ -478,8 +481,8 @@ export function useChatSession({
         const gallery = await getSessionGallery(sessionId, 20);
         if (gallery.images && gallery.images.length > 0) {
           setGalleryImages(gallery.images);
-          const randomIndex = Math.floor(Math.random() * gallery.images.length);
-          setCurrentAvatarUrl(gallery.images[randomIndex].s3_url);
+          const mostRelevantImage = gallery.images.find(img => img.session_id === sessionId) || gallery.images[0];
+          setCurrentAvatarUrl(mostRelevantImage.s3_url);
         }
       } catch (err) {
         console.warn('[Chat] Failed to load gallery:', err);
@@ -608,9 +611,6 @@ export function useChatSession({
           isNew: true,
         },
       ]);
-      const scene = extractSceneDescription(content);
-      setSceneDescription(scene);
-      setImageGenTrigger((prev) => prev + 1);
       setDebugRefreshTrigger((prev) => prev + 1);
     });
 
@@ -618,7 +618,7 @@ export function useChatSession({
       setStreamingContent((prev) => prev + chunk);
     });
 
-    const unsubEnd = ws.onAgentMessageEnd((content, imagePrompt, sequence, turnId) => {
+    const unsubEnd = ws.onAgentMessageEnd((content, imagePrompt, shouldGenerateImage, imageIntentConfidence, sequence, turnId) => {
       const emotionalState = detectEmotionalState(content);
 
       let messageId: string;
@@ -654,9 +654,16 @@ export function useChatSession({
       // Trigger pulse animation on input when companion message is received
       setMessageReceivedPulseTrigger(prev => prev + 1);
 
-      const scene = imagePrompt || extractSceneDescription(content);
-      setSceneDescription(scene);
-      setImageGenTrigger((prev) => prev + 1);
+      const shouldTriggerImage = Boolean(shouldGenerateImage)
+        && (imageIntentConfidence ?? 0) >= IMAGE_INTENT_THRESHOLD;
+      if (shouldTriggerImage) {
+        const scene = imagePrompt || extractSceneDescription(content);
+        if (scene) {
+          setSceneDescription(scene);
+          setImageTurnId(turnId);
+          setImageGenTrigger((prev) => prev + 1);
+        }
+      }
       setDebugRefreshTrigger((prev) => prev + 1);
     });
 
@@ -776,7 +783,16 @@ export function useChatSession({
       });
     });
 
-    const unsubCompanionMsgEnd = ws.onCompanionMessageEnd(({ companionId, companionName, content, isReaction, turnId }) => {
+    const unsubCompanionMsgEnd = ws.onCompanionMessageEnd(({
+      companionId,
+      companionName,
+      content,
+      isReaction,
+      turnId,
+      imagePrompt,
+      shouldGenerateImage,
+      imageIntentConfidence,
+    }) => {
       setTypingCompanionId(null);
       setStreamingByCompanion((prev) => {
         const next = new Map(prev);
@@ -806,6 +822,16 @@ export function useChatSession({
 
       if (!isReaction && companionId === hostCompanionId) {
         setCurrentEmotionalState(emotionalState);
+        const shouldTriggerImage = Boolean(shouldGenerateImage)
+          && (imageIntentConfidence ?? 0) >= IMAGE_INTENT_THRESHOLD;
+        if (shouldTriggerImage) {
+          const scene = imagePrompt || extractSceneDescription(content);
+          if (scene) {
+            setSceneDescription(scene);
+            setImageTurnId(turnId);
+            setImageGenTrigger((prev) => prev + 1);
+          }
+        }
       }
 
       setIsLoading(false);
@@ -1136,6 +1162,10 @@ export function useChatSession({
     }
   }, []);
 
+  const handleAvatarLoad = useCallback((imageUrl: string, _cacheKey?: string, _turnId?: string) => {
+    setCurrentAvatarUrl(imageUrl);
+  }, []);
+
   return {
     // Auth state
     isAuthenticated,
@@ -1176,9 +1206,11 @@ export function useChatSession({
     // Avatar/images
     currentAvatarUrl,
     setCurrentAvatarUrl,
+    handleAvatarLoad,
     galleryImages,
     imageGenTrigger,
     sceneDescription,
+    imageTurnId,
     customPrompt,
     avatarDimensions,
     mobileAvatarPop,

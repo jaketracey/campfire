@@ -676,6 +676,8 @@ export class CampfireWebSocket {
     handler: (
       content: string,
       imagePrompt?: string,
+      shouldGenerateImage?: boolean,
+      imageIntentConfidence?: number,
       sequence?: { index: number; total: number; isLast: boolean; typingDelayMs?: number },
       turnId?: string
     ) => void
@@ -683,10 +685,19 @@ export class CampfireWebSocket {
     return this.on<{
       content: string;
       imagePrompt?: string;
+      shouldGenerateImage?: boolean;
+      imageIntentConfidence?: number;
       sequence?: { index: number; total: number; isLast: boolean; typingDelayMs?: number };
       turnId?: string;
     }>('agent_message_end', (msg) => {
-      handler(msg.payload.content, msg.payload.imagePrompt, msg.payload.sequence, msg.payload.turnId);
+      handler(
+        msg.payload.content,
+        msg.payload.imagePrompt,
+        msg.payload.shouldGenerateImage,
+        msg.payload.imageIntentConfidence,
+        msg.payload.sequence,
+        msg.payload.turnId
+      );
     });
   }
 
@@ -886,6 +897,9 @@ export class CampfireWebSocket {
       content: string;
       isReaction: boolean;
       turnId: string;
+      imagePrompt?: string;
+      shouldGenerateImage?: boolean;
+      imageIntentConfidence?: number;
     }) => void
   ): () => void {
     return this.on<{
@@ -894,6 +908,9 @@ export class CampfireWebSocket {
       content: string;
       isReaction: boolean;
       turnId: string;
+      imagePrompt?: string;
+      shouldGenerateImage?: boolean;
+      imageIntentConfidence?: number;
     }>('companion_message_end', (msg) => {
       handler(msg.payload);
     });

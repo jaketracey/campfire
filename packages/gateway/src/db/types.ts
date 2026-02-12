@@ -353,6 +353,7 @@ export interface CompanionImage {
   id: UUID;
   user_id: string;
   session_id: string;
+  turn_id: UUID | null;
   companion_id: string | null;
   s3_key: string;
   s3_url: string;
@@ -373,6 +374,7 @@ export interface CompanionImage {
 export interface CompanionImageInsert {
   user_id: string;
   session_id: string;
+  turn_id?: UUID | null;
   companion_id?: string | null;
   s3_key: string;
   s3_url: string;

@@ -139,6 +139,46 @@ function sleep(ms: number): Promise<void> {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
 
+interface ImageIntentDecision {
+  shouldGenerateImage: boolean;
+  confidence: number;
+}
+
+const EXPLICIT_IMAGE_INTENT_PATTERNS: RegExp[] = [
+  /\bshow\s+me\b/i,
+  /\blet\s+me\s+see\b/i,
+  /\bsend\s+me\s+(a|an)?\s*(pic|picture|photo|image|selfie)\b/i,
+  /\bcan\s+i\s+see\b/i,
+  /\bwhat\s+do\s+you\s+look\s+like\b/i,
+  /\bwhat\s+are\s+you\s+wearing\b/i,
+  /\bpicture\s+of\s+you\b/i,
+  /\bphoto\s+of\s+you\b/i,
+  /\bselfie\b/i,
+];
+
+const WEAK_IMAGE_INTENT_PATTERNS: RegExp[] = [
+  /\bpose\b/i,
+  /\boutfit\b/i,
+  /\blook\b.*\blike\b/i,
+];
+
+function detectImageIntent(message: string): ImageIntentDecision {
+  const content = message.trim();
+  if (!content) {
+    return { shouldGenerateImage: false, confidence: 0 };
+  }
+
+  if (EXPLICIT_IMAGE_INTENT_PATTERNS.some(pattern => pattern.test(content))) {
+    return { shouldGenerateImage: true, confidence: 0.95 };
+  }
+
+  if (WEAK_IMAGE_INTENT_PATTERNS.some(pattern => pattern.test(content))) {
+    return { shouldGenerateImage: true, confidence: 0.65 };
+  }
+
+  return { shouldGenerateImage: false, confidence: 0.05 };
+}
+
 /**
  * WebSocket message types
  */
@@ -1037,6 +1077,7 @@ async function handleUserMessage(
       ),
       safety_level: effectiveSafetyLevel,
       allowed_tools: [],
+      can_generate_image_prompts: true,
       max_context_turns: 20,
       temperature: 0.7,
       version: companion.spec_version,
@@ -1250,7 +1291,10 @@ async function handleUserMessage(
 
     // 8. Stream SSE response to WebSocket client
     let fullContent = '';
+    const visualIntent = detectImageIntent(payload.content);
     let imagePrompt: string | undefined;
+    let shouldGenerateImage = visualIntent.shouldGenerateImage;
+    let imageIntentConfidence = visualIntent.confidence;
     let multiMessageSent = false; // Track if we sent multi-messages (skip final agent_message_end)
     let currentSpeakerId: string | undefined; // Track current speaker for group chat
     let currentSpeakerName: string | undefined;
@@ -1304,10 +1348,14 @@ async function handleUserMessage(
             }
 
             if (data.startsWith('[METADATA]')) {
-              // Parse metadata (contains image_prompt from companion)
+              // Parse metadata (contains image prompt + intent signals from orchestrator)
               try {
                 const metadataJson = data.slice(10); // Remove [METADATA] prefix
-                const metadata = JSON.parse(metadataJson);
+                const metadata = JSON.parse(metadataJson) as {
+                  image_prompt?: string;
+                  should_generate_image?: boolean;
+                  intent_confidence?: number;
+                };
                 if (metadata.image_prompt) {
                   imagePrompt = metadata.image_prompt;
                   logger.info(
@@ -1318,6 +1366,12 @@ async function handleUserMessage(
                     },
                     'Received image_prompt from orchestrator'
                   );
+                }
+                if (typeof metadata.should_generate_image === 'boolean') {
+                  shouldGenerateImage = metadata.should_generate_image;
+                }
+                if (typeof metadata.intent_confidence === 'number') {
+                  imageIntentConfidence = Math.max(0, Math.min(1, metadata.intent_confidence));
                 }
               } catch (e) {
                 logger.warn({ error: e, data }, 'Failed to parse metadata');
@@ -1405,6 +1459,9 @@ async function handleUserMessage(
                     content: endData.full_message,
                     isReaction: endData.is_reaction,
                     turnId: turn.id,
+                    imagePrompt: endData.companion_id === companionId && !endData.is_reaction ? imagePrompt : undefined,
+                    shouldGenerateImage: endData.companion_id === companionId && !endData.is_reaction ? shouldGenerateImage : false,
+                    imageIntentConfidence: endData.companion_id === companionId && !endData.is_reaction ? imageIntentConfidence : 0,
                   },
                 });
 
@@ -1446,6 +1503,8 @@ async function handleUserMessage(
                     sessionId,
                     turnId: turn.id,
                     imagePrompt: messageData.is_last ? imagePrompt : undefined,
+                    shouldGenerateImage: messageData.is_last ? shouldGenerateImage : false,
+                    imageIntentConfidence: messageData.is_last ? imageIntentConfidence : 0,
                     sequence: {
                       index: messageData.index,
                       total: messageData.total,
@@ -1590,6 +1649,8 @@ async function handleUserMessage(
           sessionId,
           turnId: turn.id,
           imagePrompt: imagePrompt,
+          shouldGenerateImage,
+          imageIntentConfidence,
         },
       });
     }

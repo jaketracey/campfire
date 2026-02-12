@@ -387,3 +387,31 @@ class TestHistoricalMemoriesEdgeCases:
 
         assert "[fact]" in result
         assert "[preference]" in result
+
+
+class TestCompanionImagePromptCapability:
+    """Tests for image-prompt capability checks."""
+
+    def test_explicit_prompt_capability_flag_enables_image_instructions(
+        self, context_builder, sample_companion_spec
+    ):
+        sample_companion_spec.can_generate_image_prompts = True
+        sample_companion_spec.allowed_tools = []
+
+        assert context_builder._companion_generates_images(sample_companion_spec) is True
+
+    def test_legacy_tool_based_capability_still_works(
+        self, context_builder, sample_companion_spec
+    ):
+        sample_companion_spec.can_generate_image_prompts = False
+        sample_companion_spec.allowed_tools = ["image_gen"]
+
+        assert context_builder._companion_generates_images(sample_companion_spec) is True
+
+    def test_no_flag_and_no_image_tools_disables_image_instructions(
+        self, context_builder, sample_companion_spec
+    ):
+        sample_companion_spec.can_generate_image_prompts = False
+        sample_companion_spec.allowed_tools = []
+
+        assert context_builder._companion_generates_images(sample_companion_spec) is False

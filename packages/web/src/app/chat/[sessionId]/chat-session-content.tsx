@@ -76,7 +76,8 @@ export function ChatSessionContent({
         avatarDimensions={chat.avatarDimensions}
         imageGenTrigger={chat.imageGenTrigger}
         sceneDescription={chat.sceneDescription}
-        onAvatarLoad={chat.setCurrentAvatarUrl}
+        imageTurnId={chat.imageTurnId}
+        onAvatarLoad={chat.handleAvatarLoad}
         sessionId={sessionId}
         userId={chat.user?.id}
         sessionTotalLikes={chat.sessionTotalLikes}

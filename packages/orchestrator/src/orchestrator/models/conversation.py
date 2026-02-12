@@ -111,6 +111,10 @@ class CompanionSpec(BaseModel):
     system_prompt: str
     safety_level: str = "adult"  # adult, permissive, standard, strict
     allowed_tools: list[str] = Field(default_factory=list)
+    # Controls whether chat responses should include image prompt metadata.
+    # Kept separate from allowed_tools so we can enable visual prompt generation
+    # without exposing image_generation function calls in normal chat turns.
+    can_generate_image_prompts: bool = False
     max_context_turns: int = 20
     temperature: float = 0.8  # Slightly higher for more creative responses
     version: int = 1

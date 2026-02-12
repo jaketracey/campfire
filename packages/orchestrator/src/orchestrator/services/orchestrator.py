@@ -1086,6 +1086,12 @@ class ConversationOrchestrator:
         Returns:
             tuple of (cleaned_content, image_prompt or None)
         """
+        structured = self._parse_structured_response(content)
+        if structured is not None:
+            messages, image_prompt = structured
+            cleaned_content = "\n".join(messages).strip()
+            return cleaned_content, image_prompt
+
         # Log incoming content for debugging
         logger.debug(
             "image_prompt_parse_input",
@@ -1117,6 +1123,77 @@ class ConversationOrchestrator:
         )
         return content, None
 
+    def _parse_structured_response(self, content: str) -> tuple[list[str], str | None] | None:
+        """Parse optional JSON response envelope.
+
+        Supported shapes:
+        - {"messages": ["...", "..."], "image_prompt": "..."}
+        - {"message": "...", "image_prompt": "..."}
+        - {"content": "...", "imagePrompt": "..."}
+        """
+        parsed = self._try_load_json(content)
+        if not isinstance(parsed, dict):
+            return None
+
+        image_prompt_raw = parsed.get("image_prompt", parsed.get("imagePrompt"))
+        image_prompt = image_prompt_raw.strip() if isinstance(image_prompt_raw, str) and image_prompt_raw.strip() else None
+
+        messages: list[str] = []
+        raw_messages = parsed.get("messages")
+        if isinstance(raw_messages, list):
+            for item in raw_messages:
+                if isinstance(item, str) and item.strip():
+                    messages.append(item.strip())
+                elif isinstance(item, dict):
+                    text_value = item.get("content", item.get("message", item.get("text")))
+                    if isinstance(text_value, str) and text_value.strip():
+                        messages.append(text_value.strip())
+        else:
+            single_value = parsed.get("message", parsed.get("content", parsed.get("text")))
+            if isinstance(single_value, str) and single_value.strip():
+                messages.append(single_value.strip())
+
+        if not messages:
+            return None
+
+        logger.info(
+            "structured_response_parsed",
+            message_count=len(messages),
+            image_prompt_found=image_prompt is not None,
+        )
+        return messages, image_prompt
+
+    def _try_load_json(self, content: str) -> dict[str, Any] | None:
+        """Best-effort JSON parser for model output."""
+        candidate = content.strip()
+        if not candidate:
+            return None
+
+        # Strip fenced code block wrapper if present.
+        if candidate.startswith("```"):
+            lines = candidate.splitlines()
+            if len(lines) >= 3:
+                candidate = "\n".join(lines[1:-1]).strip()
+
+        try:
+            parsed = json.loads(candidate)
+            return parsed if isinstance(parsed, dict) else None
+        except Exception:
+            pass
+
+        # Fallback: parse the first top-level JSON object in mixed text output.
+        first_brace = candidate.find("{")
+        last_brace = candidate.rfind("}")
+        if first_brace == -1 or last_brace <= first_brace:
+            return None
+
+        snippet = candidate[first_brace:last_brace + 1]
+        try:
+            parsed = json.loads(snippet)
+            return parsed if isinstance(parsed, dict) else None
+        except Exception:
+            return None
+
     def _parse_multi_messages(self, content: str) -> tuple[list[str], str | None]:
         """Parse multi-message response from LLM output.
 
@@ -1126,6 +1203,10 @@ class ConversationOrchestrator:
         Returns:
             tuple of (list of message strings, image_prompt or None)
         """
+        structured = self._parse_structured_response(content)
+        if structured is not None:
+            return structured
+
         # Check if content uses multi-message format
         message_pattern = r'<message>(.*?)</message>'
         matches = re.findall(message_pattern, content, re.DOTALL)

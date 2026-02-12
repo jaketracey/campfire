@@ -902,6 +902,9 @@ class ContextBuilder:
         Returns:
             True if the companion has any image-generating tools.
         """
+        if getattr(companion_spec, "can_generate_image_prompts", False):
+            return True
+
         if not companion_spec.allowed_tools:
             return False
 

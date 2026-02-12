@@ -7,7 +7,7 @@
 import type { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
 import { createHash } from 'crypto';
 import { PutObjectCommand } from '@aws-sdk/client-s3';
-import { requireAuth } from '../middleware/auth.js';
+import { optionalAuth, requireAuth } from '../middleware/auth.js';
 import { logger } from '../observability/logger.js';
 import { db } from '../db/index.js';
 import type { CompanionAvatar, CompanionImage } from '../db/types.js';
@@ -50,6 +50,7 @@ interface ImageGenRequest {
   cacheKey?: string;
   userId?: string;
   sessionId?: string;
+  turnId?: string;
   companionId?: string;
   referenceImageUrl?: string;  // Identity anchor for character consistency
   referenceStrength?: number;  // How strongly to follow reference (0.0-1.0)
@@ -266,6 +267,7 @@ function generateCacheKey(params: ImageGenRequest): string {
     // Include IDs so each companion gets unique cached images
     userId: params.userId,
     sessionId: params.sessionId,
+    turnId: params.turnId,
     companionId: params.companionId,
   };
   return createHash('sha256').update(JSON.stringify(keyData)).digest('hex').slice(0, 16);
@@ -284,6 +286,16 @@ function buildPrompt(params: ImageGenRequest): string {
   // The prompt from companion already contains the full scene description
   // Note: "high quality, detailed" is added by the orchestrator, don't duplicate here
   return params.prompt;
+}
+
+function shouldRequireNsfwRouting(prompt: string, contentRating: string | undefined): boolean {
+  const allowsAdultContent = contentRating === 'R' || contentRating === 'PG-13';
+  if (!allowsAdultContent) {
+    return false;
+  }
+
+  const nsfwPattern = /\b(nude|naked|explicit|nsfw|sex|sexual|lingerie|erotic|topless|bottomless)\b/i;
+  return nsfwPattern.test(prompt);
 }
 
 interface OrchestratorImageGenResponse {
@@ -326,7 +338,9 @@ async function generateWithOrchestrator(
   height: number,
   referenceImageUrl?: string,
   referenceStrength?: number,
-  isAnchor?: boolean
+  isAnchor?: boolean,
+  companionId?: string,
+  requireNsfw?: boolean,
 ): Promise<{ imageBuffer: Buffer; latencyMs: number; provider: string; modelId: string; format: string }> {
   const url = `${ORCHESTRATOR_URL}/imagegen/generate`;
 
@@ -346,6 +360,8 @@ async function generateWithOrchestrator(
       reference_image_url: referenceImageUrl,
       reference_strength: referenceStrength ?? 0.7,
       is_anchor: isAnchor ?? false,
+      companion_id: companionId,
+      require_nsfw: requireNsfw ?? false,
     }),
   });
 
@@ -483,6 +499,7 @@ async function uploadToS3(
 async function saveImageMetadata(
   userId: string,
   sessionId: string,
+  turnId: string | undefined,
   companionId: string | undefined,
   s3Key: string,
   s3Url: string,
@@ -499,18 +516,18 @@ async function saveImageMetadata(
   const latencyMsInt = Math.round(latencyMs);
   const result = await db.sql`
     INSERT INTO companion_images (
-      user_id, session_id, companion_id, s3_key, s3_url,
+      user_id, session_id, turn_id, companion_id, s3_key, s3_url,
       width, height, format, size_bytes,
       emotional_state, style, prompt, cache_key,
       provider, latency_ms
     ) VALUES (
-      ${userId}, ${sessionId}, ${companionId || null}, ${s3Key}, ${s3Url},
+      ${userId}, ${sessionId}, ${turnId || null}, ${companionId || null}, ${s3Key}, ${s3Url},
       ${width}, ${height}, 'png', ${sizeBytes},
       ${emotionalState}, ${style}, ${prompt}, ${cacheKey},
       ${provider}, ${latencyMsInt}
     )
     ON CONFLICT (user_id, session_id, cache_key)
-    DO UPDATE SET s3_url = ${s3Url}, latency_ms = ${latencyMsInt}
+    DO UPDATE SET s3_url = ${s3Url}, latency_ms = ${latencyMsInt}, turn_id = COALESCE(${turnId || null}, companion_images.turn_id)
     RETURNING id
   `;
   if (!result[0]) {
@@ -573,6 +590,7 @@ export async function imagegenRoutes(app: FastifyInstance): Promise<void> {
   app.post<{ Body: ImageGenRequest }>(
     '/generate',
     {
+      preHandler: optionalAuth,
       schema: {
         body: {
           type: 'object',
@@ -598,6 +616,7 @@ export async function imagegenRoutes(app: FastifyInstance): Promise<void> {
             cacheKey: { type: 'string' },
             userId: { type: 'string' },
             sessionId: { type: 'string' },
+            turnId: { type: 'string' },
             companionId: { type: 'string' },
             referenceImageUrl: { type: 'string' },
             referenceStrength: { type: 'number', minimum: 0, maximum: 1, default: 0.7 },
@@ -607,19 +626,59 @@ export async function imagegenRoutes(app: FastifyInstance): Promise<void> {
     },
     async (request: FastifyRequest<{ Body: ImageGenRequest }>, reply: FastifyReply) => {
       const params = request.body;
+      const authenticatedUserId = request.user?.userId;
       const width = params.width || 832;
       const height = params.height || 1248;
-      const saveToS3 = params.saveToS3 !== false; // Default to true
+      const requestedSaveToS3 = params.saveToS3 !== false; // Default to true
       const emotionalState = params.emotionalState || 'neutral';
+      let userIdForStorage: string | undefined;
+      let sessionIdForStorage: string | undefined;
+
+      if (requestedSaveToS3 || params.userId || params.sessionId || params.turnId) {
+        if (!authenticatedUserId) {
+          return reply.status(401).send({
+            error: 'Unauthorized',
+            message: 'Authentication is required for persisted image generation',
+          });
+        }
+        if (!params.sessionId) {
+          return reply.status(400).send({
+            error: 'Invalid request',
+            message: 'sessionId is required when saving generated images',
+          });
+        }
+
+        const sessionRepo = getSessionsRepository();
+        const session = await sessionRepo.findById(params.sessionId);
+        if (!session) {
+          return reply.status(404).send({
+            error: 'Session not found',
+            message: `No session found for id ${params.sessionId}`,
+          });
+        }
+        if (session.user_id !== authenticatedUserId) {
+          return reply.status(403).send({
+            error: 'Forbidden',
+            message: 'You do not have access to this session',
+          });
+        }
+
+        userIdForStorage = authenticatedUserId;
+        sessionIdForStorage = params.sessionId;
+      }
+
+      const saveToS3 = Boolean(requestedSaveToS3 && userIdForStorage && sessionIdForStorage);
 
       // Get companion's stored style if companionId provided, otherwise use request param or default
       let style = params.style || 'stylized';
       let referenceImageUrl = params.referenceImageUrl;
+      let companionContentRating: string | undefined;
 
       if (params.companionId) {
         const companionRepo = getCompanionsRepository();
         const companion = await companionRepo.findById(params.companionId);
         if (companion) {
+          companionContentRating = companion.spec?.boundaries?.content_rating as string | undefined;
           // Use companion's stored style from spec if not explicitly overridden in request
           if (!params.style && companion.spec?.visual_style?.style_type) {
             const storedStyle = companion.spec.visual_style.style_type;
@@ -639,7 +698,11 @@ export async function imagegenRoutes(app: FastifyInstance): Promise<void> {
       }
 
       // Generate or use provided cache key
-      const cacheKey = params.cacheKey || generateCacheKey(params);
+      const cacheKey = params.cacheKey || generateCacheKey({
+        ...params,
+        userId: userIdForStorage,
+        sessionId: sessionIdForStorage,
+      });
 
       // Check in-memory cache first
       const cached = imageCache.get(cacheKey);
@@ -658,6 +721,7 @@ export async function imagegenRoutes(app: FastifyInstance): Promise<void> {
       try {
         // Build the full prompt
         const fullPrompt = buildPrompt(params);
+        const requireNsfw = shouldRequireNsfwRouting(fullPrompt, companionContentRating);
 
         logger.info({
           prompt: fullPrompt,
@@ -667,6 +731,7 @@ export async function imagegenRoutes(app: FastifyInstance): Promise<void> {
           saveToS3,
           hasReference: !!referenceImageUrl,
           companionId: params.companionId,
+          requireNsfw,
         }, 'Generating image via orchestrator');
 
         // Capture request start time for cost tracking
@@ -681,7 +746,10 @@ export async function imagegenRoutes(app: FastifyInstance): Promise<void> {
           width,
           height,
           referenceImageUrl,
-          params.referenceStrength
+          params.referenceStrength,
+          false,
+          params.companionId,
+          requireNsfw
         );
 
         let finalUrl: string;
@@ -689,13 +757,13 @@ export async function imagegenRoutes(app: FastifyInstance): Promise<void> {
         let imageId: string | undefined;
 
         // Always save to S3 if userId and sessionId provided
-        if (saveToS3 && params.userId && params.sessionId) {
+        if (saveToS3 && userIdForStorage && sessionIdForStorage) {
           try {
             // Upload to S3 directly (image already in buffer)
             const s3Result = await uploadToS3(
               imageBuffer,
-              params.userId,
-              params.sessionId,
+              userIdForStorage,
+              sessionIdForStorage,
               cacheKey
             );
 
@@ -704,8 +772,9 @@ export async function imagegenRoutes(app: FastifyInstance): Promise<void> {
 
             // Save metadata to database
             imageId = await saveImageMetadata(
-              params.userId,
-              params.sessionId,
+              userIdForStorage,
+              sessionIdForStorage,
+              params.turnId,
               params.companionId,
               s3Key,
               finalUrl,
@@ -726,8 +795,8 @@ export async function imagegenRoutes(app: FastifyInstance): Promise<void> {
             try {
               const llmUsage = getLLMUsageService();
               await llmUsage.recordImageUsage({
-                user_id: params.userId,
-                session_id: params.sessionId ?? null,
+                user_id: userIdForStorage,
+                session_id: sessionIdForStorage ?? null,
                 companion_id: params.companionId ?? null,
                 provider,
                 model: modelId,
@@ -744,8 +813,8 @@ export async function imagegenRoutes(app: FastifyInstance): Promise<void> {
               enqueueImageRenditionJob({
                 originalS3Key: s3Key,
                 bucket: S3_MEDIA_BUCKET,
-                userId: params.userId,
-                sessionId: params.sessionId,
+                userId: userIdForStorage,
+                sessionId: sessionIdForStorage,
                 cacheKey,
                 imageId,
                 companionId: params.companionId,
@@ -1001,6 +1070,7 @@ export async function imagegenRoutes(app: FastifyInstance): Promise<void> {
           const imageId = await saveImageMetadata(
             userId,
             anchorSessionId,
+            undefined,
             companionId,
             s3Key,
             s3Url,
@@ -1292,7 +1362,9 @@ export async function imagegenRoutes(app: FastifyInstance): Promise<void> {
               1248,
               isPrimary ? undefined : primaryAnchorUrl || undefined,
               isPrimary ? undefined : 0.85,
-              true  // isAnchor - use high quality anchor workflow
+              true,  // isAnchor - use high quality anchor workflow
+              companionId,
+              false
             );
 
             const cacheKey = `anchor-${emotionalState}-${Date.now()}`;
@@ -1351,6 +1423,7 @@ export async function imagegenRoutes(app: FastifyInstance): Promise<void> {
             const imageId = await saveImageMetadata(
               userId,
               anchorSessionId,
+              undefined,
               companionId,
               s3Key,
               s3Url,
