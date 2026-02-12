@@ -253,3 +253,9 @@ reports/
 
 # Exception for Next.js env config module
 !packages/web/src/env/
+
+# Gas Town (added by gt)
+.runtime/
+.claude/
+.beads/
+.logs/
