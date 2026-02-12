@@ -1,10 +1,16 @@
 /**
  * Voice Service
  * Handles ElevenLabs STT (speech-to-text) and TTS (text-to-speech) integration.
+ * STT uses the official @elevenlabs/elevenlabs-js SDK for realtime transcription.
  */
 
-import WebSocketLib from 'ws';
-import type { WebSocket as WebSocketType } from 'ws';
+import {
+  ElevenLabsClient,
+  RealtimeConnection,
+  RealtimeEvents,
+  AudioFormat,
+  CommitStrategy,
+} from '@elevenlabs/elevenlabs-js';
 import { logger } from '../observability/logger.js';
 import { env } from '../env.js';
 
@@ -25,12 +31,12 @@ export interface VoiceTuning {
 }
 
 export interface STTSession {
-  ws: WebSocketType;
+  connection: RealtimeConnection | null;
   isConnected: boolean;
   onTranscription: (text: string, isFinal: boolean) => void;
   onError: (error: string) => void;
   pendingAudioChunks: string[];
-  pendingEnd: boolean;
+  pendingCommit: boolean;
 }
 
 export interface TTSOptions {
@@ -41,6 +47,21 @@ export interface TTSOptions {
 }
 
 // ============================================================================
+// ElevenLabs Client Singleton
+// ============================================================================
+
+let elevenLabsClient: ElevenLabsClient | null = null;
+
+function getElevenLabsClient(): ElevenLabsClient {
+  if (!elevenLabsClient) {
+    elevenLabsClient = new ElevenLabsClient({
+      apiKey: ELEVENLABS_API_KEY,
+    });
+  }
+  return elevenLabsClient;
+}
+
+// ============================================================================
 // Voice Service Implementation
 // ============================================================================
 
@@ -48,7 +69,7 @@ export class VoiceService {
   private sttSessions = new Map<string, STTSession>();
 
   /**
-   * Start a new STT (speech-to-text) session
+   * Start a new STT (speech-to-text) session using ElevenLabs SDK
    */
   async startSTTSession(
     clientId: string,
@@ -61,96 +82,99 @@ export class VoiceService {
       return false;
     }
 
-    // Close existing session if any (synchronous — no await to avoid yielding
-    // to the event loop before the new session is registered in the map)
+    // Close existing session if any (synchronous to avoid yielding)
     this.stopSTTSession(clientId);
 
+    // Register session in map BEFORE async connect to allow audio buffering
+    const session: STTSession = {
+      connection: null,
+      isConnected: false,
+      onTranscription,
+      onError,
+      pendingAudioChunks: [],
+      pendingCommit: false,
+    };
+    this.sttSessions.set(clientId, session);
+
     try {
-      const wsUrl = `wss://api.elevenlabs.io/v1/speech-to-text/realtime?model_id=${ELEVENLABS_STT_MODEL}`;
+      const client = getElevenLabsClient();
 
-      const ws = new WebSocketLib(wsUrl, {
-        headers: {
-          'xi-api-key': ELEVENLABS_API_KEY,
-        },
+      logger.info({ clientId, model: ELEVENLABS_STT_MODEL }, 'Starting STT session');
+
+      const connection = await client.speechToText.realtime.connect({
+        modelId: ELEVENLABS_STT_MODEL,
+        audioFormat: AudioFormat.PCM_16000,
+        sampleRate: 16000,
+        languageCode: 'en',
+        commitStrategy: CommitStrategy.MANUAL,
       });
 
-      const session: STTSession = {
-        ws: ws as unknown as WebSocketType,
-        isConnected: false,
-        onTranscription,
-        onError,
-        pendingAudioChunks: [],
-        pendingEnd: false,
-      };
+      // Check if session was replaced while we were connecting
+      if (this.sttSessions.get(clientId) !== session) {
+        logger.info({ clientId }, 'STT session replaced during connect, closing new connection');
+        connection.close();
+        return false;
+      }
 
-      ws.on('open', () => {
-        session.isConnected = true;
-        logger.info({ clientId, bufferedChunks: session.pendingAudioChunks.length }, 'STT session connected');
+      session.connection = connection;
+      session.isConnected = true;
 
-        // Send initial configuration
-        ws.send(
-          JSON.stringify({
-            type: 'config',
-            sample_rate: 16000,
-            encoding: 'pcm_s16le',
-            language: 'en',
-          })
-        );
+      logger.info({ clientId, bufferedChunks: session.pendingAudioChunks.length }, 'STT session connected');
 
-        // Flush any buffered audio chunks that arrived before connection
-        for (const chunk of session.pendingAudioChunks) {
-          ws.send(
-            JSON.stringify({
-              type: 'audio',
-              data: chunk,
-            })
-          );
-        }
-        session.pendingAudioChunks = [];
-
-        // If voice_end arrived before connection, send end signal now
-        if (session.pendingEnd) {
-          ws.send(JSON.stringify({ type: 'end' }));
-          session.pendingEnd = false;
+      // Set up event handlers
+      connection.on(RealtimeEvents.PARTIAL_TRANSCRIPT, (data) => {
+        const text = data.text || '';
+        if (text) {
+          onTranscription(text, false);
         }
       });
 
-      ws.on('message', (data: Buffer) => {
-        try {
-          const message = JSON.parse(data.toString());
+      connection.on(RealtimeEvents.COMMITTED_TRANSCRIPT, (data) => {
+        const text = data.text || '';
+        logger.info({ clientId, text: text.substring(0, 80) }, 'STT committed transcript');
+        onTranscription(text, true);
+      });
 
-          if (message.type === 'transcript') {
-            const text = message.transcript || '';
-            const isFinal = message.is_final || false;
-            onTranscription(text, isFinal);
-          } else if (message.type === 'error') {
-            logger.error({ clientId, error: message }, 'STT error');
-            onError(message.message || 'STT error');
-          }
-        } catch (err) {
-          logger.error({ clientId, err }, 'Failed to parse STT message');
+      connection.on(RealtimeEvents.ERROR, (error) => {
+        if ('message_type' in error) {
+          logger.error({ clientId, type: error.message_type, error: error.error }, 'STT server error');
+          onError(error.error || 'STT error');
+        } else {
+          logger.error({ clientId, err: error }, 'STT WebSocket error');
+          onError(error.message || 'STT error');
         }
       });
 
-      ws.on('error', (err) => {
-        logger.error({ clientId, err }, 'STT WebSocket error');
-        onError(err.message);
-      });
-
-      ws.on('close', (code, reason) => {
-        session.isConnected = false;
-        logger.info({ clientId, code, reason: reason.toString() }, 'STT session closed');
+      connection.on(RealtimeEvents.CLOSE, () => {
+        logger.info({ clientId }, 'STT session closed');
         // Only delete from map if this session is still the current one
-        // (a new startSTTSession call may have already replaced it)
         if (this.sttSessions.get(clientId) === session) {
           this.sttSessions.delete(clientId);
         }
       });
 
-      this.sttSessions.set(clientId, session);
+      // Flush any buffered audio chunks that arrived before connection
+      for (const chunk of session.pendingAudioChunks) {
+        connection.send({ audioBase64: chunk });
+      }
+      if (session.pendingAudioChunks.length > 0) {
+        logger.info({ clientId, flushed: session.pendingAudioChunks.length }, 'Flushed buffered audio chunks');
+      }
+      session.pendingAudioChunks = [];
+
+      // If commit was requested before connection, commit now
+      if (session.pendingCommit) {
+        connection.commit();
+        session.pendingCommit = false;
+      }
+
       return true;
     } catch (err) {
       logger.error({ clientId, err }, 'Failed to start STT session');
+      // Clean up the session we registered
+      if (this.sttSessions.get(clientId) === session) {
+        this.sttSessions.delete(clientId);
+      }
       onError(err instanceof Error ? err.message : 'Failed to start STT');
       return false;
     }
@@ -168,25 +192,17 @@ export class VoiceService {
     }
 
     try {
-      // Decode base64 to buffer
-      const audioBuffer = Buffer.from(base64AudioData, 'base64');
-      const chunk = audioBuffer.toString('base64');
+      logger.info({ clientId, isConnected: session.isConnected, dataLen: base64AudioData.length }, 'sendAudioToSTT called');
 
-      if (!session.isConnected) {
-        // Buffer audio until WS connects
-        session.pendingAudioChunks.push(chunk);
-        logger.debug({ clientId, buffered: session.pendingAudioChunks.length }, 'Buffered audio chunk (WS connecting)');
+      if (!session.isConnected || !session.connection) {
+        // Buffer audio until connection is ready
+        session.pendingAudioChunks.push(base64AudioData);
+        logger.info({ clientId, buffered: session.pendingAudioChunks.length }, 'Buffered audio chunk (connecting)');
         return true;
       }
 
-      // Send audio chunk
-      session.ws.send(
-        JSON.stringify({
-          type: 'audio',
-          data: chunk,
-        })
-      );
-
+      // Send audio via SDK
+      session.connection.send({ audioBase64: base64AudioData });
       return true;
     } catch (err) {
       logger.error({ clientId, err }, 'Failed to send audio to STT');
@@ -195,7 +211,7 @@ export class VoiceService {
   }
 
   /**
-   * Signal end of audio input to STT session
+   * Signal end of audio input — commits the transcription
    */
   endSTTAudio(clientId: string): boolean {
     const session = this.sttSessions.get(clientId);
@@ -204,17 +220,17 @@ export class VoiceService {
       return false;
     }
 
-    if (!session.isConnected) {
-      // Buffer end signal until WS connects
-      session.pendingEnd = true;
+    if (!session.isConnected || !session.connection) {
+      // Buffer commit signal until connection is ready
+      session.pendingCommit = true;
       return true;
     }
 
     try {
-      session.ws.send(JSON.stringify({ type: 'end' }));
+      session.connection.commit();
       return true;
     } catch (err) {
-      logger.error({ clientId, err }, 'Failed to end STT audio');
+      logger.error({ clientId, err }, 'Failed to commit STT audio');
       return false;
     }
   }
@@ -234,8 +250,8 @@ export class VoiceService {
 
     if (session) {
       try {
-        if (session.ws.readyState === WebSocketLib.OPEN) {
-          session.ws.close(1000, 'Session ended');
+        if (session.connection) {
+          session.connection.close();
         }
       } catch (err) {
         logger.warn({ clientId, err }, 'Error closing STT session');
@@ -245,108 +261,7 @@ export class VoiceService {
   }
 
   /**
-   * Synthesize text to speech and stream audio chunks
-   */
-  async synthesizeTTS(
-    text: string,
-    options: TTSOptions,
-    onChunk: (data: Buffer, format: string) => void,
-    onEnd: () => void,
-    onError: (error: string) => void
-  ): Promise<void> {
-    if (!ELEVENLABS_API_KEY) {
-      logger.error('ELEVENLABS_API_KEY not configured');
-      onError('Voice service not configured');
-      return;
-    }
-
-    const {
-      voiceId,
-      tuning = {},
-      model = ELEVENLABS_TTS_MODEL,
-      outputFormat = 'mp3_44100_128',
-    } = options;
-
-    try {
-      const wsUrl = `wss://api.elevenlabs.io/v1/text-to-speech/${voiceId}/stream-input?model_id=${model}&output_format=${outputFormat}`;
-
-      const ws = new WebSocketLib(wsUrl, {
-        headers: {
-          'xi-api-key': ELEVENLABS_API_KEY,
-        },
-      });
-
-      ws.on('open', () => {
-        logger.debug({ voiceId, model }, 'TTS WebSocket connected');
-
-        // Send initial configuration with voice settings
-        ws.send(
-          JSON.stringify({
-            text: ' ',
-            voice_settings: {
-              stability: tuning.stability ?? 0.5,
-              similarity_boost: tuning.similarityBoost ?? 0.75,
-              style: tuning.style ?? 0,
-              use_speaker_boost: tuning.useSpeakerBoost ?? true,
-            },
-            generation_config: {
-              chunk_length_schedule: [120, 160, 250, 290],
-            },
-            xi_api_key: ELEVENLABS_API_KEY,
-          })
-        );
-
-        // Send the actual text
-        ws.send(
-          JSON.stringify({
-            text,
-            try_trigger_generation: true,
-          })
-        );
-
-        // Signal end of input
-        ws.send(JSON.stringify({ text: '' }));
-      });
-
-      ws.on('message', (data: Buffer) => {
-        try {
-          const message = JSON.parse(data.toString());
-
-          if (message.audio) {
-            // Decode base64 audio and send chunk
-            const audioBuffer = Buffer.from(message.audio, 'base64');
-            onChunk(audioBuffer, 'mp3');
-          }
-
-          if (message.isFinal) {
-            onEnd();
-            ws.close();
-          }
-        } catch {
-          // Binary audio data
-          if (data.length > 0) {
-            onChunk(data, 'mp3');
-          }
-        }
-      });
-
-      ws.on('error', (err) => {
-        logger.error({ voiceId, err }, 'TTS WebSocket error');
-        onError(err.message);
-      });
-
-      ws.on('close', () => {
-        logger.debug({ voiceId }, 'TTS WebSocket closed');
-        onEnd();
-      });
-    } catch (err) {
-      logger.error({ voiceId, err }, 'Failed to start TTS');
-      onError(err instanceof Error ? err.message : 'Failed to start TTS');
-    }
-  }
-
-  /**
-   * Synthesize text to speech using HTTP streaming (alternative to WebSocket)
+   * Synthesize text to speech using HTTP streaming
    */
   async synthesizeTTSStream(
     text: string,
