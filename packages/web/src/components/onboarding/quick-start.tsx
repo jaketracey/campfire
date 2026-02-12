@@ -1,7 +1,8 @@
 'use client';
 
 import { useState, useCallback, useRef, useEffect } from 'react';
-import { useRouter, useSearchParams } from 'next/navigation';
+import { useRouter, useSearchParams, usePathname } from 'next/navigation';
+import type { Route } from 'next';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
@@ -199,6 +200,7 @@ function generateLocalRandomCompanion(): GeneratedCompanionData {
 export function QuickStart({ onBack }: QuickStartProps) {
   const router = useRouter();
   const searchParams = useSearchParams();
+  const pathname = usePathname();
   const { toast } = useToast();
   const { isAuthenticated } = useAuth();
   const { reset: resetOnboarding, setQuickStartActive } = useOnboardingStore();
@@ -224,6 +226,7 @@ export function QuickStart({ onBack }: QuickStartProps) {
 
   // Helper to navigate to a phase
   const navigateToPhase = useCallback((phase: 'carousel' | 'creating' | null) => {
+    const routeBase = pathname || '/onboard';
     const newParams = new URLSearchParams(searchParams.toString());
     if (phase) {
       newParams.set('phase', phase);
@@ -232,8 +235,9 @@ export function QuickStart({ onBack }: QuickStartProps) {
       newParams.delete('qs');
     }
     const queryString = newParams.toString();
-    router.push(queryString ? `/onboard?${queryString}` : '/onboard', { scroll: false });
-  }, [searchParams, router]);
+    const targetPath = (queryString ? `${routeBase}?${queryString}` : routeBase) as Route;
+    router.push(targetPath, { scroll: false });
+  }, [pathname, searchParams, router]);
 
   const [isCreating, setIsCreating] = useState(false);
   const [generatedCompanion, setGeneratedCompanion] = useState<GeneratedCompanionData | null>(null);
@@ -264,6 +268,7 @@ export function QuickStart({ onBack }: QuickStartProps) {
   const [anchorImages, setAnchorImages] = useState<AnchorImage[]>([]);
   const [visibleImageCount, setVisibleImageCount] = useState(0);
   const [sessionId, setSessionId] = useState<string | null>(null);
+  const [anchorsGenerationComplete, setAnchorsGenerationComplete] = useState(false);
 
   const {
     register,
@@ -300,6 +305,8 @@ export function QuickStart({ onBack }: QuickStartProps) {
 
   // Start API calls in background while carousel plays
   const startApiCalls = useCallback(async (name: string, randomCompanion: GeneratedCompanionData) => {
+    setAnchorsGenerationComplete(false);
+
     const personalityDescription = [
       randomCompanion.primaryArchetype.description,
       randomCompanion.secondaryArchetype
@@ -381,6 +388,7 @@ export function QuickStart({ onBack }: QuickStartProps) {
           onComplete: (result) => {
             console.log('[QuickStart] Anchor generation complete:', result);
             streamCleanupRef.current = null;
+            setAnchorsGenerationComplete(true);
             // Also resolve on complete in case no anchors were received
             if (!resolved) {
               resolved = true;
@@ -390,6 +398,7 @@ export function QuickStart({ onBack }: QuickStartProps) {
           onError: (error) => {
             console.error('[QuickStart] Anchor generation error:', error);
             streamCleanupRef.current = null;
+            setAnchorsGenerationComplete(true);
             // Resolve even on error so we don't block forever
             if (!resolved) {
               resolved = true;
@@ -472,6 +481,7 @@ export function QuickStart({ onBack }: QuickStartProps) {
       setAnchorImages([]);
       setVisibleImageCount(0);
       setSessionId(null);
+      setAnchorsGenerationComplete(false);
       setIsCreating(true);
 
       const promise = startApiCalls(parsed.name, parsed.companion);
@@ -486,6 +496,7 @@ export function QuickStart({ onBack }: QuickStartProps) {
             variant: 'destructive',
           });
           setIsCreating(false);
+          setAnchorsGenerationComplete(false);
           navigateToPhase(null);
           setApiPromise(null);
         });
@@ -497,6 +508,14 @@ export function QuickStart({ onBack }: QuickStartProps) {
   // Handle name submission - generate companion data and optionally start API calls
   const onNameSubmit = useCallback(async () => {
     if (!isValid || !companionName) return;
+
+    setRevealPhase('loading');
+    setBackstoryResult(null);
+    setAnchorImages([]);
+    setVisibleImageCount(0);
+    setSessionId(null);
+    setAnchorsGenerationComplete(false);
+    setApiPromise(null);
 
     // Track quick start name step
     trackOnboardingStep(1, 'quick-name', 'quick');
@@ -615,6 +634,7 @@ export function QuickStart({ onBack }: QuickStartProps) {
           variant: 'destructive',
         });
         setIsCreating(false);
+        setAnchorsGenerationComplete(false);
         navigateToPhase(null);
         setApiPromise(null);
       }
@@ -645,13 +665,13 @@ export function QuickStart({ onBack }: QuickStartProps) {
   // Transition from backstory to images after delay
   useEffect(() => {
     if (step !== 'creating') return;
-    if (revealPhase === 'backstory' && anchorImages.length > 0) {
+    if (revealPhase === 'backstory' && (anchorImages.length > 0 || anchorsGenerationComplete)) {
       const timer = setTimeout(() => {
-        setRevealPhase('images');
+        setRevealPhase(anchorImages.length > 0 ? 'images' : 'ready');
       }, 3000); // 3 seconds to read backstory
       return () => clearTimeout(timer);
     }
-  }, [revealPhase, anchorImages.length, step]);
+  }, [revealPhase, anchorImages.length, anchorsGenerationComplete, step]);
 
   // Stagger image reveals
   useEffect(() => {
@@ -667,13 +687,18 @@ export function QuickStart({ onBack }: QuickStartProps) {
   // Transition to ready after all images shown
   useEffect(() => {
     if (step !== 'creating') return;
-    if (revealPhase === 'images' && visibleImageCount >= anchorImages.length && anchorImages.length > 0) {
+    if (
+      revealPhase === 'images' &&
+      anchorsGenerationComplete &&
+      visibleImageCount >= anchorImages.length &&
+      anchorImages.length > 0
+    ) {
       const timer = setTimeout(() => {
         setRevealPhase('ready');
       }, 800);
       return () => clearTimeout(timer);
     }
-  }, [revealPhase, visibleImageCount, anchorImages.length, step]);
+  }, [revealPhase, visibleImageCount, anchorImages.length, anchorsGenerationComplete, step]);
 
   // Handle ignite - redirect to chat or signup
   const handleIgnite = useCallback(() => {
@@ -688,7 +713,8 @@ export function QuickStart({ onBack }: QuickStartProps) {
           companion: generatedCompanion,
         }));
       }
-      router.push('/signup?returnTo=/onboard/quick');
+      const returnTo = pathname || '/onboard';
+      router.push(`/signup?returnTo=${encodeURIComponent(returnTo)}`);
       return;
     }
 
@@ -696,7 +722,7 @@ export function QuickStart({ onBack }: QuickStartProps) {
     // Clear onboarding state so /onboarding shows intro screen
     resetOnboarding();
     router.push(`/chat/${sessionId}`);
-  }, [sessionId, router, resetOnboarding, isAuthenticated, generatedCompanion, companionName]);
+  }, [sessionId, router, resetOnboarding, isAuthenticated, generatedCompanion, companionName, pathname]);
 
   return (
     <div className={`w-full mx-auto ${step === 'carousel' ? 'max-w-5xl' : 'max-w-2xl'}`}>

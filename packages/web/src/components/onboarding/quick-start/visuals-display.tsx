@@ -2,10 +2,17 @@
 
 import { useState, useEffect, useMemo } from 'react';
 import { motion } from 'framer-motion';
-import { Check, Sparkles } from 'lucide-react';
+import { Check } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import Image from 'next/image';
-import type { AppearanceEthnicity, AppearanceBodyType, AppearanceHairColor, SizeCategory, CompanionGender } from '@/stores/onboarding-store';
+import type {
+  AppearanceEthnicity,
+  AppearanceHairColor,
+  SizeCategory,
+  CompanionGender,
+  FemaleBodyType,
+  MaleBodyType,
+} from '@/stores/onboarding-store';
 import type { CompanionAppearance } from '@/lib/api/companions';
 
 // Options matching step-3-visuals.tsx
@@ -23,11 +30,18 @@ const ethnicityOptions: Array<{
   { id: 'mixed', name: 'Mixed', description: 'Diverse heritage' },
 ];
 
-const bodyTypeOptions: Array<{ id: AppearanceBodyType; name: string }> = [
+const femaleBodyTypeOptions: Array<{ id: FemaleBodyType; name: string }> = [
   { id: 'slim', name: 'Slim' },
   { id: 'athletic', name: 'Athletic' },
   { id: 'curvy', name: 'Curvy' },
   { id: 'plus-size', name: 'Plus Size' },
+];
+
+const maleBodyTypeOptions: Array<{ id: MaleBodyType; name: string }> = [
+  { id: 'slim', name: 'Slim' },
+  { id: 'athletic', name: 'Athletic' },
+  { id: 'muscular', name: 'Muscular' },
+  { id: 'dad-bod', name: 'Dad Bod' },
 ];
 
 const hairColorOptions: Array<{ id: AppearanceHairColor; name: string; color: string }> = [
@@ -71,6 +85,7 @@ export function VisualsDisplay({
   autoAdvance = true,
 }: VisualsDisplayProps) {
   const { ethnicity, bodyType, hairColor, gender } = appearance;
+  const bodyTypeOptions = gender === 'male' ? maleBodyTypeOptions : femaleBodyTypeOptions;
   const [showEthnicity, setShowEthnicity] = useState(false);
   const [showBodyType, setShowBodyType] = useState(false);
   const [showHairColor, setShowHairColor] = useState(false);
