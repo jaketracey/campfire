@@ -246,13 +246,21 @@ function mapCompanionResponse(companion: {
   updated_at: Date;
 }, avatarUrl?: string | null, avatarRenditions?: ImageRenditions | null) {
   const spec = companion.spec;
+  // Prefer compressed rendition for avatarUrl to save bandwidth
+  // Priority: small webp > thumb webp > original avatarUrl
+  const optimizedAvatarUrl =
+    avatarRenditions?.small?.webp?.url ||
+    avatarRenditions?.thumb?.webp?.url ||
+    avatarRenditions?.medium?.webp?.url ||
+    avatarUrl ||
+    null;
   return {
     id: companion.id,
     name: companion.name,
     description: null, // Could be stored in extended spec in the future
     personality: JSON.stringify(spec?.personality || {}),
     voiceId: spec?.voice?.voice_id || null,
-    avatarUrl: avatarUrl ?? null,
+    avatarUrl: optimizedAvatarUrl,
     avatarRenditions: avatarRenditions ?? null,
     isPublic: companion.is_public,
     isActive: companion.status === 'active',
@@ -534,7 +542,10 @@ export async function companionsRoutes(app: FastifyInstance): Promise<void> {
         ...mapCompanionResponse(companion, avatarData?.assetUrl, avatarRenditions),
         latestSessionId: latestSession?.id || null,
         latestSessionUpdatedAt: latestSession?.updatedAt || null,
-        latestConversationImageUrl: latestImageData?.s3_url || null,
+        latestConversationImageUrl:
+          latestImageData?.renditions?.small?.webp?.url ||
+          latestImageData?.renditions?.thumb?.webp?.url ||
+          latestImageData?.s3_url || null,
         latestConversationImageRenditions: latestImageData?.renditions || null,
       };
     });
