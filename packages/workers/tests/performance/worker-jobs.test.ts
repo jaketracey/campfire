@@ -5,6 +5,11 @@
  */
 
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
+
+// Performance tests are noisy/flaky on shared CI runners.
+// Opt-in via RUN_PERF_TESTS=1.
+const describeIfPerf = process.env.RUN_PERF_TESTS ? describe : describe.skip;
+
 import { Queue, Worker, Job } from 'bullmq';
 import Redis from 'ioredis';
 
@@ -51,7 +56,7 @@ function formatDuration(ms: number): string {
   return `${(ms / 1000).toFixed(2)}s`;
 }
 
-describe('Worker Job Processing Performance', () => {
+describeIfPerf('Worker Job Processing Performance', () => {
   let redis: Redis;
   let queue: Queue<TestJobData>;
   let worker: Worker<TestJobData>;

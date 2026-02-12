@@ -7,7 +7,7 @@
     "dev": "tsx watch src/index.ts",
     "build": "tsc",
     "start": "node dist/index.js",
-    "test": "vitest",
+    "test": "vitest run",
     "test:unit": "vitest run",
     "test:performance": "vitest run tests/performance/worker-jobs.test.ts",
     "lint": "eslint src/",

@@ -17,8 +17,16 @@ const mockRepository = {
   update: vi.fn(),
   delete: vi.fn(),
   list: vi.fn(),
+  // stats + image management
+  getStats: vi.fn(),
+  addImageKey: vi.fn(),
+  removeImageKey: vi.fn(),
+
+  // legacy fields (kept for backwards compatibility in some tests)
   count: vi.fn(),
   countByStatus: vi.fn(),
+
+  // sample generation
   createSample: vi.fn(),
   findSampleById: vi.fn(),
   updateSample: vi.fn(),
@@ -334,11 +342,10 @@ describe('InfluencerModelsService', () => {
     });
 
     it('should throw error when model not found', async () => {
-      mockRepository.findById.mockResolvedValue(null);
+      // Service delegates not-found handling to the repository.
+      mockRepository.update.mockRejectedValueOnce(new Error('Model not found'));
 
-      await expect(service.update(mockModelId, { name: 'Test' })).rejects.toThrow(
-        'Model not found'
-      );
+      await expect(service.update(mockModelId, { name: 'Test' })).rejects.toThrow('Model not found');
     });
   });
 
@@ -362,8 +369,13 @@ describe('InfluencerModelsService', () => {
   describe('list', () => {
     it('should list models with pagination', async () => {
       const mockModels = [createMockModel({ id: '1' }), createMockModel({ id: '2' })];
-      mockRepository.list.mockResolvedValue(mockModels);
-      mockRepository.count.mockResolvedValue(2);
+      mockRepository.list.mockResolvedValue({
+        data: mockModels,
+        total: 2,
+        limit: 10,
+        offset: 0,
+        hasMore: false,
+      });
 
       const result = await service.list({ limit: 10, offset: 0 });
 
@@ -374,11 +386,14 @@ describe('InfluencerModelsService', () => {
     });
 
     it('should indicate hasMore when more models exist', async () => {
-      const mockModels = Array(10)
-        .fill(null)
-        .map((_, i) => createMockModel({ id: `${i}` }));
-      mockRepository.list.mockResolvedValue(mockModels);
-      mockRepository.count.mockResolvedValue(25);
+      const mockModels = Array.from({ length: 10 }, (_, i) => createMockModel({ id: `${i}` }));
+      mockRepository.list.mockResolvedValue({
+        data: mockModels,
+        total: 25,
+        limit: 10,
+        offset: 0,
+        hasMore: true,
+      });
 
       const result = await service.list({ limit: 10, offset: 0 });
 
@@ -388,24 +403,17 @@ describe('InfluencerModelsService', () => {
 
   describe('getStats', () => {
     it('should return model statistics', async () => {
-      mockRepository.count.mockResolvedValue(10);
-      mockRepository.countByStatus.mockImplementation((status) => {
-        const counts: Record<string, number> = {
-          ready: 5,
-          training: 2,
-          failed: 1,
-        };
-        return Promise.resolve(counts[status] || 0);
-      });
-
-      const result = await service.getStats();
-
-      expect(result).toEqual({
+      const stats = {
         total: 10,
         ready: 5,
         training: 2,
         failed: 1,
-      });
+      };
+      mockRepository.getStats.mockResolvedValue(stats);
+
+      const result = await service.getStats();
+
+      expect(result).toEqual(stats);
     });
   });
 
@@ -693,12 +701,10 @@ describe('InfluencerModelsService', () => {
       expect(result).toEqual([]);
     });
 
-    it('should return empty array when model not found', async () => {
+    it('should throw when model not found', async () => {
       mockRepository.findById.mockResolvedValue(null);
 
-      const result = await service.getImageUrls(mockModelId);
-
-      expect(result).toEqual([]);
+      await expect(service.getImageUrls(mockModelId)).rejects.toThrow('Model not found');
     });
   });
 
