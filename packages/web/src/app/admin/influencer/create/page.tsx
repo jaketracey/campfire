@@ -33,6 +33,7 @@ import { cn } from '@/lib/utils';
 
 const MIN_IMAGES = 15;
 const MAX_IMAGES = 25;
+const MAX_PARALLEL_UPLOADS = 3;
 
 type Step = 'config' | 'upload' | 'train';
 
@@ -164,51 +165,81 @@ export default function AdminInfluencerCreatePage() {
   const uploadFiles = async (files: File[]) => {
     if (!model) return;
 
+    const imageFiles = files.filter((f) => f.type.startsWith('image/'));
+    if (imageFiles.length === 0) {
+      setError('Please select image files only');
+      return;
+    }
+
+    setError(null);
     const currentImageCount = model.imageUrls.length;
     const remainingSlots = MAX_IMAGES - currentImageCount;
-    const filesToUpload = files.slice(0, remainingSlots);
+    const filesToUpload = imageFiles.slice(0, remainingSlots);
+    if (filesToUpload.length === 0) {
+      return;
+    }
 
-    for (const file of filesToUpload) {
-      const fileId = `${file.name}-${Date.now()}`;
-      setUploadingFiles((prev) => {
-        const next = new Map(prev);
-        next.set(fileId, { file, progress: 0, status: 'uploading' });
-        return next;
-      });
+    const queue = filesToUpload.map((file, index) => ({
+      file,
+      fileId: `${Date.now()}-${index}-${file.name}`,
+    }));
 
-      try {
-        const { s3Key } = await uploadImageToS3(model.id, file, (progress) => {
+    const runWorker = async () => {
+      while (queue.length > 0) {
+        const nextItem = queue.shift();
+        if (!nextItem) return;
+
+        const { file, fileId } = nextItem;
+        setUploadingFiles((prev) => {
+          const next = new Map(prev);
+          next.set(fileId, { file, progress: 0, status: 'uploading' });
+          return next;
+        });
+
+        try {
+          const { s3Key } = await uploadImageToS3(model.id, file, (progress) => {
+            setUploadingFiles((prev) => {
+              const next = new Map(prev);
+              const existing = next.get(fileId);
+              if (existing) {
+                next.set(fileId, { ...existing, progress });
+              }
+              return next;
+            });
+          });
+
           setUploadingFiles((prev) => {
             const next = new Map(prev);
-            const existing = next.get(fileId);
-            if (existing) {
-              next.set(fileId, { ...existing, progress });
-            }
+            next.set(fileId, { file, progress: 100, status: 'done', s3Key });
             return next;
           });
-        });
-
-        setUploadingFiles((prev) => {
-          const next = new Map(prev);
-          next.set(fileId, { file, progress: 100, status: 'done', s3Key });
-          return next;
-        });
-
-        // Refresh model to get updated image list
-        const updated = await getInfluencerModel(model.id);
-        setModel(updated);
-      } catch (err) {
-        setUploadingFiles((prev) => {
-          const next = new Map(prev);
-          next.set(fileId, {
-            file,
-            progress: 0,
-            status: 'error',
-            error: err instanceof Error ? err.message : 'Upload failed',
+        } catch (err) {
+          setUploadingFiles((prev) => {
+            const next = new Map(prev);
+            next.set(fileId, {
+              file,
+              progress: 0,
+              status: 'error',
+              error: err instanceof Error ? err.message : 'Upload failed',
+            });
+            return next;
           });
-          return next;
-        });
+        }
       }
+    };
+
+    const workers = Array.from(
+      { length: Math.min(MAX_PARALLEL_UPLOADS, queue.length) },
+      () => runWorker()
+    );
+    await Promise.all(workers);
+
+    // Refresh model once after batch upload to avoid N refetches.
+    try {
+      const refreshed = await getInfluencerModel(model.id);
+      setModel(refreshed);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to refresh uploaded images');
     }
 
     // Clear completed uploads after a delay
@@ -228,11 +259,9 @@ export default function AdminInfluencerCreatePage() {
   const handleRemoveImage = async (s3Key: string) => {
     if (!model) return;
     try {
-      const updated = await removeModelImage(model.id, s3Key);
-      setModel({
-        ...updated,
-        imageUrls: model.imageUrls.filter((img) => img.s3Key !== s3Key),
-      });
+      await removeModelImage(model.id, s3Key);
+      const refreshed = await getInfluencerModel(model.id);
+      setModel(refreshed);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to remove image');
     }

@@ -33,6 +33,7 @@ export const WorkersEnvSchema = z.object({
 
   ORCHESTRATOR_URL: z.string().url().default('http://localhost:8000'),
   WEB_URL: z.string().url().default('https://ignite.cam'),
+  FAL_API_KEY: z.string().optional(),
 
   OPENAI_API_KEY: z.string().optional(),
 
@@ -78,4 +79,3 @@ export function resetWorkersEnvForTests(): void {
 }
 
 export const env = getWorkersEnv();
-

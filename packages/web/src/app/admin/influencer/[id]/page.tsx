@@ -24,8 +24,8 @@ import {
   getLoraDownloadUrl,
   generateSample,
   listSamples,
-  getSample,
   deleteSample,
+  refreshSampleUrl,
   type InfluencerModelWithImages,
   type InfluencerModelSample,
 } from '@/lib/api/influencer-models';
@@ -62,6 +62,7 @@ export default function AdminInfluencerModelPage() {
   const [error, setError] = useState<string | null>(null);
   const [isGenerating, setIsGenerating] = useState(false);
   const [showAdvanced, setShowAdvanced] = useState(false);
+  const [imageRefreshAttempts, setImageRefreshAttempts] = useState<Set<string>>(new Set());
 
   // Generation form state
   const [prompt, setPrompt] = useState('');
@@ -96,6 +97,7 @@ export default function AdminInfluencerModelPage() {
       ]);
       setModel(modelData);
       setSamples(samplesData.samples);
+      setImageRefreshAttempts(new Set());
 
       // Start polling if there are pending/generating samples
       const hasPending = samplesData.samples.some(
@@ -171,6 +173,29 @@ export default function AdminInfluencerModelPage() {
       setSamples((prev) => prev.filter((s) => s.id !== sampleId));
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to delete sample');
+    }
+  };
+
+  const handleSampleImageError = async (sampleId: string) => {
+    if (imageRefreshAttempts.has(sampleId)) {
+      return;
+    }
+
+    setImageRefreshAttempts((prev) => {
+      const next = new Set(prev);
+      next.add(sampleId);
+      return next;
+    });
+
+    try {
+      const refreshedUrl = await refreshSampleUrl(modelId, sampleId);
+      setSamples((prev) =>
+        prev.map((sample) =>
+          sample.id === sampleId ? { ...sample, imageUrl: refreshedUrl } : sample
+        )
+      );
+    } catch (err) {
+      console.error('Failed to refresh sample URL:', err);
     }
   };
 
@@ -520,6 +545,9 @@ export default function AdminInfluencerModelPage() {
                         src={sample.imageUrl}
                         alt={sample.prompt}
                         className="w-full h-full object-cover"
+                        onError={() => {
+                          void handleSampleImageError(sample.id);
+                        }}
                       />
                     ) : (
                       <div className="w-full h-full flex flex-col items-center justify-center bg-white/[0.02]">

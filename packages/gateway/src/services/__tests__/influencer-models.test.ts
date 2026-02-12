@@ -8,7 +8,7 @@
  * - Sample generation
  */
 
-import { describe, it, expect, beforeEach, vi, type Mock } from 'vitest';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
 
 // Mock dependencies before imports
 const mockRepository = {
@@ -40,6 +40,7 @@ const mockS3Client = {
 };
 
 const mockGetSignedUrl = vi.fn();
+const mockEnqueueInfluencerSampleGenerationJob = vi.fn();
 
 vi.mock('../../repositories/influencer-models.js', () => ({
   getInfluencerModelsRepository: () => mockRepository,
@@ -88,6 +89,11 @@ vi.mock('../../env.js', () => ({
     AWS_REGION: 'us-east-1',
     FAL_API_KEY: 'test-fal-key',
   },
+}));
+
+vi.mock('../../utils/queue.js', () => ({
+  enqueueInfluencerSampleGenerationJob: (...args: unknown[]) =>
+    mockEnqueueInfluencerSampleGenerationJob(...args),
 }));
 
 // Import after mocking
@@ -144,6 +150,7 @@ describe('InfluencerModelsService', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    mockEnqueueInfluencerSampleGenerationJob.mockResolvedValue(true);
     service = new InfluencerModelsService();
   });
 
@@ -472,7 +479,7 @@ describe('InfluencerModelsService', () => {
   // ===========================================================================
 
   describe('generateSample', () => {
-    it('should create sample and start generation', async () => {
+    it('should create sample and enqueue generation job', async () => {
       const mockModel = createMockModel({
         status: 'ready',
         fal_result_url: 'https://fal.ai/lora.safetensors',
@@ -480,15 +487,6 @@ describe('InfluencerModelsService', () => {
       const mockSample = createMockSample();
       mockRepository.findById.mockResolvedValue(mockModel);
       mockRepository.createSample.mockResolvedValue(mockSample);
-
-      // Mock fetch for FAL API
-      global.fetch = vi.fn().mockResolvedValue({
-        ok: true,
-        json: () =>
-          Promise.resolve({
-            images: [{ url: 'https://fal.ai/image.png' }],
-          }),
-      });
 
       const result = await service.generateSample(mockModelId, {
         prompt: 'A portrait photo',
@@ -501,6 +499,10 @@ describe('InfluencerModelsService', () => {
 
       expect(result.id).toBe(mockSampleId);
       expect(mockRepository.createSample).toHaveBeenCalled();
+      expect(mockEnqueueInfluencerSampleGenerationJob).toHaveBeenCalledWith({
+        sampleId: mockSampleId,
+        modelId: mockModelId,
+      });
     });
 
     it('should throw when model not found', async () => {
@@ -551,6 +553,37 @@ describe('InfluencerModelsService', () => {
           height: 1024,
         })
       ).rejects.toThrow('no LoRA URL');
+    });
+
+    it('should mark sample failed when queue is unavailable', async () => {
+      const mockModel = createMockModel({
+        status: 'ready',
+        fal_result_url: 'https://fal.ai/lora.safetensors',
+      });
+      const mockSample = createMockSample();
+      mockRepository.findById.mockResolvedValue(mockModel);
+      mockRepository.createSample.mockResolvedValue(mockSample);
+      mockEnqueueInfluencerSampleGenerationJob.mockResolvedValue(false);
+
+      await expect(
+        service.generateSample(mockModelId, {
+          prompt: 'Test',
+          guidance_scale: 7.5,
+          lora_scale: 1.0,
+          num_inference_steps: 28,
+          width: 768,
+          height: 1024,
+        })
+      ).rejects.toThrow('queue is unavailable');
+
+      expect(mockRepository.updateSample).toHaveBeenCalledWith(
+        mockSampleId,
+        {
+          status: 'failed',
+          error_message: 'Sample generation queue is unavailable',
+        },
+        undefined
+      );
     });
   });
 

@@ -35,6 +35,9 @@ let emailQueue: Queue<EmailJobData> | null = null;
 // Gift generation queue
 let giftGenerationQueue: Queue<GiftGenerationJobData> | null = null;
 
+// Influencer sample generation queue
+let influencerSampleGenerationQueue: Queue<InfluencerSampleGenerationJobData> | null = null;
+
 interface SummaryJobData {
   type: 'session' | 'daily' | 'weekly';
   userId: string;
@@ -92,6 +95,14 @@ export interface GiftGenerationJobData {
   companionPersonality?: Record<string, number>;
   tokenCost: number;
   tier: 'low' | 'medium' | 'high';
+}
+
+/**
+ * Influencer sample generation job data
+ */
+export interface InfluencerSampleGenerationJobData {
+  sampleId: string;
+  modelId: string;
 }
 
 /**
@@ -380,6 +391,63 @@ export async function enqueueGiftGenerationJob(
 }
 
 /**
+ * Get or create the influencer sample generation queue
+ */
+function getInfluencerSampleGenerationQueue(): Queue<InfluencerSampleGenerationJobData> | null {
+  if (influencerSampleGenerationQueue) {
+    return influencerSampleGenerationQueue;
+  }
+
+  try {
+    const redisConfig = parseRedisUrl(REDIS_URL);
+    influencerSampleGenerationQueue = new Queue<InfluencerSampleGenerationJobData>('influencer-sample-generation', {
+      connection: redisConfig,
+    });
+    logger.info('Influencer sample generation queue initialized');
+    return influencerSampleGenerationQueue;
+  } catch (error) {
+    logger.warn({ error }, 'Failed to initialize influencer sample generation queue - Redis may not be available');
+    return null;
+  }
+}
+
+/**
+ * Enqueue an influencer sample generation job
+ */
+export async function enqueueInfluencerSampleGenerationJob(
+  jobData: InfluencerSampleGenerationJobData
+): Promise<boolean> {
+  const queue = getInfluencerSampleGenerationQueue();
+  if (!queue) {
+    logger.debug('Influencer sample generation queue not available, skipping job');
+    return false;
+  }
+
+  try {
+    await queue.add('generate-sample', jobData, {
+      attempts: 3,
+      backoff: {
+        type: 'exponential',
+        delay: 3000,
+      },
+      removeOnComplete: {
+        age: 3600,
+        count: 1000,
+      },
+      removeOnFail: {
+        age: 86400,
+      },
+      jobId: jobData.sampleId,
+    });
+    logger.debug({ sampleId: jobData.sampleId, modelId: jobData.modelId }, 'Influencer sample generation job enqueued');
+    return true;
+  } catch (error) {
+    logger.error({ error, sampleId: jobData.sampleId }, 'Failed to enqueue influencer sample generation job');
+    return false;
+  }
+}
+
+/**
  * Close queue connections (for graceful shutdown)
  */
 export async function closeQueues(): Promise<void> {
@@ -402,5 +470,9 @@ export async function closeQueues(): Promise<void> {
   if (giftGenerationQueue) {
     await giftGenerationQueue.close();
     giftGenerationQueue = null;
+  }
+  if (influencerSampleGenerationQueue) {
+    await influencerSampleGenerationQueue.close();
+    influencerSampleGenerationQueue = null;
   }
 }

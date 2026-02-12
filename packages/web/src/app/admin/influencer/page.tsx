@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import type { Route } from 'next';
 import {
@@ -14,6 +14,8 @@ import {
   Download,
   Loader2,
   Image as ImageIcon,
+  ChevronLeft,
+  ChevronRight,
 } from 'lucide-react';
 import {
   listInfluencerModels,
@@ -73,53 +75,112 @@ const STATUS_CONFIG = {
   },
 };
 
+const PAGE_SIZE = 20;
+
 export default function AdminInfluencerPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [search, setSearch] = useState('');
+  const [debouncedSearch, setDebouncedSearch] = useState('');
+  const [offset, setOffset] = useState(0);
+  const [hasMore, setHasMore] = useState(false);
   const [models, setModels] = useState<InfluencerModel[]>([]);
   const [stats, setStats] = useState<InfluencerModelStats | null>(null);
   const [deleteId, setDeleteId] = useState<string | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
 
-  const fetchData = useCallback(async () => {
-    try {
-      setError(null);
-      const [modelsRes, statsRes] = await Promise.all([
-        listInfluencerModels({ search: search || undefined, limit: 50 }),
-        getInfluencerModelStats(),
-      ]);
-      setModels(modelsRes.models);
-      setStats(statsRes);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to load models');
-    } finally {
-      setIsLoading(false);
-      setIsRefreshing(false);
-    }
-  }, [search]);
+  // Ignore stale responses from older in-flight list requests.
+  const latestModelsRequestRef = useRef(0);
 
   useEffect(() => {
-    fetchData();
-  }, [fetchData]);
+    const timer = setTimeout(() => {
+      setDebouncedSearch(search.trim());
+      setOffset(0);
+    }, 300);
+
+    return () => clearTimeout(timer);
+  }, [search]);
+
+  const fetchStats = useCallback(async () => {
+    const statsRes = await getInfluencerModelStats();
+    setStats(statsRes);
+  }, []);
+
+  const fetchModels = useCallback(async () => {
+    const requestId = ++latestModelsRequestRef.current;
+    try {
+      setIsLoading(true);
+      setError(null);
+      const modelsRes = await listInfluencerModels({
+        search: debouncedSearch || undefined,
+        limit: PAGE_SIZE,
+        offset,
+      });
+      if (requestId !== latestModelsRequestRef.current) {
+        return;
+      }
+      setModels(modelsRes.models);
+      setHasMore(modelsRes.hasMore);
+    } catch (err) {
+      if (requestId !== latestModelsRequestRef.current) {
+        return;
+      }
+      setError(err instanceof Error ? err.message : 'Failed to load model list');
+    } finally {
+      if (requestId === latestModelsRequestRef.current) {
+        setIsLoading(false);
+      }
+    }
+  }, [debouncedSearch, offset]);
+
+  useEffect(() => {
+    fetchModels();
+  }, [fetchModels]);
+
+  useEffect(() => {
+    fetchStats().catch((err) => {
+      setError(err instanceof Error ? err.message : 'Failed to load stats');
+    });
+  }, [fetchStats]);
+
+  const handleRefresh = async () => {
+    setIsRefreshing(true);
+    try {
+      await Promise.all([fetchModels(), fetchStats()]);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to refresh data');
+    } finally {
+      setIsRefreshing(false);
+    }
+  };
 
   const handleDelete = async () => {
     if (!deleteId) return;
+    const targetId = deleteId;
     setIsDeleting(true);
     try {
-      await deleteInfluencerModel(deleteId);
-      setModels((prev) => prev.filter((m) => m.id !== deleteId));
+      await deleteInfluencerModel(targetId);
       setDeleteId(null);
-      // Refresh stats
-      const statsRes = await getInfluencerModelStats();
-      setStats(statsRes);
+      await Promise.all([fetchModels(), fetchStats()]);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to delete model');
     } finally {
       setIsDeleting(false);
     }
   };
+
+  const handlePrevPage = () => {
+    setOffset(Math.max(0, offset - PAGE_SIZE));
+  };
+
+  const handleNextPage = () => {
+    if (hasMore) {
+      setOffset(offset + PAGE_SIZE);
+    }
+  };
+
+  const currentPage = Math.floor(offset / PAGE_SIZE) + 1;
 
   const handleDownloadLora = async (modelId: string) => {
     try {
@@ -206,10 +267,7 @@ export default function AdminInfluencerPage() {
             <Button
               variant="outline"
               size="sm"
-              onClick={() => {
-                setIsRefreshing(true);
-                fetchData();
-              }}
+              onClick={handleRefresh}
               disabled={isRefreshing}
               className="border-white/10"
             >
@@ -346,6 +404,37 @@ export default function AdminInfluencerPage() {
           )}
         </CardContent>
       </Card>
+
+      {!isLoading && models.length > 0 && (
+        <div className="flex items-center justify-between px-1">
+          <p className="text-sm text-gray-500">
+            Page {currentPage}
+            {hasMore ? '+' : ''} &middot; Showing {models.length} models
+          </p>
+          <div className="flex items-center gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={handlePrevPage}
+              disabled={offset === 0}
+              className="border-white/10 hover:bg-white/10"
+            >
+              <ChevronLeft className="h-4 w-4 mr-1" />
+              Previous
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={handleNextPage}
+              disabled={!hasMore}
+              className="border-white/10 hover:bg-white/10"
+            >
+              Next
+              <ChevronRight className="h-4 w-4 ml-1" />
+            </Button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

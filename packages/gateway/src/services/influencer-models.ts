@@ -14,11 +14,11 @@ import archiver from 'archiver';
 import { Readable } from 'stream';
 import { logger } from '../observability/logger.js';
 import { env } from '../env.js';
-import { getS3Client, getMediaBucket } from '../utils/storage.js';
+import { getS3Client } from '../utils/storage.js';
+import { enqueueInfluencerSampleGenerationJob } from '../utils/queue.js';
 import {
   getInfluencerModelsRepository,
   type InfluencerModel,
-  type InfluencerModelStatus,
   type InfluencerModelListFilters,
   type InfluencerModelSample,
   type InfluencerModelSampleInsert,
@@ -72,10 +72,73 @@ const FAL_API_KEY = env.FAL_API_KEY;
 
 const FAL_API_BASE = 'https://queue.fal.run';
 const FAL_MODEL = 'fal-ai/flux-lora-fast-training';
-const FAL_INFERENCE_MODEL = 'fal-ai/flux-lora';
 
 const MIN_TRAINING_IMAGES = 15;
 const MAX_TRAINING_IMAGES = 25;
+const MAX_FETCH_RETRIES = 3;
+const DEFAULT_FETCH_TIMEOUT_MS = 30_000;
+
+const RETRYABLE_HTTP_STATUSES = new Set([408, 409, 425, 429, 500, 502, 503, 504]);
+
+// =========================================================================
+// Error Types
+// =========================================================================
+
+export class InfluencerServiceError extends Error {
+  constructor(
+    message: string,
+    public readonly code:
+      | 'NOT_FOUND'
+      | 'BAD_REQUEST'
+      | 'CONFIGURATION_ERROR'
+      | 'EXTERNAL_SERVICE_ERROR'
+      | 'QUEUE_UNAVAILABLE',
+    public readonly httpStatus: number,
+    public override readonly cause?: unknown
+  ) {
+    super(message);
+    this.name = 'InfluencerServiceError';
+  }
+}
+
+export class InfluencerNotFoundError extends InfluencerServiceError {
+  constructor(resource: 'Model' | 'Sample', id?: string) {
+    super(
+      `${resource} not found${id ? `: ${id}` : ''}`,
+      'NOT_FOUND',
+      404
+    );
+    this.name = 'InfluencerNotFoundError';
+  }
+}
+
+export class InfluencerBadRequestError extends InfluencerServiceError {
+  constructor(message: string, cause?: unknown) {
+    super(message, 'BAD_REQUEST', 400, cause);
+    this.name = 'InfluencerBadRequestError';
+  }
+}
+
+export class InfluencerConfigurationError extends InfluencerServiceError {
+  constructor(message: string, cause?: unknown) {
+    super(message, 'CONFIGURATION_ERROR', 400, cause);
+    this.name = 'InfluencerConfigurationError';
+  }
+}
+
+export class InfluencerExternalServiceError extends InfluencerServiceError {
+  constructor(message: string, cause?: unknown) {
+    super(message, 'EXTERNAL_SERVICE_ERROR', 502, cause);
+    this.name = 'InfluencerExternalServiceError';
+  }
+}
+
+export class InfluencerQueueUnavailableError extends InfluencerServiceError {
+  constructor(message: string) {
+    super(message, 'QUEUE_UNAVAILABLE', 503);
+    this.name = 'InfluencerQueueUnavailableError';
+  }
+}
 
 // =========================================================================
 // FAL.ai Types
@@ -101,18 +164,6 @@ interface FalResultResponse {
   config_file?: {
     url: string;
   };
-}
-
-interface FalInferenceResponse {
-  images: Array<{
-    url: string;
-    width: number;
-    height: number;
-    content_type: string;
-  }>;
-  seed: number;
-  has_nsfw_concepts: boolean[];
-  prompt: string;
 }
 
 // =========================================================================
@@ -149,7 +200,15 @@ export class InfluencerModelsService {
    */
   async update(id: string, input: UpdateModelInput, tx?: TransactionContext): Promise<InfluencerModel> {
     const validated = UpdateModelSchema.parse(input);
-    const model = await this.repo.update(id, validated, tx);
+    let model: InfluencerModel;
+    try {
+      model = await this.repo.update(id, validated, tx);
+    } catch (error) {
+      if (error instanceof Error && error.name === 'NotFoundError') {
+        throw new InfluencerNotFoundError('Model', id);
+      }
+      throw error;
+    }
     logger.info({ modelId: id }, 'Influencer model updated');
     return model;
   }
@@ -160,7 +219,7 @@ export class InfluencerModelsService {
   async delete(id: string, tx?: TransactionContext): Promise<void> {
     const model = await this.repo.findById(id, tx);
     if (!model) {
-      throw new Error('Model not found');
+      throw new InfluencerNotFoundError('Model', id);
     }
 
     // Delete S3 resources
@@ -210,15 +269,15 @@ export class InfluencerModelsService {
   ): Promise<{ uploadUrl: string; s3Key: string }> {
     const model = await this.repo.findById(modelId);
     if (!model) {
-      throw new Error('Model not found');
+      throw new InfluencerNotFoundError('Model', modelId);
     }
 
     if (model.status !== 'pending' && model.status !== 'uploading') {
-      throw new Error('Cannot add images to model in current status');
+      throw new InfluencerBadRequestError('Cannot add images to model in current status');
     }
 
     if (model.training_images_s3_keys.length >= MAX_TRAINING_IMAGES) {
-      throw new Error(`Maximum ${MAX_TRAINING_IMAGES} images allowed`);
+      throw new InfluencerBadRequestError(`Maximum ${MAX_TRAINING_IMAGES} images allowed`);
     }
 
     const timestamp = Date.now();
@@ -247,11 +306,24 @@ export class InfluencerModelsService {
   async confirmImageUpload(modelId: string, s3Key: string): Promise<InfluencerModel> {
     const model = await this.repo.findById(modelId);
     if (!model) {
-      throw new Error('Model not found');
+      throw new InfluencerNotFoundError('Model', modelId);
+    }
+
+    if (model.status !== 'pending' && model.status !== 'uploading') {
+      throw new InfluencerBadRequestError('Cannot add images to model in current status');
     }
 
     if (!s3Key.startsWith(`influencer-models/${modelId}/`)) {
-      throw new Error('Invalid S3 key for this model');
+      throw new InfluencerBadRequestError('Invalid S3 key for this model');
+    }
+
+    // Idempotent confirm: if key already exists, return current model.
+    if (model.training_images_s3_keys.includes(s3Key)) {
+      return model;
+    }
+
+    if (model.training_images_s3_keys.length >= MAX_TRAINING_IMAGES) {
+      throw new InfluencerBadRequestError(`Maximum ${MAX_TRAINING_IMAGES} images allowed`);
     }
 
     const updated = await this.repo.addImageKey(modelId, s3Key);
@@ -265,11 +337,15 @@ export class InfluencerModelsService {
   async removeImage(modelId: string, s3Key: string): Promise<InfluencerModel> {
     const model = await this.repo.findById(modelId);
     if (!model) {
-      throw new Error('Model not found');
+      throw new InfluencerNotFoundError('Model', modelId);
     }
 
     if (model.status !== 'pending' && model.status !== 'uploading') {
-      throw new Error('Cannot remove images from model in current status');
+      throw new InfluencerBadRequestError('Cannot remove images from model in current status');
+    }
+
+    if (!model.training_images_s3_keys.includes(s3Key)) {
+      throw new InfluencerBadRequestError('Image not found on model');
     }
 
     // Delete from S3
@@ -288,7 +364,7 @@ export class InfluencerModelsService {
   async getImageUrls(modelId: string): Promise<{ s3Key: string; url: string }[]> {
     const model = await this.repo.findById(modelId);
     if (!model) {
-      throw new Error('Model not found');
+      throw new InfluencerNotFoundError('Model', modelId);
     }
 
     const urls = await Promise.all(
@@ -314,48 +390,62 @@ export class InfluencerModelsService {
    */
   async startTraining(modelId: string): Promise<InfluencerModel> {
     if (!FAL_API_KEY) {
-      throw new Error('FAL_API_KEY not configured');
+      throw new InfluencerConfigurationError('FAL_API_KEY not configured');
     }
 
     const model = await this.repo.findById(modelId);
     if (!model) {
-      throw new Error('Model not found');
+      throw new InfluencerNotFoundError('Model', modelId);
     }
 
     if (model.status !== 'pending' && model.status !== 'uploading') {
-      throw new Error(`Cannot start training from status: ${model.status}`);
+      throw new InfluencerBadRequestError(`Cannot start training from status: ${model.status}`);
     }
 
     const imageCount = model.training_images_s3_keys.length;
     if (imageCount < MIN_TRAINING_IMAGES) {
-      throw new Error(`Need at least ${MIN_TRAINING_IMAGES} images, have ${imageCount}`);
+      throw new InfluencerBadRequestError(`Need at least ${MIN_TRAINING_IMAGES} images, have ${imageCount}`);
     }
 
-    // Step 1: Create ZIP of training images
-    logger.info({ modelId, imageCount }, 'Creating training ZIP');
-    const zipS3Key = await this.createTrainingZip(model);
+    try {
+      // Step 1: Create ZIP of training images
+      logger.info({ modelId, imageCount }, 'Creating training ZIP');
+      const zipS3Key = await this.createTrainingZip(model);
 
-    // Step 2: Get presigned URL for the ZIP
-    const zipUrl = await getSignedUrl(
-      this.s3Client,
-      new GetObjectCommand({ Bucket: S3_MEDIA_BUCKET, Key: zipS3Key }),
-      { expiresIn: 86400 } // 24 hours for FAL to download
-    );
+      // Step 2: Get presigned URL for the ZIP
+      const zipUrl = await getSignedUrl(
+        this.s3Client,
+        new GetObjectCommand({ Bucket: S3_MEDIA_BUCKET, Key: zipS3Key }),
+        { expiresIn: 86400 } // 24 hours for FAL to download
+      );
 
-    // Step 3: Submit to FAL.ai
-    logger.info({ modelId }, 'Submitting training job to FAL.ai');
-    const falJobId = await this.submitFalTraining(model, zipUrl);
+      // Step 3: Submit to FAL.ai
+      logger.info({ modelId }, 'Submitting training job to FAL.ai');
+      const falJobId = await this.submitFalTraining(model, zipUrl);
 
-    // Step 4: Update model status
-    const updated = await this.repo.update(modelId, {
-      status: 'training',
-      training_zip_s3_key: zipS3Key,
-      fal_training_job_id: falJobId,
-      training_started_at: new Date(),
-    });
+      // Step 4: Update model status
+      const updated = await this.repo.update(modelId, {
+        status: 'training',
+        status_message: null,
+        training_zip_s3_key: zipS3Key,
+        fal_training_job_id: falJobId,
+        training_started_at: new Date(),
+      });
 
-    logger.info({ modelId, falJobId }, 'Training started');
-    return updated;
+      logger.info({ modelId, falJobId }, 'Training started');
+      return updated;
+    } catch (error) {
+      const message = this.getErrorMessage(error);
+      logger.error({ error, modelId }, 'Failed to start training');
+      await this.repo.update(modelId, {
+        status: 'failed',
+        status_message: `Training start failed: ${message}`,
+      }).catch((updateError) => {
+        logger.warn({ updateError, modelId }, 'Failed to persist training start failure state');
+      });
+
+      throw new InfluencerExternalServiceError(`Failed to start training: ${message}`, error);
+    }
   }
 
   /**
@@ -364,7 +454,17 @@ export class InfluencerModelsService {
   async checkTrainingStatus(modelId: string): Promise<InfluencerModel> {
     const model = await this.repo.findById(modelId);
     if (!model) {
-      throw new Error('Model not found');
+      throw new InfluencerNotFoundError('Model', modelId);
+    }
+
+    if (model.status === 'downloading') {
+      if (!model.fal_training_job_id) {
+        return this.repo.update(modelId, {
+          status: 'failed',
+          status_message: 'Training download state is missing FAL job reference',
+        });
+      }
+      return this.finalizeCompletedTraining(model);
     }
 
     if (model.status !== 'training') {
@@ -372,7 +472,7 @@ export class InfluencerModelsService {
     }
 
     if (!model.fal_training_job_id) {
-      throw new Error('No FAL job ID for this model');
+      throw new InfluencerBadRequestError('No FAL job ID for this model');
     }
 
     const status = await this.getFalStatus(model.fal_training_job_id);
@@ -386,7 +486,7 @@ export class InfluencerModelsService {
       case 'COMPLETED':
         // Download and store LoRA weights
         logger.info({ modelId }, 'Training completed, downloading LoRA weights');
-        return await this.downloadAndStoreLoraWeights(model);
+        return this.finalizeCompletedTraining(model);
 
       case 'FAILED':
         logger.error({ modelId, error: status.error }, 'Training failed');
@@ -458,26 +558,25 @@ export class InfluencerModelsService {
    * Submit training job to FAL.ai
    */
   private async submitFalTraining(model: InfluencerModel, zipUrl: string): Promise<string> {
-    const response = await fetch(`${FAL_API_BASE}/${FAL_MODEL}`, {
-      method: 'POST',
-      headers: {
-        Authorization: `Key ${FAL_API_KEY}`,
-        'Content-Type': 'application/json',
+    const response = await this.fetchWithRetry(
+      `${FAL_API_BASE}/${FAL_MODEL}`,
+      {
+        method: 'POST',
+        headers: {
+          Authorization: `Key ${FAL_API_KEY}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          images_data_url: zipUrl,
+          trigger_word: model.trigger_word,
+          is_style: model.is_style,
+          steps: model.training_steps,
+          create_masks: true,
+          rank: 16,
+        }),
       },
-      body: JSON.stringify({
-        images_data_url: zipUrl,
-        trigger_word: model.trigger_word,
-        is_style: model.is_style,
-        steps: model.training_steps,
-        create_masks: true,
-        rank: 16,
-      }),
-    });
-
-    if (!response.ok) {
-      const text = await response.text();
-      throw new Error(`FAL.ai submission failed: ${response.status} ${text}`);
-    }
+      { purpose: 'FAL training submission', timeoutMs: DEFAULT_FETCH_TIMEOUT_MS }
+    );
 
     const data = (await response.json()) as FalSubmitResponse;
     return data.request_id;
@@ -487,15 +586,15 @@ export class InfluencerModelsService {
    * Get training status from FAL.ai
    */
   private async getFalStatus(jobId: string): Promise<FalStatusResponse> {
-    const response = await fetch(`${FAL_API_BASE}/${FAL_MODEL}/requests/${jobId}/status`, {
-      headers: {
-        Authorization: `Key ${FAL_API_KEY}`,
+    const response = await this.fetchWithRetry(
+      `${FAL_API_BASE}/${FAL_MODEL}/requests/${jobId}/status`,
+      {
+        headers: {
+          Authorization: `Key ${FAL_API_KEY}`,
+        },
       },
-    });
-
-    if (!response.ok) {
-      throw new Error(`FAL.ai status check failed: ${response.status}`);
-    }
+      { purpose: 'FAL training status check', timeoutMs: 15_000 }
+    );
 
     return (await response.json()) as FalStatusResponse;
   }
@@ -505,30 +604,31 @@ export class InfluencerModelsService {
    */
   private async downloadAndStoreLoraWeights(model: InfluencerModel): Promise<InfluencerModel> {
     // First, update status to downloading
-    await this.repo.update(model.id, { status: 'downloading' });
+    await this.repo.update(model.id, { status: 'downloading', status_message: null });
 
     // Get the result from FAL
-    const resultResponse = await fetch(
+    const resultResponse = await this.fetchWithRetry(
       `${FAL_API_BASE}/${FAL_MODEL}/requests/${model.fal_training_job_id}`,
       {
         headers: {
           Authorization: `Key ${FAL_API_KEY}`,
         },
-      }
+      },
+      { purpose: 'FAL training result fetch', timeoutMs: DEFAULT_FETCH_TIMEOUT_MS }
     );
 
-    if (!resultResponse.ok) {
-      throw new Error(`Failed to get FAL result: ${resultResponse.status}`);
-    }
-
     const result = (await resultResponse.json()) as FalResultResponse;
-    const loraUrl = result.diffusers_lora_file.url;
+    const loraUrl = result.diffusers_lora_file?.url;
+    if (!loraUrl) {
+      throw new InfluencerExternalServiceError('FAL result did not contain a LoRA file URL');
+    }
 
     // Download the LoRA file
-    const loraResponse = await fetch(loraUrl);
-    if (!loraResponse.ok) {
-      throw new Error(`Failed to download LoRA: ${loraResponse.status}`);
-    }
+    const loraResponse = await this.fetchWithRetry(
+      loraUrl,
+      {},
+      { purpose: 'LoRA download', timeoutMs: 60_000 }
+    );
 
     const loraBuffer = Buffer.from(await loraResponse.arrayBuffer());
     const loraS3Key = `influencer-models/${model.id}/lora.safetensors`;
@@ -548,10 +648,94 @@ export class InfluencerModelsService {
     // Update model to ready
     return await this.repo.update(model.id, {
       status: 'ready',
+      status_message: null,
       lora_s3_key: loraS3Key,
       fal_result_url: loraUrl,
       training_completed_at: new Date(),
     });
+  }
+
+  /**
+   * Complete training finalization from a completed FAL job.
+   * Any failures are persisted as model status=failed so the model does not get stuck.
+   */
+  private async finalizeCompletedTraining(model: InfluencerModel): Promise<InfluencerModel> {
+    try {
+      return await this.downloadAndStoreLoraWeights(model);
+    } catch (error) {
+      const message = this.getErrorMessage(error);
+      logger.error({ error, modelId: model.id }, 'Failed to finalize training');
+      return this.repo.update(model.id, {
+        status: 'failed',
+        status_message: `Failed while downloading LoRA weights: ${message}`,
+      });
+    }
+  }
+
+  private async fetchWithRetry(
+    url: string,
+    init: RequestInit,
+    options: {
+      purpose: string;
+      timeoutMs?: number;
+      maxRetries?: number;
+    }
+  ): Promise<Response> {
+    const timeoutMs = options.timeoutMs ?? DEFAULT_FETCH_TIMEOUT_MS;
+    const maxRetries = options.maxRetries ?? MAX_FETCH_RETRIES;
+    let lastError: Error | null = null;
+
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+      let retryable = true;
+      try {
+        const response = await fetch(url, {
+          ...init,
+          signal: AbortSignal.timeout(timeoutMs),
+        });
+
+        if (response.ok) {
+          return response;
+        }
+
+        const responseBody = await response.text();
+        const message = `${options.purpose} failed with ${response.status}: ${responseBody.slice(0, 500)}`;
+        retryable = RETRYABLE_HTTP_STATUSES.has(response.status);
+        lastError = new InfluencerExternalServiceError(message);
+
+        if (!retryable) {
+          throw lastError;
+        }
+      } catch (error) {
+        if (error instanceof InfluencerExternalServiceError) {
+          lastError = error;
+        } else {
+          const message = `${options.purpose} failed: ${this.getErrorMessage(error)}`;
+          lastError = new InfluencerExternalServiceError(message, error);
+          retryable = true;
+        }
+
+        if (!retryable) {
+          throw error;
+        }
+      }
+
+      if (attempt === maxRetries) {
+        throw lastError ?? new InfluencerExternalServiceError(`${options.purpose} failed`);
+      }
+
+      const delayMs = 500 * (2 ** (attempt - 1));
+      await this.sleep(delayMs);
+    }
+
+    throw lastError ?? new InfluencerExternalServiceError(`${options.purpose} failed`);
+  }
+
+  private getErrorMessage(error: unknown): string {
+    return error instanceof Error ? error.message : String(error);
+  }
+
+  private async sleep(ms: number): Promise<void> {
+    await new Promise((resolve) => setTimeout(resolve, ms));
   }
 
   /**
@@ -583,20 +767,20 @@ export class InfluencerModelsService {
     tx?: TransactionContext
   ): Promise<InfluencerModelSample> {
     if (!FAL_API_KEY) {
-      throw new Error('FAL_API_KEY not configured');
+      throw new InfluencerConfigurationError('FAL_API_KEY not configured');
     }
 
     const model = await this.repo.findById(modelId, tx);
     if (!model) {
-      throw new Error('Model not found');
+      throw new InfluencerNotFoundError('Model', modelId);
     }
 
     if (model.status !== 'ready') {
-      throw new Error('Model is not ready for sample generation');
+      throw new InfluencerBadRequestError('Model is not ready for sample generation');
     }
 
     if (!model.fal_result_url) {
-      throw new Error('Model has no LoRA URL');
+      throw new InfluencerBadRequestError('Model has no LoRA URL');
     }
 
     const validated = GenerateSampleSchema.parse(input);
@@ -616,114 +800,20 @@ export class InfluencerModelsService {
 
     const sample = await this.repo.createSample(sampleData, tx);
 
-    // Start generation asynchronously
-    this.executeGeneration(sample.id, model, validated).catch((err) => {
-      logger.error({ error: err, sampleId: sample.id }, 'Sample generation failed');
+    const enqueued = await enqueueInfluencerSampleGenerationJob({
+      sampleId: sample.id,
+      modelId,
     });
-
-    logger.info({ modelId, sampleId: sample.id }, 'Sample generation started');
-    return sample;
-  }
-
-  /**
-   * Execute the actual FAL generation
-   */
-  private async executeGeneration(
-    sampleId: string,
-    model: InfluencerModel,
-    params: GenerateSampleInput
-  ): Promise<void> {
-    try {
-      // Update to generating
-      await this.repo.updateSample(sampleId, { status: 'generating' });
-
-      // Build prompt with trigger word
-      const fullPrompt = `${params.prompt}, ${model.trigger_word}`;
-
-      // Submit to FAL
-      const response = await fetch(`https://fal.run/${FAL_INFERENCE_MODEL}`, {
-        method: 'POST',
-        headers: {
-          Authorization: `Key ${FAL_API_KEY}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          prompt: fullPrompt,
-          negative_prompt: params.negative_prompt,
-          loras: [
-            {
-              path: model.fal_result_url,
-              scale: params.lora_scale,
-            },
-          ],
-          guidance_scale: params.guidance_scale,
-          num_inference_steps: params.num_inference_steps,
-          seed: params.seed,
-          image_size: {
-            width: params.width,
-            height: params.height,
-          },
-          num_images: 1,
-          enable_safety_checker: false,
-          output_format: 'png',
-        }),
-      });
-
-      if (!response.ok) {
-        const errorText = await response.text();
-        throw new Error(`FAL inference failed: ${response.status} ${errorText}`);
-      }
-
-      const result = (await response.json()) as FalInferenceResponse;
-
-      if (!result.images || result.images.length === 0) {
-        throw new Error('No images generated');
-      }
-
-      const imageUrl = result.images[0]!.url;
-
-      // Download image and upload to S3
-      const imageResponse = await fetch(imageUrl);
-      if (!imageResponse.ok) {
-        throw new Error(`Failed to download image: ${imageResponse.status}`);
-      }
-
-      const imageBuffer = Buffer.from(await imageResponse.arrayBuffer());
-      const s3Key = `influencer-models/${model.id}/samples/${sampleId}.png`;
-
-      await this.s3Client.send(
-        new PutObjectCommand({
-          Bucket: S3_MEDIA_BUCKET,
-          Key: s3Key,
-          Body: imageBuffer,
-          ContentType: 'image/png',
-        })
-      );
-
-      // Get presigned URL for the image
-      const presignedUrl = await getSignedUrl(
-        this.s3Client,
-        new GetObjectCommand({ Bucket: S3_MEDIA_BUCKET, Key: s3Key }),
-        { expiresIn: 86400 } // 24 hours
-      );
-
-      // Update sample with result
-      await this.repo.updateSample(sampleId, {
-        status: 'completed',
-        image_s3_key: s3Key,
-        image_url: presignedUrl,
-        completed_at: new Date(),
-      });
-
-      logger.info({ sampleId, modelId: model.id, s3Key }, 'Sample generation completed');
-    } catch (error) {
-      const message = error instanceof Error ? error.message : 'Unknown error';
-      logger.error({ error, sampleId }, 'Sample generation failed');
-      await this.repo.updateSample(sampleId, {
+    if (!enqueued) {
+      await this.repo.updateSample(sample.id, {
         status: 'failed',
-        error_message: message,
-      });
+        error_message: 'Sample generation queue is unavailable',
+      }, tx);
+      throw new InfluencerQueueUnavailableError('Sample generation queue is unavailable');
     }
+
+    logger.info({ modelId, sampleId: sample.id }, 'Sample generation queued');
+    return sample;
   }
 
   /**
@@ -746,7 +836,7 @@ export class InfluencerModelsService {
   async deleteSample(sampleId: string, tx?: TransactionContext): Promise<void> {
     const sample = await this.repo.findSampleById(sampleId, tx);
     if (!sample) {
-      throw new Error('Sample not found');
+      throw new InfluencerNotFoundError('Sample', sampleId);
     }
 
     // Delete from S3 if exists

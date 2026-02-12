@@ -8,11 +8,13 @@ import { z } from 'zod';
 import { requireAdmin } from '../middleware/auth.js';
 import { withSpan } from '../observability/tracing.js';
 import { logger } from '../observability/logger.js';
+import { DuplicateError, NotFoundError, ValidationError } from '../repositories/errors.js';
 import {
   getInfluencerModelsService,
   CreateModelSchema,
   UpdateModelSchema,
   GenerateSampleSchema,
+  InfluencerServiceError,
 } from '../services/influencer-models.js';
 import type { InfluencerModelStatus, InfluencerSampleStatus } from '../repositories/influencer-models.js';
 
@@ -21,16 +23,10 @@ import type { InfluencerModelStatus, InfluencerSampleStatus } from '../repositor
 // =========================================================================
 
 const ListQuerySchema = z.object({
-  limit: z
-    .string()
-    .optional()
-    .transform((val) => (val ? parseInt(val, 10) : 50)),
-  offset: z
-    .string()
-    .optional()
-    .transform((val) => (val ? parseInt(val, 10) : 0)),
+  limit: z.coerce.number().int().min(1).max(100).default(50),
+  offset: z.coerce.number().int().min(0).max(10000).default(0),
   status: z.enum(['pending', 'uploading', 'training', 'downloading', 'ready', 'failed']).optional(),
-  search: z.string().optional(),
+  search: z.string().trim().max(255).optional(),
 });
 
 const PresignUploadSchema = z.object({
@@ -47,11 +43,87 @@ const RemoveImageSchema = z.object({
 });
 
 const ListSamplesQuerySchema = z.object({
-  limit: z
-    .string()
-    .optional()
-    .transform((val) => (val ? parseInt(val, 10) : 50)),
+  limit: z.coerce.number().int().min(1).max(100).default(50),
 });
+
+const ModelIdParamsSchema = z.object({
+  id: z.string().uuid(),
+});
+
+const ModelSampleParamsSchema = z.object({
+  id: z.string().uuid(),
+  sampleId: z.string().uuid(),
+});
+
+function sendValidationError(
+  reply: FastifyReply,
+  message: string,
+  details: unknown
+) {
+  return reply.status(400).send({
+    success: false,
+    error: {
+      code: 'VALIDATION_ERROR',
+      message,
+      details,
+    },
+  });
+}
+
+function sendServiceError(
+  reply: FastifyReply,
+  error: unknown,
+  fallbackMessage: string
+) {
+  if (error instanceof InfluencerServiceError) {
+    return reply.status(error.httpStatus).send({
+      success: false,
+      error: {
+        code: error.code,
+        message: error.message,
+      },
+    });
+  }
+
+  if (error instanceof NotFoundError) {
+    return reply.status(404).send({
+      success: false,
+      error: {
+        code: 'NOT_FOUND',
+        message: error.message,
+      },
+    });
+  }
+
+  if (error instanceof DuplicateError) {
+    return reply.status(409).send({
+      success: false,
+      error: {
+        code: 'DUPLICATE',
+        message: error.message,
+      },
+    });
+  }
+
+  if (error instanceof ValidationError) {
+    return reply.status(400).send({
+      success: false,
+      error: {
+        code: 'VALIDATION_ERROR',
+        message: error.message,
+        details: error.field ? { field: error.field } : undefined,
+      },
+    });
+  }
+
+  return reply.status(500).send({
+    success: false,
+    error: {
+      code: 'INTERNAL_ERROR',
+      message: fallbackMessage,
+    },
+  });
+}
 
 // =========================================================================
 // Routes
@@ -101,14 +173,7 @@ export async function adminInfluencerModelsRoutes(app: FastifyInstance): Promise
     return withSpan('admin.influencer-models.create', async (span) => {
       const parseResult = CreateModelSchema.safeParse(request.body);
       if (!parseResult.success) {
-        return reply.status(400).send({
-          success: false,
-          error: {
-            code: 'VALIDATION_ERROR',
-            message: 'Invalid request body',
-            details: parseResult.error.flatten(),
-          },
-        });
+        return sendValidationError(reply, 'Invalid request body', parseResult.error.flatten());
       }
 
       try {
@@ -123,10 +188,7 @@ export async function adminInfluencerModelsRoutes(app: FastifyInstance): Promise
         });
       } catch (error) {
         logger.error({ error }, 'Failed to create influencer model');
-        return reply.status(500).send({
-          success: false,
-          error: { code: 'INTERNAL_ERROR', message: 'Failed to create model' },
-        });
+        return sendServiceError(reply, error, 'Failed to create model');
       }
     });
   });
@@ -138,14 +200,7 @@ export async function adminInfluencerModelsRoutes(app: FastifyInstance): Promise
     return withSpan('admin.influencer-models.list', async () => {
       const parseResult = ListQuerySchema.safeParse(request.query);
       if (!parseResult.success) {
-        return reply.status(400).send({
-          success: false,
-          error: {
-            code: 'VALIDATION_ERROR',
-            message: 'Invalid query parameters',
-            details: parseResult.error.flatten(),
-          },
-        });
+        return sendValidationError(reply, 'Invalid query parameters', parseResult.error.flatten());
       }
 
       try {
@@ -161,10 +216,7 @@ export async function adminInfluencerModelsRoutes(app: FastifyInstance): Promise
         });
       } catch (error) {
         logger.error({ error }, 'Failed to list influencer models');
-        return reply.status(500).send({
-          success: false,
-          error: { code: 'INTERNAL_ERROR', message: 'Failed to list models' },
-        });
+        return sendServiceError(reply, error, 'Failed to list models');
       }
     });
   });
@@ -174,7 +226,12 @@ export async function adminInfluencerModelsRoutes(app: FastifyInstance): Promise
    */
   app.get('/:id', async (request: FastifyRequest<{ Params: { id: string } }>, reply: FastifyReply) => {
     return withSpan('admin.influencer-models.get', async (span) => {
-      const { id } = request.params;
+      const paramsResult = ModelIdParamsSchema.safeParse(request.params);
+      if (!paramsResult.success) {
+        return sendValidationError(reply, 'Invalid model ID', paramsResult.error.flatten());
+      }
+
+      const { id } = paramsResult.data;
       span.setAttributes({ 'model.id': id });
 
       try {
@@ -201,10 +258,7 @@ export async function adminInfluencerModelsRoutes(app: FastifyInstance): Promise
         });
       } catch (error) {
         logger.error({ error, id }, 'Failed to get influencer model');
-        return reply.status(500).send({
-          success: false,
-          error: { code: 'INTERNAL_ERROR', message: 'Failed to get model' },
-        });
+        return sendServiceError(reply, error, 'Failed to get model');
       }
     });
   });
@@ -214,19 +268,17 @@ export async function adminInfluencerModelsRoutes(app: FastifyInstance): Promise
    */
   app.patch('/:id', async (request: FastifyRequest<{ Params: { id: string } }>, reply: FastifyReply) => {
     return withSpan('admin.influencer-models.update', async (span) => {
-      const { id } = request.params;
+      const paramsResult = ModelIdParamsSchema.safeParse(request.params);
+      if (!paramsResult.success) {
+        return sendValidationError(reply, 'Invalid model ID', paramsResult.error.flatten());
+      }
+
+      const { id } = paramsResult.data;
       span.setAttributes({ 'model.id': id });
 
       const parseResult = UpdateModelSchema.safeParse(request.body);
       if (!parseResult.success) {
-        return reply.status(400).send({
-          success: false,
-          error: {
-            code: 'VALIDATION_ERROR',
-            message: 'Invalid request body',
-            details: parseResult.error.flatten(),
-          },
-        });
+        return sendValidationError(reply, 'Invalid request body', parseResult.error.flatten());
       }
 
       try {
@@ -238,17 +290,8 @@ export async function adminInfluencerModelsRoutes(app: FastifyInstance): Promise
           data: formatModelResponse(model),
         });
       } catch (error) {
-        if ((error as Error).message === 'Model not found') {
-          return reply.status(404).send({
-            success: false,
-            error: { code: 'NOT_FOUND', message: 'Model not found' },
-          });
-        }
         logger.error({ error, id }, 'Failed to update influencer model');
-        return reply.status(500).send({
-          success: false,
-          error: { code: 'INTERNAL_ERROR', message: 'Failed to update model' },
-        });
+        return sendServiceError(reply, error, 'Failed to update model');
       }
     });
   });
@@ -258,7 +301,12 @@ export async function adminInfluencerModelsRoutes(app: FastifyInstance): Promise
    */
   app.delete('/:id', async (request: FastifyRequest<{ Params: { id: string } }>, reply: FastifyReply) => {
     return withSpan('admin.influencer-models.delete', async (span) => {
-      const { id } = request.params;
+      const paramsResult = ModelIdParamsSchema.safeParse(request.params);
+      if (!paramsResult.success) {
+        return sendValidationError(reply, 'Invalid model ID', paramsResult.error.flatten());
+      }
+
+      const { id } = paramsResult.data;
       span.setAttributes({ 'model.id': id });
 
       try {
@@ -270,17 +318,8 @@ export async function adminInfluencerModelsRoutes(app: FastifyInstance): Promise
           data: { deleted: true },
         });
       } catch (error) {
-        if ((error as Error).message === 'Model not found') {
-          return reply.status(404).send({
-            success: false,
-            error: { code: 'NOT_FOUND', message: 'Model not found' },
-          });
-        }
         logger.error({ error, id }, 'Failed to delete influencer model');
-        return reply.status(500).send({
-          success: false,
-          error: { code: 'INTERNAL_ERROR', message: 'Failed to delete model' },
-        });
+        return sendServiceError(reply, error, 'Failed to delete model');
       }
     });
   });
@@ -296,19 +335,17 @@ export async function adminInfluencerModelsRoutes(app: FastifyInstance): Promise
     '/:id/presign-upload',
     async (request: FastifyRequest<{ Params: { id: string } }>, reply: FastifyReply) => {
       return withSpan('admin.influencer-models.presign-upload', async (span) => {
-        const { id } = request.params;
+        const paramsResult = ModelIdParamsSchema.safeParse(request.params);
+        if (!paramsResult.success) {
+          return sendValidationError(reply, 'Invalid model ID', paramsResult.error.flatten());
+        }
+
+        const { id } = paramsResult.data;
         span.setAttributes({ 'model.id': id });
 
         const parseResult = PresignUploadSchema.safeParse(request.body);
         if (!parseResult.success) {
-          return reply.status(400).send({
-            success: false,
-            error: {
-              code: 'VALIDATION_ERROR',
-              message: 'Invalid request body',
-              details: parseResult.error.flatten(),
-            },
-          });
+          return sendValidationError(reply, 'Invalid request body', parseResult.error.flatten());
         }
 
         try {
@@ -323,24 +360,8 @@ export async function adminInfluencerModelsRoutes(app: FastifyInstance): Promise
             data: { uploadUrl, s3Key },
           });
         } catch (error) {
-          const message = (error as Error).message;
-          if (message === 'Model not found') {
-            return reply.status(404).send({
-              success: false,
-              error: { code: 'NOT_FOUND', message: 'Model not found' },
-            });
-          }
-          if (message.includes('Cannot add images') || message.includes('Maximum')) {
-            return reply.status(400).send({
-              success: false,
-              error: { code: 'BAD_REQUEST', message },
-            });
-          }
           logger.error({ error, id }, 'Failed to get presigned upload URL');
-          return reply.status(500).send({
-            success: false,
-            error: { code: 'INTERNAL_ERROR', message: 'Failed to get upload URL' },
-          });
+          return sendServiceError(reply, error, 'Failed to get upload URL');
         }
       });
     }
@@ -353,19 +374,17 @@ export async function adminInfluencerModelsRoutes(app: FastifyInstance): Promise
     '/:id/confirm-upload',
     async (request: FastifyRequest<{ Params: { id: string } }>, reply: FastifyReply) => {
       return withSpan('admin.influencer-models.confirm-upload', async (span) => {
-        const { id } = request.params;
+        const paramsResult = ModelIdParamsSchema.safeParse(request.params);
+        if (!paramsResult.success) {
+          return sendValidationError(reply, 'Invalid model ID', paramsResult.error.flatten());
+        }
+
+        const { id } = paramsResult.data;
         span.setAttributes({ 'model.id': id });
 
         const parseResult = ConfirmUploadSchema.safeParse(request.body);
         if (!parseResult.success) {
-          return reply.status(400).send({
-            success: false,
-            error: {
-              code: 'VALIDATION_ERROR',
-              message: 'Invalid request body',
-              details: parseResult.error.flatten(),
-            },
-          });
+          return sendValidationError(reply, 'Invalid request body', parseResult.error.flatten());
         }
 
         try {
@@ -376,18 +395,8 @@ export async function adminInfluencerModelsRoutes(app: FastifyInstance): Promise
             data: formatModelResponse(model),
           });
         } catch (error) {
-          const message = (error as Error).message;
-          if (message === 'Model not found' || message.includes('Invalid S3 key')) {
-            return reply.status(400).send({
-              success: false,
-              error: { code: 'BAD_REQUEST', message },
-            });
-          }
           logger.error({ error, id }, 'Failed to confirm image upload');
-          return reply.status(500).send({
-            success: false,
-            error: { code: 'INTERNAL_ERROR', message: 'Failed to confirm upload' },
-          });
+          return sendServiceError(reply, error, 'Failed to confirm upload');
         }
       });
     }
@@ -400,19 +409,17 @@ export async function adminInfluencerModelsRoutes(app: FastifyInstance): Promise
     '/:id/images',
     async (request: FastifyRequest<{ Params: { id: string } }>, reply: FastifyReply) => {
       return withSpan('admin.influencer-models.remove-image', async (span) => {
-        const { id } = request.params;
+        const paramsResult = ModelIdParamsSchema.safeParse(request.params);
+        if (!paramsResult.success) {
+          return sendValidationError(reply, 'Invalid model ID', paramsResult.error.flatten());
+        }
+
+        const { id } = paramsResult.data;
         span.setAttributes({ 'model.id': id });
 
         const parseResult = RemoveImageSchema.safeParse(request.body);
         if (!parseResult.success) {
-          return reply.status(400).send({
-            success: false,
-            error: {
-              code: 'VALIDATION_ERROR',
-              message: 'Invalid request body',
-              details: parseResult.error.flatten(),
-            },
-          });
+          return sendValidationError(reply, 'Invalid request body', parseResult.error.flatten());
         }
 
         try {
@@ -423,18 +430,8 @@ export async function adminInfluencerModelsRoutes(app: FastifyInstance): Promise
             data: formatModelResponse(model),
           });
         } catch (error) {
-          const message = (error as Error).message;
-          if (message === 'Model not found' || message.includes('Cannot remove')) {
-            return reply.status(400).send({
-              success: false,
-              error: { code: 'BAD_REQUEST', message },
-            });
-          }
           logger.error({ error, id }, 'Failed to remove image');
-          return reply.status(500).send({
-            success: false,
-            error: { code: 'INTERNAL_ERROR', message: 'Failed to remove image' },
-          });
+          return sendServiceError(reply, error, 'Failed to remove image');
         }
       });
     }
@@ -451,7 +448,12 @@ export async function adminInfluencerModelsRoutes(app: FastifyInstance): Promise
     '/:id/train',
     async (request: FastifyRequest<{ Params: { id: string } }>, reply: FastifyReply) => {
       return withSpan('admin.influencer-models.train', async (span) => {
-        const { id } = request.params;
+        const paramsResult = ModelIdParamsSchema.safeParse(request.params);
+        if (!paramsResult.success) {
+          return sendValidationError(reply, 'Invalid model ID', paramsResult.error.flatten());
+        }
+
+        const { id } = paramsResult.data;
         span.setAttributes({ 'model.id': id });
 
         try {
@@ -463,28 +465,8 @@ export async function adminInfluencerModelsRoutes(app: FastifyInstance): Promise
             data: formatModelResponse(model),
           });
         } catch (error) {
-          const message = (error as Error).message;
-          if (message === 'Model not found') {
-            return reply.status(404).send({
-              success: false,
-              error: { code: 'NOT_FOUND', message: 'Model not found' },
-            });
-          }
-          if (
-            message.includes('Cannot start training') ||
-            message.includes('Need at least') ||
-            message.includes('not configured')
-          ) {
-            return reply.status(400).send({
-              success: false,
-              error: { code: 'BAD_REQUEST', message },
-            });
-          }
           logger.error({ error, id }, 'Failed to start training');
-          return reply.status(500).send({
-            success: false,
-            error: { code: 'INTERNAL_ERROR', message: 'Failed to start training' },
-          });
+          return sendServiceError(reply, error, 'Failed to start training');
         }
       });
     }
@@ -497,7 +479,12 @@ export async function adminInfluencerModelsRoutes(app: FastifyInstance): Promise
     '/:id/training-status',
     async (request: FastifyRequest<{ Params: { id: string } }>, reply: FastifyReply) => {
       return withSpan('admin.influencer-models.training-status', async (span) => {
-        const { id } = request.params;
+        const paramsResult = ModelIdParamsSchema.safeParse(request.params);
+        if (!paramsResult.success) {
+          return sendValidationError(reply, 'Invalid model ID', paramsResult.error.flatten());
+        }
+
+        const { id } = paramsResult.data;
         span.setAttributes({ 'model.id': id });
 
         try {
@@ -508,18 +495,8 @@ export async function adminInfluencerModelsRoutes(app: FastifyInstance): Promise
             data: formatModelResponse(model),
           });
         } catch (error) {
-          const message = (error as Error).message;
-          if (message === 'Model not found') {
-            return reply.status(404).send({
-              success: false,
-              error: { code: 'NOT_FOUND', message: 'Model not found' },
-            });
-          }
           logger.error({ error, id }, 'Failed to check training status');
-          return reply.status(500).send({
-            success: false,
-            error: { code: 'INTERNAL_ERROR', message: 'Failed to check status' },
-          });
+          return sendServiceError(reply, error, 'Failed to check status');
         }
       });
     }
@@ -532,7 +509,12 @@ export async function adminInfluencerModelsRoutes(app: FastifyInstance): Promise
     '/:id/lora-download',
     async (request: FastifyRequest<{ Params: { id: string } }>, reply: FastifyReply) => {
       return withSpan('admin.influencer-models.lora-download', async (span) => {
-        const { id } = request.params;
+        const paramsResult = ModelIdParamsSchema.safeParse(request.params);
+        if (!paramsResult.success) {
+          return sendValidationError(reply, 'Invalid model ID', paramsResult.error.flatten());
+        }
+
+        const { id } = paramsResult.data;
         span.setAttributes({ 'model.id': id });
 
         try {
@@ -550,10 +532,7 @@ export async function adminInfluencerModelsRoutes(app: FastifyInstance): Promise
           });
         } catch (error) {
           logger.error({ error, id }, 'Failed to get LoRA download URL');
-          return reply.status(500).send({
-            success: false,
-            error: { code: 'INTERNAL_ERROR', message: 'Failed to get download URL' },
-          });
+          return sendServiceError(reply, error, 'Failed to get download URL');
         }
       });
     }
@@ -570,19 +549,17 @@ export async function adminInfluencerModelsRoutes(app: FastifyInstance): Promise
     '/:id/samples',
     async (request: FastifyRequest<{ Params: { id: string } }>, reply: FastifyReply) => {
       return withSpan('admin.influencer-models.generate-sample', async (span) => {
-        const { id } = request.params;
+        const paramsResult = ModelIdParamsSchema.safeParse(request.params);
+        if (!paramsResult.success) {
+          return sendValidationError(reply, 'Invalid model ID', paramsResult.error.flatten());
+        }
+
+        const { id } = paramsResult.data;
         span.setAttributes({ 'model.id': id });
 
         const parseResult = GenerateSampleSchema.safeParse(request.body);
         if (!parseResult.success) {
-          return reply.status(400).send({
-            success: false,
-            error: {
-              code: 'VALIDATION_ERROR',
-              message: 'Invalid request body',
-              details: parseResult.error.flatten(),
-            },
-          });
+          return sendValidationError(reply, 'Invalid request body', parseResult.error.flatten());
         }
 
         try {
@@ -594,28 +571,8 @@ export async function adminInfluencerModelsRoutes(app: FastifyInstance): Promise
             data: formatSampleResponse(sample),
           });
         } catch (error) {
-          const message = (error as Error).message;
-          if (message === 'Model not found') {
-            return reply.status(404).send({
-              success: false,
-              error: { code: 'NOT_FOUND', message: 'Model not found' },
-            });
-          }
-          if (
-            message.includes('not ready') ||
-            message.includes('no LoRA') ||
-            message.includes('not configured')
-          ) {
-            return reply.status(400).send({
-              success: false,
-              error: { code: 'BAD_REQUEST', message },
-            });
-          }
           logger.error({ error, id }, 'Failed to generate sample');
-          return reply.status(500).send({
-            success: false,
-            error: { code: 'INTERNAL_ERROR', message: 'Failed to generate sample' },
-          });
+          return sendServiceError(reply, error, 'Failed to generate sample');
         }
       });
     }
@@ -628,19 +585,17 @@ export async function adminInfluencerModelsRoutes(app: FastifyInstance): Promise
     '/:id/samples',
     async (request: FastifyRequest<{ Params: { id: string } }>, reply: FastifyReply) => {
       return withSpan('admin.influencer-models.list-samples', async (span) => {
-        const { id } = request.params;
+        const paramsResult = ModelIdParamsSchema.safeParse(request.params);
+        if (!paramsResult.success) {
+          return sendValidationError(reply, 'Invalid model ID', paramsResult.error.flatten());
+        }
+
+        const { id } = paramsResult.data;
         span.setAttributes({ 'model.id': id });
 
         const parseResult = ListSamplesQuerySchema.safeParse(request.query);
         if (!parseResult.success) {
-          return reply.status(400).send({
-            success: false,
-            error: {
-              code: 'VALIDATION_ERROR',
-              message: 'Invalid query parameters',
-              details: parseResult.error.flatten(),
-            },
-          });
+          return sendValidationError(reply, 'Invalid query parameters', parseResult.error.flatten());
         }
 
         try {
@@ -653,10 +608,7 @@ export async function adminInfluencerModelsRoutes(app: FastifyInstance): Promise
           });
         } catch (error) {
           logger.error({ error, id }, 'Failed to list samples');
-          return reply.status(500).send({
-            success: false,
-            error: { code: 'INTERNAL_ERROR', message: 'Failed to list samples' },
-          });
+          return sendServiceError(reply, error, 'Failed to list samples');
         }
       });
     }
@@ -672,7 +624,12 @@ export async function adminInfluencerModelsRoutes(app: FastifyInstance): Promise
       reply: FastifyReply
     ) => {
       return withSpan('admin.influencer-models.get-sample', async (span) => {
-        const { id, sampleId } = request.params;
+        const paramsResult = ModelSampleParamsSchema.safeParse(request.params);
+        if (!paramsResult.success) {
+          return sendValidationError(reply, 'Invalid path parameters', paramsResult.error.flatten());
+        }
+
+        const { id, sampleId } = paramsResult.data;
         span.setAttributes({ 'model.id': id, 'sample.id': sampleId });
 
         try {
@@ -690,10 +647,7 @@ export async function adminInfluencerModelsRoutes(app: FastifyInstance): Promise
           });
         } catch (error) {
           logger.error({ error, id, sampleId }, 'Failed to get sample');
-          return reply.status(500).send({
-            success: false,
-            error: { code: 'INTERNAL_ERROR', message: 'Failed to get sample' },
-          });
+          return sendServiceError(reply, error, 'Failed to get sample');
         }
       });
     }
@@ -709,7 +663,12 @@ export async function adminInfluencerModelsRoutes(app: FastifyInstance): Promise
       reply: FastifyReply
     ) => {
       return withSpan('admin.influencer-models.delete-sample', async (span) => {
-        const { id, sampleId } = request.params;
+        const paramsResult = ModelSampleParamsSchema.safeParse(request.params);
+        if (!paramsResult.success) {
+          return sendValidationError(reply, 'Invalid path parameters', paramsResult.error.flatten());
+        }
+
+        const { id, sampleId } = paramsResult.data;
         span.setAttributes({ 'model.id': id, 'sample.id': sampleId });
 
         try {
@@ -730,17 +689,8 @@ export async function adminInfluencerModelsRoutes(app: FastifyInstance): Promise
             data: { deleted: true },
           });
         } catch (error) {
-          if ((error as Error).message === 'Sample not found') {
-            return reply.status(404).send({
-              success: false,
-              error: { code: 'NOT_FOUND', message: 'Sample not found' },
-            });
-          }
           logger.error({ error, id, sampleId }, 'Failed to delete sample');
-          return reply.status(500).send({
-            success: false,
-            error: { code: 'INTERNAL_ERROR', message: 'Failed to delete sample' },
-          });
+          return sendServiceError(reply, error, 'Failed to delete sample');
         }
       });
     }
@@ -756,7 +706,12 @@ export async function adminInfluencerModelsRoutes(app: FastifyInstance): Promise
       reply: FastifyReply
     ) => {
       return withSpan('admin.influencer-models.refresh-sample-url', async (span) => {
-        const { id, sampleId } = request.params;
+        const paramsResult = ModelSampleParamsSchema.safeParse(request.params);
+        if (!paramsResult.success) {
+          return sendValidationError(reply, 'Invalid path parameters', paramsResult.error.flatten());
+        }
+
+        const { id, sampleId } = paramsResult.data;
         span.setAttributes({ 'model.id': id, 'sample.id': sampleId });
 
         try {
@@ -783,10 +738,7 @@ export async function adminInfluencerModelsRoutes(app: FastifyInstance): Promise
           });
         } catch (error) {
           logger.error({ error, id, sampleId }, 'Failed to refresh sample URL');
-          return reply.status(500).send({
-            success: false,
-            error: { code: 'INTERNAL_ERROR', message: 'Failed to refresh URL' },
-          });
+          return sendServiceError(reply, error, 'Failed to refresh URL');
         }
       });
     }

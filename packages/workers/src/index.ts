@@ -16,6 +16,7 @@ async function bootstrap() {
   const { ImageRenditionWorker } = await import('./image/worker.js');
   const { VideoGenerationWorker } = await import('./video/worker.js');
   const { GiftGenerationWorker } = await import('./gift/worker.js');
+  const { InfluencerSampleGenerationWorker } = await import('./influencer/worker.js');
   const { AdSpendSyncWorker, LtvCalculationWorker, createAdSpendSyncQueue, createLtvCalculationQueue } = await import('./ads/index.js');
   const { createDbClient } = await import('./db/client.js');
   const { createS3Client } = await import('./storage/s3.js');
@@ -119,6 +120,14 @@ async function bootstrap() {
     concurrency: 2, // LLM + imagegen, moderate concurrency
   });
 
+  // Influencer sample generation worker - generates LoRA test samples via FAL
+  const influencerSampleGenerationWorker = new InfluencerSampleGenerationWorker({
+    connection,
+    db,
+    logger: logger.child({ worker: 'influencer-sample-generation' }),
+    concurrency: 2,
+  });
+
   // Ad spend sync worker - syncs spend data from Google/Facebook Ads
   const adSpendSyncWorker = new AdSpendSyncWorker({
     connection,
@@ -147,6 +156,7 @@ async function bootstrap() {
     imageRenditionWorker.start(),
     videoGenerationWorker.start(),
     giftGenerationWorker.start(),
+    influencerSampleGenerationWorker.start(),
     adSpendSyncWorker.start(),
     ltvCalculationWorker.start(),
   ].filter(Boolean));
@@ -169,6 +179,7 @@ async function bootstrap() {
       imageRenditionWorker.stop(),
       videoGenerationWorker.stop(),
       giftGenerationWorker.stop(),
+      influencerSampleGenerationWorker.stop(),
       adSpendSyncWorker.stop(),
       ltvCalculationWorker.stop(),
     ].filter(Boolean));

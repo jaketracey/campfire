@@ -4,9 +4,8 @@
  */
 
 import { sql } from '../db/pool.js';
-import { logger } from '../observability/logger.js';
 import type { TransactionContext, PaginationOptions, PaginatedResult } from './types.js';
-import { NotFoundError, wrapDatabaseError } from './errors.js';
+import { NotFoundError, DuplicateError, ValidationError, isUniqueViolation, wrapDatabaseError } from './errors.js';
 
 /**
  * Influencer model status enum
@@ -219,6 +218,9 @@ export class InfluencerModelsRepository {
       `;
       return this.mapRow(result[0]!);
     } catch (error) {
+      if (isUniqueViolation(error)) {
+        throw new DuplicateError('InfluencerModel', 'trigger_word', data.trigger_word);
+      }
       throw wrapDatabaseError(error, 'influencer_models.create');
     }
   }
@@ -228,30 +230,38 @@ export class InfluencerModelsRepository {
    */
   async update(id: string, data: InfluencerModelUpdate, tx?: TransactionContext): Promise<InfluencerModel> {
     const db = this.getSql(tx);
-    const result = await db`
-      UPDATE influencer_models
-      SET
-        name = COALESCE(${data.name ?? null}, name),
-        trigger_word = COALESCE(${data.trigger_word ?? null}, trigger_word),
-        training_steps = COALESCE(${data.training_steps ?? null}, training_steps),
-        is_style = COALESCE(${data.is_style ?? null}, is_style),
-        status = COALESCE(${data.status ?? null}, status),
-        status_message = COALESCE(${data.status_message ?? null}, status_message),
-        training_images_s3_keys = COALESCE(${data.training_images_s3_keys ?? null}, training_images_s3_keys),
-        training_zip_s3_key = COALESCE(${data.training_zip_s3_key ?? null}, training_zip_s3_key),
-        lora_s3_key = COALESCE(${data.lora_s3_key ?? null}, lora_s3_key),
-        fal_training_job_id = COALESCE(${data.fal_training_job_id ?? null}, fal_training_job_id),
-        fal_result_url = COALESCE(${data.fal_result_url ?? null}, fal_result_url),
-        training_started_at = COALESCE(${data.training_started_at ?? null}, training_started_at),
-        training_completed_at = COALESCE(${data.training_completed_at ?? null}, training_completed_at)
-      WHERE id = ${id}
-      RETURNING
-        id, name, trigger_word, training_steps, is_style,
-        status, status_message,
-        training_images_s3_keys, training_zip_s3_key, lora_s3_key,
-        fal_training_job_id, fal_result_url,
-        created_at, updated_at, training_started_at, training_completed_at
-    `;
+    let result: Record<string, unknown>[];
+    try {
+      result = await db`
+        UPDATE influencer_models
+        SET
+          name = COALESCE(${data.name ?? null}, name),
+          trigger_word = COALESCE(${data.trigger_word ?? null}, trigger_word),
+          training_steps = COALESCE(${data.training_steps ?? null}, training_steps),
+          is_style = COALESCE(${data.is_style ?? null}, is_style),
+          status = COALESCE(${data.status ?? null}, status),
+          status_message = COALESCE(${data.status_message ?? null}, status_message),
+          training_images_s3_keys = COALESCE(${data.training_images_s3_keys ?? null}, training_images_s3_keys),
+          training_zip_s3_key = COALESCE(${data.training_zip_s3_key ?? null}, training_zip_s3_key),
+          lora_s3_key = COALESCE(${data.lora_s3_key ?? null}, lora_s3_key),
+          fal_training_job_id = COALESCE(${data.fal_training_job_id ?? null}, fal_training_job_id),
+          fal_result_url = COALESCE(${data.fal_result_url ?? null}, fal_result_url),
+          training_started_at = COALESCE(${data.training_started_at ?? null}, training_started_at),
+          training_completed_at = COALESCE(${data.training_completed_at ?? null}, training_completed_at)
+        WHERE id = ${id}
+        RETURNING
+          id, name, trigger_word, training_steps, is_style,
+          status, status_message,
+          training_images_s3_keys, training_zip_s3_key, lora_s3_key,
+          fal_training_job_id, fal_result_url,
+          created_at, updated_at, training_started_at, training_completed_at
+      `;
+    } catch (error) {
+      if (isUniqueViolation(error) && data.trigger_word) {
+        throw new DuplicateError('InfluencerModel', 'trigger_word', data.trigger_word);
+      }
+      throw wrapDatabaseError(error, 'influencer_models.update');
+    }
 
     if (!result[0]) {
       throw new NotFoundError('InfluencerModel', id);
@@ -266,19 +276,41 @@ export class InfluencerModelsRepository {
   async addImageKey(id: string, s3Key: string, tx?: TransactionContext): Promise<InfluencerModel> {
     const db = this.getSql(tx);
     const result = await db`
-      UPDATE influencer_models
-      SET training_images_s3_keys = array_append(training_images_s3_keys, ${s3Key})
-      WHERE id = ${id}
-      RETURNING
-        id, name, trigger_word, training_steps, is_style,
-        status, status_message,
-        training_images_s3_keys, training_zip_s3_key, lora_s3_key,
-        fal_training_job_id, fal_result_url,
-        created_at, updated_at, training_started_at, training_completed_at
+      WITH target AS (
+        SELECT
+          id,
+          training_images_s3_keys,
+          cardinality(training_images_s3_keys) AS image_count,
+          ${s3Key} = ANY(training_images_s3_keys) AS already_present
+        FROM influencer_models
+        WHERE id = ${id}
+        FOR UPDATE
+      ),
+      updated AS (
+        UPDATE influencer_models m
+        SET training_images_s3_keys = CASE
+          WHEN t.already_present THEN m.training_images_s3_keys
+          ELSE array_append(m.training_images_s3_keys, ${s3Key})
+        END
+        FROM target t
+        WHERE m.id = t.id
+          AND (t.already_present OR t.image_count < 25)
+        RETURNING
+          m.id, m.name, m.trigger_word, m.training_steps, m.is_style,
+          m.status, m.status_message,
+          m.training_images_s3_keys, m.training_zip_s3_key, m.lora_s3_key,
+          m.fal_training_job_id, m.fal_result_url,
+          m.created_at, m.updated_at, m.training_started_at, m.training_completed_at
+      )
+      SELECT * FROM updated
     `;
 
     if (!result[0]) {
-      throw new NotFoundError('InfluencerModel', id);
+      const model = await this.findById(id, tx);
+      if (!model) {
+        throw new NotFoundError('InfluencerModel', id);
+      }
+      throw new ValidationError('Maximum 25 images allowed', 'training_images_s3_keys');
     }
 
     return this.mapRow(result[0]);
@@ -335,6 +367,13 @@ export class InfluencerModelsRepository {
     const db = this.getSql(tx);
     const limit = filters.limit ?? 50;
     const offset = filters.offset ?? 0;
+
+    if (!Number.isInteger(limit) || limit < 1 || limit > 100) {
+      throw new ValidationError('limit must be an integer between 1 and 100', 'limit');
+    }
+    if (!Number.isInteger(offset) || offset < 0) {
+      throw new ValidationError('offset must be a non-negative integer', 'offset');
+    }
 
     // Build dynamic conditions
     const conditions: ReturnType<typeof db>[] = [];
