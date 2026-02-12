@@ -6,8 +6,6 @@
 import type { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
 import { z } from 'zod';
 import { nanoid } from 'nanoid';
-import { GetObjectCommand } from '@aws-sdk/client-s3';
-import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { requireAuth } from '../middleware/auth.js';
 import { getCompanionsRepository } from '../repositories/companions.js';
 import { getSessionsRepository } from '../repositories/sessions.js';
@@ -16,12 +14,8 @@ import { db } from '../db/index.js';
 import { logger } from '../observability/logger.js';
 import type { CompanionSpec } from '../db/types.js';
 import { env } from '../env.js';
-import { getS3Client, getMediaBucket } from '../utils/storage.js';
-import type { ImageRenditions, RenditionFormats, RenditionFile } from '@campfire/shared';
-
-// S3 configuration for signing rendition URLs
-const S3_MEDIA_BUCKET = getMediaBucket();
-const s3Client = getS3Client();
+import { buildMediaUrl } from '../utils/storage.js';
+import type { ImageRenditions, RenditionFormats } from '@campfire/shared';
 
 // Orchestrator configuration
 const ORCHESTRATOR_URL = env.ORCHESTRATOR_URL;
@@ -310,7 +304,7 @@ interface LatestImageData {
 
 /**
  * Get latest image for each companion from conversations
- * Signs all rendition URLs on-the-fly since the bucket requires presigned access
+ * Builds direct S3 URLs for all renditions (bucket is publicly readable)
  */
 async function getLatestImagesForCompanions(
   userId: string,
@@ -329,19 +323,15 @@ async function getLatestImagesForCompanions(
 
   const imageMap = new Map<string, LatestImageData>();
 
-  // Sign URLs in parallel for all renditions
-  await Promise.all(
-    results.map(async (row) => {
-      if (row.companion_id) {
-        const renditions = row.renditions as ImageRenditions | null;
-        const signedRenditions = renditions ? await signRenditionUrls(renditions) : null;
-        imageMap.set(row.companion_id, {
-          s3_url: row.s3_url,
-          renditions: signedRenditions,
-        });
-      }
-    })
-  );
+  for (const row of results) {
+    if (row.companion_id) {
+      const renditions = row.renditions as ImageRenditions | null;
+      imageMap.set(row.companion_id, {
+        s3_url: row.s3_url,
+        renditions: renditions ? buildRenditionUrls(renditions) : null,
+      });
+    }
+  }
 
   return imageMap;
 }
@@ -382,59 +372,52 @@ async function getAvatarDataForCompanions(
 }
 
 /**
- * Sign a single rendition file's URL
+ * Build a direct S3 URL for a rendition file (no expiry - bucket is publicly readable)
  */
-async function signRenditionUrl(s3Key: string): Promise<string> {
-  return getSignedUrl(
-    s3Client,
-    new GetObjectCommand({ Bucket: S3_MEDIA_BUCKET, Key: s3Key }),
-    { expiresIn: 604800 } // 7 days
-  );
+function buildRenditionUrl(s3Key: string): string {
+  return buildMediaUrl(s3Key);
 }
 
 /**
- * Sign all URLs in a RenditionFormats object
+ * Build direct URLs for all renditions in a RenditionFormats object
  */
-async function signRenditionFormats(formats: RenditionFormats): Promise<RenditionFormats> {
-  const signed: RenditionFormats = {};
+function buildRenditionFormats(formats: RenditionFormats): RenditionFormats {
+  const result: RenditionFormats = {};
 
   for (const [format, file] of Object.entries(formats)) {
     if (file && file.s3Key) {
-      const signedUrl = await signRenditionUrl(file.s3Key);
-      signed[format as keyof RenditionFormats] = {
+      result[format as keyof RenditionFormats] = {
         ...file,
-        url: signedUrl,
+        url: buildRenditionUrl(file.s3Key),
       };
     }
   }
 
-  return signed;
+  return result;
 }
 
 /**
- * Sign all URLs in an ImageRenditions object
- * The worker stores unsigned direct S3 URLs, so we need to sign them on-the-fly
+ * Build direct URLs for all renditions in an ImageRenditions object
+ * The bucket is publicly readable for companion images, so no signing needed
  */
-async function signRenditionUrls(renditions: ImageRenditions): Promise<ImageRenditions> {
-  const signed: ImageRenditions = {};
+function buildRenditionUrls(renditions: ImageRenditions): ImageRenditions {
+  const result: ImageRenditions = {};
   const sizes = ['thumb', 'small', 'medium', 'large', 'original'] as const;
 
-  await Promise.all(
-    sizes.map(async (size) => {
-      const formats = renditions[size];
-      if (formats) {
-        signed[size] = await signRenditionFormats(formats);
-      }
-    })
-  );
+  for (const size of sizes) {
+    const formats = renditions[size];
+    if (formats) {
+      result[size] = buildRenditionFormats(formats);
+    }
+  }
 
-  return signed;
+  return result;
 }
 
 /**
  * Get renditions for avatars by their s3_keys
  * Looks up companion_images table which stores renditions
- * Signs all URLs on-the-fly since the bucket requires presigned access
+ * Builds direct S3 URLs (bucket is publicly readable)
  */
 async function getAvatarRenditionsForS3Keys(
   s3Keys: string[]
@@ -450,15 +433,11 @@ async function getAvatarRenditionsForS3Keys(
 
   const renditionsMap = new Map<string, ImageRenditions>();
 
-  // Sign URLs in parallel for all renditions
-  await Promise.all(
-    results.map(async (row) => {
-      if (row.s3_key && row.renditions) {
-        const signedRenditions = await signRenditionUrls(row.renditions as ImageRenditions);
-        renditionsMap.set(row.s3_key, signedRenditions);
-      }
-    })
-  );
+  for (const row of results) {
+    if (row.s3_key && row.renditions) {
+      renditionsMap.set(row.s3_key, buildRenditionUrls(row.renditions as ImageRenditions));
+    }
+  }
 
   return renditionsMap;
 }

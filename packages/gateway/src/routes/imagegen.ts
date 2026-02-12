@@ -6,8 +6,7 @@
 
 import type { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
 import { createHash } from 'crypto';
-import { PutObjectCommand, GetObjectCommand } from '@aws-sdk/client-s3';
-import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
+import { PutObjectCommand } from '@aws-sdk/client-s3';
 import { requireAuth } from '../middleware/auth.js';
 import { logger } from '../observability/logger.js';
 import { db } from '../db/index.js';
@@ -23,7 +22,7 @@ import { getRenditionKeyPrefix, type ImageRenditions } from '@campfire/shared';
 import { getLLMUsageService } from '../services/llm-usage.js';
 import { renderPromptFromDb } from '../services/prompt-runtime.js';
 import { env } from '../env.js';
-import { getS3Client, getMediaBucket } from '../utils/storage.js';
+import { getS3Client, getMediaBucket, buildMediaUrl } from '../utils/storage.js';
 
 // Orchestrator configuration
 const ORCHESTRATOR_URL = env.ORCHESTRATOR_URL;
@@ -467,12 +466,8 @@ async function uploadToS3(
     })
   );
 
-  // Generate a presigned URL for access (valid for 7 days)
-  const s3Url = await getSignedUrl(
-    s3Client,
-    new GetObjectCommand({ Bucket: S3_MEDIA_BUCKET, Key: s3Key }),
-    { expiresIn: 604800 }
-  );
+  // Build direct S3 URL (no expiry - bucket is publicly readable for companion images)
+  const s3Url = buildMediaUrl(s3Key);
 
   return {
     s3Key,
@@ -569,16 +564,6 @@ async function getSessionImagesWithAnchors(
   return getSessionImages(userId, sessionId, limit);
 }
 
-/**
- * Refresh presigned URL for an image
- */
-async function refreshPresignedUrl(s3Key: string): Promise<string> {
-  return getSignedUrl(
-    s3Client,
-    new GetObjectCommand({ Bucket: S3_MEDIA_BUCKET, Key: s3Key }),
-    { expiresIn: 604800 }
-  );
-}
 
 /**
  * Register image generation routes
@@ -843,17 +828,13 @@ export async function imagegenRoutes(app: FastifyInstance): Promise<void> {
         // Get session images including anchor images for the companion
         const images = await getSessionImagesWithAnchors(userId, sessionId, companionId, limit);
 
-        // Refresh presigned URLs for images (they may have expired)
-        const refreshedImages = await Promise.all(
-          images.map(async (img) => {
-            try {
-              const freshUrl = await refreshPresignedUrl(img.s3_key);
-              return { ...img, s3_url: freshUrl };
-            } catch {
-              return img;
-            }
-          })
-        );
+        // Build direct S3 URLs (no expiry - bucket is publicly readable)
+        const refreshedImages = images.map((img) => {
+          if (img.s3_key) {
+            return { ...img, s3_url: buildMediaUrl(img.s3_key) };
+          }
+          return img;
+        });
 
         return reply.send({
           images: refreshedImages,
@@ -976,12 +957,8 @@ export async function imagegenRoutes(app: FastifyInstance): Promise<void> {
             })
           );
 
-          // Generate presigned URL
-          const s3Url = await getSignedUrl(
-            s3Client,
-            new GetObjectCommand({ Bucket: S3_MEDIA_BUCKET, Key: s3Key }),
-            { expiresIn: 604800 }
-          );
+          // Build direct S3 URL (no expiry - bucket is publicly readable)
+          const s3Url = buildMediaUrl(s3Key);
 
           // Create avatar record with is_identity_anchor = true
           const avatar = await companionRepo.createAvatar({
@@ -1332,11 +1309,8 @@ export async function imagegenRoutes(app: FastifyInstance): Promise<void> {
               })
             );
 
-            const s3Url = await getSignedUrl(
-              s3Client,
-              new GetObjectCommand({ Bucket: S3_MEDIA_BUCKET, Key: s3Key }),
-              { expiresIn: 604800 }
-            );
+            // Build direct S3 URL (no expiry - bucket is publicly readable)
+            const s3Url = buildMediaUrl(s3Key);
 
             const avatar = await companionRepo.createAvatar({
               companion_id: companionId,
