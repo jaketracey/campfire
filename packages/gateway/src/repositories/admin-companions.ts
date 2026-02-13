@@ -52,6 +52,7 @@ export interface AdminCompanionImage {
   prompt: string | null;
   provider: string;
   createdAt: Date;
+  renditions: Record<string, unknown> | null;
 }
 
 export interface AdminKnowledgeGraphEntity {
@@ -296,7 +297,8 @@ export class AdminCompanionsRepository {
         style,
         prompt,
         provider,
-        created_at
+        created_at,
+        renditions
       FROM companion_images
       WHERE companion_id = ${companionId}
       ORDER BY created_at DESC
@@ -315,6 +317,7 @@ export class AdminCompanionsRepository {
       prompt: row.prompt as string | null,
       provider: row.provider as string,
       createdAt: row.created_at as Date,
+      renditions: (row.renditions as Record<string, unknown>) ?? null,
     }));
 
     return { data, hasMore };

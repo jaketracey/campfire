@@ -3,6 +3,7 @@
  * Handles companion image generation via FAL.ai
  */
 
+import type { ImageRenditions } from '@campfire/shared';
 import { apiClient, get, post } from './client';
 import { getAccessToken } from '@/stores/auth-store';
 
@@ -62,6 +63,7 @@ export interface GalleryImage {
   provider: string;
   latency_ms: number | null;
   created_at: string;
+  renditions?: ImageRenditions | null;
 }
 
 export interface GalleryResponse {

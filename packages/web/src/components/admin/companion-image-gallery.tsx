@@ -12,6 +12,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { getAdminCompanionImages, type AdminCompanionImage } from '@/lib/api/admin-companions';
+import { selectRenditionUrl } from '@/lib/utils/image-renditions';
 
 interface CompanionImageGalleryProps {
   companionId: string;
@@ -87,7 +88,7 @@ export function CompanionImageGallery({ companionId }: CompanionImageGalleryProp
               className="group relative aspect-[3/4] rounded-lg overflow-hidden bg-white/5 hover:ring-2 hover:ring-campfire-500/50 transition-all"
             >
               <Image
-                src={image.url}
+                src={selectRenditionUrl(image.renditions, { displayWidth: 250 }) ?? image.url}
                 alt={image.emotionalState}
                 fill
                 className="object-cover"
@@ -144,7 +145,7 @@ export function CompanionImageGallery({ companionId }: CompanionImageGalleryProp
             <div className="space-y-4">
               <div className="relative aspect-[3/4] max-h-[60vh] rounded-lg overflow-hidden bg-white/5">
                 <Image
-                  src={selectedImage.url}
+                  src={selectRenditionUrl(selectedImage.renditions, { displayWidth: 768 }) ?? selectedImage.url}
                   alt={selectedImage.emotionalState}
                   fill
                   className="object-contain"

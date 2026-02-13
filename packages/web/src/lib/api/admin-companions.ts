@@ -3,6 +3,7 @@
  * Administrative operations for companion management.
  */
 
+import type { ImageRenditions } from '@campfire/shared';
 import { get } from './client';
 
 // ============================================================================
@@ -60,6 +61,7 @@ export interface AdminCompanionImage {
   prompt: string | null;
   provider: string;
   createdAt: string;
+  renditions?: ImageRenditions | null;
 }
 
 export interface AdminKnowledgeGraphEntity {

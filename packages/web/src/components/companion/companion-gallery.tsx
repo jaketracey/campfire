@@ -6,6 +6,7 @@ import { X, Download, Maximize2, ChevronLeft, ChevronRight } from 'lucide-react'
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import { getSessionGallery, type GalleryImage } from '@/lib/api/imagegen';
+import { selectRenditionUrl } from '@/lib/utils/image-renditions';
 import { StaticCompanionAvatar } from './companion-avatar';
 
 interface CompanionGalleryProps {
@@ -61,12 +62,15 @@ export function CompanionGallery({ sessionId, isOpen, onClose }: CompanionGaller
 
   async function handleDownload(image: GalleryImage) {
     try {
-      const response = await fetch(image.s3_url);
+      const downloadUrl = selectRenditionUrl(image.renditions, { displayWidth: 800, preferredSize: 'large' }) ?? image.s3_url;
+      const isWebp = downloadUrl.endsWith('.webp');
+      const ext = isWebp ? 'webp' : 'png';
+      const response = await fetch(downloadUrl);
       const blob = await response.blob();
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = `companion-${image.emotional_state}-${image.cache_key.slice(0, 8)}.png`;
+      a.download = `companion-${image.emotional_state}-${image.cache_key.slice(0, 8)}.${ext}`;
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);
@@ -136,7 +140,7 @@ export function CompanionGallery({ sessionId, isOpen, onClose }: CompanionGaller
               >
                 <div className="aspect-[5/8] overflow-hidden rounded-lg bg-white/10">
                   <img
-                    src={image.s3_url}
+                    src={selectRenditionUrl(image.renditions, { displayWidth: 200 }) ?? image.s3_url}
                     alt={`Companion - ${image.emotional_state}`}
                     className="h-full w-full object-cover transition-transform group-hover:scale-105"
                   />
@@ -208,7 +212,7 @@ export function CompanionGallery({ sessionId, isOpen, onClose }: CompanionGaller
               onClick={(e) => e.stopPropagation()}
             >
               <img
-                src={images[selectedIndex].s3_url}
+                src={selectRenditionUrl(images[selectedIndex].renditions, { displayWidth: 800 }) ?? images[selectedIndex].s3_url}
                 alt={`Companion - ${images[selectedIndex].emotional_state}`}
                 className="max-h-[80vh] rounded-lg object-contain"
               />

@@ -188,6 +188,7 @@ export async function adminCompanionsRoutes(app: FastifyInstance): Promise<void>
           prompt: image.prompt,
           provider: image.provider,
           createdAt: image.createdAt.toISOString(),
+          renditions: image.renditions ?? null,
         })),
         hasMore: result.hasMore,
         limit,

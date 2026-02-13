@@ -5,6 +5,7 @@ import { X, ChevronLeft, ChevronRight } from 'lucide-react';
 import { LikeHeartsAnimation } from '@/components/likes/like-hearts-animation';
 import type { GalleryImage } from '@/lib/api/imagegen';
 import type { SignupTrigger } from '@/components/demo/signup-modal';
+import { selectRenditionUrl } from '@/lib/utils/image-renditions';
 
 interface MobileAvatarProps {
   currentAvatarUrl: string | null;
@@ -103,7 +104,7 @@ export function MobileAvatar({
               <motion.img
                 key={mobileGalleryIndex}
                 src={mobileGalleryImages.length > 0 && mobileGalleryImages[mobileGalleryIndex]
-                  ? mobileGalleryImages[mobileGalleryIndex].s3_url
+                  ? (selectRenditionUrl(mobileGalleryImages[mobileGalleryIndex].renditions, { displayWidth: 600 }) ?? mobileGalleryImages[mobileGalleryIndex].s3_url)
                   : currentAvatarUrl}
                 alt={companionName}
                 className="w-full h-full object-cover"
