@@ -739,9 +739,15 @@ export async function companionsRoutes(app: FastifyInstance): Promise<void> {
 
     logger.info({ companionId, userId: request.user!.userId }, 'Companion updated');
 
-    // Fetch updated companion with new spec
-    const updated = await companionRepo.findById(companionId);
-    return reply.send(mapCompanionResponse(updated!));
+    // Fetch updated companion with avatar data
+    const updated = await companionRepo.findByIdWithAvatar(companionId);
+    let avatarRenditions: ImageRenditions | null = null;
+    const avatarS3Key = updated?.activeAvatar?.s3_key;
+    if (avatarS3Key) {
+      const renditionsMap = await getAvatarRenditionsForS3Keys([avatarS3Key]);
+      avatarRenditions = renditionsMap.get(avatarS3Key) || null;
+    }
+    return reply.send(mapCompanionResponse(updated!, updated?.activeAvatar?.asset_url, avatarRenditions));
   });
 
   /**
