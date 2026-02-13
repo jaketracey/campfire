@@ -63,8 +63,7 @@ export function CompanionGallery({ sessionId, isOpen, onClose }: CompanionGaller
   async function handleDownload(image: GalleryImage) {
     try {
       const downloadUrl = selectRenditionUrl(image.renditions, { displayWidth: 800, preferredSize: 'large' }) ?? image.s3_url;
-      const isWebp = downloadUrl.endsWith('.webp');
-      const ext = isWebp ? 'webp' : 'png';
+      const ext = downloadUrl.endsWith('.avif') ? 'avif' : downloadUrl.endsWith('.webp') ? 'webp' : 'png';
       const response = await fetch(downloadUrl);
       const blob = await response.blob();
       const url = URL.createObjectURL(blob);
