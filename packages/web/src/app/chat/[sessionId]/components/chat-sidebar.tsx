@@ -241,7 +241,7 @@ export function ChatSidebar({
                     className="absolute right-2 bottom-2 h-14 w-14 rounded-lg overflow-hidden border-2 border-white/80 shadow-md bg-black/30 backdrop-blur-sm ring-1 ring-black/40 cursor-pointer"
                   >
                     <img
-                      src={thumbnailImageUrl || companionAvatarUrl}
+                      src={thumbnailImageUrl || companionAvatarUrl || ''}
                       alt="Companion avatar thumbnail"
                       className="h-full w-full object-cover"
                     />
