@@ -95,18 +95,39 @@ export default function DashboardPage() {
     }
   }, [isAuthenticated, user?.id]);
 
+  const firstName = isAuthenticated
+    ? (
+      user?.displayName?.trim().split(/\s+/).filter(Boolean)[0]
+      ?? user?.email?.split('@')[0]
+      ?? 'there'
+    )
+    : '';
+
   useEffect(() => {
     if (isInitialized && !authLoading) {
       fetchData();
     }
   }, [isInitialized, authLoading, fetchData]);
 
-  const handleNewChat = (companionId: string) => {
+  const handleNewChat = (companion: Companion) => {
     if (!isAuthenticated) {
-      router.push('/login');
+      const queryParams = new URLSearchParams();
+      queryParams.set('companionId', companion.id);
+      queryParams.set('companionName', companion.name);
+      if (companion.avatarUrl) {
+        queryParams.set('companionAvatarUrl', companion.avatarUrl);
+      }
+      if (companion.archetype) {
+        queryParams.set('companionArchetype', companion.archetype);
+      }
+      if (companion.backstory) {
+        queryParams.set('companionDescription', companion.backstory);
+      }
+
+      router.push(`/chat/demo?${queryParams.toString()}`);
       return;
     }
-    router.push(`/chat/new?companion=${companionId}`);
+    router.push(`/chat/new?companion=${companion.id}`);
   };
 
   const handleResumeChat = (sessionId: string) => {
@@ -193,15 +214,13 @@ export default function DashboardPage() {
 
         {/* Companions Grid - dense mosaic of small thumbnails */}
         {hasCompanions && (
-          <section className="space-y-4">
-            <div className="flex items-center justify-between">
-              <h2 className="text-2xl font-bold font-display text-white flex items-center gap-3">
-                <div className="h-2 w-2 rounded-full bg-campfire-500 animate-pulse" />
-                {isAuthenticated ? 'Your Companions' : 'Companions'}
+          <section className={isAuthenticated ? 'space-y-4' : ''}>
+            {isAuthenticated && (
+              <h2 className="text-xl sm:text-2xl md:text-3xl font-bold font-display text-white leading-tight">
+                Welcome back, {firstName}
               </h2>
-            </div>
+            )}
 
-            {/* Full-width wrapping grid of small companion thumbnails */}
             <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 lg:grid-cols-8 xl:grid-cols-10 2xl:grid-cols-12 gap-2">
               {companions.map((companion, idx) => {
                 const hasExistingSession = isAuthenticated && !!companion.latestSessionId;
@@ -269,7 +288,7 @@ export default function DashboardPage() {
                                   Resume
                                 </Button>
                                 <Button
-                                  onClick={() => handleNewChat(companion.id)}
+                                  onClick={() => handleNewChat(companion)}
                                   className="w-full h-6 rounded-md bg-campfire-600 hover:bg-campfire-500 text-white text-[10px] px-1"
                                 >
                                   <Plus className="h-2.5 w-2.5 mr-1 flex-shrink-0" />
@@ -278,7 +297,7 @@ export default function DashboardPage() {
                               </div>
                             ) : (
                               <Button
-                                onClick={() => handleNewChat(companion.id)}
+                                onClick={() => handleNewChat(companion)}
                                 className="w-full h-6 rounded-md bg-campfire-600 hover:bg-campfire-500 text-white text-[10px] mx-1 px-1"
                               >
                                 <MessageCircle className="h-2.5 w-2.5 mr-1 flex-shrink-0" />

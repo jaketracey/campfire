@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { motion, AnimatePresence } from 'framer-motion';
 import { AnimatedFlame } from '@/components/ui/animated-flame';
 import { Button } from '@/components/ui/button';
@@ -15,6 +15,7 @@ import { ApiError } from '@/lib/api/client';
 
 export default function DemoChatPage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const { toast } = useToast();
   const { user, isInitialized, loginWithGoogle, login, signup } = useAuth();
 
@@ -27,6 +28,7 @@ export default function DemoChatPage() {
   const [signupTrigger, setSignupTrigger] = useState<SignupTrigger>('general');
   const [isSwitchingCompanion, setIsSwitchingCompanion] = useState(false);
   const [showDesignCTA, setShowDesignCTA] = useState(false);
+  const search = searchParams.toString();
 
   // Redirect authenticated users to dashboard
   useEffect(() => {
@@ -55,22 +57,46 @@ export default function DemoChatPage() {
         setIsLoading(true);
         setError(null);
 
-        // Get fingerprint and demo companion in parallel
-        const [fp, demoCompanion] = await Promise.all([
-          getDeviceFingerprint(),
-          getDemoCompanion(),
-        ]);
+        const queryCompanion = (() => {
+          const companionId = searchParams.get('companionId');
+          if (!companionId) return null;
+
+          return {
+            id: companionId,
+            name: searchParams.get('companionName') || 'Demo companion',
+            avatarUrl: searchParams.get('companionAvatarUrl') || null,
+            archetype: searchParams.get('companionArchetype') || null,
+            description: searchParams.get('companionDescription') || null,
+          };
+        })();
+
+        const fp = await getDeviceFingerprint();
+
+        let selectedCompanion = queryCompanion ?? await getDemoCompanion();
+        let demoSession;
+
+        try {
+          // Create demo session for selected companion
+          demoSession = await createDemoSession({
+            companionId: selectedCompanion.id,
+            fingerprint: fp,
+          });
+        } catch (err) {
+          if (!queryCompanion) {
+            throw err;
+          }
+
+          selectedCompanion = await getDemoCompanion();
+
+          demoSession = await createDemoSession({
+            companionId: selectedCompanion.id,
+            fingerprint: fp,
+          });
+        }
 
         setFingerprint(fp);
-        setCompanion(demoCompanion);
-
-        // Create demo session
-        const session = await createDemoSession({
-          companionId: demoCompanion.id,
-          fingerprint: fp,
-        });
-
-        setSessionId(session.id);
+        setCompanion(selectedCompanion);
+        setSessionId(demoSession.id);
         setIsLoading(false);
       } catch (err) {
         console.error('[DemoChat] Init error:', err);
@@ -84,7 +110,7 @@ export default function DemoChatPage() {
     }
 
     initDemo();
-  }, [isInitialized, user]);
+  }, [isInitialized, user, search]);
 
   // Handle limit reached
   const handleLimitReached = useCallback(() => {
