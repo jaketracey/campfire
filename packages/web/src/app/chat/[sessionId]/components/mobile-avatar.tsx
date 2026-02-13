@@ -6,7 +6,6 @@ import { LikeHeartsAnimation } from '@/components/likes/like-hearts-animation';
 import type { GalleryImage } from '@/lib/api/imagegen';
 import type { SignupTrigger } from '@/components/demo/signup-modal';
 import { useEffect, useState } from 'react';
-import { useEffect, useState } from 'react';
 
 interface MobileAvatarProps {
   currentAvatarUrl: string | null;
