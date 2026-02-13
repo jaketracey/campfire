@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useRef, useCallback, useEffect } from 'react';
+import { useState, useRef, useCallback, useEffect, type RefObject } from 'react';
 import type { CampfireWebSocket } from '@/lib/ws';
 import { isNativeApp, getNativeBridge, onNativeRecordingComplete } from '@/lib/native-bridge';
 
@@ -16,6 +16,12 @@ interface UseVoiceRecordingReturn {
   startRecording: () => Promise<void>;
   stopRecording: () => void;
   requestPermission: () => Promise<boolean>;
+
+  // Test-only handles for deterministic cleanup assertions
+  audioContextRef: RefObject<AudioContext | null>;
+  mediaStreamRef: RefObject<MediaStream | null>;
+  workletNodeRef: RefObject<AudioWorkletNode | null>;
+  chunkIntervalRef: RefObject<number | null>;
 }
 
 /**
@@ -324,5 +330,9 @@ export function useVoiceRecording(
     startRecording,
     stopRecording,
     requestPermission,
+    audioContextRef,
+    mediaStreamRef,
+    workletNodeRef,
+    chunkIntervalRef,
   };
 }

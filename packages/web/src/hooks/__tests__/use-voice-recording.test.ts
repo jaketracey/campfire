@@ -128,8 +128,8 @@ describe('useVoiceRecording - Resource Cleanup', () => {
     expect(result.current.isRecording).toBe(true);
 
     // Capture references before unmount
-    const audioContext = (result.current as any).audioContextRef?.current;
-    const mediaStream = (result.current as any).mediaStreamRef?.current;
+    const audioContext = result.current.audioContextRef.current;
+    const mediaStream = result.current.mediaStreamRef.current;
 
     // Unmount while recording
     await act(async () => {
@@ -142,16 +142,10 @@ describe('useVoiceRecording - Resource Cleanup', () => {
     expect(mediaStream?.getTracks()[0].readyState).toBe('ended');
   });
 
-  it('should clear interval timer on error', async () => {
+  it('should not set interval when recording fails to start', async () => {
     const wsRef = { current: mockWs as CampfireWebSocket };
 
-    // Make getUserMedia fail after initial success
-    let callCount = 0;
-    mockGetUserMedia.mockImplementation(() => {
-      callCount++;
-      if (callCount === 1) return Promise.resolve(new MockMediaStream());
-      return Promise.reject(new Error('Permission denied'));
-    });
+    mockGetUserMedia.mockRejectedValue(new Error('Permission denied'));
 
     const { result } = renderHook(() => useVoiceRecording(wsRef));
 
@@ -186,10 +180,9 @@ describe('useVoiceRecording - Resource Cleanup', () => {
 
     // Should not throw when stopping
     await act(async () => {
-      await expect(async () => {
-        await result.current.stopRecording();
-        await vi.advanceTimersByTimeAsync(50);
-      }).resolves.not.toThrow();
+      const stopRecording = result.current.stopRecording();
+      await vi.advanceTimersByTimeAsync(50);
+      await stopRecording;
     });
 
     expect(result.current.isRecording).toBe(false);
@@ -222,8 +215,9 @@ describe('useVoiceRecording - Resource Cleanup', () => {
     });
 
     await act(async () => {
-      await result.current.stopRecording();
+      const stopRecording = result.current.stopRecording();
       await vi.advanceTimersByTimeAsync(50);
+      await stopRecording;
     });
 
     // All tracks should have been attempted to stop
@@ -243,8 +237,9 @@ describe('useVoiceRecording - Resource Cleanup', () => {
       });
 
       await act(async () => {
-        await result.current.stopRecording();
+        const stopRecording = result.current.stopRecording();
         await vi.advanceTimersByTimeAsync(50);
+        await stopRecording;
       });
     }
 
@@ -252,8 +247,8 @@ describe('useVoiceRecording - Resource Cleanup', () => {
     expect(vi.getTimerCount()).toBe(0);
 
     // Should have cleaned up all resources
-    expect((result.current as any).audioContextRef?.current).toBeNull();
-    expect((result.current as any).mediaStreamRef?.current).toBeNull();
+    expect(result.current.audioContextRef.current).toBeNull();
+    expect(result.current.mediaStreamRef.current).toBeNull();
   });
 
   it('should clean up worklet node before audio context', async () => {
@@ -284,8 +279,9 @@ describe('useVoiceRecording - Resource Cleanup', () => {
     });
 
     await act(async () => {
-      await result.current.stopRecording();
+      const stopRecording = result.current.stopRecording();
       await vi.advanceTimersByTimeAsync(50);
+      await stopRecording;
     });
 
     // Worklet should be disconnected before context is closed
