@@ -301,6 +301,10 @@ class ImageGenRequest(BaseModel):
     reference_image_url: str | None = None  # Identity anchor for IP-Adapter
     reference_strength: float = 0.7  # How much to follow reference image
     is_anchor: bool = False  # Use high-quality anchor workflow (more steps, no upscaling)
+    # Optional LoRA support (Flux LoRA endpoints)
+    loras: list[dict[str, Any]] | None = None
+    lora_trigger_word: str | None = None
+    seed: int | None = None
     # New routing fields
     use_case: str = "image_generation"  # image_generation, image_anchor, image_variation
     companion_id: str | None = None  # For per-companion routing overrides
@@ -1381,7 +1385,9 @@ async def generate_image(request: ImageGenRequest) -> ImageGenResponse:
         routing_decision = await app_state.image_router.route_image_request(
             use_case=use_case,
             companion_id=request.companion_id,
-            requires_ip_adapter=False,  # FAL doesn't use IP-Adapter
+            # Treat reference images as a hard capability requirement. For FAL, this
+            # maps to PuLID (identity preservation). For local, this maps to IP-Adapter.
+            requires_ip_adapter=bool(request.reference_image_url),
             requires_nsfw=request.require_nsfw,
             preferred_resolution=(request.width, request.height),
             prefer_quality=request.is_anchor,
@@ -1520,11 +1526,31 @@ async def generate_image(request: ImageGenRequest) -> ImageGenResponse:
             negative_prompt = request.negative_prompt
             if negative_prompt is None:
                 negative_prompt = _get_default_negative_prompt("fal")
+
+            # Enforce identity persistence when a reference image is provided.
+            # Even if routing is misconfigured, prefer PuLID over silently dropping the reference.
+            fal_model_id = model_id
+            fal_loras = request.loras
+            fal_trigger_word = request.lora_trigger_word
+
+            if request.reference_image_url:
+                fal_model_id = "fal/flux-pulid"
+                fal_loras = None
+                fal_trigger_word = None
+            elif request.loras:
+                fal_model_id = "fal/flux-lora"
+
             result = await app_state.fal_provider.generate(
                 prompt=full_prompt,
                 size=f"{request.width}x{request.height}",
-                model_id=model_id,
+                model_id=fal_model_id,
                 negative_prompt=negative_prompt,
+                reference_image_url=request.reference_image_url,
+                reference_strength=request.reference_strength,
+                is_anchor=request.is_anchor,
+                loras=fal_loras,
+                lora_trigger_word=fal_trigger_word,
+                seed=request.seed,
             )
 
             # FAL returns a URL, we need to fetch and encode it
@@ -1549,7 +1575,7 @@ async def generate_image(request: ImageGenRequest) -> ImageGenResponse:
                 height=result["height"],
                 latency_ms=result["latency_ms"],
                 provider="fal",
-                model_id=model_id or "fal/flux-schnell",
+                model_id=fal_model_id or "fal/flux-schnell",
                 prompt_used=full_prompt,
             )
 

@@ -71,6 +71,12 @@ const CreateCompanionSchema = z.object({
       appearance: AppearanceSchema.optional(),
       palette: z.array(z.string()).optional(),
       constraints: z.array(z.string()).optional(),
+      lora: z.object({
+        provider: z.literal('fal').optional(),
+        url: z.string().url(),
+        trigger_word: z.string().min(1).max(100).regex(/^[a-z0-9_]+$/).optional(),
+        scale: z.number().min(0).max(1.5).optional(),
+      }).optional(),
     }).optional(),
     boundaries: z.object({
       relationship_pacing: z.string().optional(),
@@ -125,6 +131,12 @@ const UpdateCompanionSchema = z.object({
       appearance: AppearanceSchema.optional(),
       palette: z.array(z.string()).optional(),
       constraints: z.array(z.string()).optional(),
+      lora: z.object({
+        provider: z.literal('fal').optional(),
+        url: z.string().url(),
+        trigger_word: z.string().min(1).max(100).regex(/^[a-z0-9_]+$/).optional(),
+        scale: z.number().min(0).max(1.5).optional(),
+      }).optional(),
     }).optional(),
     boundaries: z.object({
       relationship_pacing: z.string().optional(),
@@ -173,6 +185,9 @@ function buildSpec(input: {
   }
   if (provided.visual_style?.constraints) {
     visual_style.constraints = provided.visual_style.constraints;
+  }
+  if (provided.visual_style?.lora) {
+    visual_style.lora = provided.visual_style.lora;
   }
 
   const boundaries: CompanionSpec['boundaries'] = {

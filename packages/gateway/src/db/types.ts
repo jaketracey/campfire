@@ -281,6 +281,16 @@ export interface CompanionSpec {
     palette?: string[];
     constraints?: string[];
     reference_assets?: string[];
+    lora?: {
+      /** Only FAL LoRAs are supported currently */
+      provider?: 'fal';
+      /** URL to LoRA weights (FAL CDN or S3) */
+      url: string;
+      /** Trigger token used during training (appended to prompt when using LoRA) */
+      trigger_word?: string;
+      /** LoRA strength (0.0-1.5). Defaults to 1.0. */
+      scale?: number;
+    };
   };
   boundaries: {
     relationship_pacing: string;

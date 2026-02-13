@@ -47,6 +47,12 @@ export interface ImageGenRequest {
   companionId?: string;
   referenceImageUrl?: string;  // Identity anchor for character consistency
   referenceStrength?: number;  // How strongly to follow reference (0.0-1.0)
+  /** Optional LoRAs for FAL flux-lora endpoints */
+  loras?: Array<{ path: string; scale: number }>;
+  /** Optional LoRA trigger token (appended to prompt when using LoRA) */
+  loraTriggerWord?: string;
+  /** Optional seed for reproducibility (provider/model dependent) */
+  seed?: number;
 }
 
 export interface GenerateAnchorsRequest {
@@ -257,6 +263,11 @@ export function generateCacheKey(params: ImageGenRequest): string {
     style: params.style,
     width: params.width,
     height: params.height,
+    referenceImageUrl: params.referenceImageUrl,
+    referenceStrength: params.referenceStrength,
+    loras: params.loras,
+    loraTriggerWord: params.loraTriggerWord,
+    seed: params.seed,
     // Include IDs so each companion gets unique cached images
     userId: params.userId,
     sessionId: params.sessionId,
@@ -334,6 +345,9 @@ export async function generateWithOrchestrator(
   isAnchor?: boolean,
   companionId?: string,
   requireNsfw?: boolean,
+  loras?: Array<{ path: string; scale: number }>,
+  loraTriggerWord?: string,
+  seed?: number,
 ): Promise<{ imageBuffer: Buffer; latencyMs: number; provider: string; modelId: string; format: string }> {
   const url = `${ORCHESTRATOR_URL}/imagegen/generate`;
 
@@ -355,6 +369,9 @@ export async function generateWithOrchestrator(
       is_anchor: isAnchor ?? false,
       companion_id: companionId,
       require_nsfw: requireNsfw ?? false,
+      loras: loras && loras.length > 0 ? loras : undefined,
+      lora_trigger_word: loraTriggerWord,
+      seed,
     }),
   });
 

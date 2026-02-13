@@ -62,14 +62,50 @@ class ImageRoutingConfigRepository:
                 pc.provider,
                 mc.display_name,
                 mc.is_enabled,
-                COALESCE((mc.metadata->>'max_resolution_width')::int, 1024) as max_resolution_width,
-                COALESCE((mc.metadata->>'max_resolution_height')::int, 1024) as max_resolution_height,
-                COALESCE((mc.metadata->>'supports_ip_adapter')::boolean, false) as supports_ip_adapter,
-                COALESCE((mc.metadata->>'supports_inpainting')::boolean, false) as supports_inpainting,
-                COALESCE((mc.metadata->>'supports_controlnet')::boolean, false) as supports_controlnet,
-                COALESCE((mc.metadata->>'nsfw_capable')::boolean, false) as nsfw_capable,
-                COALESCE((mc.metadata->>'cost_per_image')::float, 0.0) as cost_per_image,
-                COALESCE((mc.metadata->>'avg_generation_time')::float, 10.0) as avg_generation_time,
+                COALESCE(
+                    (mc.metadata->>'max_resolution_width')::int,
+                    (mc.metadata->'maxResolution'->>0)::int,
+                    1024
+                ) as max_resolution_width,
+                COALESCE(
+                    (mc.metadata->>'max_resolution_height')::int,
+                    (mc.metadata->'maxResolution'->>1)::int,
+                    1024
+                ) as max_resolution_height,
+                COALESCE(
+                    (mc.metadata->>'supports_ip_adapter')::boolean,
+                    (mc.metadata->>'supportsIpAdapter')::boolean,
+                    (mc.capabilities ? 'ip_adapter'),
+                    false
+                ) as supports_ip_adapter,
+                COALESCE(
+                    (mc.metadata->>'supports_inpainting')::boolean,
+                    (mc.metadata->>'supportsInpainting')::boolean,
+                    (mc.capabilities ? 'inpainting'),
+                    false
+                ) as supports_inpainting,
+                COALESCE(
+                    (mc.metadata->>'supports_controlnet')::boolean,
+                    (mc.metadata->>'supportsControlnet')::boolean,
+                    (mc.capabilities ? 'controlnet'),
+                    false
+                ) as supports_controlnet,
+                COALESCE(
+                    (mc.metadata->>'nsfw_capable')::boolean,
+                    (mc.metadata->>'nsfwCapable')::boolean,
+                    (mc.capabilities ? 'nsfw'),
+                    false
+                ) as nsfw_capable,
+                COALESCE(
+                    (mc.metadata->>'cost_per_image')::float,
+                    (mc.metadata->>'costPerImage')::float,
+                    0.0
+                ) as cost_per_image,
+                COALESCE(
+                    (mc.metadata->>'avg_generation_time')::float,
+                    (mc.metadata->>'avgGenerationTime')::float,
+                    10.0
+                ) as avg_generation_time,
                 mc.metadata
             FROM model_configs mc
             JOIN provider_configs pc ON pc.id = mc.provider_config_id

@@ -162,21 +162,55 @@ class ImageRoutingConfigService:
         # Determine if local
         is_local = db_model.provider in ("comfyui", "ollama")
 
-        # Extract provider-specific identifiers
-        checkpoint_name = metadata.get("checkpoint_name")
-        fal_endpoint = metadata.get("fal_endpoint")
-        replicate_version = metadata.get("replicate_version")
+        # Extract provider-specific identifiers (support snake_case + camelCase)
+        checkpoint_name = metadata.get("checkpoint_name") or metadata.get("checkpointName")
+        fal_endpoint = metadata.get("fal_endpoint") or metadata.get("falEndpoint")
+        replicate_version = metadata.get("replicate_version") or metadata.get("replicateVersion")
 
         # Extract supported aspect ratios
-        aspect_ratios = metadata.get("aspect_ratios", ["1:1", "3:4", "4:3", "9:16", "16:9"])
+        aspect_ratios = metadata.get("aspect_ratios") or metadata.get("aspectRatios") or [
+            "1:1",
+            "3:4",
+            "4:3",
+            "9:16",
+            "16:9",
+        ]
 
         # Extract generation settings
-        default_steps = metadata.get("default_steps", 30)
-        default_cfg_scale = metadata.get("default_cfg_scale", 7.0)
-        default_sampler = metadata.get("default_sampler", "euler_ancestral")
+        default_steps = metadata.get("default_steps") or metadata.get("defaultSteps")
+        default_cfg_scale = metadata.get("default_cfg_scale") or metadata.get("defaultCfgScale")
+        default_sampler = metadata.get("default_sampler") or metadata.get("defaultSampler") or "euler_ancestral"
+
+        # Infer sensible defaults for FAL flux models when metadata is missing.
+        inferred_steps, inferred_cfg = self._infer_generation_defaults(
+            model_id=db_model.model_id,
+            provider=db_model.provider,
+            fal_endpoint=fal_endpoint,
+        )
+        if default_steps is None:
+            default_steps = inferred_steps
+        if default_cfg_scale is None:
+            default_cfg_scale = inferred_cfg
+
+        # Coerce to expected numeric types (metadata might be strings)
+        try:
+            default_steps = int(default_steps)
+        except Exception:
+            default_steps = inferred_steps
+        try:
+            default_cfg_scale = float(default_cfg_scale)
+        except Exception:
+            default_cfg_scale = inferred_cfg
 
         # Extract tags
         tags = metadata.get("tags", [])
+
+        supports_img2img = bool(metadata.get("supports_img2img") or metadata.get("supportsImg2img") or False)
+        requires_reference_image = bool(
+            metadata.get("requires_reference_image")
+            or metadata.get("requiresReferenceImage")
+            or (fal_endpoint and "pulid" in str(fal_endpoint))
+        )
 
         return ImageModelSpec(
             model_id=db_model.model_id,
@@ -188,7 +222,8 @@ class ImageRoutingConfigService:
             supports_ip_adapter=db_model.supports_ip_adapter,
             supports_inpainting=db_model.supports_inpainting,
             supports_controlnet=db_model.supports_controlnet,
-            supports_img2img=metadata.get("supports_img2img", False),
+            supports_img2img=supports_img2img,
+            requires_reference_image=requires_reference_image,
             nsfw_capable=db_model.nsfw_capable,
             avg_generation_time=db_model.avg_generation_time,
             cost_per_image=db_model.cost_per_image,
@@ -201,6 +236,40 @@ class ImageRoutingConfigService:
             is_local=is_local,
             tags=tags,
         )
+
+    def _infer_generation_defaults(
+        self,
+        model_id: str,
+        provider: str,
+        fal_endpoint: str | None,
+    ) -> tuple[int, float]:
+        """Infer reasonable generation defaults when metadata is missing.
+
+        This prevents DB-seeded models (which often only include `fal_endpoint`)
+        from falling back to SDXL-ish defaults (CFG~7) that degrade FLUX output.
+        """
+        if provider != "fal":
+            return (30, 7.0)
+
+        endpoint = (fal_endpoint or "").lower()
+        if endpoint.startswith("fal-ai/flux"):
+            if "pulid" in endpoint:
+                return (20, 4.0)
+            if "schnell" in endpoint:
+                return (4, 1.0)
+            if "flash" in endpoint:
+                return (4, 3.5)
+            if "turbo" in endpoint:
+                return (8, 3.5)
+            if "flex" in endpoint:
+                return (20, 3.5)
+            if "max" in endpoint or "pro" in endpoint:
+                return (30, 3.5)
+            # Flux Dev / Flux Pro defaults
+            return (28, 3.5)
+
+        # Non-FLUX FAL models (Dreamina/Seedream/etc.)
+        return (30, 7.0)
 
     async def get_image_routing_for_use_case(
         self,

@@ -74,6 +74,7 @@ export async function imagegenRoutes(app: FastifyInstance): Promise<void> {
             companionId: { type: 'string' },
             referenceImageUrl: { type: 'string' },
             referenceStrength: { type: 'number', minimum: 0, maximum: 1, default: 0.7 },
+            seed: { type: 'number' },
           },
         },
       },
@@ -126,13 +127,17 @@ export async function imagegenRoutes(app: FastifyInstance): Promise<void> {
       // Get companion's stored style if companionId provided, otherwise use request param or default
       let style = params.style || 'stylized';
       let referenceImageUrl = params.referenceImageUrl;
+      let loras: Array<{ path: string; scale: number }> | undefined;
+      let loraTriggerWord: string | undefined;
       let companionContentRating: string | undefined;
+      let companionLora: { url: string; trigger_word?: string; scale?: number } | undefined;
 
       if (params.companionId) {
         const companionRepo = getCompanionsRepository();
         const companion = await companionRepo.findById(params.companionId);
         if (companion) {
           companionContentRating = companion.spec?.boundaries?.content_rating as string | undefined;
+          companionLora = companion.spec?.visual_style?.lora as typeof companionLora;
           // Use companion's stored style from spec if not explicitly overridden in request
           if (!params.style && companion.spec?.visual_style?.style_type) {
             const storedStyle = companion.spec.visual_style.style_type;
@@ -151,11 +156,27 @@ export async function imagegenRoutes(app: FastifyInstance): Promise<void> {
         }
       }
 
+      // If we still have no reference image, fall back to an identity LoRA (if configured).
+      // This keeps character identity stable in the FAL-only path even when anchors are missing.
+      if (!referenceImageUrl && companionLora?.url) {
+        loras = [
+          {
+            path: companionLora.url,
+            scale: typeof companionLora.scale === 'number' ? companionLora.scale : 1.0,
+          },
+        ];
+        loraTriggerWord = companionLora.trigger_word;
+      }
+
       // Generate or use provided cache key
       const cacheKey = params.cacheKey || generateCacheKey({
         ...params,
         userId: userIdForStorage,
         sessionId: sessionIdForStorage,
+        referenceImageUrl,
+        referenceStrength: params.referenceStrength,
+        loras,
+        loraTriggerWord,
       });
 
       // Check in-memory cache first
@@ -203,7 +224,10 @@ export async function imagegenRoutes(app: FastifyInstance): Promise<void> {
           params.referenceStrength,
           false,
           params.companionId,
-          requireNsfw
+          requireNsfw,
+          loras,
+          loraTriggerWord,
+          params.seed
         );
 
         let finalUrl: string;

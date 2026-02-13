@@ -22,6 +22,8 @@ MODEL_TO_FAL_ENDPOINT: dict[str, str] = {
     "fal/flux-dev": "fal-ai/flux/dev",
     # FLUX 2 Series
     "fal/flux-2-max": "fal-ai/flux-2-max",
+    "fal/flux-2-pro": "fal-ai/flux-2-pro",
+    "fal/flux-2": "fal-ai/flux-2",
     "fal/flux-2-turbo": "fal-ai/flux-2/turbo",
     "fal/flux-2-flash": "fal-ai/flux-2/flash",
     "fal/flux-2-flex": "fal-ai/flux-2-flex",
@@ -82,6 +84,10 @@ class FalProvider(ImageProvider):
         reference_image_url: str | None = None,
         reference_strength: float = 0.7,
         is_anchor: bool = False,
+        loras: list[dict[str, Any]] | None = None,
+        lora_trigger_word: str | None = None,
+        seed: int | None = None,
+        output_format: str | None = None,
     ) -> dict[str, Any]:
         """Generate an image from a text prompt.
 
@@ -98,17 +104,53 @@ class FalProvider(ImageProvider):
             reference_image_url: URL of reference image (not yet supported by all FAL models)
             reference_strength: How strongly to follow reference (0.0-1.0)
             is_anchor: If True, use high-quality settings
+            loras: Optional list of LoRAs (for LoRA-capable endpoints, e.g. flux-lora)
+            lora_trigger_word: Optional trigger token to append to prompt when using LoRA
+            seed: Optional seed for reproducibility (model support varies)
+            output_format: Optional output format (e.g. "png", model support varies)
         """
         start_time = time.time()
 
         client = await self._get_client()
 
-        # Select endpoint based on model_id
-        endpoint = MODEL_TO_FAL_ENDPOINT.get(model_id, self.default_model) if model_id else self.default_model
+        model_spec = self._get_model_spec(model_id)
+        endpoint = self._resolve_endpoint(model_id=model_id, model_spec=model_spec)
         logger.debug("fal_endpoint_selected", model_id=model_id, endpoint=endpoint)
 
         # Parse size
         width, height = self._parse_size(size)
+
+        # If using LoRA, append trigger token late (after any upstream prompt enhancement)
+        if lora_trigger_word:
+            token = lora_trigger_word.strip()
+            if token and token not in prompt:
+                prompt = f"{prompt}, {token}"
+
+        # Handle identity-preserving variation via PuLID.
+        # PuLID REQUIRES a reference image and has a distinct schema.
+        if endpoint == MODEL_TO_FAL_ENDPOINT.get("fal/flux-pulid"):
+            if not reference_image_url:
+                raise ValueError("reference_image_url is required for fal/flux-pulid")
+
+            # Map reference_strength to PuLID's identity weight, but enforce a safe floor.
+            # Companion identity should remain stable even if callers send the older 0.7 default.
+            id_weight = min(1.0, max(0.85, float(reference_strength)))
+
+            # Pull defaults from registry when available.
+            guidance = getattr(model_spec, "default_cfg_scale", None) or 4.0
+            steps = getattr(model_spec, "default_steps", None) or 20
+
+            result = await self.generate_pulid_variation(
+                prompt=prompt,
+                reference_image_url=reference_image_url,
+                width=width,
+                height=height,
+                negative_prompt=negative_prompt,
+                id_weight=float(id_weight),
+                guidance_scale=float(guidance),
+                num_inference_steps=int(steps),
+            )
+            return result
 
         # Build input parameters - minimal set that works across FAL models
         input_params: dict[str, Any] = {
@@ -120,20 +162,77 @@ class FalProvider(ImageProvider):
             "num_images": 1,
         }
 
-        # Add optional params only for models that support them
-        if endpoint.startswith("fal-ai/flux"):
+        # Add optional params only for models that support them.
+        # NOTE: FAL endpoints are not schema-uniform. Many endpoints will error on unknown fields.
+        if endpoint.startswith("fal-ai/flux") or endpoint.startswith("fal-ai/z-image"):
             input_params["enable_safety_checker"] = False
-            input_params["guidance_scale"] = 7.5
-            input_params["num_inference_steps"] = 4  # Flux schnell uses fewer steps
-            if negative_prompt:
-                input_params["negative_prompt"] = negative_prompt
+            supports_guidance_scale = False
+            supports_steps = False
+
+            # Flux family
+            if endpoint.startswith("fal-ai/flux"):
+                # Flux 2 "pro"/"max" are zero-config (no guidance/steps knobs).
+                if endpoint in {"fal-ai/flux-2-pro", "fal-ai/flux-2-max"}:
+                    supports_guidance_scale = False
+                    supports_steps = False
+                # Flux 2 turbo/flash expose guidance but not steps.
+                elif endpoint in {"fal-ai/flux-2/turbo", "fal-ai/flux-2/flash"}:
+                    supports_guidance_scale = True
+                    supports_steps = False
+                else:
+                    supports_guidance_scale = True
+                    supports_steps = True
+
+                # Defaults: Flux 1.x typically uses CFG ~3.5; Flux 2 [dev] defaults to ~2.5.
+                default_cfg = getattr(model_spec, "default_cfg_scale", None)
+                if default_cfg is None:
+                    if endpoint.startswith("fal-ai/flux-2"):
+                        default_cfg = 3.5 if endpoint == "fal-ai/flux-2-flex" else 2.5
+                    else:
+                        default_cfg = 3.5
+
+                default_steps = getattr(model_spec, "default_steps", None)
+                if default_steps is None and supports_steps:
+                    default_steps = 4 if "schnell" in endpoint else 28
+
+                if supports_guidance_scale:
+                    input_params["guidance_scale"] = float(default_cfg)
+                if supports_steps and default_steps is not None:
+                    input_params["num_inference_steps"] = int(default_steps)
+
+            # Z-Image family
+            if endpoint.startswith("fal-ai/z-image"):
+                # Z-Image Turbo exposes steps but not guidance_scale.
+                supports_steps = True
+                default_steps = getattr(model_spec, "default_steps", None)
+                if default_steps is None:
+                    default_steps = 8
+                input_params["num_inference_steps"] = int(default_steps)
+
+        # Seed/output format are best-effort across models.
+        if seed is not None:
+            input_params["seed"] = seed
+        if output_format:
+            input_params["output_format"] = output_format
+
+        # LoRA support (Flux LoRA endpoints).
+        if loras:
+            if "lora" not in endpoint:
+                logger.warning(
+                    "fal_loras_ignored_for_endpoint",
+                    endpoint=endpoint,
+                    model_id=model_id,
+                    lora_count=len(loras),
+                )
+            else:
+                input_params["loras"] = loras
 
         # Style parameter is deprecated - always photorealistic now
         if style:
             logger.debug("fal_style_deprecated", style=style)
 
-        # Note: reference_image_url support varies by model
-        # Flux 1.1 Pro supports IP-Adapter, others may not
+        # Note: reference_image_url support varies by model. We only guarantee it
+        # for PuLID in this provider. Other models may ignore or error.
         if reference_image_url:
             logger.debug(
                 "fal_reference_image",
@@ -141,7 +240,13 @@ class FalProvider(ImageProvider):
                 reference_url=reference_image_url[:50] if reference_image_url else None,
                 reference_strength=reference_strength,
             )
-            # TODO: Add IP-Adapter support for compatible FAL models
+            if endpoint != MODEL_TO_FAL_ENDPOINT.get("fal/flux-pulid"):
+                logger.warning(
+                    "fal_reference_image_not_applied",
+                    endpoint=endpoint,
+                    model_id=model_id,
+                    message="Reference images are only applied for fal/flux-pulid currently",
+                )
 
         try:
             # Use sync API - POST and wait for response directly
@@ -242,6 +347,33 @@ class FalProvider(ImageProvider):
             return int(parts[0]), int(parts[1])
         except (ValueError, IndexError):
             return 512, 512
+
+    def _get_model_spec(self, model_id: str | None) -> Any | None:
+        """Best-effort lookup of model defaults from the in-memory registry."""
+        if not model_id:
+            return None
+        if model_id.startswith("fal-ai/"):
+            return None
+        try:
+            from orchestrator.routing.image_model_registry import IMAGE_MODEL_REGISTRY
+
+            return IMAGE_MODEL_REGISTRY.get(model_id)
+        except Exception:
+            return None
+
+    def _resolve_endpoint(self, model_id: str | None, model_spec: Any | None) -> str:
+        """Resolve a FAL endpoint from a model_id or model registry spec."""
+        if model_id and model_id.startswith("fal-ai/"):
+            return model_id
+        if model_spec is not None:
+            endpoint = getattr(model_spec, "fal_endpoint", None)
+            if endpoint:
+                return str(endpoint)
+        if model_id:
+            endpoint = MODEL_TO_FAL_ENDPOINT.get(model_id)
+            if endpoint:
+                return endpoint
+        return self.default_model
 
     async def close(self) -> None:
         """Close the HTTP client."""
