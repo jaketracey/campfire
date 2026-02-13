@@ -159,6 +159,7 @@ export function useChatSession({
   const [inputHeight, setInputHeight] = useState(0);
   const [hasShownPulse, setHasShownPulse] = useState(false);
   const [messageReceivedPulseTrigger, setMessageReceivedPulseTrigger] = useState(0);
+  const pendingMessagesRef = useRef<string[]>([]);
 
   // Voice recording hook
   const {
@@ -872,7 +873,48 @@ export function useChatSession({
       ws.disconnect();
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sessionId, authLoading, isAuthenticated, isDemo, demoFingerprint, onLimitReached]);
+    }, [sessionId, authLoading, isAuthenticated, isDemo, demoFingerprint, onLimitReached]);
+
+  const sendUserMessage = useCallback((messageText: string) => {
+    setIsLoading(true);
+    setStreamingContent('');
+
+    if (wsRef.current) {
+      wsRef.current.sendMessageWithRetry(messageText);
+
+      if (!hasFiredFirstMessage.current) {
+        trackFirstMessage(sessionId);
+        hasFiredFirstMessage.current = true;
+      }
+      return;
+    }
+
+    console.error('WebSocket not initialized');
+    setIsLoading(false);
+  }, [sessionId]);
+
+  const flushQueuedMessages = useCallback(() => {
+    if (isLoading) return;
+    if (pendingMessagesRef.current.length === 0) return;
+    if (!wsRef.current?.isConnected) return;
+
+    const nextMessage = pendingMessagesRef.current.shift();
+    if (!nextMessage) return;
+
+    sendUserMessage(nextMessage);
+  }, [isLoading, sendUserMessage]);
+
+  useEffect(() => {
+    if (!isLoading) {
+      flushQueuedMessages();
+    }
+  }, [isLoading, flushQueuedMessages]);
+
+  useEffect(() => {
+    if (wsConnected) {
+      flushQueuedMessages();
+    }
+  }, [wsConnected, flushQueuedMessages]);
 
   // Auto-focus input when page loads
   useEffect(() => {
@@ -915,36 +957,29 @@ export function useChatSession({
 
   // Handlers
   const handleSend = useCallback(() => {
-    if (!input.trim() || isLoading) return;
+    const trimmedInput = input.trim();
+    if (!trimmedInput) return;
 
     const userMessage: Message = {
       id: crypto.randomUUID(),
       role: 'user',
-      content: input.trim(),
+      content: trimmedInput,
       timestamp: new Date(),
     };
 
     setMessages((prev) => [...prev, userMessage]);
     setInput('');
-    setIsLoading(true);
-    setStreamingContent('');
 
-    if (wsRef.current) {
-      wsRef.current.sendMessageWithRetry(input.trim());
-      // Track FirstMessage event (only once per session)
-      if (!hasFiredFirstMessage.current) {
-        trackFirstMessage(sessionId);
-        hasFiredFirstMessage.current = true;
-      }
+    if (isLoading) {
+      pendingMessagesRef.current.push(trimmedInput);
     } else {
-      console.error('WebSocket not initialized');
-      setIsLoading(false);
+      sendUserMessage(trimmedInput);
     }
 
     setTimeout(() => {
       inputRef.current?.focus();
     }, 10);
-  }, [input, isLoading, sessionId]);
+  }, [input, isLoading, sendUserMessage]);
 
   const handleLikeMessage = useCallback((messageId: string) => {
     if (!wsRef.current?.isConnected) return;

@@ -1,6 +1,7 @@
 'use client';
 
 import { motion, AnimatePresence } from 'framer-motion';
+import { useEffect, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Sparkles, Gift, BookOpen, Gamepad2, Users, GripVertical, Heart } from 'lucide-react';
 import { AnimatedFlame } from '@/components/ui/animated-flame';
@@ -131,6 +132,23 @@ export function ChatSidebar({
   onMouseLeaveGrabber,
   onDesignCompanion,
 }: ChatSidebarProps) {
+  const companionAvatarUrl = companion?.avatarUrl ?? null;
+  const hasAlternateAvatar = Boolean(companionAvatarUrl && currentAvatarUrl && companionAvatarUrl !== currentAvatarUrl);
+  const [showGeneratedAvatar, setShowGeneratedAvatar] = useState(true);
+  const displayAvatarUrl = hasAlternateAvatar && !showGeneratedAvatar ? companionAvatarUrl : currentAvatarUrl || companionAvatarUrl;
+  const thumbnailImageUrl = showGeneratedAvatar ? companionAvatarUrl : currentAvatarUrl || null;
+
+  useEffect(() => {
+    setShowGeneratedAvatar(Boolean(currentAvatarUrl));
+  }, [currentAvatarUrl]);
+
+  const handleAvatarToggle = (event: { preventDefault: () => void; stopPropagation: () => void }) => {
+    if (!hasAlternateAvatar) return;
+    event.preventDefault();
+    event.stopPropagation();
+    setShowGeneratedAvatar((prev) => !prev);
+  };
+
   const handleDemoGuard = (action: SignupTrigger, callback: () => void) => {
     if (isDemo && onRequireAuth) {
       onRequireAuth(action);
@@ -176,14 +194,22 @@ export function ChatSidebar({
               isGenerating={isGeneratingNewCompanion || Boolean(isDemo && isSwitchingDemoCompanion)}
               disabled={Boolean(isDemo && !onSwitchDemoCompanion)}
             >
-              <button
+              <div
                 onClick={() => handleDemoGuard('gallery', onShowGallery)}
+                onKeyDown={(event) => {
+                  if (event.key === 'Enter' || event.key === ' ') {
+                    event.preventDefault();
+                    handleDemoGuard('gallery', onShowGallery);
+                  }
+                }}
                 className="relative cursor-pointer hover:opacity-90 transition-opacity focus:outline-none focus:ring-2 focus:ring-campfire-500 focus:ring-offset-2 focus:ring-offset-background rounded-xl overflow-hidden"
+                role="button"
+                tabIndex={0}
                 style={{ width: avatarDimensions.width, height: avatarDimensions.height }}
                 aria-label="View gallery"
               >
                 <CompanionAvatar
-                  key={currentAvatarUrl || companion.avatarUrl}
+                  key={displayAvatarUrl || companionAvatarUrl}
                   emotionalState={currentEmotionalState}
                   customPrompt={customPrompt}
                   width={avatarDimensions.genWidth}
@@ -194,15 +220,40 @@ export function ChatSidebar({
                   userId={userId}
                   sessionId={sessionId}
                   companionId={companion.id}
-                  anchorImageUrl={currentAvatarUrl || companion.avatarUrl}
+                  anchorImageUrl={displayAvatarUrl || companionAvatarUrl || undefined}
                   anchorRenditions={companion.avatarRenditions}
-                  generationTrigger={imageGenTrigger}
+                  generationTrigger={showGeneratedAvatar ? imageGenTrigger : 0}
                   sceneDescription={sceneDescription}
                   turnId={imageTurnId}
                   onLoad={onAvatarLoad}
                 />
+                {hasAlternateAvatar && (
+                  <div
+                    role="button"
+                    tabIndex={0}
+                    aria-label={showGeneratedAvatar ? 'Show profile image' : 'Show generated image'}
+                    onClick={handleAvatarToggle}
+                    onKeyDown={(event) => {
+                      if (event.key === 'Enter' || event.key === ' ') {
+                        handleAvatarToggle(event);
+                      }
+                    }}
+                    className="absolute right-2 bottom-2 h-14 w-14 rounded-lg overflow-hidden border-2 border-white/80 shadow-md bg-black/30 backdrop-blur-sm ring-1 ring-black/40 cursor-pointer"
+                  >
+                    <img
+                      src={thumbnailImageUrl || companionAvatarUrl}
+                      alt="Companion avatar thumbnail"
+                      className="h-full w-full object-cover"
+                    />
+                    <div className="absolute inset-0 bg-black/20 flex items-center justify-center">
+                      <span className="text-[10px] font-semibold text-white/90">
+                        {showGeneratedAvatar ? 'Profile' : 'Generated'}
+                      </span>
+                    </div>
+                  </div>
+                )}
                 <LikeHeartsAnimation trigger={likeAnimationTrigger} />
-              </button>
+              </div>
             </CompanionAvatarSwitcher>
           ) : (
             /* Loading placeholder while companion data loads */

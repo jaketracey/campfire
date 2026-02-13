@@ -162,9 +162,19 @@ export class VoiceService {
       }
       session.pendingAudioChunks = [];
 
-      // If commit was requested before connection, commit now
+      // If commit was requested before connection, commit after a delay
+      // ElevenLabs needs time to process audio before accepting a commit
       if (session.pendingCommit) {
-        connection.commit();
+        setTimeout(() => {
+          try {
+            if (session.connection && session.isConnected) {
+              session.connection.commit();
+              logger.info({ clientId }, 'Delayed commit sent after flush');
+            }
+          } catch (err) {
+            logger.error({ clientId, err }, 'Failed delayed commit after flush');
+          }
+        }, 500);
         session.pendingCommit = false;
       }
 
@@ -211,7 +221,8 @@ export class VoiceService {
   }
 
   /**
-   * Signal end of audio input — commits the transcription
+   * Signal end of audio input — commits the transcription after a delay
+   * ElevenLabs needs time to process audio chunks before accepting a commit
    */
   endSTTAudio(clientId: string): boolean {
     const session = this.sttSessions.get(clientId);
@@ -226,13 +237,19 @@ export class VoiceService {
       return true;
     }
 
-    try {
-      session.connection.commit();
-      return true;
-    } catch (err) {
-      logger.error({ clientId, err }, 'Failed to commit STT audio');
-      return false;
-    }
+    // Delay commit to give ElevenLabs time to process audio
+    setTimeout(() => {
+      try {
+        const currentSession = this.sttSessions.get(clientId);
+        if (currentSession === session && session.connection && session.isConnected) {
+          session.connection.commit();
+          logger.info({ clientId }, 'Delayed commit sent');
+        }
+      } catch (err) {
+        logger.error({ clientId, err }, 'Failed to commit STT audio');
+      }
+    }, 500);
+    return true;
   }
 
   /**

@@ -207,7 +207,6 @@ export function ChatSessionContent({
             input={chat.input}
             onInputChange={chat.setInput}
             onSend={chat.handleSend}
-            isLoading={chat.isLoading}
             isRecording={chat.isRecording}
             voiceModeEnabled={chat.voiceModeEnabled}
             hasShownPulse={chat.hasShownPulse}
@@ -230,6 +229,7 @@ export function ChatSessionContent({
             <MobileAvatar
               currentAvatarUrl={chat.currentAvatarUrl}
               companionName={chat.companion?.name || 'Companion'}
+              companionAvatarUrl={chat.companion?.avatarUrl}
               showMobileAvatar={chat.showMobileAvatar}
               onToggleMobileAvatar={() => chat.setShowMobileAvatar(false)}
               keyboardHeight={chat.keyboardHeight}

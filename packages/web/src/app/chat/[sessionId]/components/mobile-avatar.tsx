@@ -5,11 +5,13 @@ import { X, ChevronLeft, ChevronRight } from 'lucide-react';
 import { LikeHeartsAnimation } from '@/components/likes/like-hearts-animation';
 import type { GalleryImage } from '@/lib/api/imagegen';
 import type { SignupTrigger } from '@/components/demo/signup-modal';
-import { selectRenditionUrl } from '@/lib/utils/image-renditions';
+import { useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
 
 interface MobileAvatarProps {
   currentAvatarUrl: string | null;
   companionName: string;
+  companionAvatarUrl?: string | null;
   showMobileAvatar: boolean;
   onToggleMobileAvatar: () => void;
   keyboardHeight: number;
@@ -43,7 +45,34 @@ export function MobileAvatar({
   isDemo,
   onRequireAuth,
   demoAvatarTopRight,
+  companionAvatarUrl,
 }: MobileAvatarProps) {
+  const resolvedCompanionAvatarUrl = companionAvatarUrl || null;
+  const hasAlternateAvatar = Boolean(
+    resolvedCompanionAvatarUrl &&
+    currentAvatarUrl &&
+    resolvedCompanionAvatarUrl !== currentAvatarUrl
+  );
+  const [showGeneratedImage, setShowGeneratedImage] = useState(true);
+
+  useEffect(() => {
+    setShowGeneratedImage(Boolean(currentAvatarUrl));
+  }, [currentAvatarUrl]);
+
+  const activeGalleryImage = mobileGalleryImages.length > 0 && mobileGalleryImages[mobileGalleryIndex]
+    ? mobileGalleryImages[mobileGalleryIndex].s3_url
+    : null;
+
+  const showProfileImage = hasAlternateAvatar && !showGeneratedImage;
+  const thumbnailImageUrl = showGeneratedImage
+    ? resolvedCompanionAvatarUrl
+    : (activeGalleryImage || currentAvatarUrl || resolvedCompanionAvatarUrl);
+
+  const isProfileMode = showProfileImage;
+  const mainImageUrl = isProfileMode
+    ? resolvedCompanionAvatarUrl
+    : (activeGalleryImage || currentAvatarUrl);
+
   // Only render when expanded (showMobileAvatar is true)
   // The collapsed thumbnail is now shown as a background in ChatMessages
   if (!currentAvatarUrl || !showMobileAvatar) {
@@ -102,10 +131,8 @@ export function MobileAvatar({
           >
             <AnimatePresence mode="wait">
               <motion.img
-                key={mobileGalleryIndex}
-                src={mobileGalleryImages.length > 0 && mobileGalleryImages[mobileGalleryIndex]
-                  ? (selectRenditionUrl(mobileGalleryImages[mobileGalleryIndex].renditions, { displayWidth: 600 }) ?? mobileGalleryImages[mobileGalleryIndex].s3_url)
-                  : currentAvatarUrl}
+                key={isProfileMode ? 'profile' : `gallery-${mobileGalleryIndex}`}
+                src={mainImageUrl || currentAvatarUrl}
                 alt={companionName}
                 className="w-full h-full object-cover"
                 initial={{ opacity: 0 }}
@@ -145,6 +172,27 @@ export function MobileAvatar({
                 className="absolute right-3 top-1/2 -translate-y-1/2 p-2 rounded-full bg-black/50 text-white hover:bg-black/70"
               >
                 <ChevronRight className="h-6 w-6" />
+              </button>
+            )}
+
+            {hasAlternateAvatar && (
+              <button
+                onClick={(event) => {
+                  event.stopPropagation();
+                  setShowGeneratedImage((prev) => !prev);
+                }}
+                className="absolute right-3 bottom-3 h-14 w-14 rounded-lg overflow-hidden border-2 border-white/80 shadow-md bg-black/30 backdrop-blur-sm"
+                aria-label={showGeneratedImage ? 'Show profile image' : 'Show generated image'}
+                type="button"
+              >
+                <img
+                  src={thumbnailImageUrl || ''}
+                  alt="Companion avatar thumbnail"
+                  className="h-full w-full object-cover"
+                />
+                <span className="absolute inset-0 bg-black/20 flex items-center justify-center text-[10px] font-semibold text-white/90">
+                  {showGeneratedImage ? 'Profile' : 'Generated'}
+                </span>
               </button>
             )}
 

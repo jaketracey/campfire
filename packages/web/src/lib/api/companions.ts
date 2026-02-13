@@ -191,6 +191,16 @@ export function listCompanions(options?: {
 }
 
 /**
+ * Browse all companions (no auth required)
+ */
+export function browseCompanions(options?: {
+  limit?: number;
+  offset?: number;
+}): Promise<CompanionListResponse> {
+  return get<CompanionListResponse>('/companions/browse', options);
+}
+
+/**
  * Get companion by ID
  */
 export function getCompanion(companionId: string): Promise<Companion> {

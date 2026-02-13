@@ -386,6 +386,31 @@ export class CompanionsRepository {
     return { data, hasMore };
   }
 
+  /**
+   * List all active companions (no user filter, for public browse)
+   */
+  async listAll(options: PaginationOptions = {}, tx?: TransactionContext): Promise<PaginatedResult<Companion>> {
+    const db = this.getSql(tx);
+    const limit = options.limit ?? 50;
+    const offset = options.offset ?? 0;
+
+    const result = await db`
+      SELECT
+        id, user_id, name, spec, spec_version, status, is_public,
+        active_avatar_id, created_at, updated_at
+      FROM companions
+      WHERE status = 'active'
+      ORDER BY created_at DESC
+      LIMIT ${limit + 1}
+      OFFSET ${offset}
+    `;
+
+    const hasMore = result.length > limit;
+    const data = result.slice(0, limit).map(row => this.mapCompanion(row));
+
+    return { data, hasMore };
+  }
+
   async countByUser(userId: string, tx?: TransactionContext): Promise<number> {
     const db = this.getSql(tx);
 

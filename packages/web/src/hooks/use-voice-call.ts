@@ -66,6 +66,26 @@ export function useVoiceCall(
   const isCallActive = callState !== 'idle';
 
   /**
+   * Downsample audio from source sample rate to target sample rate
+   */
+  const downsample = useCallback(
+    (buffer: Float32Array, sourceSampleRate: number, targetSampleRate: number): Float32Array => {
+      if (sourceSampleRate === targetSampleRate) {
+        return buffer;
+      }
+      const ratio = sourceSampleRate / targetSampleRate;
+      const newLength = Math.round(buffer.length / ratio);
+      const result = new Float32Array(newLength);
+      for (let i = 0; i < newLength; i++) {
+        const index = Math.round(i * ratio);
+        result[i] = buffer[index] ?? 0;
+      }
+      return result;
+    },
+    []
+  );
+
+  /**
    * Convert Float32Array audio samples to 16-bit PCM base64
    */
   const float32ToBase64PCM = useCallback((float32Array: Float32Array): string => {
@@ -110,13 +130,18 @@ export function useVoiceCall(
       setCallState('processing');
       setCurrentTranscript('');
 
-      // Convert and send audio via WebSocket
-      const base64Data = float32ToBase64PCM(audio);
+      // Downsample from browser sample rate (typically 48kHz) to 16kHz for ElevenLabs
+      const sourceSampleRate = audioContextRef.current?.sampleRate ?? 48000;
+      const downsampled = downsample(audio, sourceSampleRate, 16000);
+      console.log(`[VoiceCall] Audio: ${audio.length} samples @ ${sourceSampleRate}Hz → ${downsampled.length} samples @ 16kHz`);
+
+      // Convert to base64 PCM and send
+      const base64Data = float32ToBase64PCM(downsampled);
       wsRef.current?.startVoice();
       wsRef.current?.sendVoiceChunk(base64Data);
       wsRef.current?.endVoice();
     },
-    [isMuted, wsRef, float32ToBase64PCM]
+    [isMuted, wsRef, float32ToBase64PCM, downsample]
   );
 
   /**

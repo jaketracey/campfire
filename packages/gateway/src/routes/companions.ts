@@ -457,6 +457,50 @@ export async function companionsRoutes(app: FastifyInstance): Promise<void> {
   const companionRepo = getCompanionsRepository();
 
   /**
+   * GET /companions/browse - List all companions (no auth required)
+   * Used for the public dashboard/landing page
+   */
+  app.get('/browse', async (request: FastifyRequest, reply: FastifyReply) => {
+    const { limit = '50', offset = '0' } = request.query as {
+      limit?: string;
+      offset?: string;
+    };
+
+    const result = await companionRepo.listAll({
+      limit: parseInt(limit, 10),
+      offset: parseInt(offset, 10),
+    });
+
+    const companionIds = result.data.map((c) => c.id);
+
+    // Fetch avatar data for all companions
+    const avatarDataMap = await getAvatarDataForCompanions(companionIds);
+
+    // Collect s3_keys from avatars to fetch renditions
+    const avatarS3Keys = Array.from(avatarDataMap.values())
+      .map((data) => data.s3Key)
+      .filter((key): key is string => key !== null);
+
+    const avatarRenditionsMap = await getAvatarRenditionsForS3Keys(avatarS3Keys);
+
+    const companions = result.data.map((companion) => {
+      const avatarData = avatarDataMap.get(companion.id);
+      const avatarRenditions = avatarData?.s3Key
+        ? avatarRenditionsMap.get(avatarData.s3Key) || null
+        : null;
+
+      return mapCompanionResponse(companion, avatarData?.assetUrl, avatarRenditions);
+    });
+
+    return reply.send({
+      companions,
+      total: companions.length,
+      limit: parseInt(limit, 10),
+      offset: parseInt(offset, 10),
+    });
+  });
+
+  /**
    * GET /companions/public/:companionId - Get public companion (no auth required)
    * Returns sanitized companion data for the share page
    */

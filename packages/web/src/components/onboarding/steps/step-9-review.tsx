@@ -12,7 +12,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { useAuth } from '@/hooks/use-auth';
 import { trackOnboardingStep, trackOnboardingComplete } from '@/lib/analytics/meta-pixel';
 
-type RevealPhase = 'loading' | 'backstory' | 'images' | 'ready';
+type RevealPhase = 'loading' | 'images' | 'ready';
 
 export function Step9Review() {
   const router = useRouter();
@@ -152,22 +152,24 @@ export function Step9Review() {
     setAnchorStreamStarted,
   ]);
 
-  // Phase transitions
+  // Phase transitions - loading → images → ready
   useEffect(() => {
-    if (backstoryResult && revealPhase === 'loading') {
-      setRevealPhase('backstory');
+    if (revealPhase !== 'loading') return;
+    if (generatedAnchors.length > 0) {
+      setRevealPhase('images');
+      return;
     }
-  }, [backstoryResult, revealPhase]);
+    if (imagesGenerated) {
+      setRevealPhase('ready');
+    }
+  }, [generatedAnchors.length, imagesGenerated, revealPhase]);
 
-  // Transition from backstory to images after delay
+  // Ensure first image appears when image phase starts.
   useEffect(() => {
-    if (revealPhase === 'backstory' && (generatedAnchors.length > 0 || imagesGenerated)) {
-      const timer = setTimeout(() => {
-        setRevealPhase(generatedAnchors.length > 0 ? 'images' : 'ready');
-      }, 3000); // 3 seconds to read backstory
-      return () => clearTimeout(timer);
+    if (revealPhase === 'images' && generatedAnchors.length > 0 && visibleImageCount === 0) {
+      setVisibleImageCount(1);
     }
-  }, [revealPhase, generatedAnchors.length, imagesGenerated]);
+  }, [revealPhase, generatedAnchors.length, visibleImageCount]);
 
   // Stagger image reveals
   useEffect(() => {
@@ -297,82 +299,7 @@ export function Step9Review() {
           </motion.div>
         )}
 
-        {/* Phase 2: Backstory Reveal */}
-        {revealPhase === 'backstory' && backstoryResult && (
-          <motion.div
-            key="backstory"
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0, y: -30 }}
-            transition={{ duration: 0.6 }}
-            className="text-center max-w-2xl md:max-w-4xl mx-auto px-4 pt-8 md:pt-12"
-          >
-            {/* Name - larger */}
-            <motion.h1
-              initial={{ y: 30, opacity: 0, scale: 0.9 }}
-              animate={{ y: 0, opacity: 1, scale: 1 }}
-              transition={{ type: 'spring', stiffness: 100, damping: 15 }}
-              className="text-5xl md:text-8xl font-bold font-display text-white mb-2"
-              style={{
-                textShadow: '0 0 40px rgba(168, 85, 247, 0.5)',
-              }}
-            >
-              {state.name}
-            </motion.h1>
-
-            {/* Pronouns + Archetype */}
-            <motion.p
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              transition={{ delay: 0.3, duration: 0.5 }}
-              className="text-gray-400 text-base md:text-lg mb-6 md:mb-8"
-            >
-              {state.identity.pronouns} •{' '}
-              <span className="text-vibes-neon">{state.archetype?.name}</span>
-              {state.secondaryArchetype && (
-                <>
-                  {' + '}
-                  <span className="text-vibes-cyan">{state.secondaryArchetype.name}</span>
-                </>
-              )}
-            </motion.p>
-
-            {/* Backstory text */}
-            <motion.div
-              initial={{ opacity: 0, filter: 'blur(10px)' }}
-              animate={{ opacity: 1, filter: 'blur(0px)' }}
-              transition={{ delay: 0.5, duration: 1.2 }}
-            >
-              <p className="text-base md:text-xl text-gray-300 leading-relaxed font-light">
-                {backstoryResult.backstory || `A ${state.archetype?.description?.toLowerCase() || 'unique'} companion waiting to connect.`}
-              </p>
-            </motion.div>
-
-            {/* Traits */}
-            {state.archetype?.traits && (
-              <motion.div
-                initial={{ opacity: 0, y: 20 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: 1.5, duration: 0.6 }}
-                className="flex gap-3 justify-center flex-wrap mt-8"
-              >
-                {state.archetype.traits.map((trait, i) => (
-                  <motion.span
-                    key={trait}
-                    initial={{ opacity: 0, scale: 0.8 }}
-                    animate={{ opacity: 1, scale: 1 }}
-                    transition={{ delay: 1.7 + i * 0.1 }}
-                    className="px-4 py-2 rounded-full bg-white/[0.05] border border-white/10 text-gray-300 text-sm"
-                  >
-                    {trait}
-                  </motion.span>
-                ))}
-              </motion.div>
-            )}
-          </motion.div>
-        )}
-
-        {/* Phase 3: Image Reveal */}
+        {/* Phase 2: Image Reveal + Backstory Overlay */}
         {(revealPhase === 'images' || revealPhase === 'ready') && (
           <motion.div
             key="images"
@@ -406,12 +333,32 @@ export function Step9Review() {
                   className="object-cover"
                   priority
                 />
-                {/* Name overlay */}
-                <div className="absolute bottom-0 left-0 right-0 p-6 bg-gradient-to-t from-black/90 via-black/50 to-transparent z-20">
-                  <h2 className="text-3xl font-bold font-display text-white">{state.name}</h2>
-                  <p className="text-gray-300 text-sm">
+                {/* Identity & backstory overlay */}
+                <div className="absolute bottom-0 left-0 right-0 p-5 bg-gradient-to-t from-black/95 via-black/80 to-transparent z-20">
+                  <h2 className="text-3xl font-bold font-display text-white mb-1">{state.name}</h2>
+                  <p className="text-gray-300 text-xs uppercase tracking-wider">
                     {state.identity.pronouns} • {state.archetype?.name}
+                    {state.secondaryArchetype && (
+                      <>
+                        {' + '}
+                        <span className="text-vibes-cyan">{state.secondaryArchetype.name}</span>
+                      </>
+                    )}
                   </p>
+                  <AnimatePresence>
+                    {backstoryResult && (
+                      <motion.p
+                        key="backstory-overlay"
+                        initial={{ opacity: 0, y: 16, filter: 'blur(6px)' }}
+                        animate={{ opacity: 1, y: 0, filter: 'blur(0px)' }}
+                        exit={{ opacity: 0, y: 16 }}
+                        transition={{ delay: 0.2, duration: 0.45 }}
+                        className="mt-2 text-sm leading-relaxed text-gray-100 font-light line-clamp-3"
+                      >
+                        {backstoryResult.backstory || `A ${state.archetype?.description?.toLowerCase() || 'unique'} companion waiting to connect.`}
+                      </motion.p>
+                    )}
+                  </AnimatePresence>
                 </div>
               </motion.div>
             )}
@@ -454,7 +401,7 @@ export function Step9Review() {
 
             {/* IGNITE Button */}
             <AnimatePresence>
-              {revealPhase === 'ready' && (localSessionId || isPreparingSession || !!sessionError) && (
+              {(revealPhase === 'ready' || visibleImageCount >= 1) && backstoryResult && (localSessionId || isPreparingSession || !!sessionError) && (
                 <motion.div
                   initial={{ y: 50, opacity: 0, scale: 0.9 }}
                   animate={{ y: 0, opacity: 1, scale: 1 }}

@@ -2652,6 +2652,8 @@ async function handleVoiceStart(client: ConnectedClient): Promise<void> {
 
   const voiceService = getVoiceService();
 
+  logger.info({ clientId: client.id }, 'handleVoiceStart: creating STT session');
+
   // Clear any previous transcription
   client.voiceTranscription = '';
 
@@ -2679,7 +2681,7 @@ async function handleVoiceStart(client: ConnectedClient): Promise<void> {
     sendError(client, 'Failed to start voice session');
   }
 
-  logger.debug({ clientId: client.id }, 'Voice recording started');
+  logger.info({ clientId: client.id, success, hasSession: voiceService.hasSTTSession(client.id) }, 'handleVoiceStart: done');
 }
 
 /**
@@ -2699,8 +2701,10 @@ async function handleVoiceAudioChunk(
     return;
   }
 
+  logger.info({ clientId: client.id, dataLen: payload.data.length }, 'handleVoiceAudioChunk: received');
   const voiceService = getVoiceService();
-  voiceService.sendAudioToSTT(client.id, payload.data);
+  const sent = voiceService.sendAudioToSTT(client.id, payload.data);
+  logger.info({ clientId: client.id, sent }, 'handleVoiceAudioChunk: sendAudioToSTT result');
 }
 
 /**

@@ -5,7 +5,7 @@ import type { NextRequest } from 'next/server';
 const protectedRoutes = ['/dashboard', '/chat', '/onboard', '/settings', '/admin'];
 
 // Public routes that are exceptions to protected routes above
-const publicRoutes = ['/chat/demo', '/onboard'];
+const publicRoutes = ['/chat/demo', '/onboard', '/dashboard'];
 
 // Routes that should redirect to dashboard if authenticated
 const authRoutes = ['/login', '/signup', '/forgot-password'];

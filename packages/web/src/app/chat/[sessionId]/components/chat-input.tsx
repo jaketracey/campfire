@@ -10,7 +10,6 @@ interface ChatInputProps {
   input: string;
   onInputChange: (value: string) => void;
   onSend: () => void;
-  isLoading: boolean;
   isRecording: boolean;
   voiceModeEnabled: boolean;
   hasShownPulse: boolean;
@@ -38,7 +37,6 @@ export function ChatInput({
   input,
   onInputChange,
   onSend,
-  isLoading,
   isRecording,
   voiceModeEnabled,
   hasShownPulse,
@@ -101,9 +99,9 @@ export function ChatInput({
             ref={inputRef}
             value={input}
             onChange={(e) => onInputChange(e.target.value)}
-            onKeyDown={(e) => e.key === 'Enter' && !isLoading && onSend()}
+            onKeyDown={(e) => e.key === 'Enter' && !isRecording && onSend()}
             placeholder={voiceModeEnabled ? 'Type or hold mic to speak...' : 'Type a message...'}
-            readOnly={isLoading || isRecording}
+            readOnly={isRecording}
             data-testid="chat-input"
             className={`w-full h-12 lg:h-10 text-base lg:text-sm ${
               !hasShownPulse && input.length === 0
@@ -115,7 +113,7 @@ export function ChatInput({
         <Button
           onClick={onSend}
           onMouseDown={(e) => e.preventDefault()}
-          disabled={!input.trim() || isLoading || isRecording}
+          disabled={!input.trim() || isRecording}
           className="h-12 w-12 lg:h-10 lg:w-10 flex-shrink-0 rounded-full"
           data-testid="chat-send-button"
         >
