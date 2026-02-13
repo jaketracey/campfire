@@ -77,10 +77,10 @@ export function DashboardHeaderNav() {
   if (!isAuthenticated) {
     // Unauthed: show Design + Login/Signup
     return (
-      <div className="flex items-center gap-2">
+      <div className="flex flex-wrap items-center justify-end gap-1.5 sm:gap-2">
         <motion.button
           onClick={handleDesignNewCompanion}
-          className="relative h-9 px-4 rounded-full bg-gradient-to-b from-white via-gray-100 to-gray-300 text-gray-900 font-bold text-sm shadow-[0_4px_20px_rgba(255,255,255,0.2),inset_0_1px_0_rgba(255,255,255,0.8),inset_0_-2px_4px_rgba(0,0,0,0.1)] border border-white/50 transition-all overflow-hidden"
+          className="relative h-8 sm:h-9 px-3 sm:px-4 rounded-full bg-gradient-to-b from-white via-gray-100 to-gray-300 text-gray-900 font-bold text-xs sm:text-sm shadow-[0_4px_20px_rgba(255,255,255,0.2),inset_0_1px_0_rgba(255,255,255,0.8),inset_0_-2px_4px_rgba(0,0,0,0.1)] border border-white/50 transition-all overflow-hidden"
           whileHover={{
             scale: 1.05,
             boxShadow: '0 6px 30px rgba(255,255,255,0.3),inset 0 1px 0 rgba(255,255,255,0.9),inset 0 -2px 4px rgba(0,0,0,0.1)'
@@ -92,19 +92,20 @@ export function DashboardHeaderNav() {
             animate={{ x: ['-100%', '200%'] }}
             transition={{ duration: 2, repeat: Infinity, repeatDelay: 4, ease: 'easeInOut' }}
           />
-          <span className="relative z-10">Design new companion</span>
+          <span className="relative z-10 hidden sm:inline">Design new companion</span>
+          <span className="relative z-10 sm:hidden">New</span>
         </motion.button>
 
         <Link
           href={'/login' as Route}
-          className="flex items-center gap-2 px-4 py-2 rounded-full bg-white/[0.05] border border-white/10 hover:bg-white/[0.1] hover:border-white/20 transition-all group"
+          className="flex items-center gap-1.5 sm:gap-2 px-3 sm:px-4 py-2 rounded-full bg-white/[0.05] border border-white/10 hover:bg-white/[0.1] hover:border-white/20 transition-all group"
         >
-          <User className="h-5 w-5 text-gray-400 group-hover:text-white transition-colors" />
-          <span className="text-sm font-medium text-gray-400 group-hover:text-white transition-colors">Login</span>
+          <User className="h-4 w-4 sm:h-5 sm:w-5 text-gray-400 group-hover:text-white transition-colors" />
+          <span className="text-xs sm:text-sm font-medium text-gray-400 group-hover:text-white transition-colors">Login</span>
         </Link>
         <Link
           href={'/signup' as Route}
-          className="flex items-center gap-2 px-4 py-2 rounded-full bg-campfire-600 hover:bg-campfire-500 text-white transition-all text-sm font-medium"
+          className="flex items-center gap-1.5 sm:gap-2 px-3 sm:px-4 py-2 rounded-full bg-campfire-600 hover:bg-campfire-500 text-white transition-all text-xs sm:text-sm font-medium"
         >
           Sign up
         </Link>
@@ -113,11 +114,11 @@ export function DashboardHeaderNav() {
   }
 
   return (
-    <div className="flex items-center gap-2">
+    <div className="flex flex-wrap items-center justify-end gap-1.5 sm:gap-2">
       {/* Design new companion */}
       <motion.button
         onClick={handleDesignNewCompanion}
-        className="relative h-9 px-4 rounded-full bg-gradient-to-b from-white via-gray-100 to-gray-300 text-gray-900 font-bold text-sm shadow-[0_4px_20px_rgba(255,255,255,0.2),inset_0_1px_0_rgba(255,255,255,0.8),inset_0_-2px_4px_rgba(0,0,0,0.1)] border border-white/50 transition-all overflow-hidden"
+        className="relative h-8 sm:h-9 px-3 sm:px-4 rounded-full bg-gradient-to-b from-white via-gray-100 to-gray-300 text-gray-900 font-bold text-xs sm:text-sm shadow-[0_4px_20px_rgba(255,255,255,0.2),inset_0_1px_0_rgba(255,255,255,0.8),inset_0_-2px_4px_rgba(0,0,0,0.1)] border border-white/50 transition-all overflow-hidden"
         whileHover={{
           scale: 1.05,
           boxShadow: '0 6px 30px rgba(255,255,255,0.3),inset 0 1px 0 rgba(255,255,255,0.9),inset 0 -2px 4px rgba(0,0,0,0.1)'
@@ -137,7 +138,7 @@ export function DashboardHeaderNav() {
       {inviteCode && (
         <motion.button
           onClick={handleCopyCode}
-          className="relative h-9 px-4 rounded-full bg-gradient-to-r from-amber-500 via-amber-400 to-amber-500 text-black font-bold text-sm shadow-[0_0_20px_rgba(245,158,11,0.3)] transition-all overflow-hidden flex items-center justify-center"
+          className="relative h-8 sm:h-9 px-3 sm:px-4 rounded-full bg-gradient-to-r from-amber-500 via-amber-400 to-amber-500 text-black font-bold text-xs sm:text-sm shadow-[0_0_20px_rgba(245,158,11,0.3)] transition-all overflow-hidden flex items-center justify-center"
           whileHover={{ scale: 1.05, boxShadow: '0 0 30px rgba(245,158,11,0.5)' }}
           whileTap={{ scale: 0.95 }}
         >
@@ -153,7 +154,7 @@ export function DashboardHeaderNav() {
             </>
           ) : (
             <>
-              <Users className="mr-1.5 h-4 w-4 relative z-10" />
+              <Users className="mr-1 sm:mr-1.5 h-3.5 w-3.5 sm:h-4 sm:w-4 relative z-10" />
               <span className="relative z-10 hidden sm:inline">Invite friends</span>
               <span className="relative z-10 sm:hidden">Invite</span>
             </>
@@ -164,7 +165,7 @@ export function DashboardHeaderNav() {
       {/* Tokens Button - Poker Machine Style */}
       <Link href={'/account/tokens' as Route}>
         <motion.div
-          className="relative flex items-center gap-2 px-3 sm:px-4 py-2 rounded-full bg-gradient-to-r from-amber-500 via-yellow-400 to-amber-500 text-amber-950 font-bold text-sm shadow-[0_0_20px_rgba(251,191,36,0.4)] border border-amber-300/50 overflow-hidden cursor-pointer"
+          className="relative flex items-center gap-2 px-3 sm:px-4 py-2 rounded-full bg-gradient-to-r from-amber-500 via-yellow-400 to-amber-500 text-amber-950 font-bold text-xs sm:text-sm shadow-[0_0_20px_rgba(251,191,36,0.4)] border border-amber-300/50 overflow-hidden cursor-pointer"
           whileHover={{
             scale: 1.05,
             boxShadow: '0 0 30px rgba(251,191,36,0.6)',
@@ -217,7 +218,7 @@ export function DashboardHeaderNav() {
           <span className="relative z-10 hidden sm:inline">
             {tokenBalance !== null ? tokenBalance.toLocaleString() : '...'}
           </span>
-          <span className="relative z-10 sm:hidden">
+          <span className="relative z-10 sm:hidden text-[10px] leading-tight">
             {tokenBalance !== null ? (tokenBalance >= 1000 ? `${(tokenBalance / 1000).toFixed(1)}k` : tokenBalance) : '...'}
           </span>
         </motion.div>
@@ -225,16 +226,16 @@ export function DashboardHeaderNav() {
 
       <Link
         href={'/account' as Route}
-        className="flex items-center gap-2 px-2 sm:px-4 py-2 rounded-full bg-white/[0.05] border border-white/10 hover:bg-white/[0.1] hover:border-white/20 transition-all group"
+        className="flex items-center gap-1.5 sm:gap-2 px-2 sm:px-4 py-2 rounded-full bg-white/[0.05] border border-white/10 hover:bg-white/[0.1] hover:border-white/20 transition-all group"
       >
-        <User className="h-5 w-5 text-gray-400 group-hover:text-white transition-colors" />
+        <User className="h-4 w-4 sm:h-5 sm:w-5 text-gray-400 group-hover:text-white transition-colors" />
         <span className="hidden sm:inline text-sm font-medium text-gray-400 group-hover:text-white transition-colors">Account</span>
       </Link>
       <button
         onClick={logout}
-        className="flex items-center gap-2 px-2 sm:px-4 py-2 rounded-full bg-white/[0.05] border border-white/10 hover:bg-red-500/20 hover:border-red-500/30 transition-all group"
+        className="flex items-center gap-1.5 sm:gap-2 px-2 sm:px-4 py-2 rounded-full bg-white/[0.05] border border-white/10 hover:bg-red-500/20 hover:border-red-500/30 transition-all group"
       >
-        <LogOut className="h-5 w-5 text-gray-400 group-hover:text-red-400 transition-colors" />
+        <LogOut className="h-4 w-4 sm:h-5 sm:w-5 text-gray-400 group-hover:text-red-400 transition-colors" />
         <span className="hidden sm:inline text-sm font-medium text-gray-400 group-hover:text-red-400 transition-colors">Logout</span>
       </button>
     </div>

@@ -13,11 +13,13 @@ export default function DashboardLayout({
             <CompanionBackground />
 
             {/* Header */}
-            <header className="fixed top-0 left-0 right-0 z-50 flex items-center justify-between p-6 bg-black/20 backdrop-blur-lg border-b border-white/5">
+            <header className="fixed top-0 left-0 right-0 z-50 flex items-start justify-between gap-3 p-3 sm:p-6 bg-black/20 backdrop-blur-lg border-b border-white/5">
                 <Link href="/" className="hover:opacity-80 transition-opacity">
                     <AnimatedFlame size="md" />
                 </Link>
-                <DashboardHeaderNav />
+                <div className="w-full sm:w-auto min-w-0">
+                    <DashboardHeaderNav />
+                </div>
             </header>
 
             <main className="flex-1 pt-24 z-10">
