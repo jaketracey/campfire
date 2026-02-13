@@ -26,12 +26,10 @@ import { adminOrchestrationRoutes } from './admin-orchestration.js';
 import { adminCostsRoutes, userCostsRoutes } from './admin-costs.js';
 import { voiceRoutes } from './voice.js';
 import { supportRoutes, adminSupportRoutes } from './support.js';
-import {
-  adminProvidersRoutes,
-  adminModelsRoutes,
-  adminRoutingRoutes,
-  adminCompanionRoutingRoutes,
-} from './admin-providers.js';
+import { adminProvidersRoutes } from './admin-providers.js';
+import { adminModelsRoutes } from './admin-models.js';
+import { adminRoutingRoutes } from './admin-routing.js';
+import { adminCompanionRoutingRoutes } from './admin-companion-routing.js';
 import {
   adminImageProvidersRoutes,
   adminImageModelsRoutes,
