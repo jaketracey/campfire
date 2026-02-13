@@ -15,26 +15,21 @@ import {
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
 import { motion } from 'framer-motion';
-import { MessageCircle, Plus, RotateCcw, Trash2, Check, Users, Settings, BookOpen } from 'lucide-react';
+import { MessageCircle, Plus, RotateCcw, Trash2, Settings, BookOpen } from 'lucide-react';
 import { BackstoryModal } from '@/components/companion/backstory-modal';
 import { CompanionCardImage } from '@/components/companion/companion-card-image';
 import { useAuth } from '@/hooks/use-auth';
 import { WelcomeTransition } from '@/components/auth/welcome-transition';
 import {
   listCompanions,
+  browseCompanions,
   deleteCompanion,
-  getInviteCode,
-  getPersonalityProfile,
-  getRandomDefaultWelcome,
-  buildPersonalizedWelcome,
 } from '@/lib/api';
 import type {
   Companion as APICompanion,
-  InviteCodeData,
 } from '@/lib/api';
 import Link from 'next/link';
 import type { Route } from 'next';
-import { useOnboardingStore } from '@/stores/onboarding-store';
 
 interface Companion {
   id: string;
@@ -57,48 +52,24 @@ function getAnchorImageUrl(_ethnicity: string | null): string | null {
 
 export default function DashboardPage() {
   const router = useRouter();
-  const resetOnboarding = useOnboardingStore((state) => state.reset);
   const { isAuthenticated, isInitialized, user, isLoading: authLoading } = useAuth();
   const [companions, setCompanions] = useState<Companion[]>([]);
   const [loading, setLoading] = useState(true);
   const [companionToDelete, setCompanionToDelete] = useState<Companion | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
-  const [inviteCode, setInviteCode] = useState<InviteCodeData | null>(null);
-  const [copiedCode, setCopiedCode] = useState(false);
   // Backstory modal state
   const [backstoryCompanion, setBackstoryCompanion] = useState<Companion | null>(null);
-  // Personality profile state for personalized welcome
-  const [welcomeMessage, setWelcomeMessage] = useState<string | null>(null);
-
-  // Redirect to login if not authenticated
-  useEffect(() => {
-    console.log('[DASHBOARD] Auth check:', {
-      isInitialized,
-      authLoading,
-      isAuthenticated,
-      userId: user?.id,
-    });
-    if (isInitialized && !authLoading && !isAuthenticated) {
-      console.log('[DASHBOARD] Redirecting to /login - not authenticated');
-      router.push('/login');
-    }
-  }, [isInitialized, authLoading, isAuthenticated, router]);
 
   const fetchData = useCallback(async () => {
-    if (!isAuthenticated || !user?.id) return;
-
     setLoading(true);
     try {
-      // Fetch companions, invite code, and personality profile in parallel
-      const [companionsRes, inviteCodeRes, personalityProfile] = await Promise.all([
-        listCompanions({ limit: 200 }),
-        getInviteCode().catch(() => null),
-        getPersonalityProfile(user.id).catch(() => null),
-      ]);
-
-      // Set invite code if fetched successfully
-      if (inviteCodeRes?.data) {
-        setInviteCode(inviteCodeRes.data);
+      let companionsRes;
+      if (isAuthenticated && user?.id) {
+        // Authenticated: fetch user's companions
+        companionsRes = await listCompanions({ limit: 200 });
+      } else {
+        // Unauthenticated: browse all companions
+        companionsRes = await browseCompanions({ limit: 200 });
       }
 
       // Map API companions to dashboard format
@@ -117,32 +88,24 @@ export default function DashboardPage() {
       }));
 
       setCompanions(mappedCompanions);
-
-      // Generate personalized welcome message
-      // Prefer displayName (first name only), fallback to email prefix
-      const fullName = user.displayName || user.email?.split('@')[0] || 'friend';
-      const userName = fullName.split(' ')[0]; // Just the first name
-      if (personalityProfile) {
-        const welcome = buildPersonalizedWelcome(userName, personalityProfile);
-        setWelcomeMessage(welcome);
-      } else {
-        // No profile yet - use random default message
-        setWelcomeMessage(getRandomDefaultWelcome(userName));
-      }
     } catch (error) {
       console.error('Failed to fetch dashboard data:', error);
     } finally {
       setLoading(false);
     }
-  }, [isAuthenticated, user?.id, user?.email, user?.displayName]);
+  }, [isAuthenticated, user?.id]);
 
   useEffect(() => {
-    if (isInitialized && isAuthenticated) {
+    if (isInitialized && !authLoading) {
       fetchData();
     }
-  }, [isInitialized, isAuthenticated, fetchData]);
+  }, [isInitialized, authLoading, fetchData]);
 
   const handleNewChat = (companionId: string) => {
+    if (!isAuthenticated) {
+      router.push('/login');
+      return;
+    }
     router.push(`/chat/new?companion=${companionId}`);
   };
 
@@ -166,25 +129,8 @@ export default function DashboardPage() {
     }
   };
 
-  const handleCopyCode = async () => {
-    if (!inviteCode?.code) return;
-    await navigator.clipboard.writeText(inviteCode.code);
-    setCopiedCode(true);
-    setTimeout(() => setCopiedCode(false), 2000);
-  };
-
-  const handleDesignNewCompanion = () => {
-    resetOnboarding();
-    router.push('/onboard');
-  };
-
   // Show nothing while checking auth or loading data
   if (!isInitialized || authLoading || loading) {
-    return null;
-  }
-
-  // Don't render if not authenticated (will redirect)
-  if (!isAuthenticated) {
     return null;
   }
 
@@ -198,78 +144,8 @@ export default function DashboardPage() {
         animate={{ opacity: 1, y: 0 }}
         className="space-y-8"
       >
-        {/* Header Section - full width */}
-        <div className="flex flex-col md:flex-row md:items-start justify-between gap-6">
-          <div className="space-y-2">
-            <h1 className="text-5xl md:text-6xl font-bold font-display tracking-tight text-white">
-              Hi, <span className="text-transparent bg-clip-text bg-gradient-to-r from-campfire-400 via-campfire-500 to-campfire-600">{(user?.displayName || user?.email?.split('@')[0] || 'there').split(' ')[0]}</span>
-            </h1>
-            <p className="text-gray-400 text-lg">
-              {welcomeMessage || 'Your companions are excited to see you.'}
-            </p>
-          </div>
-          <div className="flex flex-col lg:flex-row gap-3 md:pt-6">
-            <motion.button
-              onClick={handleDesignNewCompanion}
-              className="relative h-14 md:h-11 px-8 md:px-6 rounded-full bg-gradient-to-b from-white via-gray-100 to-gray-300 text-gray-900 font-bold text-lg md:text-base shadow-[0_4px_20px_rgba(255,255,255,0.2),inset_0_1px_0_rgba(255,255,255,0.8),inset_0_-2px_4px_rgba(0,0,0,0.1)] border border-white/50 transition-all overflow-hidden"
-              whileHover={{
-                scale: 1.05,
-                boxShadow: '0 6px 30px rgba(255,255,255,0.3),inset 0 1px 0 rgba(255,255,255,0.9),inset 0 -2px 4px rgba(0,0,0,0.1)'
-              }}
-              whileTap={{ scale: 0.95 }}
-            >
-              {/* Shiny silver shimmer effect */}
-              <motion.div
-                className="absolute inset-0 bg-gradient-to-r from-transparent via-white/60 to-transparent -skew-x-12"
-                animate={{
-                  x: ['-100%', '200%'],
-                }}
-                transition={{
-                  duration: 2,
-                  repeat: Infinity,
-                  repeatDelay: 4,
-                  ease: 'easeInOut',
-                }}
-              />
-              <span className="relative z-10">Design new companion</span>
-            </motion.button>
-            {inviteCode && (
-              <motion.button
-                onClick={handleCopyCode}
-                className="relative h-14 md:h-11 px-8 md:px-6 rounded-full bg-gradient-to-r from-amber-500 via-amber-400 to-amber-500 text-black font-bold text-lg md:text-base shadow-[0_0_20px_rgba(245,158,11,0.3)] transition-all hover:scale-105 active:scale-95 overflow-hidden flex items-center justify-center"
-                whileHover={{ boxShadow: '0 0 30px rgba(245,158,11,0.5)' }}
-              >
-                {/* Shimmer overlay */}
-                <motion.div
-                  className="absolute inset-0 bg-gradient-to-r from-transparent via-white/30 to-transparent -skew-x-12"
-                  animate={{
-                    x: ['-100%', '200%'],
-                  }}
-                  transition={{
-                    duration: 2.5,
-                    repeat: Infinity,
-                    repeatDelay: 3,
-                    ease: 'easeInOut',
-                  }}
-                />
-                {copiedCode ? (
-                  <>
-                    <Check className="mr-2 h-6 w-6 md:h-5 md:w-5 relative z-10" />
-                    <span className="relative z-10">Copied!</span>
-                  </>
-                ) : (
-                  <>
-                    <Users className="mr-2 h-6 w-6 md:h-5 md:w-5 relative z-10" />
-                    <span className="relative z-10">Invite friends</span>
-                  </>
-                )}
-              </motion.button>
-            )}
-          </div>
-        </div>
-
         {/* Admin Panel Link */}
-        {user?.role === 'admin' && (
+        {isAuthenticated && user?.role === 'admin' && (
           <div className="flex justify-end">
             <Link
               href={'/admin' as Route}
@@ -298,7 +174,13 @@ export default function DashboardPage() {
                   </p>
                 </div>
                 <Button
-                  onClick={handleDesignNewCompanion}
+                  onClick={() => {
+                    if (!isAuthenticated) {
+                      router.push('/login');
+                      return;
+                    }
+                    router.push('/onboard');
+                  }}
                   size="xl"
                   className="h-16 px-12 rounded-full bg-gradient-to-r from-campfire-500 to-campfire-600 text-white font-bold text-xl shadow-[0_0_30px_rgba(249,115,22,0.3)] hover:scale-105 transition-all"
                 >
@@ -315,14 +197,14 @@ export default function DashboardPage() {
             <div className="flex items-center justify-between">
               <h2 className="text-2xl font-bold font-display text-white flex items-center gap-3">
                 <div className="h-2 w-2 rounded-full bg-campfire-500 animate-pulse" />
-                Your Companions
+                {isAuthenticated ? 'Your Companions' : 'Companions'}
               </h2>
             </div>
 
             {/* Full-width wrapping grid of small companion thumbnails */}
             <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 lg:grid-cols-8 xl:grid-cols-10 2xl:grid-cols-12 gap-2">
               {companions.map((companion, idx) => {
-                const hasExistingSession = !!companion.latestSessionId;
+                const hasExistingSession = isAuthenticated && !!companion.latestSessionId;
                 const anchorImageUrl = getAnchorImageUrl(companion.ethnicity);
                 const hasBackstory = !!companion.backstory;
 
@@ -353,25 +235,27 @@ export default function DashboardPage() {
 
                           {/* Hover action overlay */}
                           <div className="absolute inset-0 z-20 opacity-0 group-hover:opacity-100 transition-all duration-300 bg-black/60 flex flex-col items-center justify-center gap-1.5 p-1.5">
-                            {/* Top right actions */}
-                            <div className="absolute top-1 right-1 flex gap-1">
-                              {hasBackstory && (
+                            {/* Top right actions - only for authenticated users */}
+                            {isAuthenticated && (
+                              <div className="absolute top-1 right-1 flex gap-1">
+                                {hasBackstory && (
+                                  <button
+                                    onClick={(e) => { e.stopPropagation(); setBackstoryCompanion(companion); }}
+                                    className="p-1 rounded-md bg-amber-900/60 border border-amber-600/30 text-amber-400 backdrop-blur-sm"
+                                    title="View Backstory"
+                                  >
+                                    <BookOpen className="h-3 w-3" />
+                                  </button>
+                                )}
                                 <button
-                                  onClick={(e) => { e.stopPropagation(); setBackstoryCompanion(companion); }}
-                                  className="p-1 rounded-md bg-amber-900/60 border border-amber-600/30 text-amber-400 backdrop-blur-sm"
-                                  title="View Backstory"
+                                  onClick={(e) => { e.stopPropagation(); setCompanionToDelete(companion); }}
+                                  className="p-1 rounded-md bg-white/10 hover:bg-red-500/20 border border-white/10 text-white/70 hover:text-red-400 backdrop-blur-sm"
+                                  title="Delete Companion"
                                 >
-                                  <BookOpen className="h-3 w-3" />
+                                  <Trash2 className="h-3 w-3" />
                                 </button>
-                              )}
-                              <button
-                                onClick={(e) => { e.stopPropagation(); setCompanionToDelete(companion); }}
-                                className="p-1 rounded-md bg-white/10 hover:bg-red-500/20 border border-white/10 text-white/70 hover:text-red-400 backdrop-blur-sm"
-                                title="Delete Companion"
-                              >
-                                <Trash2 className="h-3 w-3" />
-                              </button>
-                            </div>
+                              </div>
+                            )}
 
                             <h3 className="font-bold text-[10px] sm:text-xs text-white text-center truncate w-full px-1">{companion.name}</h3>
 
@@ -398,7 +282,7 @@ export default function DashboardPage() {
                                 className="w-full h-6 rounded-md bg-campfire-600 hover:bg-campfire-500 text-white text-[10px] mx-1 px-1"
                               >
                                 <MessageCircle className="h-2.5 w-2.5 mr-1 flex-shrink-0" />
-                                Start
+                                {isAuthenticated ? 'Start' : 'Chat'}
                               </Button>
                             )}
                           </div>

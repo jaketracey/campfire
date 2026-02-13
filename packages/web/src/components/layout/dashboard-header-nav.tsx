@@ -1,16 +1,24 @@
 'use client';
 
 import { useEffect, useState, useCallback } from 'react';
+import { useRouter } from 'next/navigation';
 import { motion } from 'framer-motion';
-import { User, LogOut, Coins } from 'lucide-react';
+import { User, LogOut, Coins, Check, Users } from 'lucide-react';
 import Link from 'next/link';
 import type { Route } from 'next';
 import { useAuth } from '@/hooks/use-auth';
 import { getTokenBalance } from '@/lib/api/tokens';
+import { getInviteCode } from '@/lib/api';
+import type { InviteCodeData } from '@/lib/api';
+import { useOnboardingStore } from '@/stores/onboarding-store';
 
 export function DashboardHeaderNav() {
+  const router = useRouter();
   const { logout, isAuthenticated } = useAuth();
+  const resetOnboarding = useOnboardingStore((state) => state.reset);
   const [tokenBalance, setTokenBalance] = useState<number | null>(null);
+  const [inviteCode, setInviteCode] = useState<InviteCodeData | null>(null);
+  const [copiedCode, setCopiedCode] = useState(false);
 
   // Fetch token balance
   const fetchBalance = useCallback(() => {
@@ -21,10 +29,22 @@ export function DashboardHeaderNav() {
     }
   }, [isAuthenticated]);
 
+  // Fetch invite code
+  const fetchInviteCode = useCallback(() => {
+    if (isAuthenticated) {
+      getInviteCode()
+        .then((res) => {
+          if (res?.data) setInviteCode(res.data);
+        })
+        .catch(() => {});
+    }
+  }, [isAuthenticated]);
+
   // Initial fetch
   useEffect(() => {
     fetchBalance();
-  }, [fetchBalance]);
+    fetchInviteCode();
+  }, [fetchBalance, fetchInviteCode]);
 
   // Refresh when page becomes visible (e.g., after admin grants tokens or switching tabs)
   useEffect(() => {
@@ -38,8 +58,109 @@ export function DashboardHeaderNav() {
     return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
   }, [fetchBalance]);
 
+  const handleDesignNewCompanion = () => {
+    if (!isAuthenticated) {
+      router.push('/login');
+      return;
+    }
+    resetOnboarding();
+    router.push('/onboard');
+  };
+
+  const handleCopyCode = async () => {
+    if (!inviteCode?.code) return;
+    await navigator.clipboard.writeText(inviteCode.code);
+    setCopiedCode(true);
+    setTimeout(() => setCopiedCode(false), 2000);
+  };
+
+  if (!isAuthenticated) {
+    // Unauthed: show Design + Login/Signup
+    return (
+      <div className="flex items-center gap-2">
+        <motion.button
+          onClick={handleDesignNewCompanion}
+          className="relative h-9 px-4 rounded-full bg-gradient-to-b from-white via-gray-100 to-gray-300 text-gray-900 font-bold text-sm shadow-[0_4px_20px_rgba(255,255,255,0.2),inset_0_1px_0_rgba(255,255,255,0.8),inset_0_-2px_4px_rgba(0,0,0,0.1)] border border-white/50 transition-all overflow-hidden"
+          whileHover={{
+            scale: 1.05,
+            boxShadow: '0 6px 30px rgba(255,255,255,0.3),inset 0 1px 0 rgba(255,255,255,0.9),inset 0 -2px 4px rgba(0,0,0,0.1)'
+          }}
+          whileTap={{ scale: 0.95 }}
+        >
+          <motion.div
+            className="absolute inset-0 bg-gradient-to-r from-transparent via-white/60 to-transparent -skew-x-12"
+            animate={{ x: ['-100%', '200%'] }}
+            transition={{ duration: 2, repeat: Infinity, repeatDelay: 4, ease: 'easeInOut' }}
+          />
+          <span className="relative z-10">Design new companion</span>
+        </motion.button>
+
+        <Link
+          href={'/login' as Route}
+          className="flex items-center gap-2 px-4 py-2 rounded-full bg-white/[0.05] border border-white/10 hover:bg-white/[0.1] hover:border-white/20 transition-all group"
+        >
+          <User className="h-5 w-5 text-gray-400 group-hover:text-white transition-colors" />
+          <span className="text-sm font-medium text-gray-400 group-hover:text-white transition-colors">Login</span>
+        </Link>
+        <Link
+          href={'/signup' as Route}
+          className="flex items-center gap-2 px-4 py-2 rounded-full bg-campfire-600 hover:bg-campfire-500 text-white transition-all text-sm font-medium"
+        >
+          Sign up
+        </Link>
+      </div>
+    );
+  }
+
   return (
     <div className="flex items-center gap-2">
+      {/* Design new companion */}
+      <motion.button
+        onClick={handleDesignNewCompanion}
+        className="relative h-9 px-4 rounded-full bg-gradient-to-b from-white via-gray-100 to-gray-300 text-gray-900 font-bold text-sm shadow-[0_4px_20px_rgba(255,255,255,0.2),inset_0_1px_0_rgba(255,255,255,0.8),inset_0_-2px_4px_rgba(0,0,0,0.1)] border border-white/50 transition-all overflow-hidden"
+        whileHover={{
+          scale: 1.05,
+          boxShadow: '0 6px 30px rgba(255,255,255,0.3),inset 0 1px 0 rgba(255,255,255,0.9),inset 0 -2px 4px rgba(0,0,0,0.1)'
+        }}
+        whileTap={{ scale: 0.95 }}
+      >
+        <motion.div
+          className="absolute inset-0 bg-gradient-to-r from-transparent via-white/60 to-transparent -skew-x-12"
+          animate={{ x: ['-100%', '200%'] }}
+          transition={{ duration: 2, repeat: Infinity, repeatDelay: 4, ease: 'easeInOut' }}
+        />
+        <span className="relative z-10 hidden sm:inline">Design new companion</span>
+        <span className="relative z-10 sm:hidden">New</span>
+      </motion.button>
+
+      {/* Invite friends */}
+      {inviteCode && (
+        <motion.button
+          onClick={handleCopyCode}
+          className="relative h-9 px-4 rounded-full bg-gradient-to-r from-amber-500 via-amber-400 to-amber-500 text-black font-bold text-sm shadow-[0_0_20px_rgba(245,158,11,0.3)] transition-all overflow-hidden flex items-center justify-center"
+          whileHover={{ scale: 1.05, boxShadow: '0 0 30px rgba(245,158,11,0.5)' }}
+          whileTap={{ scale: 0.95 }}
+        >
+          <motion.div
+            className="absolute inset-0 bg-gradient-to-r from-transparent via-white/30 to-transparent -skew-x-12"
+            animate={{ x: ['-100%', '200%'] }}
+            transition={{ duration: 2.5, repeat: Infinity, repeatDelay: 3, ease: 'easeInOut' }}
+          />
+          {copiedCode ? (
+            <>
+              <Check className="mr-1.5 h-4 w-4 relative z-10" />
+              <span className="relative z-10">Copied!</span>
+            </>
+          ) : (
+            <>
+              <Users className="mr-1.5 h-4 w-4 relative z-10" />
+              <span className="relative z-10 hidden sm:inline">Invite friends</span>
+              <span className="relative z-10 sm:hidden">Invite</span>
+            </>
+          )}
+        </motion.button>
+      )}
+
       {/* Tokens Button - Poker Machine Style */}
       <Link href={'/account/tokens' as Route}>
         <motion.div
