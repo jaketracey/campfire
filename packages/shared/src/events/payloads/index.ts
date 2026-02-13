@@ -43,12 +43,6 @@ export * from './companion.js';
 // Billing events
 export * from './billing.js';
 
-// Security events
-export * from './security.js';
-
-// Deploy events
-export * from './deploy.js';
-
 // Email events
 export * from './email.js';
 

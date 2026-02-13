@@ -82,15 +82,6 @@ export const EventTypes = {
   BILLING_SUBSCRIPTION_UPDATED: 'billing.subscription.updated',
   BILLING_SUBSCRIPTION_CANCELED: 'billing.subscription.canceled',
 
-  // Security events
-  SECURITY_MFA_REQUIRED: 'security.mfa.required',
-  SECURITY_MFA_ENABLED: 'security.mfa.enabled',
-
-  // Deploy events
-  DEPLOY_STARTED: 'deploy.started',
-  DEPLOY_COMPLETED: 'deploy.completed',
-  DEPLOY_FAILED: 'deploy.failed',
-
   // Email events
   EMAIL_QUEUED: 'email.queued',
   EMAIL_SENT: 'email.sent',
