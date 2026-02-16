@@ -1,10 +1,18 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Sparkles } from 'lucide-react';
+import { Flame } from 'lucide-react';
 
 const WELCOME_FLAG_KEY = 'campfire-welcome-transition';
+
+const LOGIN_GREETINGS = [
+  { title: 'Welcome back', subtitle: 'Your companions missed you' },
+  { title: 'Welcome back', subtitle: 'The crew is ready' },
+  { title: 'Welcome home', subtitle: 'The fire never went out' },
+  { title: 'Look who\'s back', subtitle: 'Your companions are waiting' },
+  { title: 'Welcome back', subtitle: 'Let\'s pick up where we left off' },
+];
 
 export interface WelcomeTransitionData {
   type: 'signup' | 'login';
@@ -77,7 +85,7 @@ export function WelcomeTransition({ children }: WelcomeTransitionProps) {
     return <>{children}</>;
   }
 
-  const getMessage = () => {
+  const { title, subtitle } = useMemo(() => {
     if (!transitionData) return { title: '', subtitle: '' };
 
     if (transitionData.type === 'signup') {
@@ -86,13 +94,8 @@ export function WelcomeTransition({ children }: WelcomeTransitionProps) {
         subtitle: 'Let\'s spark something special',
       };
     }
-    return {
-      title: 'Welcome back',
-      subtitle: 'Your companions missed you',
-    };
-  };
-
-  const { title, subtitle } = getMessage();
+    return LOGIN_GREETINGS[Math.floor(Math.random() * LOGIN_GREETINGS.length)];
+  }, [transitionData]);
 
   return (
     <>
@@ -135,7 +138,7 @@ export function WelcomeTransition({ children }: WelcomeTransitionProps) {
 
             {/* Content */}
             <div className="absolute inset-0 flex flex-col items-center justify-center px-6">
-              {/* Sparkle icon */}
+              {/* Ignite flame icon */}
               <motion.div
                 initial={{ opacity: 0, scale: 0.5, y: 20 }}
                 animate={{
@@ -148,7 +151,7 @@ export function WelcomeTransition({ children }: WelcomeTransitionProps) {
               >
                 <div className="relative">
                   <div className="absolute inset-0 blur-xl bg-campfire-500/30 rounded-full" />
-                  <Sparkles className="relative h-12 w-12 text-campfire-500 drop-shadow-[0_0_20px_rgba(234,88,12,0.6)]" />
+                  <Flame className="relative h-12 w-12 text-campfire-500 drop-shadow-[0_0_20px_rgba(234,88,12,0.6)]" />
                 </div>
               </motion.div>
 
