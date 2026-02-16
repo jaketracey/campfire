@@ -1,19 +1,33 @@
 'use client';
 
 import { useState, useEffect, useRef, useCallback } from 'react';
+import { selectRenditionUrl, type ImageRenditions } from '@/lib/utils/image-renditions';
 
 interface CompanionCardImageProps {
   /** Array of image URLs specific to this companion (conversation images, avatar, etc.) */
   images: (string | null)[];
   /** Fallback image to show if no companion-specific images exist */
   fallbackImage?: string | null;
+  /** Avatar renditions for optimized delivery */
+  avatarRenditions?: ImageRenditions | null;
+  /** The avatar URL that renditions correspond to (used to match which image to optimize) */
+  avatarUrl?: string | null;
   alt: string;
   className?: string;
 }
 
-export function CompanionCardImage({ images, fallbackImage, alt, className = '' }: CompanionCardImageProps) {
+export function CompanionCardImage({ images, fallbackImage, avatarRenditions, avatarUrl, alt, className = '' }: CompanionCardImageProps) {
   // Filter out null/undefined and duplicate images - only companion-specific images
-  const validImages = [...new Set(images.filter((img): img is string => !!img))];
+  // If renditions are available, replace the avatar URL with an optimized rendition
+  const optimizedImages = images.map((img) => {
+    if (!img) return null;
+    if (avatarRenditions && avatarUrl && img === avatarUrl) {
+      const renditionUrl = selectRenditionUrl(avatarRenditions, { displayWidth: 300 });
+      if (renditionUrl) return renditionUrl;
+    }
+    return img;
+  });
+  const validImages = [...new Set(optimizedImages.filter((img): img is string => !!img))];
 
   const [currentIndex, setCurrentIndex] = useState(0);
   const [loadedImages, setLoadedImages] = useState<Set<number>>(new Set([0]));

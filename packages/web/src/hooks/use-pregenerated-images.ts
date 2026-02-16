@@ -106,12 +106,12 @@ export function usePregeneratedImages() {
  * Get the URL for a pre-generated emotional state image
  */
 export function getEmotionalStateImageUrl(emotionalState: string): string {
-  return `/generated/emotion-${emotionalState}.png`;
+  return `/generated/emotion-${emotionalState}.webp`;
 }
 
 /**
  * Get the URL for a pre-generated style preview image
  */
 export function getStylePreviewUrl(style: string): string {
-  return `/generated/preview-${style}-neutral.png`;
+  return `/generated/preview-${style}-neutral.webp`;
 }

@@ -26,10 +26,10 @@ import { GoogleSignInButton } from '@/components/auth/google-sign-in-button';
 import { cn } from '@/lib/utils';
 
 const COMPANIONS = [
-  'female/black-athletic-black-bM.png', 'female/black-curvy-brown-bM.png', 'female/black-plus-size-red-bM.png',
-  'female/caucasian-athletic-blonde-bM.png', 'female/caucasian-curvy-black-bM.png', 'female/caucasian-plus-size-brown-bM.png',
-  'female/east-asian-athletic-red-bM.png', 'female/east-asian-curvy-black-bM.png', 'female/east-asian-slim-blonde-bM.png',
-  'female/latina-athletic-brown-bM.png', 'female/latina-curvy-red-bM.png', 'female/latina-plus-size-black-bM.png',
+  'female/black-athletic-black-bM.webp', 'female/black-curvy-brown-bM.webp', 'female/black-plus-size-red-bM.webp',
+  'female/caucasian-athletic-blonde-bM.webp', 'female/caucasian-curvy-black-bM.webp', 'female/caucasian-plus-size-brown-bM.webp',
+  'female/east-asian-athletic-red-bM.webp', 'female/east-asian-curvy-black-bM.webp', 'female/east-asian-slim-blonde-bM.webp',
+  'female/latina-athletic-brown-bM.webp', 'female/latina-curvy-red-bM.webp', 'female/latina-plus-size-black-bM.webp',
 ];
 
 function MiniCompanionBackground() {

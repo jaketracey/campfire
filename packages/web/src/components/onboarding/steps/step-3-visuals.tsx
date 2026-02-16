@@ -66,12 +66,12 @@ function getPreviewImagePath(
   size: SizeCategory
 ): string {
   const sizePrefix = gender === 'female' ? 'b' : 'build';
-  return `/images/companions/${gender}/${ethnicity}-${bodyType}-${hairColor}-${sizePrefix}${size}.png`;
+  return `/images/companions/${gender}/${ethnicity}-${bodyType}-${hairColor}-${sizePrefix}${size}.webp`;
 }
 
 // Fallback images for each ethnicity (used when specific combo doesn't exist)
 function getFallbackImagePath(ethnicity: AppearanceEthnicity, gender: CompanionGender): string {
-  return `/images/companions/${gender}/${ethnicity}-athletic-black-${gender === 'female' ? 'b' : 'build'}M.png`;
+  return `/images/companions/${gender}/${ethnicity}-athletic-black-${gender === 'female' ? 'b' : 'build'}M.webp`;
 }
 
 export function Step3Visuals() {

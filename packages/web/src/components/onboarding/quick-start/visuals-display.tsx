@@ -66,11 +66,11 @@ function getPreviewImagePath(appearance: CompanionAppearance): string {
   const size = gender === 'female'
     ? (appearance as { breastSize: SizeCategory }).breastSize
     : (appearance as { build: SizeCategory }).build;
-  return `/images/companions/${gender}/${appearance.ethnicity}-${appearance.bodyType}-${appearance.hairColor}-${sizePrefix}${size}.png`;
+  return `/images/companions/${gender}/${appearance.ethnicity}-${appearance.bodyType}-${appearance.hairColor}-${sizePrefix}${size}.webp`;
 }
 
 function getFallbackImagePath(ethnicity: AppearanceEthnicity, gender: CompanionGender): string {
-  return `/images/companions/${gender}/${ethnicity}-athletic-black-${gender === 'female' ? 'b' : 'build'}M.png`;
+  return `/images/companions/${gender}/${ethnicity}-athletic-black-${gender === 'female' ? 'b' : 'build'}M.webp`;
 }
 
 interface VisualsDisplayProps {

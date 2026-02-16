@@ -28,6 +28,7 @@ import {
 import type {
   Companion as APICompanion,
 } from '@/lib/api';
+import type { ImageRenditions } from '@/lib/utils/image-renditions';
 import Link from 'next/link';
 import type { Route } from 'next';
 
@@ -36,6 +37,7 @@ interface Companion {
   name: string;
   archetype: string;
   avatarUrl: string | null;
+  avatarRenditions?: ImageRenditions | null;
   createdAt: string;
   isPublic: boolean;
   latestSessionId: string | null;
@@ -78,6 +80,7 @@ export default function DashboardPage() {
         name: c.name,
         archetype: c.spec?.personality?.archetype || c.description || 'Custom',
         avatarUrl: c.avatarUrl,
+        avatarRenditions: c.avatarRenditions || null,
         createdAt: c.createdAt,
         isPublic: c.isPublic,
         latestSessionId: c.latestSessionId || null,
@@ -242,6 +245,8 @@ export default function DashboardPage() {
                               companion.latestConversationImageUrl,
                               companion.avatarUrl,
                             ]}
+                            avatarUrl={companion.avatarUrl}
+                            avatarRenditions={companion.avatarRenditions}
                             fallbackImage={anchorImageUrl}
                             alt={companion.name}
                           />
