@@ -63,6 +63,34 @@ PY
           export PYTEST_ADDOPTS="${FILTERED_PYTEST_ADDOPTS}"
         fi
       fi
+
+      if (( $# > 2 )); then
+        FILTERED_PYTEST_ARGS=()
+        SKIP_NEXT=0
+        for ARG in "${@:3}"; do
+          if [[ "${SKIP_NEXT}" == "1" ]]; then
+            SKIP_NEXT=0
+            continue
+          fi
+
+          case "${ARG}" in
+            --cov|--cov=*|--cov-*)
+              continue
+              ;;
+            --cov-report|--cov-config|--cov-fail-under|--cov-context)
+              SKIP_NEXT=1
+              continue
+              ;;
+            *)
+              FILTERED_PYTEST_ARGS+=("${ARG}")
+              ;;
+          esac
+        done
+
+        if (( ${#FILTERED_PYTEST_ARGS[@]} != $# - 2 )); then
+          set -- "${@:1:2}" "${FILTERED_PYTEST_ARGS[@]}"
+        fi
+      fi
     fi
   fi
 fi
