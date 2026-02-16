@@ -360,34 +360,40 @@ async function getLatestImagesForCompanions(
 }
 
 /**
- * Avatar data with URL and optional s3_key for rendition lookup
+ * Avatar data combined with renditions for batch operations
  */
-interface AvatarData {
+interface AvatarDataWithRenditions {
   assetUrl: string;
   s3Key: string | null;
+  renditions: ImageRenditions | null;
 }
 
 /**
- * Get active avatar URLs and s3_keys for multiple companions
+ * Get active avatar URLs, s3_keys, AND renditions for multiple companions in a single query.
+ * Replaces the two-step getAvatarDataForCompanions + getAvatarRenditionsForS3Keys pattern
+ * to eliminate the N+1 waterfall (companion list → avatar data → renditions).
  */
-async function getAvatarDataForCompanions(
+async function getAvatarDataWithRenditionsForCompanions(
   companionIds: string[]
-): Promise<Map<string, AvatarData>> {
+): Promise<Map<string, AvatarDataWithRenditions>> {
   if (companionIds.length === 0) return new Map();
 
   const results = await db.sql`
-    SELECT c.id as companion_id, a.asset_url, a.s3_key
+    SELECT c.id as companion_id, a.asset_url, a.s3_key, ci.renditions
     FROM companions c
     JOIN companion_avatars a ON c.active_avatar_id = a.id
+    LEFT JOIN companion_images ci ON ci.s3_key = a.s3_key AND ci.renditions IS NOT NULL
     WHERE c.id = ANY(${companionIds})
   `;
 
-  const avatarMap = new Map<string, AvatarData>();
+  const avatarMap = new Map<string, AvatarDataWithRenditions>();
   for (const row of results) {
     if (row.companion_id && row.asset_url) {
+      const renditions = row.renditions as ImageRenditions | null;
       avatarMap.set(row.companion_id, {
         assetUrl: row.asset_url,
         s3Key: row.s3_key || null,
+        renditions: renditions ? buildRenditionUrls(renditions) : null,
       });
     }
   }
@@ -488,23 +494,12 @@ export async function companionsRoutes(app: FastifyInstance): Promise<void> {
 
     const companionIds = result.data.map((c) => c.id);
 
-    // Fetch avatar data for all companions
-    const avatarDataMap = await getAvatarDataForCompanions(companionIds);
-
-    // Collect s3_keys from avatars to fetch renditions
-    const avatarS3Keys = Array.from(avatarDataMap.values())
-      .map((data) => data.s3Key)
-      .filter((key): key is string => key !== null);
-
-    const avatarRenditionsMap = await getAvatarRenditionsForS3Keys(avatarS3Keys);
+    // Fetch avatar data + renditions in a single query (fixes N+1)
+    const avatarDataMap = await getAvatarDataWithRenditionsForCompanions(companionIds);
 
     const companions = result.data.map((companion) => {
       const avatarData = avatarDataMap.get(companion.id);
-      const avatarRenditions = avatarData?.s3Key
-        ? avatarRenditionsMap.get(avatarData.s3Key) || null
-        : null;
-
-      return mapCompanionResponse(companion, avatarData?.assetUrl, avatarRenditions);
+      return mapCompanionResponse(companion, avatarData?.assetUrl, avatarData?.renditions);
     });
 
     return reply.send({
@@ -573,32 +568,21 @@ export async function companionsRoutes(app: FastifyInstance): Promise<void> {
     // Get companion IDs for batch queries
     const companionIds = result.data.map((c) => c.id);
 
-    // Fetch latest sessions, images, and avatars in parallel
+    // Fetch latest sessions, images, and avatars+renditions in parallel (fixes N+1)
     const [sessionMap, imageMap, avatarDataMap] = await Promise.all([
       getLatestSessionsForCompanions(request.user!.userId, companionIds),
       getLatestImagesForCompanions(request.user!.userId, companionIds),
-      getAvatarDataForCompanions(companionIds),
+      getAvatarDataWithRenditionsForCompanions(companionIds),
     ]);
-
-    // Collect s3_keys from avatars to fetch renditions
-    const avatarS3Keys = Array.from(avatarDataMap.values())
-      .map((data) => data.s3Key)
-      .filter((key): key is string => key !== null);
-
-    // Fetch avatar renditions
-    const avatarRenditionsMap = await getAvatarRenditionsForS3Keys(avatarS3Keys);
 
     // Map companions with session, image, and avatar data
     const companions = result.data.map((companion) => {
       const latestSession = sessionMap.get(companion.id);
       const latestImageData = imageMap.get(companion.id);
       const avatarData = avatarDataMap.get(companion.id);
-      const avatarRenditions = avatarData?.s3Key
-        ? avatarRenditionsMap.get(avatarData.s3Key) || null
-        : null;
 
       return {
-        ...mapCompanionResponse(companion, avatarData?.assetUrl, avatarRenditions),
+        ...mapCompanionResponse(companion, avatarData?.assetUrl, avatarData?.renditions),
         latestSessionId: latestSession?.id || null,
         latestSessionUpdatedAt: latestSession?.updatedAt || null,
         latestConversationImageUrl:
