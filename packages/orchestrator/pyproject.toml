@@ -79,7 +79,7 @@ packages = ["src/orchestrator"]
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths = ["tests"]
-addopts = "-v --cov=orchestrator --cov-report=term-missing --cov-report=html"
+addopts = "-v"
 filterwarnings = [
     "ignore::DeprecationWarning",
 ]
