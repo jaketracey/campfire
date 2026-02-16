@@ -448,6 +448,62 @@ export async function enqueueInfluencerSampleGenerationJob(
 }
 
 /**
+ * Check Redis connectivity by pinging the connection used by queues
+ */
+export async function checkRedisHealth(): Promise<{ ok: boolean; latency_ms: number; error?: string }> {
+  const start = Date.now();
+  try {
+    const redisConfig = parseRedisUrl(REDIS_URL);
+    // Use a lightweight Queue instance just to verify Redis connectivity
+    const probe = new Queue('health-probe', { connection: redisConfig });
+    const client = await probe.client;
+    await client.ping();
+    await probe.close();
+    return { ok: true, latency_ms: Date.now() - start };
+  } catch (error) {
+    return {
+      ok: false,
+      latency_ms: Date.now() - start,
+      error: error instanceof Error ? error.message : 'Unknown error',
+    };
+  }
+}
+
+/**
+ * Get queue depth stats for all initialized queues
+ */
+export async function getQueueStats(): Promise<Record<string, { waiting: number; active: number; delayed: number; failed: number }>> {
+  const stats: Record<string, { waiting: number; active: number; delayed: number; failed: number }> = {};
+
+  const queues: [string, Queue | null][] = [
+    ['summary-projection', summaryQueue],
+    ['image-renditions', imageRenditionQueue],
+    ['video-generation', videoGenerationQueue],
+    ['email', emailQueue],
+    ['gift-generation', giftGenerationQueue],
+    ['influencer-sample-generation', influencerSampleGenerationQueue],
+  ];
+
+  for (const [name, queue] of queues) {
+    if (queue) {
+      try {
+        const counts = await queue.getJobCounts('waiting', 'active', 'delayed', 'failed');
+        stats[name] = {
+          waiting: counts.waiting ?? 0,
+          active: counts.active ?? 0,
+          delayed: counts.delayed ?? 0,
+          failed: counts.failed ?? 0,
+        };
+      } catch {
+        stats[name] = { waiting: -1, active: -1, delayed: -1, failed: -1 };
+      }
+    }
+  }
+
+  return stats;
+}
+
+/**
  * Close queue connections (for graceful shutdown)
  */
 export async function closeQueues(): Promise<void> {

@@ -22,6 +22,7 @@ const IntSchema = z.preprocess((value) => {
 export const WorkersEnvSchema = z.object({
   NODE_ENV: NodeEnvSchema.default('development'),
   LOG_LEVEL: z.string().default('info'),
+  HEALTH_PORT: IntSchema.pipe(z.number().int().positive()).default(3003),
 
   DATABASE_URL: z.string().url(),
   REDIS_URL: z.string().default('redis://localhost:6379'),

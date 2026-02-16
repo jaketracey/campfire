@@ -20,6 +20,7 @@ async function bootstrap() {
   const { AdSpendSyncWorker, LtvCalculationWorker, createAdSpendSyncQueue, createLtvCalculationQueue } = await import('./ads/index.js');
   const { createDbClient } = await import('./db/client.js');
   const { createS3Client } = await import('./storage/s3.js');
+  const { createHealthServer } = await import('./health.js');
 
   const logger = pino({
     level: env.LOG_LEVEL,
@@ -163,12 +164,28 @@ async function bootstrap() {
 
   logger.info('All projection workers started successfully');
 
+  // Start health check HTTP server
+  const workerNames = [
+    'vault', 'knowledge-graph', 'summary', 'personality-profile',
+    'email', 'image-rendition', 'video-generation', 'gift-generation',
+    'influencer-sample-generation', 'ad-spend-sync', 'ltv-calculation',
+    ...(embeddingWorker ? ['embedding'] : []),
+  ];
+  const healthServer = createHealthServer({
+    redis: connection,
+    db,
+    logger: logger.child({ component: 'health' }),
+    port: env.HEALTH_PORT,
+    workerNames,
+  });
+
   // Set up scheduled jobs for ad spend sync and LTV calculation
   await setupScheduledJobs(connection, logger);
 
   // Graceful shutdown
   const shutdown = async () => {
     logger.info('Shutting down workers...');
+    healthServer.close();
     await Promise.all([
       vaultWorker.stop(),
       embeddingWorker?.stop(),

@@ -121,13 +121,17 @@ export const db = {
     total: number;
     idle: number;
     waiting: number;
+    max: number;
   }> {
-    // postgres.js doesn't expose pool stats directly
-    // This is a placeholder for monitoring
+    // postgres.js exposes connection counts via internal state
+    const s = sql();
+    const count = (s as unknown as { count: number }).count ?? 0;
+    const max = (s as unknown as { options: { max: number } }).options?.max ?? 20;
     return {
-      total: 0,
-      idle: 0,
+      total: count,
+      idle: Math.max(0, count),
       waiting: 0,
+      max,
     };
   },
 };
