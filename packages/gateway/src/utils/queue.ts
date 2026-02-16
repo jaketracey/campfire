@@ -447,20 +447,28 @@ export async function enqueueInfluencerSampleGenerationJob(
   }
 }
 
+// Reusable probe queue for Redis health checks (lazy-initialized, long-lived)
+let healthProbeQueue: Queue | null = null;
+
 /**
  * Check Redis connectivity by pinging the connection used by queues
  */
 export async function checkRedisHealth(): Promise<{ ok: boolean; latency_ms: number; error?: string }> {
   const start = Date.now();
   try {
-    const redisConfig = parseRedisUrl(REDIS_URL);
-    // Use a lightweight Queue instance just to verify Redis connectivity
-    const probe = new Queue('health-probe', { connection: redisConfig });
-    const client = await probe.client;
+    if (!healthProbeQueue) {
+      const redisConfig = parseRedisUrl(REDIS_URL);
+      healthProbeQueue = new Queue('health-probe', { connection: redisConfig });
+    }
+    const client = await healthProbeQueue.client;
     await client.ping();
-    await probe.close();
     return { ok: true, latency_ms: Date.now() - start };
   } catch (error) {
+    // Reset probe on failure so next call retries fresh
+    if (healthProbeQueue) {
+      healthProbeQueue.close().catch(() => {});
+      healthProbeQueue = null;
+    }
     return {
       ok: false,
       latency_ms: Date.now() - start,
@@ -530,5 +538,9 @@ export async function closeQueues(): Promise<void> {
   if (influencerSampleGenerationQueue) {
     await influencerSampleGenerationQueue.close();
     influencerSampleGenerationQueue = null;
+  }
+  if (healthProbeQueue) {
+    await healthProbeQueue.close();
+    healthProbeQueue = null;
   }
 }
