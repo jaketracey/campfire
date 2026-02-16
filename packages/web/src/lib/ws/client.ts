@@ -133,6 +133,7 @@ interface CampfireWSOptions {
   onError?: (error: Event) => void;
   autoReconnect?: boolean;
   reconnectDelay?: number;
+  maxReconnectAttempts?: number;
 }
 
 export class CampfireWebSocket {
@@ -141,6 +142,9 @@ export class CampfireWebSocket {
   private options: CampfireWSOptions;
   private reconnectTimeout: NodeJS.Timeout | null = null;
   private connectionTimeout: NodeJS.Timeout | null = null;
+  private reconnectAttempts = 0;
+  private isManualDisconnect = false;
+  private readonly maxReconnectDelay = 30000;
   private _isConnected = false;
   private _isAuthenticated = false;
   private _sessionId: string | null = null;
@@ -162,6 +166,7 @@ export class CampfireWebSocket {
     this.options = {
       autoReconnect: true,
       reconnectDelay: 3000,
+      maxReconnectAttempts: 10,
       ...options,
     };
   }
@@ -214,6 +219,8 @@ export class CampfireWebSocket {
    * Connect to the WebSocket server
    */
   connect(): void {
+    this.isManualDisconnect = false;
+
     // Already connected - nothing to do
     if (this.ws?.readyState === WebSocket.OPEN) {
       console.log('[WS] Already connected, skipping connect()');
@@ -251,6 +258,7 @@ export class CampfireWebSocket {
       }
       this._isConnected = true;
       this._hasConnectedOnce = true;
+      this.reconnectAttempts = 0;
       console.log('[WS] Connected');
       this.options.onOpen?.();
     };
@@ -266,8 +274,8 @@ export class CampfireWebSocket {
       console.log('[WS] Disconnected', event.code, event.reason);
       this.options.onClose?.(event);
 
-      // Auto-reconnect only for abnormal closures
-      if (this.options.autoReconnect && event.code !== 1000) {
+      // Auto-reconnect except when explicitly disconnected by the caller
+      if (this.options.autoReconnect && !this.isManualDisconnect) {
         this.scheduleReconnect();
       }
     };
@@ -295,6 +303,7 @@ export class CampfireWebSocket {
    * Disconnect from the server
    */
   disconnect(): void {
+    this.isManualDisconnect = true;
     // Clear all timers
     if (this.reconnectTimeout) {
       clearTimeout(this.reconnectTimeout);
@@ -310,6 +319,7 @@ export class CampfireWebSocket {
 
     // Reset all state
     this.resetState();
+    this.reconnectAttempts = 0;
   }
 
   /**
@@ -1113,7 +1123,22 @@ export class CampfireWebSocket {
       return;
     }
 
-    console.log(`[WS] Reconnecting in ${this.options.reconnectDelay}ms...`);
+    const maxAttempts = this.options.maxReconnectAttempts;
+    const maxReconnectAttempts = maxAttempts && maxAttempts > 0 ? maxAttempts : 0;
+
+    if (maxReconnectAttempts > 0 && this.reconnectAttempts >= maxReconnectAttempts) {
+      console.warn('[WS] Max reconnection attempts reached, stopping reconnection');
+      return;
+    }
+
+    this.reconnectAttempts += 1;
+    const baseDelay = this.options.reconnectDelay ?? 3000;
+    const delay = Math.min(
+      baseDelay * Math.pow(2, this.reconnectAttempts - 1),
+      this.maxReconnectDelay
+    );
+
+    console.log(`[WS] Reconnecting in ${delay}ms... (attempt ${this.reconnectAttempts})`);
     this.reconnectTimeout = setTimeout(() => {
       this.reconnectTimeout = null;
       // Reset state before reconnecting to prevent stale data

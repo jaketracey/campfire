@@ -134,6 +134,23 @@ describe('CampfireWebSocket - Memory Leak Prevention', () => {
   });
 
   describe('Reconnection Timer Cleanup', () => {
+    it('should reconnect on normal close when not manually disconnected', async () => {
+      const onOpenSpy = vi.fn();
+      ws = new CampfireWebSocket({ onOpen: onOpenSpy });
+      ws.connect();
+      await vi.advanceTimersByTimeAsync(20);
+
+      expect(onOpenSpy).toHaveBeenCalledTimes(1);
+
+      const firstWs = (ws as any).ws as MockWebSocket;
+      firstWs.close(1000, 'Connection timeout');
+      await vi.advanceTimersByTimeAsync(3200);
+
+      const secondWs = (ws as any).ws as MockWebSocket;
+      expect(secondWs).not.toBe(firstWs);
+      expect(onOpenSpy).toHaveBeenCalledTimes(2);
+    });
+
     it('should not create multiple reconnection timers', async () => {
       ws.connect();
       await vi.advanceTimersByTimeAsync(20);
