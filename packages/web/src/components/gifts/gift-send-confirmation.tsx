@@ -10,6 +10,7 @@ import {
   AlertDialogCancel,
   AlertDialogAction,
 } from '@/components/ui/alert-dialog';
+import Image from 'next/image';
 import { Coins, Loader2 } from 'lucide-react';
 import type { Gift } from '@/lib/api/gifts';
 
@@ -44,12 +45,14 @@ export function GiftSendConfirmation({
 
               {/* Gift Preview */}
               <div className="flex items-start gap-4 p-4 rounded-lg bg-muted">
-                <div className="w-16 h-16 rounded-lg overflow-hidden bg-muted-foreground/10 shrink-0">
+                <div className="relative w-16 h-16 rounded-lg overflow-hidden bg-muted-foreground/10 shrink-0">
                   {gift.imageUrl ? (
-                    <img
+                    <Image
                       src={gift.imageUrl}
                       alt={gift.name}
-                      className="w-full h-full object-cover"
+                      fill
+                      sizes="64px"
+                      className="object-cover"
                     />
                   ) : (
                     <div className="w-full h-full flex items-center justify-center bg-gradient-to-br from-campfire-400 to-campfire-600">

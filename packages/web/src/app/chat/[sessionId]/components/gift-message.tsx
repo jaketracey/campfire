@@ -1,5 +1,6 @@
 'use client';
 
+import Image from 'next/image';
 import { motion } from 'framer-motion';
 import { Card } from '@/components/ui/card';
 import { Gift, Heart } from 'lucide-react';
@@ -32,12 +33,14 @@ export function GiftMessage({ giftData, isNew }: GiftMessageProps) {
         {/* Gift Content */}
         <div className="flex items-start gap-3">
           {/* Gift Image */}
-          <div className="w-16 h-16 rounded-lg overflow-hidden bg-muted shrink-0">
+          <div className="relative w-16 h-16 rounded-lg overflow-hidden bg-muted shrink-0">
             {giftData.imageUrl ? (
-              <img
+              <Image
                 src={giftData.imageUrl}
                 alt={`Gift: ${giftData.name}`}
-                className="w-full h-full object-cover"
+                fill
+                sizes="64px"
+                className="object-cover"
                 loading="lazy"
               />
             ) : (

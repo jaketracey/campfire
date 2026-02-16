@@ -1,5 +1,6 @@
 'use client';
 
+import Image from 'next/image';
 import { cn } from '@/lib/utils';
 import { Card } from '@/components/ui/card';
 import { Coins, Loader2 } from 'lucide-react';
@@ -78,10 +79,12 @@ export function GiftCard({
           {isGenerating ? (
             <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
           ) : gift.imageUrl ? (
-            <img
+            <Image
               src={gift.imageUrl}
               alt={gift.name}
-              className="w-full h-full object-cover"
+              fill
+              sizes={size === 'lg' ? '96px' : size === 'md' ? '64px' : '48px'}
+              className="object-cover"
             />
           ) : (
             <div className="w-full h-full bg-gradient-to-br from-campfire-400 to-campfire-600 flex items-center justify-center">
