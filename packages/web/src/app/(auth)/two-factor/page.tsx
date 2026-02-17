@@ -73,7 +73,6 @@ export default function TwoFactorPage() {
     setIsLoading(true);
     try {
       // TODO: Implement actual 2FA verification
-      console.log('2FA code:', fullCode);
 
       // Simulate API call
       await new Promise((resolve) => setTimeout(resolve, 1000));

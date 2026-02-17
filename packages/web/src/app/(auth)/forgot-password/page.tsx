@@ -43,7 +43,6 @@ export default function ForgotPasswordPage() {
     setIsLoading(true);
     try {
       // TODO: Implement actual forgot password API call
-      console.log('Forgot password data:', data);
 
       // Simulate API call
       await new Promise((resolve) => setTimeout(resolve, 1000));
