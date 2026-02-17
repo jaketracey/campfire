@@ -129,7 +129,10 @@ export default function TwoFactorPage() {
         </CardDescription>
       </CardHeader>
       <CardContent>
-        <Tabs defaultValue="app" className="w-full">
+        <Tabs defaultValue="app" className="w-full" onValueChange={() => {
+          setCode(['', '', '', '', '', '']);
+          inputRefs.current[0]?.focus();
+        }}>
           <TabsList className="grid w-full grid-cols-2">
             <TabsTrigger value="app" data-testid="mfa-authenticator-tab">
               <Smartphone className="mr-2 h-4 w-4" />
