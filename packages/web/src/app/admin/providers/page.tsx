@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState, useCallback } from 'react';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
-import { Server, Image, Video, Plus, RefreshCw, CheckCircle2, AlertCircle, Zap, Settings2, Trash2 } from 'lucide-react';
+import { Server, Image, Video, Plus, RefreshCw, CheckCircle2, AlertCircle, Zap, Settings2, Trash2, MoreVertical } from 'lucide-react';
 import Link from 'next/link';
 import type { Route } from 'next';
 import {
@@ -43,6 +43,13 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from '@/components/ui/alert-dialog';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 
 type ProviderKind = 'text' | 'image' | 'video';
 
@@ -415,11 +422,11 @@ function ProviderTabContent({
                       : 'bg-white/[0.01] border-white/5 opacity-60'
                   )}
                 >
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-4">
+                  <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+                    <div className="flex items-center gap-4 min-w-0">
                       <div
                         className={cn(
-                          'p-3 rounded-lg',
+                          'p-3 rounded-lg shrink-0',
                           provider.isEnabled ? config.iconClasses.listIconBg : 'bg-gray-500/10'
                         )}
                       >
@@ -430,15 +437,15 @@ function ProviderTabContent({
                           )}
                         />
                       </div>
-                      <div>
+                      <div className="min-w-0">
                         <div className="flex items-center gap-2">
-                          <h3 className="font-medium text-white">{provider.displayName}</h3>
-                          {!provider.isEnabled && <Badge variant="secondary" className="text-xs">Disabled</Badge>}
+                          <h3 className="font-medium text-white truncate">{provider.displayName}</h3>
+                          {!provider.isEnabled && <Badge variant="secondary" className="text-xs shrink-0">Disabled</Badge>}
                         </div>
                         <p className={cn('text-sm text-gray-400', config.kind === 'text' && 'capitalize')}>
                           {config.providerTypeLabel(provider.provider)}
                         </p>
-                        <div className="flex items-center gap-4 mt-1 text-xs text-gray-500">
+                        <div className="flex flex-wrap items-center gap-x-4 gap-y-1 mt-1 text-xs text-gray-500">
                           <span>
                             {provider.modelCount} model{provider.modelCount !== 1 ? 's' : ''}
                           </span>
@@ -454,7 +461,7 @@ function ProviderTabContent({
                       </div>
                     </div>
 
-                    <div className="flex items-center gap-3">
+                    <div className="flex items-center gap-3 shrink-0">
                       <div className="flex items-center gap-2 rounded-md border border-white/10 bg-white/[0.02] px-2 py-1">
                         <span className="text-xs text-gray-400">Enabled</span>
                         <Switch
@@ -466,59 +473,124 @@ function ProviderTabContent({
 
                       {getHealthBadge(provider)}
 
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => onTestConnection(provider.id)}
-                        disabled={testingProviderId === provider.id || !canTest(provider)}
-                        className="gap-2"
-                      >
-                        {testingProviderId === provider.id ? (
-                          <RefreshCw className="h-4 w-4 animate-spin" />
-                        ) : (
-                          <Zap className="h-4 w-4" />
-                        )}
-                        Test
-                      </Button>
-
-                      <Link href={config.configureHref(provider.id)}>
-                        <Button variant="outline" size="sm" className="gap-2">
-                          <Settings2 className="h-4 w-4" />
-                          Configure
+                      {/* Desktop: inline buttons */}
+                      <div className="hidden md:flex items-center gap-3">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => onTestConnection(provider.id)}
+                          disabled={testingProviderId === provider.id || !canTest(provider)}
+                          className="gap-2"
+                        >
+                          {testingProviderId === provider.id ? (
+                            <RefreshCw className="h-4 w-4 animate-spin" />
+                          ) : (
+                            <Zap className="h-4 w-4" />
+                          )}
+                          Test
                         </Button>
-                      </Link>
 
-                      <AlertDialog>
-                        <AlertDialogTrigger asChild>
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            className="text-red-400 hover:text-red-300"
-                            disabled={provider.isEnabled || deletingProviderId === provider.id}
-                            title={provider.isEnabled ? 'Disable this provider to delete it' : 'Delete provider'}
-                          >
-                            <Trash2 className="h-4 w-4" />
+                        <Link href={config.configureHref(provider.id)}>
+                          <Button variant="outline" size="sm" className="gap-2">
+                            <Settings2 className="h-4 w-4" />
+                            Configure
                           </Button>
-                        </AlertDialogTrigger>
-                        <AlertDialogContent>
-                          <AlertDialogHeader>
-                            <AlertDialogTitle>Delete Provider</AlertDialogTitle>
-                            <AlertDialogDescription>
-                              Delete <span className="font-medium">{provider.displayName}</span>? This removes the provider
-                              configuration and all related models and routing rules.
-                            </AlertDialogDescription>
-                          </AlertDialogHeader>
-                          <AlertDialogFooter>
-                            <AlertDialogCancel>Cancel</AlertDialogCancel>
-                            <AlertDialogAction
-                              onClick={() => handleDeleteProvider(provider.id)}
-                              className="bg-red-600 hover:bg-red-700"
+                        </Link>
+
+                        <AlertDialog>
+                          <AlertDialogTrigger asChild>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="text-red-400 hover:text-red-300"
+                              disabled={provider.isEnabled || deletingProviderId === provider.id}
+                              title={provider.isEnabled ? 'Disable this provider to delete it' : 'Delete provider'}
                             >
-                              Delete
-                            </AlertDialogAction>
-                          </AlertDialogFooter>
-                        </AlertDialogContent>
-                      </AlertDialog>
+                              <Trash2 className="h-4 w-4" />
+                            </Button>
+                          </AlertDialogTrigger>
+                          <AlertDialogContent>
+                            <AlertDialogHeader>
+                              <AlertDialogTitle>Delete Provider</AlertDialogTitle>
+                              <AlertDialogDescription>
+                                Delete <span className="font-medium">{provider.displayName}</span>? This removes the provider
+                                configuration and all related models and routing rules.
+                              </AlertDialogDescription>
+                            </AlertDialogHeader>
+                            <AlertDialogFooter>
+                              <AlertDialogCancel>Cancel</AlertDialogCancel>
+                              <AlertDialogAction
+                                onClick={() => handleDeleteProvider(provider.id)}
+                                className="bg-red-600 hover:bg-red-700"
+                              >
+                                Delete
+                              </AlertDialogAction>
+                            </AlertDialogFooter>
+                          </AlertDialogContent>
+                        </AlertDialog>
+                      </div>
+
+                      {/* Mobile: dropdown menu */}
+                      <div className="md:hidden">
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <Button variant="ghost" size="sm">
+                              <MoreVertical className="h-4 w-4" />
+                              <span className="sr-only">Actions</span>
+                            </Button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="end">
+                            <DropdownMenuItem
+                              onClick={() => onTestConnection(provider.id)}
+                              disabled={testingProviderId === provider.id || !canTest(provider)}
+                            >
+                              {testingProviderId === provider.id ? (
+                                <RefreshCw className="h-4 w-4 mr-2 animate-spin" />
+                              ) : (
+                                <Zap className="h-4 w-4 mr-2" />
+                              )}
+                              Test Connection
+                            </DropdownMenuItem>
+                            <DropdownMenuItem asChild>
+                              <Link href={config.configureHref(provider.id)}>
+                                <Settings2 className="h-4 w-4 mr-2" />
+                                Configure
+                              </Link>
+                            </DropdownMenuItem>
+                            <DropdownMenuSeparator />
+                            <AlertDialog>
+                              <AlertDialogTrigger asChild>
+                                <DropdownMenuItem
+                                  className="text-red-400 focus:text-red-300"
+                                  disabled={provider.isEnabled || deletingProviderId === provider.id}
+                                  onSelect={(e) => e.preventDefault()}
+                                >
+                                  <Trash2 className="h-4 w-4 mr-2" />
+                                  {provider.isEnabled ? 'Disable to delete' : 'Delete'}
+                                </DropdownMenuItem>
+                              </AlertDialogTrigger>
+                              <AlertDialogContent>
+                                <AlertDialogHeader>
+                                  <AlertDialogTitle>Delete Provider</AlertDialogTitle>
+                                  <AlertDialogDescription>
+                                    Delete <span className="font-medium">{provider.displayName}</span>? This removes the provider
+                                    configuration and all related models and routing rules.
+                                  </AlertDialogDescription>
+                                </AlertDialogHeader>
+                                <AlertDialogFooter>
+                                  <AlertDialogCancel>Cancel</AlertDialogCancel>
+                                  <AlertDialogAction
+                                    onClick={() => handleDeleteProvider(provider.id)}
+                                    className="bg-red-600 hover:bg-red-700"
+                                  >
+                                    Delete
+                                  </AlertDialogAction>
+                                </AlertDialogFooter>
+                              </AlertDialogContent>
+                            </AlertDialog>
+                          </DropdownMenuContent>
+                        </DropdownMenu>
+                      </div>
                     </div>
                   </div>
 
