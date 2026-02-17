@@ -162,6 +162,8 @@ export default function TwoFactorPage() {
                   onKeyDown={(e) => handleKeyDown(index, e)}
                   className="h-12 w-12 text-center text-lg font-semibold"
                   disabled={isLoading}
+                  aria-label={`Digit ${index + 1} of 6`}
+                  autoComplete="one-time-code"
                   data-testid="mfa-code-input"
                 />
               ))}
@@ -187,6 +189,8 @@ export default function TwoFactorPage() {
                   onKeyDown={(e) => handleKeyDown(index, e)}
                   className="h-12 w-12 text-center text-lg font-semibold"
                   disabled={isLoading}
+                  aria-label={`Digit ${index + 1} of 6`}
+                  autoComplete="one-time-code"
                   data-testid="mfa-code-input"
                 />
               ))}
