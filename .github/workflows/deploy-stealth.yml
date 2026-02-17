@@ -36,6 +36,9 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || github.sha }}
+          fetch-depth: 1
 
       - name: Resolve image tag
         id: image-tag
@@ -47,6 +50,40 @@ jobs:
           fi
 
           echo "image_tag=${IMAGE_TAG}" >> "$GITHUB_OUTPUT"
+
+      - name: Validate required secrets
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          S3_MEDIA_BUCKET: ${{ secrets.S3_MEDIA_BUCKET }}
+          JWT_SECRET: ${{ secrets.JWT_SECRET }}
+          SESSION_SECRET: ${{ secrets.SESSION_SECRET }}
+          INTERNAL_SERVICE_KEY: ${{ secrets.INTERNAL_SERVICE_KEY }}
+          PROVIDER_KEY_ENCRYPTION_SECRET: ${{ secrets.PROVIDER_KEY_ENCRYPTION_SECRET }}
+        run: |
+          set -euo pipefail
+
+          missing=0
+          check() {
+            local key="$1"
+            if [ -z "${!key:-}" ]; then
+              echo "::error ::Required secret '$key' is missing."
+              missing=1
+            fi
+          }
+
+          check AWS_ACCESS_KEY_ID
+          check AWS_SECRET_ACCESS_KEY
+          check S3_MEDIA_BUCKET
+          check JWT_SECRET
+          check SESSION_SECRET
+          check INTERNAL_SERVICE_KEY
+          check PROVIDER_KEY_ENCRYPTION_SECRET
+
+          if [ "$missing" -eq 1 ]; then
+            echo "Deployment blocked until required secrets are configured in repository secrets."
+            exit 1
+          fi
 
       - name: Setup SSH key
         run: |
@@ -137,10 +174,32 @@ jobs:
           docker compose -f docker-compose.stealth.yml --env-file /opt/campfire/.env.stealth pull gateway web workers orchestrator
 
           echo "=== Restarting services ==="
-          docker compose -f docker-compose.stealth.yml --env-file /opt/campfire/.env.stealth up -d
+          if ! docker compose -f docker-compose.stealth.yml --env-file /opt/campfire/.env.stealth up -d --remove-orphans; then
+            echo "Deployment startup failed. Collecting recent logs..."
+            docker compose -f docker-compose.stealth.yml logs --no-color --tail 200 gateway orchestrator web workers redis postgres nginx || true
+            exit 1
+          fi
 
           echo "=== Waiting for services to start ==="
           sleep 10
+
+          echo "=== Waiting for health checks ==="
+          for i in {1..45}; do
+            if docker compose -f docker-compose.stealth.yml exec -T gateway sh -lc "wget -q --tries=1 --timeout=5 --spider http://localhost:4000/health" >/dev/null 2>&1 \
+              && docker compose -f docker-compose.stealth.yml exec -T orchestrator sh -lc "wget -q --tries=1 --timeout=5 --spider http://localhost:5000/health" >/dev/null 2>&1 \
+              && docker compose -f docker-compose.stealth.yml exec -T web sh -lc "wget -q --tries=1 --timeout=5 --spider http://localhost:3000/api/health" >/dev/null 2>&1; then
+              echo "All services responded to health checks."
+              break
+            fi
+
+            echo "Waiting for service health checks... ($i/45)"
+            if [ "$i" -eq 45 ]; then
+              echo "Services did not become healthy in time. Collecting logs..."
+              docker compose -f docker-compose.stealth.yml logs --no-color --tail 200 gateway orchestrator web workers redis postgres nginx || true
+              exit 1
+            fi
+            sleep 4
+          done
 
           echo "=== Restarting nginx to pick up new container IPs ==="
           docker compose -f docker-compose.stealth.yml --env-file /opt/campfire/.env.stealth restart nginx
