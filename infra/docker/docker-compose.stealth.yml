@@ -76,7 +76,7 @@ services:
   # Gateway Service - API Gateway and WebSocket server
   # ---------------------------------------------------------------------------
   gateway:
-    image: ${ECR_REGISTRY}/campfire-gateway:latest
+    image: ${ECR_REGISTRY}/campfire-gateway:${CAMPFIRE_IMAGE_TAG:-latest}
     container_name: campfire-gateway
     restart: unless-stopped
     environment:
@@ -150,7 +150,7 @@ services:
   # Orchestrator Service - AI/ML pipeline orchestration
   # ---------------------------------------------------------------------------
   orchestrator:
-    image: ${ECR_REGISTRY}/campfire-orchestrator:latest
+    image: ${ECR_REGISTRY}/campfire-orchestrator:${CAMPFIRE_IMAGE_TAG:-latest}
     container_name: campfire-orchestrator
     restart: unless-stopped
     environment:
@@ -199,7 +199,7 @@ services:
   # Web Application - Main user-facing application
   # ---------------------------------------------------------------------------
   web:
-    image: ${ECR_REGISTRY}/campfire-web:latest
+    image: ${ECR_REGISTRY}/campfire-web:${CAMPFIRE_IMAGE_TAG:-latest}
     container_name: campfire-web
     restart: unless-stopped
     environment:
@@ -236,7 +236,7 @@ services:
   # Workers - Background job processing
   # ---------------------------------------------------------------------------
   workers:
-    image: ${ECR_REGISTRY}/campfire-workers:latest
+    image: ${ECR_REGISTRY}/campfire-workers:${CAMPFIRE_IMAGE_TAG:-latest}
     container_name: campfire-workers
     restart: unless-stopped
     environment:

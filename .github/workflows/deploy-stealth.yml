@@ -37,6 +37,17 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
+      - name: Resolve image tag
+        id: image-tag
+        run: |
+          if [[ "${{ github.event_name }}" == "workflow_run" ]]; then
+            IMAGE_TAG="${{ github.event.workflow_run.head_sha }}"
+          else
+            IMAGE_TAG="${{ github.sha }}"
+          fi
+
+          echo "image_tag=${IMAGE_TAG}" >> "$GITHUB_OUTPUT"
+
       - name: Setup SSH key
         run: |
           mkdir -p ~/.ssh
@@ -70,6 +81,7 @@ jobs:
           FLOWGUARD_SIGNATURE_KEY: ${{ secrets.FLOWGUARD_SIGNATURE_KEY }}
           FACEBOOK_APP_ID: ${{ secrets.FACEBOOK_APP_ID }}
           FACEBOOK_APP_SECRET: ${{ secrets.FACEBOOK_APP_SECRET }}
+          CAMPFIRE_IMAGE_TAG: ${{ steps.image-tag.outputs.image_tag }}
         run: |
           ssh -i ~/.ssh/deploy_key ${{ env.DEPLOY_USER }}@${{ env.DEPLOY_HOST }} "
           set -e
@@ -103,6 +115,7 @@ jobs:
           update_env 'FLOWGUARD_SIGNATURE_KEY' '${FLOWGUARD_SIGNATURE_KEY}'
           update_env 'FACEBOOK_APP_ID' '${FACEBOOK_APP_ID}'
           update_env 'FACEBOOK_APP_SECRET' '${FACEBOOK_APP_SECRET}'
+          update_env 'CAMPFIRE_IMAGE_TAG' '${CAMPFIRE_IMAGE_TAG}'
 
           # Set ECR registry for pulling images
           update_env 'ECR_REGISTRY' '932630290000.dkr.ecr.us-east-1.amazonaws.com'
