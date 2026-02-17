@@ -189,23 +189,23 @@ export default function TokensPage() {
         ) : (
           <>
             {/* Current Balance Card */}
-            <Card className="mb-8 bg-gradient-to-br from-amber-50 to-orange-50 dark:from-amber-950/30 dark:to-orange-950/30 border-amber-200 dark:border-amber-800">
+            <Card className="mb-8 bg-gradient-to-br from-amber-500/10 via-orange-500/5 to-transparent border-amber-500/20">
               <CardContent className="pt-6">
                 <div className="flex items-center justify-between">
                   <div>
-                    <p className="text-sm font-medium text-amber-800 dark:text-amber-200 mb-1">
+                    <p className="text-sm font-medium text-amber-400/80 mb-1">
                       Current Balance
                     </p>
                     <div className="flex items-center gap-3">
-                      <Coins className="h-8 w-8 text-amber-600 dark:text-amber-400" />
-                      <span className="text-4xl font-bold text-amber-900 dark:text-amber-100">
+                      <Coins className="h-8 w-8 text-amber-500" />
+                      <span className="text-4xl font-bold text-white">
                         {balance?.balance?.toLocaleString() ?? 0}
                       </span>
-                      <span className="text-lg text-amber-700 dark:text-amber-300">tokens</span>
+                      <span className="text-lg text-gray-400">tokens</span>
                     </div>
                   </div>
                   {balance && (
-                    <div className="text-right text-sm text-amber-700 dark:text-amber-300">
+                    <div className="text-right text-sm text-gray-500">
                       <p>Lifetime purchased: {(balance.lifetimePurchased ?? 0).toLocaleString()}</p>
                       <p>Bonus earned: {(balance.lifetimeBonus ?? 0).toLocaleString()}</p>
                       <p>Total spent: {(balance.lifetimeSpent ?? 0).toLocaleString()}</p>
@@ -320,9 +320,9 @@ export default function TokensPage() {
             </div>
 
             {/* Info section */}
-            <div className="mt-8 p-4 bg-muted/50 rounded-lg">
-              <h3 className="font-semibold mb-2">How tokens work</h3>
-              <ul className="text-sm text-muted-foreground space-y-1">
+            <div className="mt-8 p-4 bg-white/[0.03] border border-white/5 rounded-lg">
+              <h3 className="font-semibold mb-2 text-white">How tokens work</h3>
+              <ul className="text-sm text-gray-500 space-y-1">
                 <li>- Tokens are used to send gifts to your AI companions</li>
                 <li>- Each gift has a different token cost based on its rarity and meaning</li>
                 <li>- Tokens never expire and are tied to your account</li>
