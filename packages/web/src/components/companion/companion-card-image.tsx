@@ -33,6 +33,8 @@ export function CompanionCardImage({ images, fallbackImage, avatarRenditions, av
   const [loadedImages, setLoadedImages] = useState<Set<number>>(new Set([0]));
   const [isTransitioning, setIsTransitioning] = useState(false);
   const [isHovering, setIsHovering] = useState(false);
+  const [isLoaded, setIsLoaded] = useState(false);
+  const [hasError, setHasError] = useState(false);
   const intervalRef = useRef<NodeJS.Timeout | null>(null);
 
   // Preload the next image
@@ -101,8 +103,14 @@ export function CompanionCardImage({ images, fallbackImage, avatarRenditions, av
     }
   };
 
-  // Use fallback if no valid companion images
+  // Reset loading/error state when displayed image changes
   const displayImage = validImages.length > 0 ? validImages[currentIndex] : fallbackImage;
+  const displayImageRef = useRef(displayImage);
+  if (displayImageRef.current !== displayImage) {
+    displayImageRef.current = displayImage;
+    setIsLoaded(false);
+    setHasError(false);
+  }
 
   if (!displayImage) {
     return (
@@ -116,20 +124,32 @@ export function CompanionCardImage({ images, fallbackImage, avatarRenditions, av
       onMouseEnter={() => setIsHovering(true)}
       onMouseLeave={handleMouseLeave}
     >
-      <img
-        src={displayImage}
-        alt={alt}
-        className={`w-full h-full object-cover object-top transition-all duration-500 ${
-          isTransitioning ? 'blur-sm scale-105 opacity-80' : 'blur-0 scale-100 opacity-100'
-        } group-hover:scale-110`}
-      />
+      {/* Loading skeleton */}
+      {!isLoaded && !hasError && (
+        <div className="absolute inset-0 bg-gradient-to-br from-campfire-500/20 via-campfire-600/10 to-campfire-700/20 animate-pulse" />
+      )}
+
+      {/* Error fallback */}
+      {hasError ? (
+        <div className="w-full h-full bg-gradient-to-br from-campfire-500/20 via-campfire-600/10 to-campfire-700/20" />
+      ) : (
+        <img
+          src={displayImage}
+          alt={alt}
+          onLoad={() => setIsLoaded(true)}
+          onError={() => setHasError(true)}
+          className={`w-full h-full object-cover object-top transition-all duration-500 ${
+            isTransitioning ? 'blur-sm scale-105 opacity-80' : 'blur-0 scale-100 opacity-100'
+          } ${!isLoaded ? 'opacity-0' : ''} group-hover:scale-110`}
+        />
+      )}
 
       {/* Image indicator dots - only show if multiple images and hovering */}
       {validImages.length > 1 && isHovering && (
         <div className="absolute bottom-3 left-1/2 -translate-x-1/2 flex gap-1.5 z-10">
-          {validImages.map((_, idx) => (
+          {validImages.map((imgUrl, idx) => (
             <div
-              key={idx}
+              key={imgUrl}
               className={`w-1.5 h-1.5 rounded-full transition-all duration-300 ${
                 idx === currentIndex
                   ? 'bg-white scale-125'
