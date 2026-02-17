@@ -15,6 +15,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
 import { updateCompanion } from '@/lib/api/companions';
+import { useToast } from '@/hooks/use-toast';
 import { publicEnv } from '../../env/public';
 
 interface ShareCompanionDialogProps {
@@ -39,6 +40,7 @@ export function ShareCompanionDialog({
   const [isPublic, setIsPublic] = useState(initialIsPublic);
   const [copied, setCopied] = useState(false);
   const [isUpdating, setIsUpdating] = useState(false);
+  const { toast } = useToast();
 
   const baseUrl =
     publicEnv.NEXT_PUBLIC_APP_URL ||
@@ -56,13 +58,20 @@ export function ShareCompanionDialog({
   };
 
   const handleTogglePublic = async (checked: boolean) => {
+    const previousValue = isPublic;
+    setIsPublic(checked);
+    onShareStatusChange?.(checked);
     setIsUpdating(true);
     try {
       await updateCompanion(companionId, { isPublic: checked });
-      setIsPublic(checked);
-      onShareStatusChange?.(checked);
     } catch (error) {
-      console.error('Failed to update share status:', error);
+      setIsPublic(previousValue);
+      onShareStatusChange?.(previousValue);
+      toast({
+        title: 'Failed to update share status',
+        description: 'Please try again.',
+        variant: 'destructive',
+      });
     } finally {
       setIsUpdating(false);
     }
