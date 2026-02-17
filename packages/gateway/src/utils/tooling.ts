@@ -1,4 +1,4 @@
-import registry from '../../../shared/src/tooling/tooling-registry.json' with { type: 'json' };
+import registry from '@campfire/shared/tooling';
 import { logger } from '../observability/logger.js';
 
 type ToolingRegistry = {
