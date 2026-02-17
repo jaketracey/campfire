@@ -3,6 +3,7 @@
 import { useEffect, useState, useCallback } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import type { Route } from 'next';
+import DOMPurify from 'isomorphic-dompurify';
 import {
   ArrowLeft,
   RefreshCw,
@@ -461,7 +462,7 @@ export default function AdminSeoEditPage() {
                 <div className="bg-white rounded-lg p-6">
                   <div
                     className="prose prose-lg max-w-none"
-                    dangerouslySetInnerHTML={{ __html: page.contentHtml }}
+                    dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(page.contentHtml) }}
                   />
                 </div>
               )}

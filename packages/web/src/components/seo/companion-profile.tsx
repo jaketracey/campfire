@@ -1,3 +1,4 @@
+import DOMPurify from 'isomorphic-dompurify';
 import Image from 'next/image';
 import Link from 'next/link';
 import { Flame, MessageCircle, Sparkles, Heart } from 'lucide-react';
@@ -176,7 +177,7 @@ export function CompanionProfile({ page }: CompanionProfileProps) {
           <div className="max-w-4xl mx-auto px-4">
             <div
               className="prose prose-invert prose-lg max-w-none prose-headings:font-display prose-a:text-campfire-400"
-              dangerouslySetInnerHTML={{ __html: page.contentHtml }}
+              dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(page.contentHtml) }}
             />
           </div>
         </section>
