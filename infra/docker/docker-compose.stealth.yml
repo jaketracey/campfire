@@ -55,7 +55,7 @@ services:
     image: redis:7-alpine
     container_name: campfire-redis
     restart: unless-stopped
-    command: redis-server --appendonly yes --maxmemory 192mb --maxmemory-policy allkeys-lru
+    command: redis-server --appendonly yes --maxmemory 220mb --maxmemory-policy noeviction
     volumes:
       - redis_data:/data
     healthcheck:
@@ -258,6 +258,8 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+    # Workers process image/video/render workloads and need more headroom than other services.
+    # Keep this high enough for sharp image conversion to avoid OOM restarts.
     healthcheck:
       test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8080/health"]
       interval: 30s
@@ -267,9 +269,9 @@ services:
     deploy:
       resources:
         limits:
-          memory: 256M
+          memory: 768M
         reservations:
-          memory: 128M
+          memory: 256M
     networks:
       - campfire-network
 
@@ -325,9 +327,9 @@ networks:
 # PostgreSQL:  384 MB (limit) / 256 MB (reserve)
 # Redis:       256 MB (limit) / 128 MB (reserve)
 # Gateway:     256 MB (limit) / 128 MB (reserve)
-# Orchestrator:384 MB (limit) / 192 MB (reserve)
+# Orchestrator: 384 MB (limit) / 192 MB (reserve)
 # Web:         384 MB (limit) / 192 MB (reserve)
-# Workers:     256 MB (limit) / 128 MB (reserve)
+# Workers:     768 MB (limit) / 256 MB (reserve)
 # Nginx:        64 MB (limit) / 32 MB (reserve)
 # ------------------------------------------------
 # Total:     2,176 MB (limit) / 1,152 MB (reserve)

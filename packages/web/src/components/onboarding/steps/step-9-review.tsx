@@ -17,7 +17,7 @@ type RevealPhase = 'loading' | 'images' | 'ready';
 export function Step9Review() {
   const router = useRouter();
   const { toast } = useToast();
-  const { isAuthenticated } = useAuth();
+  const { isAuthenticated, isInitialized } = useAuth();
   const state = useOnboardingStore();
   const {
     companionId,
@@ -42,9 +42,12 @@ export function Step9Review() {
   const [visibleImageCount, setVisibleImageCount] = useState(0);
   const [isPreparingSession, setIsPreparingSession] = useState(false);
   const [sessionError, setSessionError] = useState<string | null>(null);
+  const [isNavigatingToChat, setIsNavigatingToChat] = useState(false);
   const hasConnectedRef = useRef(false);
   const hasTrackedRef = useRef(false);
   const streamCleanupRef = useRef<(() => void) | null>(null);
+  const isCreatingSessionRef = useRef(false);
+  const igniteNavigationTimeoutRef = useRef<ReturnType<typeof window.setTimeout> | null>(null);
 
   // Track step on mount
   useEffect(() => {
@@ -60,6 +63,10 @@ export function Step9Review() {
         streamCleanupRef.current();
         streamCleanupRef.current = null;
         setAnchorStreamStarted(false);
+      }
+      if (igniteNavigationTimeoutRef.current) {
+        window.clearTimeout(igniteNavigationTimeoutRef.current);
+        igniteNavigationTimeoutRef.current = null;
       }
     };
   }, [setAnchorStreamStarted]);
@@ -192,8 +199,9 @@ export function Step9Review() {
   }, [revealPhase, visibleImageCount, generatedAnchors.length, imagesGenerated]);
 
   const createSessionForCompanion = useCallback(async () => {
-    if (!companionId || localSessionId || isPreparingSession) return;
+    if (!companionId || localSessionId || isPreparingSession || isCreatingSessionRef.current) return;
 
+    isCreatingSessionRef.current = true;
     setIsPreparingSession(true);
     setSessionError(null);
 
@@ -205,15 +213,20 @@ export function Step9Review() {
       console.log('Session created:', session);
       setLocalSessionId(session.id);
       storeSetSessionId(session.id);
+      if (typeof window !== 'undefined') {
+        window.sessionStorage.setItem('campfire:onboard-completion-session', session.id);
+      }
     } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Failed to prepare chat.';
       console.error('Failed to create session:', error);
-      setSessionError('Failed to prepare chat.');
+      setSessionError(errorMessage);
       toast({
         title: 'Error',
-        description: 'Failed to prepare chat. Please try again.',
+        description: errorMessage || 'Failed to prepare chat. Please try again.',
         variant: 'destructive',
       });
     } finally {
+      isCreatingSessionRef.current = false;
       setIsPreparingSession(false);
     }
   }, [companionId, localSessionId, isPreparingSession, state.name, storeSetSessionId, toast]);
@@ -227,12 +240,30 @@ export function Step9Review() {
 
   // Handle ignite
   const handleIgnite = useCallback(() => {
-    if (!localSessionId) return;
+    if (!localSessionId || isNavigatingToChat || !isInitialized) return;
+    if (!isAuthenticated) {
+      toast({
+        title: 'Authentication required',
+        description: 'Please sign in again to continue to chat.',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    if (typeof window !== 'undefined') {
+      window.sessionStorage.setItem('campfire:onboard-completion-session', localSessionId);
+    }
     // Track onboarding completion
     trackOnboardingComplete('full', 6);
-    state.reset();
+    setIsNavigatingToChat(true);
+    if (igniteNavigationTimeoutRef.current) {
+      window.clearTimeout(igniteNavigationTimeoutRef.current);
+    }
+    igniteNavigationTimeoutRef.current = window.setTimeout(() => {
+      setIsNavigatingToChat(false);
+    }, 1200);
     router.push(`/chat/${localSessionId}`);
-  }, [localSessionId, state, router]);
+  }, [isAuthenticated, isInitialized, isNavigatingToChat, localSessionId, router, toast]);
 
   if (!companionId) {
     return (

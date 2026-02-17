@@ -202,8 +202,8 @@ export function QuickStart({ onBack }: QuickStartProps) {
   const searchParams = useSearchParams();
   const pathname = usePathname();
   const { toast } = useToast();
-  const { isAuthenticated } = useAuth();
-  const { reset: resetOnboarding, setQuickStartActive } = useOnboardingStore();
+  const { isAuthenticated, isInitialized } = useAuth();
+  const { setQuickStartActive } = useOnboardingStore();
 
   // Transient local state for flame animation (not URL-persisted)
   const [isTransitioning, setIsTransitioning] = useState(false);
@@ -240,6 +240,8 @@ export function QuickStart({ onBack }: QuickStartProps) {
   }, [pathname, searchParams, router]);
 
   const [isCreating, setIsCreating] = useState(false);
+  const [isNavigatingToChat, setIsNavigatingToChat] = useState(false);
+  const navigateToChatTimeoutRef = useRef<ReturnType<typeof window.setTimeout> | null>(null);
   const [generatedCompanion, setGeneratedCompanion] = useState<GeneratedCompanionData | null>(null);
 
   // Sync quickStartActive with carousel step
@@ -299,6 +301,10 @@ export function QuickStart({ onBack }: QuickStartProps) {
       if (streamCleanupRef.current) {
         streamCleanupRef.current();
         streamCleanupRef.current = null;
+      }
+      if (navigateToChatTimeoutRef.current) {
+        window.clearTimeout(navigateToChatTimeoutRef.current);
+        navigateToChatTimeoutRef.current = null;
       }
     };
   }, []);
@@ -704,6 +710,11 @@ export function QuickStart({ onBack }: QuickStartProps) {
 
   // Handle ignite - redirect to chat or signup
   const handleIgnite = useCallback(() => {
+    if (!isAuthenticated && !isInitialized) {
+      return;
+    }
+
+    if (isNavigatingToChat) return;
     // Track onboarding completion
     trackOnboardingComplete('quick', 4);
 
@@ -721,10 +732,18 @@ export function QuickStart({ onBack }: QuickStartProps) {
     }
 
     if (!sessionId) return;
-    // Clear onboarding state so /onboarding shows intro screen
-    resetOnboarding();
+    if (typeof window !== 'undefined') {
+      window.sessionStorage.setItem('campfire:onboard-completion-session', sessionId);
+    }
+    setIsNavigatingToChat(true);
+    if (navigateToChatTimeoutRef.current) {
+      window.clearTimeout(navigateToChatTimeoutRef.current);
+    }
+    navigateToChatTimeoutRef.current = window.setTimeout(() => {
+      setIsNavigatingToChat(false);
+    }, 1200);
     router.push(`/chat/${sessionId}`);
-  }, [sessionId, router, resetOnboarding, isAuthenticated, generatedCompanion, companionName, pathname]);
+  }, [isInitialized, isAuthenticated, isNavigatingToChat, sessionId, router, generatedCompanion, companionName, pathname]);
 
   return (
     <div className={`w-full mx-auto ${step === 'carousel' ? 'max-w-5xl' : 'max-w-2xl'}`}>

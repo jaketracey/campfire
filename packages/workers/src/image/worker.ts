@@ -36,6 +36,11 @@ interface ImageRenditionWorkerConfig {
   concurrency?: number;
 }
 
+const IMAGE_RENDITION_LOCK_DURATION_MS = 600000;
+const IMAGE_RENDITION_LOCK_RENEW_TIME_MS = 60000;
+const IMAGE_RENDITION_STALLED_INTERVAL_MS = 60000;
+const IMAGE_RENDITION_MAX_STALLED_COUNT = 3;
+
 export class ImageRenditionWorker {
   private worker: Worker<ImageRenditionJobData, ImageRenditionResult> | null = null;
   private config: ImageRenditionWorkerConfig;
@@ -54,7 +59,11 @@ export class ImageRenditionWorker {
       async (job) => this.process(job),
       {
         connection: this.config.connection,
-        concurrency: this.config.concurrency || 2, // CPU-intensive, limit concurrency
+        concurrency: this.config.concurrency || 1, // CPU-intensive, limit concurrency
+        lockDuration: IMAGE_RENDITION_LOCK_DURATION_MS,
+        lockRenewTime: IMAGE_RENDITION_LOCK_RENEW_TIME_MS,
+        stalledInterval: IMAGE_RENDITION_STALLED_INTERVAL_MS,
+        maxStalledCount: IMAGE_RENDITION_MAX_STALLED_COUNT,
       }
     );
 
@@ -71,14 +80,21 @@ export class ImageRenditionWorker {
     });
 
     this.worker.on('failed', (job, err) => {
+      const imageId = job?.data?.imageId;
       this.config.logger.error(
-        { jobId: job?.id, error: err.message },
+        {
+          jobId: job?.id,
+          imageId,
+          attemptsMade: job?.attemptsMade,
+          attemptsLimit: job?.opts.attempts,
+          error: err.message,
+        },
         'Image rendition job failed'
       );
     });
 
     this.config.logger.info(
-      { concurrency: this.config.concurrency || 2 },
+      { concurrency: this.config.concurrency || 1 },
       'Image rendition worker started'
     );
   }
@@ -94,6 +110,7 @@ export class ImageRenditionWorker {
     job: Job<ImageRenditionJobData>
   ): Promise<ImageRenditionResult> {
     const startTime = Date.now();
+    await job.updateProgress(5);
     const { data } = job;
     const {
       originalS3Key,
@@ -112,6 +129,7 @@ export class ImageRenditionWorker {
     );
 
     // Download original image from S3
+    await job.updateProgress(10);
     const originalBuffer = await this.downloadFromS3(bucket, originalS3Key);
     const originalSize = originalBuffer.length;
 
@@ -121,6 +139,7 @@ export class ImageRenditionWorker {
       : RENDITION_CONFIGS.session;
 
     // Process renditions
+    await job.updateProgress(25);
     const renditions = await processImageRenditions(originalBuffer, {
       sizes: [...sizesToGenerate],
       keepOriginal: true,
@@ -128,10 +147,12 @@ export class ImageRenditionWorker {
 
     // Upload all renditions to S3
     // Use explicit keyPrefix if provided (for anchor images), otherwise construct from path components
+    await job.updateProgress(70);
     const keyPrefix = explicitKeyPrefix || getRenditionKeyPrefix(userId, sessionId, cacheKey);
     await this.uploadRenditions(bucket, keyPrefix, renditions);
 
     // Group renditions into structured object
+    await job.updateProgress(90);
     const groupedRenditions = groupRenditions(
       renditions,
       (size, format) => getRenditionS3Key(keyPrefix, size, format),
@@ -139,6 +160,7 @@ export class ImageRenditionWorker {
     );
 
     // Update database with renditions
+    await job.updateProgress(95);
     await this.updateImageRenditions(imageId, groupedRenditions);
 
     const processingTimeMs = Date.now() - startTime;
@@ -217,7 +239,7 @@ export class ImageRenditionWorker {
   ): Promise<void> {
     await this.config.db.sql`
       UPDATE companion_images
-      SET renditions = ${JSON.stringify(renditions)}::jsonb
+      SET renditions = (${JSON.stringify(renditions)}::jsonb #>> '{}')::jsonb
       WHERE id = ${imageId}
     `;
   }

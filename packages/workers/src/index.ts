@@ -102,7 +102,7 @@ async function bootstrap() {
     connection,
     db,
     logger: logger.child({ worker: 'image-rendition' }),
-    concurrency: 2, // CPU-intensive, limit concurrency
+    concurrency: 1, // CPU-intensive, limit concurrency further to reduce load
   });
 
   // Video generation worker - processes video requests via AnimateDiff

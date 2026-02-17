@@ -48,7 +48,7 @@ services:
     restart: always
     ports:
       - "6379:6379"
-    command: redis-server --appendonly yes --maxmemory 512mb --maxmemory-policy allkeys-lru --requirepass ${REDIS_PASSWORD:-campfire_redis_secret}
+    command: redis-server --appendonly yes --maxmemory 640mb --maxmemory-policy noeviction --requirepass ${REDIS_PASSWORD:-campfire_redis_secret}
     volumes:
       - redis_prod_data:/data
     healthcheck:

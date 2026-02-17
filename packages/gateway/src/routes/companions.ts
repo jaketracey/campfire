@@ -325,6 +325,32 @@ interface LatestImageData {
   renditions: ImageRenditions | null;
 }
 
+function parseRenditions(
+  value: unknown
+): ImageRenditions | null {
+  if (!value) {
+    return null;
+  }
+
+  if (typeof value === 'string') {
+    try {
+      const parsed = JSON.parse(value);
+      if (!parsed || typeof parsed !== 'object') {
+        return null;
+      }
+      return parsed as ImageRenditions;
+    } catch {
+      return null;
+    }
+  }
+
+  if (typeof value === 'object') {
+    return value as ImageRenditions;
+  }
+
+  return null;
+}
+
 /**
  * Get latest image for each companion from conversations
  * Builds direct S3 URLs for all renditions (bucket is publicly readable)
@@ -348,7 +374,7 @@ async function getLatestImagesForCompanions(
 
   for (const row of results) {
     if (row.companion_id) {
-      const renditions = row.renditions as ImageRenditions | null;
+      const renditions = parseRenditions(row.renditions);
       imageMap.set(row.companion_id, {
         s3_url: row.s3_url,
         renditions: renditions ? buildRenditionUrls(renditions) : null,
@@ -464,7 +490,10 @@ async function getAvatarRenditionsForS3Keys(
 
   for (const row of results) {
     if (row.s3_key && row.renditions) {
-      renditionsMap.set(row.s3_key, buildRenditionUrls(row.renditions as ImageRenditions));
+      const renditions = parseRenditions(row.renditions);
+      if (renditions) {
+        renditionsMap.set(row.s3_key, buildRenditionUrls(renditions));
+      }
     }
   }
 

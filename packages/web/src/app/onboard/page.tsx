@@ -19,15 +19,25 @@ const QUICK_START_LABELS = ['Identity', 'Visuals', 'Archetype', 'Voice'];
 export default function OnboardingPage() {
   const searchParams = useSearchParams();
   const router = useRouter();
-  const { currentStep, setStep, reset, quickStartActive, quickStartStep } = useOnboardingStore();
+  const {
+    currentStep,
+    setStep,
+    reset,
+    quickStartActive,
+    quickStartStep,
+    companionId,
+    sessionId,
+  } = useOnboardingStore();
 
-  // Reset onboarding state when page mounts fresh (only if no step param)
+  // Reset onboarding state when page mounts fresh (only if no step param and no active draft flow)
   useEffect(() => {
     const stepParam = searchParams.get('step');
     if (!stepParam) {
-      reset();
+      if (!quickStartActive && !companionId && !sessionId) {
+        reset();
+      }
     }
-  }, [reset, searchParams]);
+  }, [quickStartActive, companionId, reset, searchParams, sessionId]);
 
   // Sync URL to step state on mount and popstate (browser back/forward)
   // Note: We intentionally exclude currentStep from deps to avoid a feedback loop.
