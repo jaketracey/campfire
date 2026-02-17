@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
+import Image from 'next/image';
 import { motion } from 'framer-motion';
 import {
   Image as ImageIcon,
@@ -205,9 +206,12 @@ export default function MediaGalleryPage() {
                   autoPlay
                 />
               ) : (
-                <img
+                <Image
                   src={selectedItem.thumbnailUrl || selectedItem.url}
                   alt={`Generated image by ${selectedItem.companionName}`}
+                  width={800}
+                  height={1200}
+                  sizes="(max-width: 896px) 100vw, 896px"
                   className="w-full max-h-[80vh] object-contain"
                 />
               )}
@@ -284,10 +288,12 @@ function MediaCard({ item, onSelect }: { item: UserMediaItem; onSelect: (item: U
             tabIndex={-1}
           />
         ) : (
-          <img
+          <Image
             src={item.thumbnailUrl || item.url!}
             alt={`Generated image by ${item.companionName}`}
-            className="w-full h-full object-cover"
+            fill
+            sizes="(max-width: 768px) 50vw, (max-width: 1024px) 33vw, 25vw"
+            className="object-cover"
           />
         )
       ) : (
