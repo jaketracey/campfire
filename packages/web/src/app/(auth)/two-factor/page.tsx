@@ -118,7 +118,7 @@ export default function TwoFactorPage() {
   };
 
   return (
-    <Card>
+    <Card className="bg-white/[0.03] backdrop-blur-xl border-white/10">
       <CardHeader className="space-y-1 text-center">
         <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-campfire-500/10">
           <Shield className="h-8 w-8 text-campfire-500" />
