@@ -24,7 +24,7 @@
     "date-fns": "^4.1.0",
     "dotenv": "^17.2.3",
     "ioredis": "^5.4.2",
-    "mjml": "^5.0.0-alpha.4",
+    "mjml": "^5.0.0-alpha.11",
     "nanoid": "^5.1.6",
     "openai": "^6.16.0",
     "pino": "^10.2.1",
