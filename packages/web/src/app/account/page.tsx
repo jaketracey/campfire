@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -66,6 +66,36 @@ export default function AccountPage() {
   // Safety level state
   const [safetyLevel, setSafetyLevel] = useState<string>('permissive');
   const [isSavingSafety, setIsSavingSafety] = useState(false);
+
+  // Tab navigation refs and keyboard handler
+  const tabRefs = useRef<(HTMLButtonElement | null)[]>([]);
+
+  const handleTabKeyDown = useCallback(
+    (e: React.KeyboardEvent) => {
+      const currentIndex = tabs.findIndex((t) => t.id === activeTab);
+      let nextIndex: number | null = null;
+
+      if (e.key === 'ArrowRight' || e.key === 'ArrowDown') {
+        e.preventDefault();
+        nextIndex = (currentIndex + 1) % tabs.length;
+      } else if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') {
+        e.preventDefault();
+        nextIndex = (currentIndex - 1 + tabs.length) % tabs.length;
+      } else if (e.key === 'Home') {
+        e.preventDefault();
+        nextIndex = 0;
+      } else if (e.key === 'End') {
+        e.preventDefault();
+        nextIndex = tabs.length - 1;
+      }
+
+      if (nextIndex !== null) {
+        setActiveTab(tabs[nextIndex].id);
+        tabRefs.current[nextIndex]?.focus();
+      }
+    },
+    [activeTab],
+  );
 
   useEffect(() => {
     if (!isAuthenticated) return;
@@ -540,13 +570,24 @@ export default function AccountPage() {
           <div className="flex flex-col lg:flex-row gap-6 lg:gap-8">
             {/* Left Sidebar - Tabs */}
             <div className="lg:w-56 flex-shrink-0">
-              <nav className="flex lg:flex-col gap-1 overflow-x-auto lg:overflow-x-visible pb-2 lg:pb-0">
-                {tabs.map((tab) => {
+              <nav
+                role="tablist"
+                aria-label="Account settings"
+                className="flex lg:flex-col gap-1 overflow-x-auto lg:overflow-x-visible pb-2 lg:pb-0"
+                onKeyDown={handleTabKeyDown}
+              >
+                {tabs.map((tab, index) => {
                   const isActive = activeTab === tab.id;
                   const Icon = tab.icon;
                   return (
                     <button
                       key={tab.id}
+                      ref={(el) => { tabRefs.current[index] = el; }}
+                      role="tab"
+                      id={`tab-${tab.id}`}
+                      aria-selected={isActive}
+                      aria-controls={`tabpanel-${tab.id}`}
+                      tabIndex={isActive ? 0 : -1}
                       onClick={() => setActiveTab(tab.id)}
                       className="relative flex items-center gap-3 px-4 py-3 rounded-lg text-left whitespace-nowrap transition-colors"
                     >
@@ -581,7 +622,12 @@ export default function AccountPage() {
             </div>
 
             {/* Right Content Area */}
-            <div className="flex-1 min-w-0">
+            <div
+              className="flex-1 min-w-0"
+              role="tabpanel"
+              id={`tabpanel-${activeTab}`}
+              aria-labelledby={`tab-${activeTab}`}
+            >
               <Card className="bg-white/[0.02] border-white/10 backdrop-blur-xl overflow-hidden">
                 <CardHeader className="pb-3 sm:pb-4">
                   <div className="flex items-center gap-2 sm:gap-3">
