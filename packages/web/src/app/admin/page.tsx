@@ -147,7 +147,7 @@ export default function AdminDashboardPage() {
   };
 
   const formatDuration = (ms: number | null) => {
-    if (!ms) return '-';
+    if (ms == null) return '-';
     if (ms < 1000) return `${ms}ms`;
     return `${(ms / 1000).toFixed(1)}s`;
   };

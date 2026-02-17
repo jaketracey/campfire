@@ -4,7 +4,7 @@ import { useState } from 'react';
 import Link from 'next/link';
 import type { Route } from 'next';
 import { usePathname } from 'next/navigation';
-import { Users, Mail, BarChart3, Flame, LayoutDashboard, DollarSign, LifeBuoy, Server, GitBranch, Handshake, Target, Search, ChevronDown, Cpu, Terminal, Store, ScrollText, Sparkles, Bot } from 'lucide-react';
+import { Users, Mail, BarChart3, Flame, LayoutDashboard, DollarSign, LifeBuoy, Server, GitBranch, Handshake, Target, Search, ChevronDown, Cpu, Terminal, Store, ScrollText, Sparkles, Bot, FlaskConical } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 interface NavItem {
@@ -106,6 +106,11 @@ const inferenceGroup: NavGroup = {
       label: 'Influencer Models',
       href: '/admin/influencer' as Route,
       icon: Sparkles,
+    },
+    {
+      label: 'Orchestration',
+      href: '/admin/orchestration' as Route,
+      icon: FlaskConical,
     },
   ],
 };

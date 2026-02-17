@@ -79,6 +79,7 @@ export default function ProviderDetailPage() {
   const [testResult, setTestResult] = useState<{ success: boolean; latencyMs: number | null; error: string | null } | null>(null);
   const [provider, setProvider] = useState<ProviderWithModels | null>(null);
   const [showApiKey, setShowApiKey] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
 
   // Form state
   const [displayName, setDisplayName] = useState('');
@@ -137,6 +138,7 @@ export default function ProviderDetailPage() {
 
   const handleSave = async () => {
     setIsSaving(true);
+    setSaveError(null);
     try {
       const input: UpdateProviderInput = {
         displayName,
@@ -157,6 +159,7 @@ export default function ProviderDetailPage() {
       await fetchData();
     } catch (error) {
       console.error('Failed to save provider:', error);
+      setSaveError(error instanceof Error ? error.message : 'Failed to save provider');
     } finally {
       setIsSaving(false);
     }
@@ -375,6 +378,16 @@ export default function ProviderDetailPage() {
                 <span className="text-red-400">{testResult.error || 'Connection failed'}</span>
               </>
             )}
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Save Error */}
+      {saveError && (
+        <Card className="border bg-red-500/5 border-red-500/20">
+          <CardContent className="p-4 flex items-center gap-3">
+            <AlertCircle className="h-5 w-5 text-red-500" />
+            <span className="text-red-400">{saveError}</span>
           </CardContent>
         </Card>
       )}

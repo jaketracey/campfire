@@ -159,7 +159,7 @@ export default function AdminLayout({
       {/* Main Content */}
       <div className={`flex-1 flex flex-col ${isImpersonating ? 'pt-10' : ''}`}>
         {/* Header */}
-        <header className="h-16 border-b border-white/5 bg-zinc-950/80 backdrop-blur-lg flex items-center justify-between px-6 sticky top-0 z-50">
+        <header className={`h-16 border-b border-white/5 bg-zinc-950/80 backdrop-blur-lg flex items-center justify-between px-6 sticky ${isImpersonating ? 'top-10' : 'top-0'} z-50`}>
           <Link
             href="/dashboard"
             className="flex items-center gap-2 text-gray-400 hover:text-white transition-colors"

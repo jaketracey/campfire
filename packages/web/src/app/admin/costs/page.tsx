@@ -92,24 +92,6 @@ export default function CostsDashboardPage() {
 
   const trendInfo = calculateTrendDirection();
 
-  // Simple sparkline visualization
-  const renderSparkline = () => {
-    if (trend.length === 0) return null;
-    const max = Math.max(...trend.map((p) => p.costUsd), 0.01);
-    return (
-      <div className="flex items-end gap-0.5 h-8">
-        {trend.slice(-14).map((point, i) => (
-          <div
-            key={point.date}
-            className="flex-1 bg-campfire-500/60 rounded-t min-w-[4px]"
-            style={{ height: `${(point.costUsd / max) * 100}%` }}
-            title={`${point.date}: ${formatCost(point.costUsd)}`}
-          />
-        ))}
-      </div>
-    );
-  };
-
   if (isLoading) {
     return (
       <div className="space-y-6">

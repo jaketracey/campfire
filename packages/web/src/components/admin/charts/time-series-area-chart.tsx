@@ -124,8 +124,11 @@ export function TimeSeriesAreaChart({
 
       {hovered && hoveredPoint ? (
         <div
-          className="absolute top-2 z-10 -translate-x-1/2 rounded-md border border-white/10 bg-zinc-900/90 px-2 py-1 text-xs text-white shadow-lg backdrop-blur"
-          style={{ left: `${(hoveredPoint.x / geometry.width) * 100}%` }}
+          className="absolute top-2 z-10 rounded-md border border-white/10 bg-zinc-900/90 px-2 py-1 text-xs text-white shadow-lg backdrop-blur"
+          style={{
+            left: `clamp(0%, ${(hoveredPoint.x / geometry.width) * 100}%, 100%)`,
+            transform: `translateX(${(hoveredPoint.x / geometry.width) < 0.15 ? '0%' : (hoveredPoint.x / geometry.width) > 0.85 ? '-100%' : '-50%'})`,
+          }}
         >
           <div className="text-gray-200">{hovered.label}</div>
           <div className="text-gray-400">
