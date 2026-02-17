@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { motion } from 'framer-motion';
 import {
   Image as ImageIcon,
@@ -10,8 +10,15 @@ import {
   CheckCircle,
   XCircle,
   RefreshCw,
+  Download,
 } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
+import {
+  Dialog,
+  DialogContent,
+  DialogTitle,
+  DialogDescription,
+} from '@/components/ui/dialog';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useRequireAuth } from '@/hooks/use-auth';
 import { getUserMedia, type UserMediaItem, type MediaStatus } from '@/lib/api/media';
@@ -41,6 +48,7 @@ export default function MediaGalleryPage() {
   const [loading, setLoading] = useState(true);
   const [mediaFilter, setMediaFilter] = useState<MediaFilter>('all');
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all');
+  const [selectedItem, setSelectedItem] = useState<UserMediaItem | null>(null);
 
   useEffect(() => {
     if (!isAuthenticated || authLoading) return;
@@ -170,41 +178,115 @@ export default function MediaGalleryPage() {
           ) : (
             <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
               {filteredMedia.map((item) => (
-                <MediaCard key={item.id} item={item} />
+                <MediaCard key={item.id} item={item} onSelect={setSelectedItem} />
               ))}
             </div>
           )}
         </motion.div>
       </main>
+
+      {/* Lightbox Dialog */}
+      <Dialog open={selectedItem !== null} onOpenChange={(open) => !open && setSelectedItem(null)}>
+        <DialogContent className="max-w-4xl bg-black/95 border-white/10 p-0">
+          <DialogTitle className="sr-only">
+            {selectedItem ? `${selectedItem.type === 'video' ? 'Video' : 'Image'} by ${selectedItem.companionName}` : 'Media preview'}
+          </DialogTitle>
+          <DialogDescription className="sr-only">
+            {selectedItem ? `${selectedItem.type === 'video' ? 'Video' : 'Image'} created on ${new Date(selectedItem.createdAt).toLocaleDateString()}` : ''}
+          </DialogDescription>
+          {selectedItem?.status === 'ready' && selectedItem.url && (
+            <div className="relative">
+              {selectedItem.type === 'video' ? (
+                <video
+                  src={selectedItem.url}
+                  poster={selectedItem.thumbnailUrl || undefined}
+                  className="w-full max-h-[80vh] object-contain"
+                  controls
+                  autoPlay
+                />
+              ) : (
+                <img
+                  src={selectedItem.thumbnailUrl || selectedItem.url}
+                  alt={`Generated image by ${selectedItem.companionName}`}
+                  className="w-full max-h-[80vh] object-contain"
+                />
+              )}
+              <div className="flex items-center justify-between p-4">
+                <div>
+                  <p className="text-sm text-gray-300">{selectedItem.companionName}</p>
+                  <p className="text-xs text-gray-500">
+                    {new Date(selectedItem.createdAt).toLocaleDateString()}
+                  </p>
+                </div>
+                <a
+                  href={selectedItem.url}
+                  download
+                  className="flex items-center gap-2 px-3 py-2 rounded-lg bg-white/10 hover:bg-white/20 text-sm text-white transition-colors"
+                >
+                  <Download className="h-4 w-4" />
+                  Download
+                </a>
+              </div>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
 
-function MediaCard({ item }: { item: UserMediaItem }) {
+function MediaCard({ item, onSelect }: { item: UserMediaItem; onSelect: (item: UserMediaItem) => void }) {
   const StatusIcon = STATUS_ICONS[item.status] || Clock;
   const statusColor = STATUS_COLORS[item.status] || 'text-gray-400';
   const isVideo = item.type === 'video';
+  const isReady = item.status === 'ready' && item.url;
+
+  const handleActivate = useCallback(() => {
+    if (isReady) {
+      onSelect(item);
+    }
+  }, [isReady, item, onSelect]);
+
+  const handleKeyDown = useCallback(
+    (e: React.KeyboardEvent) => {
+      if (e.key === 'Enter' || e.key === ' ') {
+        e.preventDefault();
+        handleActivate();
+      }
+    },
+    [handleActivate]
+  );
+
+  const label = isReady
+    ? `View ${isVideo ? 'video' : 'image'} by ${item.companionName}, ${new Date(item.createdAt).toLocaleDateString()}`
+    : `${item.type === 'video' ? 'Video' : 'Image'} by ${item.companionName}, status: ${item.status}`;
 
   return (
     <motion.div
       initial={{ opacity: 0, scale: 0.95 }}
       animate={{ opacity: 1, scale: 1 }}
-      className="group relative aspect-[2/3] rounded-xl overflow-hidden bg-white/5 border border-white/10 hover:border-white/20 transition-all"
+      tabIndex={0}
+      role={isReady ? 'button' : 'group'}
+      aria-label={label}
+      onClick={handleActivate}
+      onKeyDown={handleKeyDown}
+      className={`group relative aspect-[2/3] rounded-xl overflow-hidden bg-white/5 border border-white/10 hover:border-white/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 focus-visible:ring-offset-black transition-all ${isReady ? 'cursor-pointer' : ''}`}
     >
       {/* Thumbnail/Video */}
-      {item.status === 'ready' && item.url ? (
+      {isReady ? (
         isVideo ? (
           <video
-            src={item.url}
+            src={item.url!}
             poster={item.thumbnailUrl || undefined}
             className="w-full h-full object-cover"
             controls
             preload="metadata"
+            tabIndex={-1}
           />
         ) : (
           <img
-            src={item.thumbnailUrl || item.url}
-            alt="Generated media"
+            src={item.thumbnailUrl || item.url!}
+            alt={`Generated image by ${item.companionName}`}
             className="w-full h-full object-cover"
           />
         )
