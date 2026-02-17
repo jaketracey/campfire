@@ -241,7 +241,7 @@ export function QuickStart({ onBack }: QuickStartProps) {
 
   const [isCreating, setIsCreating] = useState(false);
   const [isNavigatingToChat, setIsNavigatingToChat] = useState(false);
-  const navigateToChatTimeoutRef = useRef<ReturnType<typeof window.setTimeout> | null>(null);
+  const navigateToChatTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [generatedCompanion, setGeneratedCompanion] = useState<GeneratedCompanionData | null>(null);
 
   // Sync quickStartActive with carousel step
@@ -303,7 +303,7 @@ export function QuickStart({ onBack }: QuickStartProps) {
         streamCleanupRef.current = null;
       }
       if (navigateToChatTimeoutRef.current) {
-        window.clearTimeout(navigateToChatTimeoutRef.current);
+        clearTimeout(navigateToChatTimeoutRef.current);
         navigateToChatTimeoutRef.current = null;
       }
     };
@@ -737,9 +737,9 @@ export function QuickStart({ onBack }: QuickStartProps) {
     }
     setIsNavigatingToChat(true);
     if (navigateToChatTimeoutRef.current) {
-      window.clearTimeout(navigateToChatTimeoutRef.current);
+      clearTimeout(navigateToChatTimeoutRef.current);
     }
-    navigateToChatTimeoutRef.current = window.setTimeout(() => {
+    navigateToChatTimeoutRef.current = setTimeout(() => {
       setIsNavigatingToChat(false);
     }, 1200);
     router.push(`/chat/${sessionId}`);

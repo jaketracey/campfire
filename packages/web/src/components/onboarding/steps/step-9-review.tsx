@@ -47,7 +47,7 @@ export function Step9Review() {
   const hasTrackedRef = useRef(false);
   const streamCleanupRef = useRef<(() => void) | null>(null);
   const isCreatingSessionRef = useRef(false);
-  const igniteNavigationTimeoutRef = useRef<ReturnType<typeof window.setTimeout> | null>(null);
+  const igniteNavigationTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Track step on mount
   useEffect(() => {
@@ -65,7 +65,7 @@ export function Step9Review() {
         setAnchorStreamStarted(false);
       }
       if (igniteNavigationTimeoutRef.current) {
-        window.clearTimeout(igniteNavigationTimeoutRef.current);
+        clearTimeout(igniteNavigationTimeoutRef.current);
         igniteNavigationTimeoutRef.current = null;
       }
     };
@@ -257,9 +257,9 @@ export function Step9Review() {
     trackOnboardingComplete('full', 6);
     setIsNavigatingToChat(true);
     if (igniteNavigationTimeoutRef.current) {
-      window.clearTimeout(igniteNavigationTimeoutRef.current);
+      clearTimeout(igniteNavigationTimeoutRef.current);
     }
-    igniteNavigationTimeoutRef.current = window.setTimeout(() => {
+    igniteNavigationTimeoutRef.current = setTimeout(() => {
       setIsNavigatingToChat(false);
     }, 1200);
     router.push(`/chat/${localSessionId}`);
