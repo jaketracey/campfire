@@ -38,22 +38,24 @@ export default function AnalyticsDashboardPage() {
           </p>
         </div>
         <div className="flex gap-2">
-          <div className="flex gap-1 bg-white/[0.02] rounded-lg p-1">
-            {[7, 30, 90].map((days) => (
-              <Button
-                key={days}
-                variant={selectedDays === days ? 'secondary' : 'ghost'}
-                size="sm"
-                onClick={() => setSelectedDays(days)}
-                className={cn(
-                  'text-xs',
-                  selectedDays === days && 'bg-campfire-500/20 text-campfire-500'
-                )}
-              >
-                {days}d
-              </Button>
-            ))}
-          </div>
+          {(activeTab === 'engagement' || activeTab === 'revenue') && (
+            <div className="flex gap-1 bg-white/[0.02] rounded-lg p-1">
+              {[7, 30, 90].map((days) => (
+                <Button
+                  key={days}
+                  variant={selectedDays === days ? 'secondary' : 'ghost'}
+                  size="sm"
+                  onClick={() => setSelectedDays(days)}
+                  className={cn(
+                    'text-xs',
+                    selectedDays === days && 'bg-campfire-500/20 text-campfire-500'
+                  )}
+                >
+                  {days}d
+                </Button>
+              ))}
+            </div>
+          )}
           <Button variant="outline" size="sm" onClick={handleRefresh} className="gap-2">
             <RefreshCw className="h-4 w-4" />
             Refresh
