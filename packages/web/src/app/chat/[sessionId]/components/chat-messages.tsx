@@ -143,7 +143,7 @@ export function ChatMessages({
                     : 'bg-muted'
                 }`}
               >
-                <p className="text-base lg:text-sm whitespace-pre-wrap">{message.content}</p>
+                <p className="text-base lg:text-sm whitespace-pre-wrap break-words">{message.content}</p>
                 {!isUser && !isDemo && (
                   <div className="flex justify-end mt-1 -mb-1 -mr-1">
                     <LikeButton
@@ -163,7 +163,7 @@ export function ChatMessages({
       {streamingContent && (
         <div className="flex justify-start relative z-10" data-testid="streaming-message">
           <Card className="bg-muted p-3 max-w-[80%]">
-            <p className="text-base lg:text-sm whitespace-pre-wrap">{streamingContent}</p>
+            <p className="text-base lg:text-sm whitespace-pre-wrap break-words">{streamingContent}</p>
           </Card>
         </div>
       )}

@@ -158,7 +158,7 @@ export function AnimatedMessageSegments({
                     isUser ? 'bg-primary text-primary-foreground' : 'bg-muted'
                   }`}
                 >
-                  <span className="text-base lg:text-sm whitespace-pre-wrap">{segment.content}</span>
+                  <span className="text-base lg:text-sm whitespace-pre-wrap break-words">{segment.content}</span>
                   {showLikeButton && actualIndex === lastDialogueIndex && onLike && (
                     <span className="ml-2 -mr-1">
                       <LikeButton
