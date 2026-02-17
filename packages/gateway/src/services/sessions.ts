@@ -361,7 +361,8 @@ export class SessionsService {
     turnId: string,
     agentMessage: string,
     agentMessageType: MessageType,
-    metrics: TurnMetrics,
+    metadata?: JSONObject,
+    metrics?: TurnMetrics,
     tx?: TransactionContext
   ): Promise<Turn> {
     const session = await this.getById(userId, sessionId, tx);
@@ -369,14 +370,22 @@ export class SessionsService {
       throw new Error('Session not found');
     }
 
+    const completeMetrics = metrics ?? {
+      latencyMs: 0,
+      inputTokens: 0,
+      outputTokens: 0,
+      costUsd: 0,
+    };
+
     const turn = await this.sessions.completeTurn(
       turnId,
       {
         agentMessage,
-        latencyMs: metrics.latencyMs,
-        tokenCountInput: metrics.inputTokens,
-        tokenCountOutput: metrics.outputTokens,
-        costUsd: metrics.costUsd,
+        latencyMs: completeMetrics.latencyMs,
+        tokenCountInput: completeMetrics.inputTokens,
+        tokenCountOutput: completeMetrics.outputTokens,
+        costUsd: completeMetrics.costUsd,
+        metadata,
       },
       tx
     );
@@ -393,10 +402,10 @@ export class SessionsService {
       context,
       { content: agentMessage, messageType: agentMessageType as 'text' | 'audio' },
       {
-        inputTokens: metrics.inputTokens,
-        outputTokens: metrics.outputTokens,
-        estimatedCostUsd: metrics.costUsd,
-        durationMs: metrics.latencyMs,
+        inputTokens: completeMetrics.inputTokens,
+        outputTokens: completeMetrics.outputTokens,
+        estimatedCostUsd: completeMetrics.costUsd,
+        durationMs: completeMetrics.latencyMs,
       }
     );
 

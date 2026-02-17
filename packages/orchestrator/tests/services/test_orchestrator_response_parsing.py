@@ -91,3 +91,20 @@ def test_extract_image_tool_metadata_from_turn() -> None:
 
     assert image_prompt == "cinematic portrait near campfire"
     assert generated_image_url == "https://example.com/generated.png"
+
+
+def test_extract_image_tool_metadata_from_legacy_tool_name() -> None:
+    turn = SimpleNamespace(
+        tool_calls=[
+            {"name": "image_gen", "arguments": {"prompt": "legacy portrait request"}},
+            {"name": "memory_read", "arguments": {"query": "test"}},
+        ],
+        tool_results=[
+            {"name": "image_gen", "metadata": {"image_url": "https://example.com/legacy.png"}},
+        ],
+    )
+
+    image_prompt, generated_image_url = extract_image_tool_metadata(turn)  # type: ignore[arg-type]
+
+    assert image_prompt == "legacy portrait request"
+    assert generated_image_url == "https://example.com/legacy.png"

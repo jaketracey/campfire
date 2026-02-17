@@ -415,3 +415,11 @@ class TestCompanionImagePromptCapability:
         sample_companion_spec.allowed_tools = []
 
         assert context_builder._companion_generates_images(sample_companion_spec) is False
+
+    def test_image_tool_aliases_are_normalized(
+        self, context_builder, sample_companion_spec
+    ):
+        sample_companion_spec.can_generate_image_prompts = False
+        sample_companion_spec.allowed_tools = ["image_gen", "generate_image", "photo"]
+
+        assert context_builder._normalize_tools(sample_companion_spec.allowed_tools) == ["image_generation"]

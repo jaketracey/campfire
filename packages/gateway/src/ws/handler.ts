@@ -162,6 +162,48 @@ const WEAK_IMAGE_INTENT_PATTERNS: RegExp[] = [
   /\blook\b.*\blike\b/i,
 ];
 
+const IMAGE_TOOL_NAME_ALIASES: Record<string, string> = {
+  image_gen: 'image_generation',
+  generate_image: 'image_generation',
+  selfie: 'image_generation',
+  photo: 'image_generation',
+  webcam: 'image_generation',
+};
+
+function normalizeToolName(value: string): string {
+  const normalized = value.trim().toLowerCase();
+  return IMAGE_TOOL_NAME_ALIASES[normalized] ?? normalized;
+}
+
+function normalizeToolNames(values: Iterable<string>): string[] {
+  const names = new Set<string>();
+  for (const value of values) {
+    if (typeof value !== 'string' || !value.trim()) {
+      continue;
+    }
+    names.add(normalizeToolName(value));
+  }
+  return Array.from(names);
+}
+
+function asObjectArray(value: unknown): Record<string, unknown>[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  return value.filter(
+    item => item && typeof item === 'object' && !Array.isArray(item)
+  ) as Record<string, unknown>[];
+}
+
+function asStringArray(value: unknown): string[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  return value.filter(item => typeof item === 'string') as string[];
+}
+
 function detectImageIntent(message: string): ImageIntentDecision {
   const content = message.trim();
   if (!content) {
@@ -205,7 +247,7 @@ function extractConfiguredAllowedTools(spec: Record<string, unknown> | null | un
     collect((toolsConfig as Record<string, unknown>)['tools']);
   }
 
-  return Array.from(normalized);
+  return normalizeToolNames(normalized);
 }
 
 /**
@@ -1084,14 +1126,9 @@ async function handleUserMessage(
     const configuredAllowedTools = extractConfiguredAllowedTools(
       spec as unknown as Record<string, unknown> | null | undefined
     );
-    const allowedTools = new Set(configuredAllowedTools);
-
-    if (visualIntent.shouldGenerateImage) {
-      allowedTools.add('image_generation');
-    }
-
-    const allowedToolsList = Array.from(allowedTools);
-    const allowImagePromptFallback = !allowedToolsList.includes('image_generation');
+    const allowedToolsList = normalizeToolNames(configuredAllowedTools);
+    const hasImageGenerationTool = allowedToolsList.includes('image_generation');
+    const canGenerateImagePrompts = visualIntent.shouldGenerateImage && !hasImageGenerationTool;
 
     logger.debug(
       {
@@ -1126,7 +1163,7 @@ async function handleUserMessage(
       ),
       safety_level: effectiveSafetyLevel,
       allowed_tools: allowedToolsList,
-      can_generate_image_prompts: allowImagePromptFallback,
+      can_generate_image_prompts: canGenerateImagePrompts,
       max_context_turns: 20,
       temperature: 0.7,
       version: companion.spec_version,
@@ -1157,8 +1194,8 @@ async function handleUserMessage(
           content: t.agent_message,
           created_at: t.created_at.toISOString(),
         } : null,
-        tool_calls: [],
-        tool_results: [],
+        tool_calls: asObjectArray((t.metadata as Record<string, unknown> | undefined)?.tool_calls),
+        tool_results: asObjectArray((t.metadata as Record<string, unknown> | undefined)?.tool_results),
         metadata: {
           turn_id: t.id,
           session_id: sessionId,
@@ -1170,7 +1207,7 @@ async function handleUserMessage(
           total_tokens: 0,
           latency_ms: t.latency_ms || 0,
           cost_usd: 0,
-          tools_invoked: [],
+          tools_invoked: asStringArray((t.metadata as Record<string, unknown> | undefined)?.tools_invoked),
           safety_flags: [],
           prompt_version: '1.0.0',
           policy_version: '1.0.0',
@@ -1342,6 +1379,9 @@ async function handleUserMessage(
     let fullContent = '';
     let imagePrompt: string | undefined;
     let generatedImageUrl: string | undefined;
+    let toolCalls: Record<string, unknown>[] = [];
+    let toolResults: Record<string, unknown>[] = [];
+    let toolingUnavailableReason: string | undefined;
     let shouldGenerateImage = visualIntent.shouldGenerateImage;
     let imageIntentConfidence = visualIntent.confidence;
     let multiMessageSent = false; // Track if we sent multi-messages (skip final agent_message_end)
@@ -1405,6 +1445,9 @@ async function handleUserMessage(
                   generated_image_url?: string;
                   should_generate_image?: boolean;
                   intent_confidence?: number;
+                  tool_calls?: unknown;
+                  tool_results?: unknown;
+                  tooling_unavailable_reason?: string;
                 };
                 if (metadata.image_prompt) {
                   imagePrompt = metadata.image_prompt;
@@ -1425,6 +1468,15 @@ async function handleUserMessage(
                 }
                 if (typeof metadata.intent_confidence === 'number') {
                   imageIntentConfidence = Math.max(0, Math.min(1, metadata.intent_confidence));
+                }
+                if (typeof metadata.tooling_unavailable_reason === 'string') {
+                  toolingUnavailableReason = metadata.tooling_unavailable_reason;
+                }
+                if (metadata.tool_calls) {
+                  toolCalls = asObjectArray(metadata.tool_calls);
+                }
+                if (metadata.tool_results) {
+                  toolResults = asObjectArray(metadata.tool_results);
                 }
               } catch (e) {
                 logger.warn({ error: e, data }, 'Failed to parse metadata');
@@ -1641,6 +1693,13 @@ async function handleUserMessage(
       turn.id,
       fullContent,
       'text',
+      {
+        metadata: {
+          tool_calls: toolCalls,
+          tool_results: toolResults,
+          tooling_unavailable_reason: toolingUnavailableReason,
+        },
+      },
       {
         latencyMs,
         inputTokens: estimatedInputTokens,

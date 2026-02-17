@@ -170,7 +170,7 @@ def extract_image_tool_metadata(turn: ConversationTurn) -> tuple[str | None, str
     for tool_call in reversed(turn.tool_calls):
         if not isinstance(tool_call, dict):
             continue
-        if tool_call.get("name") != "image_generation":
+        if normalize_tool_name(str(tool_call.get("name", ""))) != "image_generation":
             continue
 
         arguments = tool_call.get("arguments")
@@ -183,7 +183,7 @@ def extract_image_tool_metadata(turn: ConversationTurn) -> tuple[str | None, str
     for tool_result in reversed(turn.tool_results):
         if not isinstance(tool_result, dict):
             continue
-        if tool_result.get("name") != "image_generation":
+        if normalize_tool_name(str(tool_result.get("name", ""))) != "image_generation":
             continue
 
         metadata = tool_result.get("metadata")
@@ -201,6 +201,21 @@ def extract_image_tool_metadata(turn: ConversationTurn) -> tuple[str | None, str
                 break
 
     return image_prompt, generated_image_url
+
+
+IMAGE_TOOL_NAME_ALIASES = {
+    "image_gen": "image_generation",
+    "generate_image": "image_generation",
+    "selfie": "image_generation",
+    "photo": "image_generation",
+    "webcam": "image_generation",
+}
+
+
+def normalize_tool_name(value: str) -> str:
+    """Normalize tool names used across legacy and canonical naming."""
+    normalized = value.strip().lower()
+    return IMAGE_TOOL_NAME_ALIASES.get(normalized, normalized)
 
 
 # Request/Response models
@@ -1162,9 +1177,13 @@ async def stream_message(request: StreamMessageRequest) -> StreamingResponse:
                 # Emit [MESSAGE] events for multi-message responses
                 if len(messages) > 1:
                     import json
+                    tool_calls: list[dict[str, Any]] = []
+                    tool_results: list[dict[str, Any]] = []
                     metadata = {
                         "should_generate_image": requested_image,
                         "intent_confidence": intent_confidence,
+                        "tool_calls": tool_calls,
+                        "tool_results": tool_results,
                     }
                     if image_prompt:
                         metadata["image_prompt"] = image_prompt
@@ -1196,9 +1215,13 @@ async def stream_message(request: StreamMessageRequest) -> StreamingResponse:
                 else:
                     # Single message - send image_prompt metadata if present
                     import json
+                    tool_calls: list[dict[str, Any]] = []
+                    tool_results: list[dict[str, Any]] = []
                     metadata = {
                         "should_generate_image": requested_image,
                         "intent_confidence": intent_confidence,
+                        "tool_calls": tool_calls,
+                        "tool_results": tool_results,
                     }
                     if image_prompt:
                         metadata["image_prompt"] = image_prompt
@@ -1231,13 +1254,28 @@ async def stream_message(request: StreamMessageRequest) -> StreamingResponse:
                     tool_image_prompt, generated_image_url = extract_image_tool_metadata(result)
                     if not image_prompt and tool_image_prompt:
                         image_prompt = tool_image_prompt
+
+                    tool_calls = list(result.tool_calls)
+                    tool_results = list(result.tool_results)
+                    invoked_image_tool = any(
+                        normalize_tool_name(tool_call.get("name")) == "image_generation"
+                        for tool_call in tool_calls
+                        if isinstance(tool_call, dict)
+                    )
+                    tooling_unavailable_reason = None
+                    if requested_image and not invoked_image_tool:
+                        tooling_unavailable_reason = "image_prompt_requested_without_image_tool_invocation"
                     import json
 
                     if len(messages) > 1:
                         metadata = {
                             "should_generate_image": requested_image,
                             "intent_confidence": intent_confidence,
+                            "tool_calls": tool_calls,
+                            "tool_results": tool_results,
                         }
+                        if tooling_unavailable_reason:
+                            metadata["tooling_unavailable_reason"] = tooling_unavailable_reason
                         if image_prompt:
                             metadata["image_prompt"] = image_prompt
                         if generated_image_url:
@@ -1264,7 +1302,11 @@ async def stream_message(request: StreamMessageRequest) -> StreamingResponse:
                         metadata = {
                             "should_generate_image": requested_image,
                             "intent_confidence": intent_confidence,
+                            "tool_calls": tool_calls,
+                            "tool_results": tool_results,
                         }
+                        if tooling_unavailable_reason:
+                            metadata["tooling_unavailable_reason"] = tooling_unavailable_reason
                         if image_prompt:
                             metadata["image_prompt"] = image_prompt
                         if generated_image_url:

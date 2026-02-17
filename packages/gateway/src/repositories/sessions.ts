@@ -437,6 +437,7 @@ export class SessionsRepository {
       modelUsed?: string;
       promptVersion?: string;
       safetyFlags?: JSONObject;
+      metadata?: JSONObject;
     },
     tx?: TransactionContext
   ): Promise<Turn> {
@@ -456,7 +457,8 @@ export class SessionsRepository {
         cost_usd = COALESCE(${data.costUsd ?? null}, cost_usd),
         model_used = COALESCE(${data.modelUsed ?? null}, model_used),
         prompt_version = COALESCE(${data.promptVersion ?? null}, prompt_version),
-        safety_flags = COALESCE(${data.safetyFlags ? db.json(data.safetyFlags as postgres.JSONValue) : null}, safety_flags)
+        safety_flags = COALESCE(${data.safetyFlags ? db.json(data.safetyFlags as postgres.JSONValue) : null}, safety_flags),
+        metadata = COALESCE(metadata, '{}'::jsonb) || COALESCE(${data.metadata ? db.json(data.metadata as postgres.JSONValue) : null}, '{}'::jsonb)
       WHERE id = ${id}
       RETURNING
         id, session_id, turn_number, user_message, user_message_type,

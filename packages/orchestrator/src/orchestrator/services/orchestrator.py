@@ -70,6 +70,14 @@ logger = structlog.get_logger()
 class ConversationOrchestrator:
     """Orchestrates conversation flow between user, LLM, and tools."""
 
+    _TOOL_NAME_ALIASES = {
+        "image_gen": "image_generation",
+        "generate_image": "image_generation",
+        "selfie": "image_generation",
+        "photo": "image_generation",
+        "webcam": "image_generation",
+    }
+
     def __init__(
         self,
         settings: Settings,
@@ -498,7 +506,7 @@ class ConversationOrchestrator:
                 prompt_tokens=response.prompt_tokens,
                 completion_tokens=response.completion_tokens,
                 latency_ms=latency_ms,
-                tools_invoked=[tc.name for tc in tool_calls],
+                tools_invoked=[self._normalize_tool_name(tc.name) for tc in tool_calls],
                 tool_calls=[self._serialize_tool_call(tc) for tc in tool_calls],
                 tool_results=[self._serialize_tool_result(tr) for tr in tool_results],
                 safety_flags=all_safety_flags,
@@ -994,11 +1002,31 @@ class ConversationOrchestrator:
     ) -> list[dict[str, Any]]:
         """Get tool definitions for allowed tools."""
         tools = []
-        for tool_name in allowed_tools:
+        normalized_tools = self._normalize_tool_names(allowed_tools)
+        for tool_name in normalized_tools:
             if tool_name in TOOL_REGISTRY:
                 tool_def = TOOL_REGISTRY[tool_name]
                 tools.append(tool_def.to_anthropic_tool())
         return tools
+
+    @classmethod
+    def _normalize_tool_name(cls, tool_name: str) -> str:
+        normalized = tool_name.strip().lower()
+        return cls._TOOL_NAME_ALIASES.get(normalized, normalized)
+
+    @classmethod
+    def _normalize_tool_names(cls, tool_names: list[str]) -> list[str]:
+        normalized: list[str] = []
+        seen: set[str] = set()
+        for name in tool_names:
+            if not isinstance(name, str):
+                continue
+            normalized_name = cls._normalize_tool_name(name)
+            if normalized_name in seen:
+                continue
+            seen.add(normalized_name)
+            normalized.append(normalized_name)
+        return normalized
 
     def _serialize_tool_call(self, tool_call: ToolCall) -> dict[str, Any]:
         """Serialize a tool call for storage."""
