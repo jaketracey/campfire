@@ -3,7 +3,6 @@
 import { useEffect, useState, useCallback } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import type { Route } from 'next';
-import DOMPurify from 'isomorphic-dompurify';
 import {
   ArrowLeft,
   RefreshCw,
@@ -34,6 +33,7 @@ import {
 import { format } from 'date-fns';
 import { useToast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
+import { sanitizeHtml } from '@/lib/sanitize-html';
 
 const STATUS_LABELS: Record<SeoPageStatus, string> = {
   draft: 'Draft',
@@ -462,7 +462,7 @@ export default function AdminSeoEditPage() {
                 <div className="bg-white rounded-lg p-6">
                   <div
                     className="prose prose-lg max-w-none"
-                    dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(page.contentHtml) }}
+                    dangerouslySetInnerHTML={{ __html: sanitizeHtml(page.contentHtml) }}
                   />
                 </div>
               )}
