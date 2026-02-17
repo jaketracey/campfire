@@ -45,6 +45,7 @@ from orchestrator.api.test_runner import router as test_router
 from orchestrator.api.health import router as health_router
 from orchestrator.api.providers import router as providers_router
 from orchestrator.api.config import router as config_router
+from orchestrator.utils import build_tool_context_metadata, normalize_tool_name
 
 logger = structlog.get_logger()
 
@@ -203,19 +204,6 @@ def extract_image_tool_metadata(turn: ConversationTurn) -> tuple[str | None, str
     return image_prompt, generated_image_url
 
 
-IMAGE_TOOL_NAME_ALIASES = {
-    "image_gen": "image_generation",
-    "generate_image": "image_generation",
-    "selfie": "image_generation",
-    "photo": "image_generation",
-    "webcam": "image_generation",
-}
-
-
-def normalize_tool_name(value: str) -> str:
-    """Normalize tool names used across legacy and canonical naming."""
-    normalized = value.strip().lower()
-    return IMAGE_TOOL_NAME_ALIASES.get(normalized, normalized)
 
 
 # Request/Response models
@@ -1112,8 +1100,8 @@ async def process_message(request: ProcessMessageRequest) -> ProcessMessageRespo
 
 
 @app.post("/stream")
-async def stream_message(request: StreamMessageRequest) -> StreamingResponse:
-    """Process a user message with streaming response.
+    async def stream_message(request: StreamMessageRequest) -> StreamingResponse:
+        """Process a user message with streaming response.
 
     This endpoint handles the full conversation flow with streaming:
     1. Safety check on input
@@ -1126,6 +1114,8 @@ async def stream_message(request: StreamMessageRequest) -> StreamingResponse:
     """
 
     async def generate_stream() -> AsyncGenerator[str, None]:
+        import json
+
         try:
             logger.info(
                 "stream_message_request",
@@ -1152,11 +1142,52 @@ async def stream_message(request: StreamMessageRequest) -> StreamingResponse:
                 engagement_level=request.engagement_level,
                 stream=True,
             )
+            stream_tool_calls: list[dict[str, Any]] = []
+            stream_tool_results: list[dict[str, Any]] = []
+            stream_tooling_unavailable_reason: str | None = None
+            stream_generated_image_url: str | None = None
 
             if isinstance(result, AsyncGenerator):
                 # Streaming path: accumulate content for multi-message parsing
                 full_content = ""
                 async for chunk in result:
+                    if chunk.startswith("[ERROR]"):
+                        logger.warning(
+                            "stream_tool_metadata_error",
+                            detail=chunk,
+                        )
+                        continue
+
+                    if chunk.startswith("[METADATA]"):
+                        try:
+                            metadata = json.loads(chunk[10:])
+                            tool_context = build_tool_context_metadata(metadata)
+                            if tool_context.get("tooling_unavailable_reason"):
+                                stream_tooling_unavailable_reason = tool_context["tooling_unavailable_reason"]
+                            if tool_context["tool_calls"]:
+                                stream_tool_calls = tool_context["tool_calls"]
+                            if tool_context["tool_results"]:
+                                stream_tool_results = tool_context["tool_results"]
+
+                            if isinstance(metadata.get("generated_image_url"), str):
+                                stream_generated_image_url = metadata["generated_image_url"]
+                            if isinstance(metadata.get("image_prompt"), str):
+                                image_prompt = metadata["image_prompt"]
+                            if isinstance(metadata.get("should_generate_image"), bool):
+                                requested_image = metadata["should_generate_image"]
+                            if isinstance(metadata.get("intent_confidence"), (int, float)):
+                                intent_confidence = max(0.0, min(1.0, float(metadata["intent_confidence"])))
+                            logger.debug(
+                                { "metadata_keys": list(metadata.keys())},
+                                "streamed tool metadata parsed",
+                            )
+                        except (json.JSONDecodeError, KeyError, TypeError) as e:
+                            logger.warning(
+                                "failed_to_parse_stream_metadata",
+                                error=str(e),
+                            )
+                        continue
+
                     full_content += chunk
                     # Escape newlines to prevent breaking SSE format
                     escaped_chunk = chunk.replace('\n', '\\n')
@@ -1177,16 +1208,21 @@ async def stream_message(request: StreamMessageRequest) -> StreamingResponse:
                 # Emit [MESSAGE] events for multi-message responses
                 if len(messages) > 1:
                     import json
-                    tool_calls: list[dict[str, Any]] = []
-                    tool_results: list[dict[str, Any]] = []
+                    tool_metadata = build_tool_context_metadata(
+                        tool_calls=stream_tool_calls,
+                        tool_results=stream_tool_results,
+                        tooling_unavailable_reason=stream_tooling_unavailable_reason,
+                    )
                     metadata = {
+                        **tool_metadata,
                         "should_generate_image": requested_image,
                         "intent_confidence": intent_confidence,
-                        "tool_calls": tool_calls,
-                        "tool_results": tool_results,
                     }
                     if image_prompt:
                         metadata["image_prompt"] = image_prompt
+                    if stream_generated_image_url:
+                        metadata["generated_image_url"] = stream_generated_image_url
+                        metadata["should_generate_image"] = False
 
                     # Send metadata before [MESSAGE] events so downstream can
                     # attach prompt/intent to the final streamed message.
@@ -1215,16 +1251,21 @@ async def stream_message(request: StreamMessageRequest) -> StreamingResponse:
                 else:
                     # Single message - send image_prompt metadata if present
                     import json
-                    tool_calls: list[dict[str, Any]] = []
-                    tool_results: list[dict[str, Any]] = []
+                    tool_metadata = build_tool_context_metadata(
+                        tool_calls=stream_tool_calls,
+                        tool_results=stream_tool_results,
+                        tooling_unavailable_reason=stream_tooling_unavailable_reason,
+                    )
                     metadata = {
+                        **tool_metadata,
                         "should_generate_image": requested_image,
                         "intent_confidence": intent_confidence,
-                        "tool_calls": tool_calls,
-                        "tool_results": tool_results,
                     }
                     if image_prompt:
                         metadata["image_prompt"] = image_prompt
+                    if stream_generated_image_url:
+                        metadata["generated_image_url"] = stream_generated_image_url
+                        metadata["should_generate_image"] = False
                         logger.info(
                             "sending_image_prompt_metadata",
                             image_prompt_length=len(image_prompt),
@@ -1266,16 +1307,18 @@ async def stream_message(request: StreamMessageRequest) -> StreamingResponse:
                     if requested_image and not invoked_image_tool:
                         tooling_unavailable_reason = "image_prompt_requested_without_image_tool_invocation"
                     import json
+                    tool_metadata = build_tool_context_metadata(
+                        tool_calls=tool_calls,
+                        tool_results=tool_results,
+                        tooling_unavailable_reason=tooling_unavailable_reason,
+                    )
 
                     if len(messages) > 1:
                         metadata = {
+                            **tool_metadata,
                             "should_generate_image": requested_image,
                             "intent_confidence": intent_confidence,
-                            "tool_calls": tool_calls,
-                            "tool_results": tool_results,
                         }
-                        if tooling_unavailable_reason:
-                            metadata["tooling_unavailable_reason"] = tooling_unavailable_reason
                         if image_prompt:
                             metadata["image_prompt"] = image_prompt
                         if generated_image_url:
@@ -1300,13 +1343,10 @@ async def stream_message(request: StreamMessageRequest) -> StreamingResponse:
                         escaped_msg = messages[0].replace('\n', '\\n')
                         yield f"data: {escaped_msg}\n\n"
                         metadata = {
+                            **tool_metadata,
                             "should_generate_image": requested_image,
                             "intent_confidence": intent_confidence,
-                            "tool_calls": tool_calls,
-                            "tool_results": tool_results,
                         }
-                        if tooling_unavailable_reason:
-                            metadata["tooling_unavailable_reason"] = tooling_unavailable_reason
                         if image_prompt:
                             metadata["image_prompt"] = image_prompt
                         if generated_image_url:
@@ -1328,6 +1368,8 @@ async def stream_message(request: StreamMessageRequest) -> StreamingResponse:
         except Exception as e:
             logger.exception("stream_message_error", error=str(e))
             yield f"data: [ERROR] {str(e)}\n\n"
+        finally:
+            app_state.orchestrator.clear_current_routing_decision()
 
     return StreamingResponse(
         generate_stream(),

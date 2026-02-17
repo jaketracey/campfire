@@ -96,6 +96,10 @@ class ToolCall(BaseModel):
     user_id: UUID
     companion_id: UUID
     context: ToolCallContext | None = None
+    status: str = "requested"
+    attempt_count: int = 1
+    started_at: datetime | None = None
+    ended_at: datetime | None = None
     created_at: datetime = Field(default_factory=datetime.utcnow)
 
     class Config:
@@ -110,6 +114,10 @@ class ToolResult(BaseModel):
     success: bool
     output: Any | None = None
     error: str | None = None
+    status: str = "requested"
+    attempt_count: int = 1
+    started_at: datetime | None = None
+    ended_at: datetime | None = None
     duration_ms: float = 0.0
     cost_usd: float = 0.0
     metadata: dict[str, Any] = Field(default_factory=dict)

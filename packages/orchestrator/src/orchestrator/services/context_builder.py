@@ -23,6 +23,7 @@ from orchestrator.services.lorebook import LorebookMatch
 from orchestrator.services.hierarchical_memory import HierarchicalRetrievalResult
 from orchestrator.services.memory_conflict import MemoryWithValidity
 from orchestrator.prompts.manager import PromptManager
+from orchestrator.utils import normalize_tool_names
 
 logger = structlog.get_logger()
 
@@ -30,38 +31,8 @@ logger = structlog.get_logger()
 class ContextBuilder:
     """Builds model input context from various sources."""
 
-    # Tool aliases that map legacy/legacy-like names to canonical tool names
-    IMAGE_TOOL_NAME_ALIASES = {
-        "image_gen": "image_generation",
-        "generate_image": "image_generation",
-        "selfie": "image_generation",
-        "photo": "image_generation",
-        "webcam": "image_generation",
-    }
-
     # Tools that indicate companion generates images
-    IMAGE_GENERATING_TOOLS = {"image_generation", "image_gen", "generate_image", "selfie", "photo", "webcam"}
-
-    @classmethod
-    def _normalize_tool_name(cls, value: str) -> str:
-        normalized = value.strip().lower()
-        return cls.IMAGE_TOOL_NAME_ALIASES.get(normalized, normalized)
-
-    @classmethod
-    def _normalize_tools(cls, values: list[str] | None) -> list[str]:
-        if not values:
-            return []
-        normalized_tools: list[str] = []
-        seen: set[str] = set()
-        for tool in values:
-            if not tool or not isinstance(tool, str):
-                continue
-            normalized = cls._normalize_tool_name(tool)
-            if normalized in seen:
-                continue
-            seen.add(normalized)
-            normalized_tools.append(normalized)
-        return normalized_tools
+    IMAGE_GENERATING_TOOLS = {"image_generation"}
 
     def __init__(
         self,
@@ -101,7 +72,7 @@ class ContextBuilder:
             session_summary=session_summary,
             long_term_memories=long_term_memories or [],
             safety_constraints=safety_constraints or [],
-            active_tools=self._normalize_tools(active_tools or companion_spec.allowed_tools),
+            active_tools=normalize_tool_names(active_tools or companion_spec.allowed_tools),
             situational_tenets=situational_tenets or [],
             prompt_version=prompt_version,
             policy_version=policy_version,
@@ -938,7 +909,7 @@ class ContextBuilder:
         if not companion_spec.allowed_tools:
             return False
 
-        allowed_tools_set = set(self._normalize_tools(companion_spec.allowed_tools))
+        allowed_tools_set = set(normalize_tool_names(companion_spec.allowed_tools))
         return bool(allowed_tools_set & self.IMAGE_GENERATING_TOOLS)
 
     def _format_active_game(self, game: dict) -> str:

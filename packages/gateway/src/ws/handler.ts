@@ -5,6 +5,7 @@
 
 import type { FastifyInstance } from 'fastify';
 import type { WebSocket } from 'ws';
+import { createHash } from 'crypto';
 import { nanoid } from 'nanoid';
 import { z } from 'zod';
 import { logger } from '../observability/logger.js';
@@ -30,6 +31,13 @@ import { getCreatorEarningsService } from '../services/creator-earnings.js';
 import { env } from '../env.js';
 
 import { enqueueSummaryJob } from '../utils/queue.js';
+import {
+  buildToolContextMetadata,
+  normalizeToolContextMetadata,
+  normalizeToolName,
+  normalizeToolNames,
+} from '../utils/tooling.js';
+import { downloadImage, saveImageMetadata, S3_MEDIA_BUCKET, uploadToS3 } from '../routes/imagegen-helpers.js';
 
 import { uploadWebcamFrame } from '../utils/webcam-storage.js';
 
@@ -41,6 +49,7 @@ const ANONYMOUS_USER_ID = '00000000-0000-0000-0000-000000000000';
 
 // Orchestrator base URL
 const ORCHESTRATOR_URL = env.ORCHESTRATOR_URL;
+const S3_MEDIA_HOST_FRAGMENT = `${S3_MEDIA_BUCKET}.s3`;
 
 // ============================================================================
 // WebSocket Payload Validation Schemas
@@ -162,46 +171,262 @@ const WEAK_IMAGE_INTENT_PATTERNS: RegExp[] = [
   /\blook\b.*\blike\b/i,
 ];
 
-const IMAGE_TOOL_NAME_ALIASES: Record<string, string> = {
-  image_gen: 'image_generation',
-  generate_image: 'image_generation',
-  selfie: 'image_generation',
-  photo: 'image_generation',
-  webcam: 'image_generation',
-};
-
-function normalizeToolName(value: string): string {
-  const normalized = value.trim().toLowerCase();
-  return IMAGE_TOOL_NAME_ALIASES[normalized] ?? normalized;
-}
-
-function normalizeToolNames(values: Iterable<string>): string[] {
-  const names = new Set<string>();
-  for (const value of values) {
-    if (typeof value !== 'string' || !value.trim()) {
-      continue;
-    }
-    names.add(normalizeToolName(value));
-  }
-  return Array.from(names);
-}
-
-function asObjectArray(value: unknown): Record<string, unknown>[] {
-  if (!Array.isArray(value)) {
-    return [];
-  }
-
-  return value.filter(
-    item => item && typeof item === 'object' && !Array.isArray(item)
-  ) as Record<string, unknown>[];
-}
-
 function asStringArray(value: unknown): string[] {
   if (!Array.isArray(value)) {
     return [];
   }
 
   return value.filter(item => typeof item === 'string') as string[];
+}
+
+function asRecord(value: unknown): Record<string, unknown> | null {
+  return value && typeof value === 'object' && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : null;
+}
+
+function asString(value: unknown): string | undefined {
+  return typeof value === 'string' && value.trim() ? value.trim() : undefined;
+}
+
+function asNumber(value: unknown): number | undefined {
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    return value;
+  }
+
+  if (typeof value === 'string') {
+    const parsed = Number(value.trim());
+    return Number.isFinite(parsed) ? parsed : undefined;
+  }
+
+  return undefined;
+}
+
+function parseImageSize(size: string | undefined): { width: number; height: number } | null {
+  if (!size) {
+    return null;
+  }
+
+  const match = size.trim().match(/^(\d+)\s*[xX]\s*(\d+)$/);
+  if (!match) {
+    return null;
+  }
+
+  const width = Number(match[1]);
+  const height = Number(match[2]);
+  if (!Number.isFinite(width) || !Number.isFinite(height) || width <= 0 || height <= 0) {
+    return null;
+  }
+
+  return { width, height };
+}
+
+function parseImageUrlFromText(value: unknown): string | undefined {
+  if (typeof value !== 'string') {
+    return undefined;
+  }
+
+  const match = value.match(/https?:\/\/\S+/);
+  return match?.[0]?.replace(/[)\].,]+$/, '') ?? undefined;
+}
+
+function buildGalleryCacheKey(seed: string): string {
+  return createHash('sha256').update(seed).digest('hex').slice(0, 24);
+}
+
+function extractInternalS3KeyFromUrl(imageUrl: string): string | undefined {
+  try {
+    const parsed = new URL(imageUrl);
+    if (parsed.protocol === 'data:') {
+      return undefined;
+    }
+
+    if (!parsed.hostname.includes(S3_MEDIA_HOST_FRAGMENT)) {
+      return undefined;
+    }
+
+    const key = parsed.pathname.replace(/^\/+/, '');
+    return key || undefined;
+  } catch (_err) {
+    return undefined;
+  }
+}
+
+function getImageGenerationMetadata(
+  toolCalls: unknown[],
+  toolResults: unknown[],
+  fallbackImageUrl?: string
+): {
+  imageUrl: string;
+  style: string | undefined;
+  prompt: string | undefined;
+  width: number | undefined;
+  height: number | undefined;
+  provider: string | undefined;
+  latencyMs: number | undefined;
+} | undefined {
+  let selectedResult: Record<string, unknown> | undefined;
+
+  for (let i = toolResults.length - 1; i >= 0; i--) {
+    const toolResult = asRecord(toolResults[i]);
+    if (!toolResult) {
+      continue;
+    }
+
+    const toolName = normalizeToolName(asString(toolResult.name) ?? '');
+    if (toolName !== 'image_generation') {
+      continue;
+    }
+
+    selectedResult = toolResult;
+    break;
+  }
+
+  const selectedResultId = asString(selectedResult?.tool_call_id) || asString(selectedResult?.id);
+
+  let selectedCall: Record<string, unknown> | undefined;
+  if (selectedResultId) {
+    selectedCall = toolCalls
+      .slice()
+      .reverse()
+      .find(call => {
+        const record = asRecord(call);
+        if (!record) {
+          return false;
+        }
+        const callName = normalizeToolName(asString(record.name) ?? '');
+        if (callName !== 'image_generation') {
+          return false;
+        }
+
+        const callId = asString(record.tool_call_id) || asString(record.id);
+        return callId === selectedResultId;
+      }) as Record<string, unknown> | undefined;
+  }
+
+  if (!selectedCall) {
+    selectedCall = toolCalls
+      .slice()
+      .reverse()
+      .find((call) => {
+        const record = asRecord(call);
+        if (!record) {
+          return false;
+        }
+        return normalizeToolName(asString(record.name) ?? '') === 'image_generation';
+      }) as Record<string, unknown> | undefined;
+  }
+
+  const selectedResultMetadata = asRecord(selectedResult?.metadata);
+  const selectedCallArgs = asRecord(selectedCall?.arguments) as Record<string, unknown> | null;
+
+  const imageUrlFromMetadata = asString(selectedResultMetadata?.image_url) || asString(selectedResultMetadata?.url);
+  const imageUrlFromOutput = parseImageUrlFromText(selectedResult?.output);
+  const fallback = asString(selectedResult?.output) && imageUrlFromOutput ? imageUrlFromOutput : undefined;
+  const imageUrl = asString(fallbackImageUrl) || imageUrlFromMetadata || imageUrlFromOutput || fallback;
+
+  if (!imageUrl) {
+    return undefined;
+  }
+
+  const sizeFromArgs = parseImageSize(asString(selectedCallArgs?.size));
+  const sizeFromMetadata = parseImageSize(asString(selectedResultMetadata?.size));
+  const width = sizeFromArgs?.width ?? sizeFromMetadata?.width ?? asNumber(selectedResultMetadata?.width) ?? asNumber(selectedResultMetadata?.image_width);
+  const height = sizeFromArgs?.height ?? sizeFromMetadata?.height ?? asNumber(selectedResultMetadata?.height) ?? asNumber(selectedResultMetadata?.image_height);
+  const provider = asString(selectedResultMetadata?.provider);
+  const latencyMs = asNumber(selectedResult?.duration_ms);
+  const style = asString(selectedCallArgs?.style) || asString(selectedResultMetadata?.style);
+  const prompt = asString(selectedCallArgs?.prompt) || asString(selectedResultMetadata?.prompt);
+
+  return {
+    imageUrl,
+    width: Number.isFinite(width) ? width : undefined,
+    height: Number.isFinite(height) ? height : undefined,
+    provider,
+    latencyMs: Number.isFinite(latencyMs) ? latencyMs : undefined,
+    style,
+    prompt,
+  };
+}
+
+async function persistImageGenerationToGallery({
+  userId,
+  sessionId,
+  turnId,
+  companionId,
+  toolCalls,
+  toolResults,
+  generatedImageUrl,
+}: {
+  userId: string;
+  sessionId: string;
+  turnId: string;
+  companionId: string | undefined;
+  toolCalls: unknown[];
+  toolResults: unknown[];
+  generatedImageUrl: string | undefined;
+}): Promise<void> {
+  const toolImageMetadata = getImageGenerationMetadata(toolCalls, toolResults, generatedImageUrl);
+  if (!toolImageMetadata) {
+    return;
+  }
+
+  if (userId.startsWith(ANONYMOUS_USER_ID_PREFIX) || userId === ANONYMOUS_USER_ID) {
+    return;
+  }
+
+  const parsedImageUrl = toolImageMetadata.imageUrl;
+  const cacheKey = buildGalleryCacheKey(`${sessionId}:${turnId}:${parsedImageUrl}`);
+
+  let s3Key = extractInternalS3KeyFromUrl(parsedImageUrl);
+  let s3Url = parsedImageUrl;
+  let sizeBytes = 0;
+
+  if (!s3Key) {
+    if (!/^https?:/i.test(parsedImageUrl)) {
+      logger.warn(
+        { userId, sessionId, turnId, imageUrl: parsedImageUrl },
+        'Skipping gallery persistence for non-http generated image URL'
+      );
+      return;
+    }
+
+    logger.info(
+      { userId, sessionId, turnId, imageUrl: parsedImageUrl },
+      'Persisting non-S3 generated image by uploading to media bucket'
+    );
+
+    const imageBuffer = await downloadImage(parsedImageUrl);
+    const uploadResult = await uploadToS3(imageBuffer, userId, sessionId, cacheKey);
+    s3Key = uploadResult.s3Key;
+    s3Url = uploadResult.s3Url;
+    sizeBytes = uploadResult.sizeBytes;
+  }
+
+  const style = toolImageMetadata.style || 'realistic';
+  const prompt = toolImageMetadata.prompt || null;
+  const width = toolImageMetadata.width || 1024;
+  const height = toolImageMetadata.height || 1024;
+  const latencyMs = toolImageMetadata.latencyMs || 0;
+  const provider = toolImageMetadata.provider || 'fal';
+
+  await saveImageMetadata(
+    userId,
+    sessionId,
+    turnId,
+    companionId,
+    s3Key,
+    s3Url,
+    width,
+    height,
+    sizeBytes,
+    'neutral',
+    style,
+    prompt || '',
+    cacheKey,
+    latencyMs,
+    provider
+  );
 }
 
 function detectImageIntent(message: string): ImageIntentDecision {
@@ -1179,41 +1404,45 @@ async function handleUserMessage(
     const formattedTurns = recentTurns
       .filter(t => t.id !== turn.id) // Exclude current turn
       .filter(t => t.user_message && t.agent_message) // Only include COMPLETE turns
-      .map(t => ({
-        id: t.id,
-        session_id: sessionId,
-        user_message: {
-          id: crypto.randomUUID(),
-          role: 'user' as const,
-          content: t.user_message || '',
-          created_at: t.created_at.toISOString(),
-        },
-        assistant_message: t.agent_message ? {
-          id: crypto.randomUUID(),
-          role: 'assistant' as const,
-          content: t.agent_message,
-          created_at: t.created_at.toISOString(),
-        } : null,
-        tool_calls: asObjectArray((t.metadata as Record<string, unknown> | undefined)?.tool_calls),
-        tool_results: asObjectArray((t.metadata as Record<string, unknown> | undefined)?.tool_results),
-        metadata: {
-          turn_id: t.id,
+      .map(t => {
+        const toolMetadata = normalizeToolContextMetadata((t.metadata as Record<string, unknown> | undefined) ?? {});
+
+        return {
+          id: t.id,
           session_id: sessionId,
-          user_id: userId,
-          companion_id: companionId,
-          model_used: 'claude-3-5-sonnet-20241022',
-          prompt_tokens: 0,
-          completion_tokens: 0,
-          total_tokens: 0,
-          latency_ms: t.latency_ms || 0,
-          cost_usd: 0,
-          tools_invoked: asStringArray((t.metadata as Record<string, unknown> | undefined)?.tools_invoked),
-          safety_flags: [],
-          prompt_version: '1.0.0',
-          policy_version: '1.0.0',
-        },
-        created_at: t.created_at.toISOString(),
-      }));
+          user_message: {
+            id: crypto.randomUUID(),
+            role: 'user' as const,
+            content: t.user_message || '',
+            created_at: t.created_at.toISOString(),
+          },
+          assistant_message: t.agent_message ? {
+            id: crypto.randomUUID(),
+            role: 'assistant' as const,
+            content: t.agent_message,
+            created_at: t.created_at.toISOString(),
+          } : null,
+          tool_calls: toolMetadata.tool_calls,
+          tool_results: toolMetadata.tool_results,
+          metadata: {
+            turn_id: t.id,
+            session_id: sessionId,
+            user_id: userId,
+            companion_id: companionId,
+            model_used: 'claude-3-5-sonnet-20241022',
+            prompt_tokens: 0,
+            completion_tokens: 0,
+            total_tokens: 0,
+            latency_ms: t.latency_ms || 0,
+            cost_usd: 0,
+            tools_invoked: toolMetadata.tools_invoked,
+            safety_flags: [],
+            prompt_version: '1.0.0',
+            policy_version: '1.0.0',
+          },
+          created_at: t.created_at.toISOString(),
+        };
+      });
 
     // 8. Fetch session with metadata for game state
     const session = await sessionsService.getById(userId, sessionId);
@@ -1379,8 +1608,8 @@ async function handleUserMessage(
     let fullContent = '';
     let imagePrompt: string | undefined;
     let generatedImageUrl: string | undefined;
-    let toolCalls: Record<string, unknown>[] = [];
-    let toolResults: Record<string, unknown>[] = [];
+    let toolCalls: unknown[] = [];
+    let toolResults: unknown[] = [];
     let toolingUnavailableReason: string | undefined;
     let shouldGenerateImage = visualIntent.shouldGenerateImage;
     let imageIntentConfidence = visualIntent.confidence;
@@ -1440,17 +1669,20 @@ async function handleUserMessage(
               // Parse metadata (contains image prompt + intent signals from orchestrator)
               try {
                 const metadataJson = data.slice(10); // Remove [METADATA] prefix
-                const metadata = JSON.parse(metadataJson) as {
-                  image_prompt?: string;
-                  generated_image_url?: string;
-                  should_generate_image?: boolean;
-                  intent_confidence?: number;
-                  tool_calls?: unknown;
-                  tool_results?: unknown;
-                  tooling_unavailable_reason?: string;
-                };
-                if (metadata.image_prompt) {
-                  imagePrompt = metadata.image_prompt;
+                const metadata = JSON.parse(metadataJson) as Record<string, unknown>;
+                const toolContext = normalizeToolContextMetadata(metadata);
+                if (toolContext.tooling_unavailable_reason) {
+                  toolingUnavailableReason = toolContext.tooling_unavailable_reason;
+                }
+                if (toolContext.tool_calls.length > 0) {
+                  toolCalls = toolContext.tool_calls;
+                }
+                if (toolContext.tool_results.length > 0) {
+                  toolResults = toolContext.tool_results;
+                }
+                const metadataImagePrompt = metadata.image_prompt;
+                if (typeof metadataImagePrompt === 'string') {
+                  imagePrompt = metadataImagePrompt;
                   logger.info(
                     {
                       sessionId,
@@ -1463,20 +1695,11 @@ async function handleUserMessage(
                 if (typeof metadata.should_generate_image === 'boolean') {
                   shouldGenerateImage = metadata.should_generate_image;
                 }
-                if (metadata.generated_image_url) {
+                if (typeof metadata.generated_image_url === 'string') {
                   generatedImageUrl = metadata.generated_image_url;
                 }
                 if (typeof metadata.intent_confidence === 'number') {
                   imageIntentConfidence = Math.max(0, Math.min(1, metadata.intent_confidence));
-                }
-                if (typeof metadata.tooling_unavailable_reason === 'string') {
-                  toolingUnavailableReason = metadata.tooling_unavailable_reason;
-                }
-                if (metadata.tool_calls) {
-                  toolCalls = asObjectArray(metadata.tool_calls);
-                }
-                if (metadata.tool_results) {
-                  toolResults = asObjectArray(metadata.tool_results);
                 }
               } catch (e) {
                 logger.warn({ error: e, data }, 'Failed to parse metadata');
@@ -1687,6 +1910,8 @@ async function handleUserMessage(
     const estimatedCostUsd = (estimatedInputTokens * 0.003 + estimatedOutputTokens * 0.015) / 1000;
 
     // 10. Complete the turn in database
+    const completeMetadata = buildToolContextMetadata(toolCalls, toolResults, toolingUnavailableReason);
+
     const completedTurn = await sessionsService.completeTurn(
       userId,
       sessionId,
@@ -1695,9 +1920,11 @@ async function handleUserMessage(
       'text',
       {
         metadata: {
-          tool_calls: toolCalls,
-          tool_results: toolResults,
-          tooling_unavailable_reason: toolingUnavailableReason,
+          ...completeMetadata,
+          should_generate_image: shouldGenerateImage,
+          intent_confidence: imageIntentConfidence,
+          image_prompt: imagePrompt,
+          generated_image_url: generatedImageUrl,
         },
       },
       {
@@ -1707,6 +1934,21 @@ async function handleUserMessage(
         costUsd: estimatedCostUsd,
       }
     );
+
+    void persistImageGenerationToGallery({
+      userId,
+      sessionId,
+      turnId: turn.id,
+      companionId,
+      toolCalls,
+      toolResults,
+      generatedImageUrl,
+    }).catch(error => {
+      logger.warn(
+        { error, userId, sessionId, turnId: turn.id, companionId },
+        'Failed to persist generated image to gallery'
+      );
+    });
 
     // 10b. Record LLM usage for cost tracking
     // Uses actual provider/model from orchestrator if available, falls back to defaults

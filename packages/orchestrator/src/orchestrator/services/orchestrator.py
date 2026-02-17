@@ -1,6 +1,7 @@
 """Main conversation orchestrator service."""
 
 import asyncio
+from datetime import datetime
 import json
 import re
 import time
@@ -62,6 +63,11 @@ from orchestrator.services.session_summarization import (
 )
 from orchestrator.services.tenet_retriever import TenetRetriever
 from orchestrator.services.turn_manager import TurnManager
+from orchestrator.utils import (
+    build_tool_context_metadata,
+    normalize_tool_name,
+    normalize_tool_names,
+)
 from orchestrator.tools.router import ToolRouter
 
 logger = structlog.get_logger()
@@ -69,14 +75,6 @@ logger = structlog.get_logger()
 
 class ConversationOrchestrator:
     """Orchestrates conversation flow between user, LLM, and tools."""
-
-    _TOOL_NAME_ALIASES = {
-        "image_gen": "image_generation",
-        "generate_image": "image_generation",
-        "selfie": "image_generation",
-        "photo": "image_generation",
-        "webcam": "image_generation",
-    }
 
     def __init__(
         self,
@@ -498,6 +496,14 @@ class ConversationOrchestrator:
 
             # Parse image_prompt from response content
             cleaned_content, image_prompt = self._parse_image_prompt(response.content)
+            tool_context_metadata: dict[str, Any] = build_tool_context_metadata(
+                [self._serialize_tool_call(tc) for tc in tool_calls],
+                [self._serialize_tool_result(tr) for tr in tool_results],
+            )
+            current_turn_count = len(recent_turns) + 1 if recent_turns else 1
+            generated_image_url = self._extract_generated_image_url(
+                tool_context_metadata["tool_results"]
+            )
 
             # Complete turn
             turn = await self.turn_manager.complete_turn(
@@ -506,9 +512,9 @@ class ConversationOrchestrator:
                 prompt_tokens=response.prompt_tokens,
                 completion_tokens=response.completion_tokens,
                 latency_ms=latency_ms,
-                tools_invoked=[self._normalize_tool_name(tc.name) for tc in tool_calls],
-                tool_calls=[self._serialize_tool_call(tc) for tc in tool_calls],
-                tool_results=[self._serialize_tool_result(tr) for tr in tool_results],
+                tools_invoked=tool_context_metadata["tools_invoked"],
+                tool_calls=tool_context_metadata["tool_calls"],
+                tool_results=tool_context_metadata["tool_results"],
                 safety_flags=all_safety_flags,
                 image_prompt=image_prompt,
             )
@@ -558,11 +564,11 @@ class ConversationOrchestrator:
                     session_id=session_id,
                     user_id=user_id,
                     companion_spec=companion_spec,
-                    turn_count=current_turn_count,
-                    recent_turns=recent_turns,
-                    user_message=user_message,
-                    assistant_response=cleaned_content,
-                )
+                turn_count=current_turn_count,
+                recent_turns=recent_turns,
+                user_message=user_message,
+                assistant_response=cleaned_content,
+            )
             )
 
             # Record gift recall if one was triggered
@@ -573,6 +579,16 @@ class ConversationOrchestrator:
                         session_id=session_id,
                         trigger=pending_gift_recall.trigger,
                     )
+                )
+
+            # Stream mode returns structured streamed chunks with the same tool context.
+            if stream:
+                return self._stream_turn_response(
+                    turn=turn,
+                    tool_calls=tool_context_metadata["tool_calls"],
+                    tool_results=tool_context_metadata["tool_results"],
+                    image_prompt=image_prompt,
+                    generated_image_url=generated_image_url,
                 )
 
             # Reset routing decision after turn completes
@@ -590,6 +606,67 @@ class ConversationOrchestrator:
             # Reset routing decision on error
             self._current_routing_decision = None
             raise
+
+    async def _stream_turn_response(
+        self,
+        turn: ConversationTurn,
+        tool_calls: list[dict[str, Any]],
+        tool_results: list[dict[str, Any]],
+        image_prompt: str | None = None,
+        generated_image_url: str | None = None,
+        tooling_unavailable_reason: str | None = None,
+        chunk_size: int = 64,
+    ) -> AsyncGenerator[str, None]:
+        """Emit streamed assistant content and final tool metadata payload."""
+        content = turn.assistant_message.content if turn.assistant_message else ""
+        if not content:
+            content = ""
+
+        for index in range(0, len(content), chunk_size):
+            yield content[index:index + chunk_size]
+
+        metadata = build_tool_context_metadata(
+            tool_calls=tool_calls,
+            tool_results=tool_results,
+            tooling_unavailable_reason=tooling_unavailable_reason,
+        )
+        if generated_image_url:
+            metadata["generated_image_url"] = generated_image_url
+        if image_prompt:
+            metadata["image_prompt"] = image_prompt
+
+        yield f"[METADATA]{json.dumps(metadata)}"
+
+    def _extract_generated_image_url(self, tool_results: list[dict[str, Any]]) -> str | None:
+        """Extract the latest generated image URL from image generation tool results."""
+        for tool_result in reversed(tool_results):
+            if normalize_tool_name(str(tool_result.get("name", ""))) != "image_generation":
+                continue
+
+            metadata = tool_result.get("metadata")
+            if isinstance(metadata, dict):
+                image_url = self._to_string_or_none(metadata.get("image_url"))
+                if image_url:
+                    return image_url
+
+            output = tool_result.get("output")
+            if isinstance(output, str):
+                image_url_match = re.search(r"https?://\S+", output)
+                if image_url_match:
+                    return image_url_match.group(0).rstrip(".,)")
+
+        return None
+
+
+    def _to_string_or_none(value: Any) -> str | None:
+        if isinstance(value, str):
+            stripped = value.strip()
+            return stripped or None
+        return None
+
+    def clear_current_routing_decision(self) -> None:
+        """Clear cached routing decision after a stream request has fully completed."""
+        self._current_routing_decision = None
 
     def get_last_model_info(self) -> dict[str, str | int | None]:
         """Get information about the last model used for LLM generation.
@@ -639,33 +716,21 @@ class ConversationOrchestrator:
                 return response, all_tool_calls, all_tool_results
 
             # Process tool calls
-            # Build context for tool handlers (e.g., for visual prompt augmentation)
-            tool_context = ToolCallContext(
-                companion_spec=context.companion_spec.model_dump(),
-                recent_turns=[
-                    {"role": "user", "content": t.user_message.content}
-                    for t in context.recent_turns[-5:]
-                    if t.user_message
-                ] + [
-                    {"role": "assistant", "content": t.assistant_message.content}
-                    for t in context.recent_turns[-5:]
-                    if t.assistant_message
-                ],
-            )
-
-            tool_calls = [
-                ToolCall(
-                    id=tc["id"],
-                    name=tc["name"],
-                    arguments=tc["arguments"],
-                    turn_id=turn_id,
-                    session_id=context.session_id,
-                    user_id=context.user_id,
-                    companion_id=context.companion_spec.id,
-                    context=tool_context,
+            tool_calls: list[ToolCall] = []
+            for raw_tool_call in response.tool_calls:
+                normalized_tool_call = self._coerce_tool_call(
+                    raw_tool_call,
+                    turn_id,
+                    context,
                 )
-                for tc in response.tool_calls
-            ]
+                if normalized_tool_call is not None:
+                    tool_calls.append(normalized_tool_call)
+            if len(tool_calls) != len(response.tool_calls):
+                logger.warning(
+                    "tool_call_normalization_filtered",
+                    expected_count=len(response.tool_calls),
+                    normalized_count=len(tool_calls),
+                )
 
             all_tool_calls.extend(tool_calls)
 
@@ -1002,31 +1067,113 @@ class ConversationOrchestrator:
     ) -> list[dict[str, Any]]:
         """Get tool definitions for allowed tools."""
         tools = []
-        normalized_tools = self._normalize_tool_names(allowed_tools)
+        normalized_tools = normalize_tool_names(allowed_tools)
         for tool_name in normalized_tools:
             if tool_name in TOOL_REGISTRY:
                 tool_def = TOOL_REGISTRY[tool_name]
                 tools.append(tool_def.to_anthropic_tool())
         return tools
 
-    @classmethod
-    def _normalize_tool_name(cls, tool_name: str) -> str:
-        normalized = tool_name.strip().lower()
-        return cls._TOOL_NAME_ALIASES.get(normalized, normalized)
+    @staticmethod
+    def _coerce_tool_status(value: Any) -> str:
+        if isinstance(value, str):
+            status = value.strip().lower()
+            if status in {"requested", "running", "succeeded", "failed", "cancelled"}:
+                return status
+        return "requested"
 
-    @classmethod
-    def _normalize_tool_names(cls, tool_names: list[str]) -> list[str]:
-        normalized: list[str] = []
-        seen: set[str] = set()
-        for name in tool_names:
-            if not isinstance(name, str):
-                continue
-            normalized_name = cls._normalize_tool_name(name)
-            if normalized_name in seen:
-                continue
-            seen.add(normalized_name)
-            normalized.append(normalized_name)
-        return normalized
+    @staticmethod
+    def _coerce_attempt_count(value: Any) -> int:
+        if isinstance(value, (int, float)) and not isinstance(value, bool):
+            return max(1, int(value))
+        return 1
+
+    @staticmethod
+    def _coerce_tool_arguments(value: Any) -> dict[str, Any]:
+        if isinstance(value, dict):
+            return value
+        if isinstance(value, str):
+            try:
+                parsed = json.loads(value)
+                if isinstance(parsed, dict):
+                    return parsed
+            except json.JSONDecodeError:
+                logger.warning("tool_arguments_json_parse_failed", raw=value[:200])
+        return {}
+
+    def _coerce_tool_timestamp(self, value: Any) -> datetime | None:
+        if isinstance(value, datetime):
+            return value
+        if not isinstance(value, str):
+            return None
+        text = value.strip()
+        if not text:
+            return None
+        try:
+            return datetime.fromisoformat(text)
+        except ValueError:
+            return None
+
+    @staticmethod
+    def _coerce_tool_name(raw_name: Any) -> str:
+        if isinstance(raw_name, str):
+            return normalize_tool_name(raw_name)
+        return ""
+
+    def _coerce_tool_call(
+        self,
+        raw_tool_call: Any,
+        turn_id: UUID,
+        context: ConversationContext,
+    ) -> ToolCall | None:
+        if not isinstance(raw_tool_call, dict):
+            logger.warning("invalid_tool_call_payload", tool_call_type=str(type(raw_tool_call)))
+            return None
+
+        tool_call_id = raw_tool_call.get("id") or raw_tool_call.get("tool_call_id")
+        if not isinstance(tool_call_id, str) or not tool_call_id.strip():
+            tool_call_id = str(uuid4())
+
+        function_payload = raw_tool_call.get("function")
+        if isinstance(function_payload, dict):
+            raw_name = raw_tool_call.get("name") or function_payload.get("name")
+            raw_arguments = raw_tool_call.get("arguments", function_payload.get("arguments"))
+        else:
+            raw_name = raw_tool_call.get("name")
+            raw_arguments = raw_tool_call.get("arguments")
+
+        name = self._coerce_tool_name(raw_name)
+        if not name:
+            logger.warning("tool_call_missing_name", raw_tool_call_id=tool_call_id)
+            return None
+
+        tool_call_context = ToolCallContext(
+            companion_spec=context.companion_spec.model_dump(),
+            recent_turns=[
+                {"role": "user", "content": t.user_message.content}
+                for t in context.recent_turns[-5:]
+                if t.user_message
+            ] + [
+                {"role": "assistant", "content": t.assistant_message.content}
+                for t in context.recent_turns[-5:]
+                if t.assistant_message
+            ],
+        )
+
+        return ToolCall(
+            id=tool_call_id,
+            name=name,
+            arguments=self._coerce_tool_arguments(raw_arguments),
+            turn_id=turn_id,
+            session_id=context.session_id,
+            user_id=context.user_id,
+            companion_id=context.companion_spec.id,
+            context=tool_call_context,
+            status=self._coerce_tool_status(raw_tool_call.get("status")),
+            attempt_count=self._coerce_attempt_count(raw_tool_call.get("attempt_count")),
+            started_at=self._coerce_tool_timestamp(raw_tool_call.get("started_at")),
+            ended_at=self._coerce_tool_timestamp(raw_tool_call.get("ended_at")),
+        )
 
     def _serialize_tool_call(self, tool_call: ToolCall) -> dict[str, Any]:
         """Serialize a tool call for storage."""
@@ -1035,6 +1182,10 @@ class ConversationOrchestrator:
             "name": tool_call.name,
             "arguments": tool_call.arguments,
             "created_at": tool_call.created_at.isoformat(),
+            "status": tool_call.status,
+            "attempt_count": tool_call.attempt_count,
+            "started_at": tool_call.started_at.isoformat() if tool_call.started_at else None,
+            "ended_at": tool_call.ended_at.isoformat() if tool_call.ended_at else None,
         }
 
     def _serialize_tool_result(self, tool_result: ToolResult) -> dict[str, Any]:
@@ -1045,6 +1196,11 @@ class ConversationOrchestrator:
             "success": tool_result.success,
             "output": tool_result.output,
             "error": tool_result.error,
+            "status": tool_result.status,
+            "attempt_count": tool_result.attempt_count,
+            "started_at": tool_result.started_at.isoformat() if tool_result.started_at else None,
+            "ended_at": tool_result.ended_at.isoformat() if tool_result.ended_at else None,
+            "created_at": tool_result.created_at.isoformat(),
             "duration_ms": tool_result.duration_ms,
             "cost_usd": tool_result.cost_usd,
             "metadata": tool_result.metadata,

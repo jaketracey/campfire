@@ -1,0 +1,10 @@
+{
+  "tool_context_version": 1,
+  "tool_name_aliases": {
+    "image_gen": "image_generation",
+    "generate_image": "image_generation",
+    "selfie": "image_generation",
+    "photo": "image_generation",
+    "webcam": "image_generation"
+  }
+}

@@ -1,6 +1,7 @@
 """Tool routing and execution system."""
 
 import asyncio
+from datetime import datetime
 import time
 from typing import Any
 
@@ -119,17 +120,41 @@ class ToolRouter:
     async def execute_tool(self, tool_call: ToolCall) -> ToolResult:
         """Execute a single tool call."""
         start_time = time.time()
+        started_at = datetime.utcnow()
+        running_tool_call = tool_call.copy(update={"status": "running", "started_at": started_at})
 
         handler = self.get_handler(tool_call.name)
         if not handler:
             logger.warning("unknown_tool", tool_name=tool_call.name)
-            return ToolResult(
+            error = f"Unknown tool: {tool_call.name}"
+            ended_at = datetime.utcnow()
+            unknown_result = ToolResult(
                 tool_call_id=tool_call.id,
                 name=tool_call.name,
                 success=False,
-                error=f"Unknown tool: {tool_call.name}",
-                duration_ms=0,
+                error=error,
+                status="failed",
+                attempt_count=tool_call.attempt_count,
+                started_at=started_at,
+                ended_at=ended_at,
+                duration_ms=(ended_at - started_at).total_seconds() * 1000,
             )
+
+            await self.event_emitter.emit(
+                ToolEvent(
+                    type=EventType.TOOL_FAILED,
+                    session_id=tool_call.session_id,
+                    user_id=tool_call.user_id,
+                    companion_id=tool_call.companion_id,
+                    tool_name=tool_call.name,
+                    tool_call_id=tool_call.id,
+                    duration_ms=unknown_result.duration_ms,
+                    success=False,
+                    error_message=error,
+                )
+            )
+
+            return unknown_result
 
         # Emit tool invoked event
         await self.event_emitter.emit(
@@ -150,21 +175,55 @@ class ToolRouter:
                 tool_call.arguments
             )
             if not is_valid:
-                return ToolResult(
+                validation_error_message = f"Invalid arguments: {validation_error}"
+                ended_at = datetime.utcnow()
+                validation_result = ToolResult(
                     tool_call_id=tool_call.id,
                     name=tool_call.name,
                     success=False,
-                    error=f"Invalid arguments: {validation_error}",
-                    duration_ms=(time.time() - start_time) * 1000,
+                    error=validation_error_message,
+                    status="failed",
+                    attempt_count=tool_call.attempt_count,
+                    started_at=running_tool_call.started_at,
+                    ended_at=ended_at,
+                    duration_ms=(ended_at - started_at).total_seconds() * 1000,
                 )
 
+                await self.event_emitter.emit(
+                    ToolEvent(
+                        type=EventType.TOOL_FAILED,
+                        session_id=tool_call.session_id,
+                        user_id=tool_call.user_id,
+                        companion_id=tool_call.companion_id,
+                        tool_name=tool_call.name,
+                        tool_call_id=tool_call.id,
+                        duration_ms=validation_result.duration_ms,
+                        success=False,
+                        error_message=validation_error_message,
+                    )
+                )
+                return validation_result
+
             # Execute the tool
-            result = await handler.execute(tool_call)
+            result = await handler.execute(running_tool_call)
+            ended_at = datetime.utcnow()
+            result = result.copy(
+                update={
+                    "status": "succeeded" if result.success else "failed",
+                    "attempt_count": running_tool_call.attempt_count,
+                    "started_at": started_at,
+                    "ended_at": ended_at,
+                    "duration_ms": (ended_at - started_at).total_seconds() * 1000,
+                    "name": running_tool_call.name,
+                }
+            )
 
             # Emit tool completed event
             await self.event_emitter.emit(
                 ToolEvent(
-                    type=EventType.TOOL_COMPLETED,
+                    type=EventType.TOOL_COMPLETED
+                    if result.success
+                    else EventType.TOOL_FAILED,
                     session_id=tool_call.session_id,
                     user_id=tool_call.user_id,
                     companion_id=tool_call.companion_id,
@@ -179,7 +238,8 @@ class ToolRouter:
             return result
 
         except Exception as e:
-            duration_ms = (time.time() - start_time) * 1000
+            ended_at = datetime.utcnow()
+            execution_duration_ms = (ended_at - started_at).total_seconds() * 1000
             logger.exception(
                 "tool_execution_failed",
                 tool_name=tool_call.name,
@@ -195,7 +255,7 @@ class ToolRouter:
                     companion_id=tool_call.companion_id,
                     tool_name=tool_call.name,
                     tool_call_id=tool_call.id,
-                    duration_ms=duration_ms,
+                    duration_ms=execution_duration_ms,
                     success=False,
                     error_message=str(e),
                 )
@@ -206,7 +266,11 @@ class ToolRouter:
                 name=tool_call.name,
                 success=False,
                 error=str(e),
-                duration_ms=duration_ms,
+                status="failed",
+                attempt_count=tool_call.attempt_count,
+                started_at=started_at,
+                ended_at=ended_at,
+                duration_ms=execution_duration_ms,
             )
 
     async def execute_tools(
@@ -219,6 +283,8 @@ class ToolRouter:
             return []
 
         if parallel:
+            run_started_at = datetime.utcnow()
+
             # Execute all tools in parallel
             tasks = [self.execute_tool(tc) for tc in tool_calls]
             results = await asyncio.gather(*tasks, return_exceptions=True)
@@ -227,14 +293,24 @@ class ToolRouter:
             processed_results: list[ToolResult] = []
             for i, result in enumerate(results):
                 if isinstance(result, Exception):
+                    ended_at = datetime.utcnow()
                     processed_results.append(
                         ToolResult(
                             tool_call_id=tool_calls[i].id,
                             name=tool_calls[i].name,
                             success=False,
                             error=str(result),
-                            duration_ms=0,
+                            status="failed",
+                            attempt_count=tool_calls[i].attempt_count,
+                            started_at=run_started_at,
+                            ended_at=ended_at,
+                            duration_ms=(ended_at - run_started_at).total_seconds() * 1000,
                         )
+                    )
+                    logger.warning(
+                        "tool_execution_scheduling_failed",
+                        tool_name=tool_calls[i].name,
+                        error=str(result),
                     )
                 else:
                     processed_results.append(result)

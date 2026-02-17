@@ -5,6 +5,7 @@
 
 import { z } from 'zod';
 import { nanoid } from 'nanoid';
+import { normalizeToolContextMetadata } from '../utils/tooling.js';
 import {
   getSessionsRepository,
   getCompanionsRepository,
@@ -365,6 +366,7 @@ export class SessionsService {
     metrics?: TurnMetrics,
     tx?: TransactionContext
   ): Promise<Turn> {
+    const sanitizedMetadata = metadata ? normalizeToolContextMetadata(metadata) : undefined;
     const session = await this.getById(userId, sessionId, tx);
     if (!session) {
       throw new Error('Session not found');
@@ -385,7 +387,7 @@ export class SessionsService {
         tokenCountInput: completeMetrics.inputTokens,
         tokenCountOutput: completeMetrics.outputTokens,
         costUsd: completeMetrics.costUsd,
-        metadata,
+        metadata: sanitizedMetadata as unknown as Record<string, unknown>,
       },
       tx
     );
