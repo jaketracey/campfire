@@ -80,6 +80,7 @@ export default function ProviderDetailPage() {
   const [provider, setProvider] = useState<ProviderWithModels | null>(null);
   const [showApiKey, setShowApiKey] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
+  const [modelError, setModelError] = useState<string | null>(null);
 
   // Form state
   const [displayName, setDisplayName] = useState('');
@@ -217,10 +218,12 @@ export default function ProviderDetailPage() {
     } else {
       resetModelForm();
     }
+    setModelError(null);
     setIsModelDialogOpen(true);
   };
 
   const handleSaveModel = async () => {
+    setModelError(null);
     try {
       if (editingModel) {
         const input: UpdateModelInput = {
@@ -251,15 +254,18 @@ export default function ProviderDetailPage() {
       await fetchData();
     } catch (error) {
       console.error('Failed to save model:', error);
+      setModelError(error instanceof Error ? error.message : 'Failed to save model');
     }
   };
 
   const handleDeleteModel = async (modelId: string) => {
+    setModelError(null);
     try {
       await deleteModel(modelId);
       await fetchData();
     } catch (error) {
       console.error('Failed to delete model:', error);
+      setModelError(error instanceof Error ? error.message : 'Failed to delete model');
     }
   };
 
@@ -545,6 +551,16 @@ export default function ProviderDetailPage() {
         </Card>
       </div>
 
+      {/* Model Error */}
+      {modelError && !isModelDialogOpen && (
+        <Card className="border bg-red-500/5 border-red-500/20">
+          <CardContent className="p-4 flex items-center gap-3">
+            <AlertCircle className="h-5 w-5 text-red-500" />
+            <span className="text-red-400">{modelError}</span>
+          </CardContent>
+        </Card>
+      )}
+
       {/* Models */}
       <Card className="bg-white/[0.02] border-white/5">
         <CardHeader className="flex flex-row items-center justify-between">
@@ -666,6 +682,12 @@ export default function ProviderDetailPage() {
                   </div>
                 </div>
               </div>
+              {modelError && isModelDialogOpen && (
+                <div className="flex items-center gap-2 p-3 rounded-md bg-red-500/10 border border-red-500/20">
+                  <AlertCircle className="h-4 w-4 text-red-500 shrink-0" />
+                  <span className="text-sm text-red-400">{modelError}</span>
+                </div>
+              )}
               <DialogFooter>
                 <Button variant="outline" onClick={() => setIsModelDialogOpen(false)}>
                   Cancel
