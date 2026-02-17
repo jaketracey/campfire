@@ -56,6 +56,7 @@ import { TimeSeriesAreaChart } from '@/components/admin/charts/time-series-area-
 
 export default function AdminDashboardPage() {
   const [isLoading, setIsLoading] = useState(true);
+  const [fetchError, setFetchError] = useState<string | null>(null);
   const [testRuns, setTestRuns] = useState<TestRun[]>([]);
   const [testStats, setTestStats] = useState<{
     total_runs: number;
@@ -121,8 +122,12 @@ export default function AdminDashboardPage() {
       setModelCosts(modelCostsRes.data.models);
       setEngagement(engagementRes.data);
       setTopUsers(topUsersRes.data.users);
+      setFetchError(null);
     } catch (error) {
       console.error('Failed to fetch dashboard data:', error);
+      setFetchError(
+        error instanceof Error ? error.message : 'Failed to load dashboard data'
+      );
     } finally {
       setIsLoading(false);
     }
@@ -263,6 +268,28 @@ export default function AdminDashboardPage() {
           </Button>
         </div>
       </div>
+
+      {/* Error Banner */}
+      {fetchError && (
+        <div role="alert" className="flex items-center gap-3 p-4 rounded-lg bg-red-500/10 border border-red-500/20">
+          <AlertCircle className="h-5 w-5 text-red-500 flex-shrink-0" />
+          <div className="flex-1">
+            <p className="text-sm font-medium text-red-400">
+              Failed to load dashboard data
+            </p>
+            <p className="text-xs text-red-400/70 mt-0.5">{fetchError}</p>
+          </div>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => fetchData()}
+            className="gap-2 border-red-500/30 text-red-400 hover:bg-red-500/10"
+          >
+            <RefreshCw className="h-3 w-3" />
+            Retry
+          </Button>
+        </div>
+      )}
 
       {/* Key Metrics Row */}
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
