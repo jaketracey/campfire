@@ -74,7 +74,7 @@ jobs:
       release_notes: ${{ steps.changelog.outputs.release_notes }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           fetch-depth: 0
           token: ${{ secrets.GITHUB_TOKEN }}
@@ -295,7 +295,7 @@ jobs:
     if: needs.analyze.outputs.should_release == 'true' && github.event.inputs.dry_run != 'true'
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           fetch-depth: 0
           token: ${{ secrets.GITHUB_TOKEN }}

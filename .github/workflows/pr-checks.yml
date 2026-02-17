@@ -168,7 +168,7 @@ jobs:
       any-package: ${{ steps.changes.outputs.any-package }}
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Detect file changes
         uses: dorny/paths-filter@v3
@@ -224,7 +224,7 @@ jobs:
     if: needs.detect-changes.outputs.web == 'true'
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Setup pnpm
         uses: pnpm/action-setup@v4
@@ -308,7 +308,7 @@ jobs:
     if: needs.detect-changes.outputs.any-package == 'true' || needs.detect-changes.outputs.ci == 'true'
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Dependency Review
         uses: actions/dependency-review-action@v4
@@ -412,7 +412,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           fetch-depth: 0
 
