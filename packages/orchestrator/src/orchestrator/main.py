@@ -1101,7 +1101,7 @@ async def process_message(request: ProcessMessageRequest) -> ProcessMessageRespo
 
 @app.post("/stream")
 async def stream_message(request: StreamMessageRequest) -> StreamingResponse:
-        """Process a user message with streaming response.
+    """Process a user message with streaming response.
 
     This endpoint handles the full conversation flow with streaming:
     1. Safety check on input
