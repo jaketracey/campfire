@@ -127,7 +127,14 @@ export default function OnboardingPage() {
               })}
             </div>
             {/* Progress bar */}
-            <div className="h-1 w-full bg-white/10 rounded-full overflow-hidden border border-white/5">
+            <div
+              className="h-1 w-full bg-white/10 rounded-full overflow-hidden border border-white/5"
+              role="progressbar"
+              aria-valuenow={Math.round(progress)}
+              aria-valuemin={0}
+              aria-valuemax={100}
+              aria-label="Onboarding progress"
+            >
               <motion.div
                 className="h-full bg-white shadow-[0_0_10px_rgba(255,255,255,0.3)]"
                 initial={{ width: 0 }}
@@ -166,7 +173,14 @@ export default function OnboardingPage() {
               })}
             </div>
             {/* Progress bar */}
-            <div className="h-1 w-full bg-white/10 rounded-full overflow-hidden border border-white/5">
+            <div
+              className="h-1 w-full bg-white/10 rounded-full overflow-hidden border border-white/5"
+              role="progressbar"
+              aria-valuenow={Math.round(quickStartProgress)}
+              aria-valuemin={0}
+              aria-valuemax={100}
+              aria-label="Quick start progress"
+            >
               <motion.div
                 className="h-full bg-white shadow-[0_0_10px_rgba(255,255,255,0.3)]"
                 initial={{ width: 0 }}
