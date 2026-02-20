@@ -1144,7 +1144,7 @@ export class CampfireWebSocket {
       // Reset state before reconnecting to prevent stale data
       this.resetState();
       this.connect();
-    }, this.options.reconnectDelay);
+    }, delay);
   }
 }
 

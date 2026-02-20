@@ -257,7 +257,9 @@ export function useAudioPlayer(options: UseAudioPlayerOptions = {}): UseAudioPla
     return () => {
       stop();
       if (audioContextRef.current) {
-        audioContextRef.current.close();
+        audioContextRef.current.close().catch(() => {
+          // Ignore errors during unmount cleanup
+        });
         audioContextRef.current = null;
         analyserRef.current = null;
       }

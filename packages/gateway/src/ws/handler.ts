@@ -675,6 +675,13 @@ export async function registerWebSocketHandler(app: FastifyInstance): Promise<vo
         { clientId, code, reason: reason.toString() },
         'WebSocket client disconnected'
       );
+
+      // Clean up voice call billing interval to prevent resource leak
+      if (client.voiceCallBillingInterval) {
+        clearInterval(client.voiceCallBillingInterval);
+        client.voiceCallBillingInterval = undefined;
+      }
+
       clients.delete(clientId);
     });
 
