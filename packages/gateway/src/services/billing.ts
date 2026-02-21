@@ -230,7 +230,7 @@ export class BillingService {
     if (subscription) {
       // Update existing
       subscription = await this.billing.updateSubscription(subscription.id, {
-        flowguard_subscription_id: validated.flowguardSubscriptionId,
+        stripe_subscription_id: validated.flowguardSubscriptionId,
         plan: validated.plan,
         status: validated.status,
         current_period_start: validated.periodStart,
@@ -241,8 +241,8 @@ export class BillingService {
       // Create new
       subscription = await this.billing.createSubscription({
         user_id: userId,
-        flowguard_customer_id: validated.flowguardCustomerId,
-        flowguard_subscription_id: validated.flowguardSubscriptionId ?? '',
+        stripe_customer_id: validated.flowguardCustomerId,
+        stripe_subscription_id: validated.flowguardSubscriptionId ?? '',
         plan: validated.plan,
         status: validated.status ?? 'active',
         current_period_start: validated.periodStart ?? new Date(),
@@ -359,22 +359,22 @@ export class BillingService {
    * Process a Flowguard postback event
    */
   async processPostbackEvent(
-    flowguardEventId: string,
+    stripeEventId: string,
     eventType: string,
     payload: JSONObject,
     tx?: TransactionContext
   ): Promise<BillingEvent> {
     // Check if event already processed (idempotency)
-    const existing = await this.billing.findBillingEventByFlowguardId(flowguardEventId, tx);
+    const existing = await this.billing.findBillingEventByStripeEventId(stripeEventId, tx);
     if (existing) {
-      logger.debug({ flowguardEventId }, 'Postback event already processed');
+      logger.debug({ stripeEventId }, 'Postback event already processed');
       return existing;
     }
 
     // Create billing event record
     const billingEvent = await this.billing.createBillingEvent({
-      flowguard_event_id: flowguardEventId,
-      flowguard_event_type: eventType,
+      stripe_event_id: stripeEventId,
+      stripe_event_type: eventType,
       payload,
     }, tx);
 
@@ -385,13 +385,13 @@ export class BillingService {
       // Mark as processed
       await this.billing.markBillingEventProcessed(billingEvent.id, null, tx);
 
-      logger.info({ flowguardEventId, eventType }, 'Postback event processed');
+      logger.info({ stripeEventId, eventType }, 'Postback event processed');
     } catch (error) {
       // Mark as failed
       const errorMessage = error instanceof Error ? error.message : 'Unknown error';
       await this.billing.markBillingEventProcessed(billingEvent.id, errorMessage, tx);
 
-      logger.error({ flowguardEventId, eventType, error: errorMessage }, 'Postback event processing failed');
+      logger.error({ stripeEventId, eventType, error: errorMessage }, 'Postback event processing failed');
       throw error;
     }
 
@@ -456,7 +456,7 @@ export class BillingService {
 
     for (const event of failedEvents) {
       try {
-        await this.handlePostbackEvent(event.flowguard_event_type, event.payload, tx);
+        await this.handlePostbackEvent(event.stripe_event_type, event.payload, tx);
         await this.billing.markBillingEventProcessed(event.id, null, tx);
         successCount++;
       } catch (error) {
@@ -485,9 +485,9 @@ export class BillingService {
     for (const record of unsyncedRecords) {
       try {
         // Flowguard doesn't have usage metering API, mark as synced for internal tracking
-        const flowguardUsageRecordId = `fg_${nanoid()}`;
+        const stripeUsageRecordId = `fg_${nanoid()}`;
 
-        await this.billing.markUsageSynced(record.id, flowguardUsageRecordId, tx);
+        await this.billing.markUsageSynced(record.id, stripeUsageRecordId, tx);
         syncedCount++;
       } catch (error) {
         logger.error(

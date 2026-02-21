@@ -46,8 +46,8 @@ export interface UsageRecord {
   unit: string;
   periodStart: Date;
   periodEnd: Date;
-  flowguardUsageRecordId: string | null;
-  syncedToFlowguard: boolean;
+  stripeUsageRecordId: string | null;
+  syncedToStripe: boolean;
   syncedAt: Date | null;
   sourceSessionId: string | null;
   sourceEventIds: string[];
@@ -87,7 +87,7 @@ export interface UsageLimitResult {
 export interface SubscriptionListFilters extends PaginationOptions {
   status?: SubscriptionStatus | SubscriptionStatus[];
   plan?: SubscriptionPlan;
-  flowguardCustomerId?: string;
+  stripeCustomerId?: string;
 }
 
 /**
@@ -108,7 +108,7 @@ export interface UsageRecordListFilters extends PaginationOptions {
   usageType?: string;
   periodStart?: Date;
   periodEnd?: Date;
-  syncedToFlowguard?: boolean;
+  syncedToStripe?: boolean;
 }
 
 /**
@@ -137,7 +137,7 @@ export class BillingRepository {
     const db = this.getSql(tx);
     const result = await db`
       SELECT
-        id, user_id, flowguard_customer_id, flowguard_subscription_id, flowguard_price_id,
+        id, user_id, stripe_customer_id, stripe_subscription_id, stripe_price_id,
         status, plan, current_period_start, current_period_end,
         cancel_at_period_end, canceled_at, cancel_reason,
         trial_start, trial_end,
@@ -155,7 +155,7 @@ export class BillingRepository {
     const db = this.getSql(tx);
     const result = await db`
       SELECT
-        id, user_id, flowguard_customer_id, flowguard_subscription_id, flowguard_price_id,
+        id, user_id, stripe_customer_id, stripe_subscription_id, stripe_price_id,
         status, plan, current_period_start, current_period_end,
         cancel_at_period_end, canceled_at, cancel_reason,
         trial_start, trial_end,
@@ -170,13 +170,13 @@ export class BillingRepository {
   }
 
   async findSubscriptionByFlowguardCustomerId(
-    flowguardCustomerId: string,
+    stripeCustomerId: string,
     tx?: TransactionContext
   ): Promise<SubscriptionWithUsage | null> {
     const db = this.getSql(tx);
     const result = await db`
       SELECT
-        id, user_id, flowguard_customer_id, flowguard_subscription_id, flowguard_price_id,
+        id, user_id, stripe_customer_id, stripe_subscription_id, stripe_price_id,
         status, plan, current_period_start, current_period_end,
         cancel_at_period_end, canceled_at, cancel_reason,
         trial_start, trial_end,
@@ -184,20 +184,20 @@ export class BillingRepository {
         message_limit, messages_used, companion_limit,
         metadata, created_at, updated_at
       FROM subscriptions
-      WHERE flowguard_customer_id = ${flowguardCustomerId}
+      WHERE stripe_customer_id = ${stripeCustomerId}
     `;
 
     return result[0] ? this.mapSubscription(result[0]) : null;
   }
 
   async findSubscriptionByFlowguardSubscriptionId(
-    flowguardSubscriptionId: string,
+    stripeSubscriptionId: string,
     tx?: TransactionContext
   ): Promise<SubscriptionWithUsage | null> {
     const db = this.getSql(tx);
     const result = await db`
       SELECT
-        id, user_id, flowguard_customer_id, flowguard_subscription_id, flowguard_price_id,
+        id, user_id, stripe_customer_id, stripe_subscription_id, stripe_price_id,
         status, plan, current_period_start, current_period_end,
         cancel_at_period_end, canceled_at, cancel_reason,
         trial_start, trial_end,
@@ -205,7 +205,7 @@ export class BillingRepository {
         message_limit, messages_used, companion_limit,
         metadata, created_at, updated_at
       FROM subscriptions
-      WHERE flowguard_subscription_id = ${flowguardSubscriptionId}
+      WHERE stripe_subscription_id = ${stripeSubscriptionId}
     `;
 
     return result[0] ? this.mapSubscription(result[0]) : null;
@@ -217,13 +217,13 @@ export class BillingRepository {
     try {
       const result = await db`
         INSERT INTO subscriptions (
-          user_id, flowguard_customer_id, flowguard_subscription_id,
+          user_id, stripe_customer_id, stripe_subscription_id,
           status, plan, current_period_start, current_period_end,
           cancel_at_period_end, trial_start, trial_end, metadata
         ) VALUES (
           ${data.user_id},
-          ${data.flowguard_customer_id},
-          ${data.flowguard_subscription_id},
+          ${data.stripe_customer_id},
+          ${data.stripe_subscription_id},
           ${data.status},
           ${data.plan},
           ${data.current_period_start},
@@ -234,7 +234,7 @@ export class BillingRepository {
           ${db.json((data.metadata ?? {}) as postgres.JSONValue)}
         )
         RETURNING
-          id, user_id, flowguard_customer_id, flowguard_subscription_id, flowguard_price_id,
+          id, user_id, stripe_customer_id, stripe_subscription_id, stripe_price_id,
           status, plan, current_period_start, current_period_end,
           cancel_at_period_end, canceled_at, cancel_reason,
           trial_start, trial_end,
@@ -256,7 +256,7 @@ export class BillingRepository {
 
   async updateSubscription(
     id: string,
-    data: Partial<Omit<SubscriptionInsert, 'user_id' | 'flowguard_customer_id'>>,
+    data: Partial<Omit<SubscriptionInsert, 'user_id' | 'stripe_customer_id'>>,
     tx?: TransactionContext
   ): Promise<SubscriptionWithUsage> {
     const db = this.getSql(tx);
@@ -264,7 +264,7 @@ export class BillingRepository {
     const result = await db`
       UPDATE subscriptions
       SET
-        flowguard_subscription_id = COALESCE(${data.flowguard_subscription_id ?? null}, flowguard_subscription_id),
+        stripe_subscription_id = COALESCE(${data.stripe_subscription_id ?? null}, stripe_subscription_id),
         status = COALESCE(${data.status ?? null}, status),
         plan = COALESCE(${data.plan ?? null}, plan),
         current_period_start = COALESCE(${data.current_period_start ?? null}, current_period_start),
@@ -275,7 +275,7 @@ export class BillingRepository {
         metadata = COALESCE(${data.metadata ? db.json(data.metadata as postgres.JSONValue) : null}, metadata)
       WHERE id = ${id}
       RETURNING
-        id, user_id, flowguard_customer_id, flowguard_subscription_id, flowguard_price_id,
+        id, user_id, stripe_customer_id, stripe_subscription_id, stripe_price_id,
         status, plan, current_period_start, current_period_end,
         cancel_at_period_end, canceled_at, cancel_reason,
         trial_start, trial_end,
@@ -311,7 +311,7 @@ export class BillingRepository {
         cancel_reason = ${options.cancelReason ?? null}
       WHERE id = ${id}
       RETURNING
-        id, user_id, flowguard_customer_id, flowguard_subscription_id, flowguard_price_id,
+        id, user_id, stripe_customer_id, stripe_subscription_id, stripe_price_id,
         status, plan, current_period_start, current_period_end,
         cancel_at_period_end, canceled_at, cancel_reason,
         trial_start, trial_end,
@@ -347,7 +347,7 @@ export class BillingRepository {
         companion_limit = COALESCE(${limits.companionLimit ?? null}, companion_limit)
       WHERE id = ${id}
       RETURNING
-        id, user_id, flowguard_customer_id, flowguard_subscription_id, flowguard_price_id,
+        id, user_id, stripe_customer_id, stripe_subscription_id, stripe_price_id,
         status, plan, current_period_start, current_period_end,
         cancel_at_period_end, canceled_at, cancel_reason,
         trial_start, trial_end,
@@ -373,7 +373,7 @@ export class BillingRepository {
         messages_used = 0
       WHERE id = ${id}
       RETURNING
-        id, user_id, flowguard_customer_id, flowguard_subscription_id, flowguard_price_id,
+        id, user_id, stripe_customer_id, stripe_subscription_id, stripe_price_id,
         status, plan, current_period_start, current_period_end,
         cancel_at_period_end, canceled_at, cancel_reason,
         trial_start, trial_end,
@@ -429,7 +429,7 @@ export class BillingRepository {
 
     const result = await db`
       SELECT
-        id, user_id, flowguard_customer_id, flowguard_subscription_id, flowguard_price_id,
+        id, user_id, stripe_customer_id, stripe_subscription_id, stripe_price_id,
         status, plan, current_period_start, current_period_end,
         cancel_at_period_end, canceled_at, cancel_reason,
         trial_start, trial_end,
@@ -440,7 +440,7 @@ export class BillingRepository {
       WHERE 1=1
         ${statusArray ? db`AND status = ANY(${statusArray}::subscription_status[])` : db``}
         ${filters.plan ? db`AND plan = ${filters.plan}` : db``}
-        ${filters.flowguardCustomerId ? db`AND flowguard_customer_id = ${filters.flowguardCustomerId}` : db``}
+        ${filters.stripeCustomerId ? db`AND stripe_customer_id = ${filters.stripeCustomerId}` : db``}
       ORDER BY created_at DESC
       LIMIT ${limit + 1}
       OFFSET ${offset}
@@ -497,7 +497,7 @@ export class BillingRepository {
     const db = this.getSql(tx);
     const result = await db`
       SELECT
-        id, user_id, flowguard_event_id, flowguard_event_type,         payload, processed, processed_at, error, retry_count,
+        id, user_id, stripe_event_id, stripe_event_type,         payload, processed, processed_at, error, retry_count,
         idempotency_key, created_at
       FROM billing_events
       WHERE id = ${id}
@@ -506,14 +506,14 @@ export class BillingRepository {
     return result[0] ? this.mapBillingEvent(result[0]) : null;
   }
 
-  async findBillingEventByFlowguardId(flowguardEventId: string, tx?: TransactionContext): Promise<BillingEvent | null> {
+  async findBillingEventByStripeEventId(stripeEventId: string, tx?: TransactionContext): Promise<BillingEvent | null> {
     const db = this.getSql(tx);
     const result = await db`
       SELECT
-        id, user_id, flowguard_event_id, flowguard_event_type,         payload, processed, processed_at, error, retry_count,
+        id, user_id, stripe_event_id, stripe_event_type,         payload, processed, processed_at, error, retry_count,
         idempotency_key, created_at
       FROM billing_events
-      WHERE flowguard_event_id = ${flowguardEventId}
+      WHERE stripe_event_id = ${stripeEventId}
     `;
 
     return result[0] ? this.mapBillingEvent(result[0]) : null;
@@ -525,26 +525,26 @@ export class BillingRepository {
     try {
       const result = await db`
         INSERT INTO billing_events (
-          user_id, flowguard_event_id, flowguard_event_type, payload, processed, error
+          user_id, stripe_event_id, stripe_event_type, payload, processed, error
         ) VALUES (
           ${data.user_id ?? null},
-          ${data.flowguard_event_id},
-          ${data.flowguard_event_type},
+          ${data.stripe_event_id},
+          ${data.stripe_event_type},
           ${db.json(data.payload as postgres.JSONValue)},
           ${data.processed ?? false},
           ${data.error ?? null}
         )
         RETURNING
-          id, user_id, flowguard_event_id, flowguard_event_type,           payload, processed, processed_at, error, retry_count,
+          id, user_id, stripe_event_id, stripe_event_type,           payload, processed, processed_at, error, retry_count,
           idempotency_key, created_at
       `;
 
       const event = this.mapBillingEvent(result[0]!);
-      logger.debug({ eventId: event.id, flowguardEventId: data.flowguard_event_id }, 'Billing event created');
+      logger.debug({ eventId: event.id, stripeEventId: data.stripe_event_id }, 'Billing event created');
       return event;
     } catch (error) {
       if (isUniqueViolation(error)) {
-        throw new DuplicateError('BillingEvent', 'flowguard_event_id', data.flowguard_event_id);
+        throw new DuplicateError('BillingEvent', 'stripe_event_id', data.stripe_event_id);
       }
       throw wrapDatabaseError(error, 'billing.createBillingEvent');
     }
@@ -566,7 +566,7 @@ export class BillingRepository {
         retry_count = retry_count + 1
       WHERE id = ${id}
       RETURNING
-        id, user_id, flowguard_event_id, flowguard_event_type,         payload, processed, processed_at, error, retry_count,
+        id, user_id, stripe_event_id, stripe_event_type,         payload, processed, processed_at, error, retry_count,
         idempotency_key, created_at
     `;
 
@@ -587,12 +587,12 @@ export class BillingRepository {
 
     const result = await db`
       SELECT
-        id, user_id, flowguard_event_id, flowguard_event_type,         payload, processed, processed_at, error, retry_count,
+        id, user_id, stripe_event_id, stripe_event_type,         payload, processed, processed_at, error, retry_count,
         idempotency_key, created_at
       FROM billing_events
       WHERE 1=1
         ${filters.userId ? db`AND user_id = ${filters.userId}` : db``}
-        ${filters.eventType ? db`AND flowguard_event_type = ${filters.eventType}` : db``}
+        ${filters.eventType ? db`AND stripe_event_type = ${filters.eventType}` : db``}
         ${filters.processed !== undefined ? db`AND processed = ${filters.processed}` : db``}
         ${filters.hasError !== undefined
           ? filters.hasError
@@ -620,7 +620,7 @@ export class BillingRepository {
     const db = this.getSql(tx);
     const result = await db`
       SELECT
-        id, user_id, flowguard_event_id, flowguard_event_type,         payload, processed, processed_at, error, retry_count,
+        id, user_id, stripe_event_id, stripe_event_type,         payload, processed, processed_at, error, retry_count,
         idempotency_key, created_at
       FROM billing_events
       WHERE processed = FALSE
@@ -639,7 +639,7 @@ export class BillingRepository {
     const db = this.getSql(tx);
     const result = await db`
       SELECT
-        id, user_id, flowguard_event_id, flowguard_event_type,         payload, processed, processed_at, error, retry_count,
+        id, user_id, stripe_event_id, stripe_event_type,         payload, processed, processed_at, error, retry_count,
         idempotency_key, created_at
       FROM billing_events
       WHERE error IS NOT NULL
@@ -659,8 +659,8 @@ export class BillingRepository {
     const result = await db`
       SELECT
         id, user_id, subscription_id, usage_type, quantity, unit,
-        period_start, period_end, flowguard_usage_record_id,
-        synced_to_flowguard, synced_at, source_session_id,
+        period_start, period_end, stripe_usage_record_id,
+        synced_to_stripe, synced_at, source_session_id,
         source_event_ids, metadata, created_at
       FROM usage_records
       WHERE id = ${id}
@@ -690,8 +690,8 @@ export class BillingRepository {
       )
       RETURNING
         id, user_id, subscription_id, usage_type, quantity, unit,
-        period_start, period_end, flowguard_usage_record_id,
-        synced_to_flowguard, synced_at, source_session_id,
+        period_start, period_end, stripe_usage_record_id,
+        synced_to_stripe, synced_at, source_session_id,
         source_event_ids, metadata, created_at
     `;
 
@@ -716,7 +716,7 @@ export class BillingRepository {
 
   async markUsageSynced(
     id: string,
-    flowguardUsageRecordId: string,
+    stripeUsageRecordId: string,
     tx?: TransactionContext
   ): Promise<UsageRecord> {
     const db = this.getSql(tx);
@@ -724,14 +724,14 @@ export class BillingRepository {
     const result = await db`
       UPDATE usage_records
       SET
-        flowguard_usage_record_id = ${flowguardUsageRecordId},
-        synced_to_flowguard = TRUE,
+        stripe_usage_record_id = ${stripeUsageRecordId},
+        synced_to_stripe = TRUE,
         synced_at = NOW()
       WHERE id = ${id}
       RETURNING
         id, user_id, subscription_id, usage_type, quantity, unit,
-        period_start, period_end, flowguard_usage_record_id,
-        synced_to_flowguard, synced_at, source_session_id,
+        period_start, period_end, stripe_usage_record_id,
+        synced_to_stripe, synced_at, source_session_id,
         source_event_ids, metadata, created_at
     `;
 
@@ -754,15 +754,15 @@ export class BillingRepository {
     const result = await db`
       SELECT
         id, user_id, subscription_id, usage_type, quantity, unit,
-        period_start, period_end, flowguard_usage_record_id,
-        synced_to_flowguard, synced_at, source_session_id,
+        period_start, period_end, stripe_usage_record_id,
+        synced_to_stripe, synced_at, source_session_id,
         source_event_ids, metadata, created_at
       FROM usage_records
       WHERE user_id = ${userId}
         ${filters.usageType ? db`AND usage_type = ${filters.usageType}` : db``}
         ${filters.periodStart ? db`AND period_start >= ${filters.periodStart}` : db``}
         ${filters.periodEnd ? db`AND period_end <= ${filters.periodEnd}` : db``}
-        ${filters.syncedToFlowguard !== undefined ? db`AND synced_to_flowguard = ${filters.syncedToFlowguard}` : db``}
+        ${filters.syncedToStripe !== undefined ? db`AND synced_to_stripe = ${filters.syncedToStripe}` : db``}
       ORDER BY created_at DESC
       LIMIT ${limit + 1}
       OFFSET ${offset}
@@ -779,11 +779,11 @@ export class BillingRepository {
     const result = await db`
       SELECT
         id, user_id, subscription_id, usage_type, quantity, unit,
-        period_start, period_end, flowguard_usage_record_id,
-        synced_to_flowguard, synced_at, source_session_id,
+        period_start, period_end, stripe_usage_record_id,
+        synced_to_stripe, synced_at, source_session_id,
         source_event_ids, metadata, created_at
       FROM usage_records
-      WHERE synced_to_flowguard = FALSE
+      WHERE synced_to_stripe = FALSE
       ORDER BY created_at ASC
       LIMIT ${limit}
     `;
@@ -843,9 +843,9 @@ export class BillingRepository {
     return {
       id: row.id as string,
       user_id: row.user_id as string,
-      flowguard_customer_id: row.flowguard_customer_id as string,
-      flowguard_subscription_id: row.flowguard_subscription_id as string,
-      flowguard_price_id: row.flowguard_price_id as string | null,
+      stripe_customer_id: row.stripe_customer_id as string,
+      stripe_subscription_id: row.stripe_subscription_id as string,
+      stripe_price_id: row.stripe_price_id as string | null,
       status: row.status as SubscriptionStatus,
       plan: row.plan as SubscriptionPlan,
       current_period_start: row.current_period_start as Date,
@@ -870,8 +870,8 @@ export class BillingRepository {
     return {
       id: row.id as string,
       user_id: (row.user_id as string) ?? null,
-      flowguard_event_id: row.flowguard_event_id as string,
-      flowguard_event_type: row.flowguard_event_type as string,
+      stripe_event_id: row.stripe_event_id as string,
+      stripe_event_type: row.stripe_event_type as string,
       payload: row.payload as JSONObject,
       processed: row.processed as boolean,
       processed_at: row.processed_at as Date | null,
@@ -890,8 +890,8 @@ export class BillingRepository {
       unit: row.unit as string,
       periodStart: row.period_start as Date,
       periodEnd: row.period_end as Date,
-      flowguardUsageRecordId: row.flowguard_usage_record_id as string | null,
-      syncedToFlowguard: row.synced_to_flowguard as boolean,
+      stripeUsageRecordId: row.stripe_usage_record_id as string | null,
+      syncedToStripe: row.synced_to_stripe as boolean,
       syncedAt: row.synced_at as Date | null,
       sourceSessionId: row.source_session_id as string | null,
       sourceEventIds: row.source_event_ids as string[],
