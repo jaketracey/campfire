@@ -371,7 +371,7 @@ export class AffiliatesService {
       plan_tier: planTier,
       commission_amount: commissionAmount,
       status: 'pending',
-      flowguard_transaction_id: flowguardTransactionId,
+      stripe_transaction_id: flowguardTransactionId,
     }, tx);
 
     logger.info(

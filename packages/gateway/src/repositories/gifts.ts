@@ -265,7 +265,7 @@ export class GiftsRepository {
     const result = await db`
       SELECT
         id, user_id, transaction_type, amount, balance_after,
-        flowguard_transaction_id, flowguard_session_id,
+        stripe_transaction_id, stripe_session_id,
         gift_id, subscription_id, description, metadata,
         idempotency_key, created_at
       FROM token_transactions
@@ -291,7 +291,7 @@ export class GiftsRepository {
     const result = await db`
       SELECT
         id, user_id, transaction_type, amount, balance_after,
-        flowguard_transaction_id, flowguard_session_id,
+        stripe_transaction_id, stripe_session_id,
         gift_id, subscription_id, description, metadata,
         idempotency_key, created_at
       FROM token_transactions
@@ -310,7 +310,7 @@ export class GiftsRepository {
     const result = await db`
       SELECT
         id, name, description, tokens, price_cents, currency,
-        flowguard_price_id, flowguard_product_id, is_active, display_order,
+        stripe_price_id, stripe_product_id, is_active, display_order,
         bonus_tokens, bonus_expires_at, created_at, updated_at
       FROM token_bundles
       WHERE is_active = TRUE
@@ -325,7 +325,7 @@ export class GiftsRepository {
     const result = await db`
       SELECT
         id, name, description, tokens, price_cents, currency,
-        flowguard_price_id, flowguard_product_id, is_active, display_order,
+        stripe_price_id, stripe_product_id, is_active, display_order,
         bonus_tokens, bonus_expires_at, created_at, updated_at
       FROM token_bundles
       WHERE id = ${id}
@@ -342,10 +342,10 @@ export class GiftsRepository {
     const result = await db`
       SELECT
         id, name, description, tokens, price_cents, currency,
-        flowguard_price_id, flowguard_product_id, is_active, display_order,
+        stripe_price_id, stripe_product_id, is_active, display_order,
         bonus_tokens, bonus_expires_at, created_at, updated_at
       FROM token_bundles
-      WHERE flowguard_price_id = ${flowguardPriceId}
+      WHERE stripe_price_id = ${flowguardPriceId}
     `;
 
     return result[0] ? this.mapTokenBundle(result[0]) : null;
@@ -358,7 +358,7 @@ export class GiftsRepository {
       const result = await db`
         INSERT INTO token_bundles (
           name, description, tokens, price_cents, currency,
-          flowguard_price_id, flowguard_product_id, is_active, display_order,
+          stripe_price_id, stripe_product_id, is_active, display_order,
           bonus_tokens, bonus_expires_at
         ) VALUES (
           ${data.name},
@@ -366,8 +366,8 @@ export class GiftsRepository {
           ${data.tokens},
           ${data.price_cents},
           ${data.currency ?? 'usd'},
-          ${data.flowguard_price_id ?? null},
-          ${data.flowguard_product_id ?? null},
+          ${data.stripe_price_id ?? null},
+          ${data.stripe_product_id ?? null},
           ${data.is_active ?? true},
           ${data.display_order ?? 0},
           ${data.bonus_tokens ?? 0},
@@ -375,7 +375,7 @@ export class GiftsRepository {
         )
         RETURNING
           id, name, description, tokens, price_cents, currency,
-          flowguard_price_id, flowguard_product_id, is_active, display_order,
+          stripe_price_id, stripe_product_id, is_active, display_order,
           bonus_tokens, bonus_expires_at, created_at, updated_at
       `;
 
@@ -384,7 +384,7 @@ export class GiftsRepository {
       return bundle;
     } catch (error) {
       if (isUniqueViolation(error)) {
-        throw new DuplicateError('TokenBundle', 'flowguard_price_id', data.flowguard_price_id ?? '');
+        throw new DuplicateError('TokenBundle', 'stripe_price_id', data.stripe_price_id ?? '');
       }
       throw wrapDatabaseError(error, 'gifts.createBundle');
     }
@@ -405,8 +405,8 @@ export class GiftsRepository {
         tokens = COALESCE(${data.tokens ?? null}, tokens),
         price_cents = COALESCE(${data.price_cents ?? null}, price_cents),
         currency = COALESCE(${data.currency ?? null}, currency),
-        flowguard_price_id = COALESCE(${data.flowguard_price_id ?? null}, flowguard_price_id),
-        flowguard_product_id = COALESCE(${data.flowguard_product_id ?? null}, flowguard_product_id),
+        stripe_price_id = COALESCE(${data.stripe_price_id ?? null}, stripe_price_id),
+        stripe_product_id = COALESCE(${data.stripe_product_id ?? null}, stripe_product_id),
         is_active = COALESCE(${data.is_active ?? null}, is_active),
         display_order = COALESCE(${data.display_order ?? null}, display_order),
         bonus_tokens = COALESCE(${data.bonus_tokens ?? null}, bonus_tokens),
@@ -414,7 +414,7 @@ export class GiftsRepository {
       WHERE id = ${id}
       RETURNING
         id, name, description, tokens, price_cents, currency,
-        flowguard_price_id, flowguard_product_id, is_active, display_order,
+        stripe_price_id, stripe_product_id, is_active, display_order,
         bonus_tokens, bonus_expires_at, created_at, updated_at
     `;
 
@@ -976,8 +976,8 @@ export class GiftsRepository {
       transaction_type: row.transaction_type as TokenTransactionType,
       amount: row.amount as number,
       balance_after: row.balance_after as number,
-      flowguard_transaction_id: row.flowguard_transaction_id as string | null,
-      flowguard_session_id: row.flowguard_session_id as string | null,
+      stripe_transaction_id: row.stripe_transaction_id as string | null,
+      stripe_session_id: row.stripe_session_id as string | null,
       gift_id: row.gift_id as string | null,
       subscription_id: row.subscription_id as string | null,
       description: row.description as string | null,
@@ -995,8 +995,8 @@ export class GiftsRepository {
       tokens: row.tokens as number,
       price_cents: row.price_cents as number,
       currency: row.currency as string,
-      flowguard_price_id: row.flowguard_price_id as string | null,
-      flowguard_product_id: row.flowguard_product_id as string | null,
+      stripe_price_id: row.stripe_price_id as string | null,
+      stripe_product_id: row.stripe_product_id as string | null,
       is_active: row.is_active as boolean,
       display_order: row.display_order as number,
       bonus_tokens: row.bonus_tokens as number,
