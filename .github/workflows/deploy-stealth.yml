@@ -176,7 +176,7 @@ jobs:
 
           echo "=== Pulling latest images ==="
           export ECR_REGISTRY=932630290000.dkr.ecr.us-east-1.amazonaws.com
-          docker compose -f docker-compose.stealth.yml --env-file /opt/campfire/.env.stealth pull gateway web workers orchestrator
+          docker compose -f docker-compose.stealth.yml --env-file /opt/campfire/.env.stealth pull gateway web workers orchestrator nginx
 
           echo "=== Starting infrastructure dependencies ==="
           docker compose -f docker-compose.stealth.yml --env-file /opt/campfire/.env.stealth up -d --no-deps postgres redis
@@ -213,14 +213,16 @@ jobs:
           for i in {1..45}; do
             if docker compose -f docker-compose.stealth.yml exec -T gateway sh -lc "wget -q --tries=1 --timeout=5 --spider http://localhost:4000/health" >/dev/null 2>&1 \
               && docker compose -f docker-compose.stealth.yml exec -T orchestrator sh -lc "wget -q --tries=1 --timeout=5 --spider http://localhost:5000/health" >/dev/null 2>&1 \
-              && docker compose -f docker-compose.stealth.yml exec -T web sh -lc "wget -q --tries=1 --timeout=5 --spider http://localhost:3000/api/health" >/dev/null 2>&1; then
+              && docker compose -f docker-compose.stealth.yml exec -T workers sh -lc "wget -q --tries=1 --timeout=5 --spider http://localhost:8080/health" >/dev/null 2>&1 \
+              && docker compose -f docker-compose.stealth.yml exec -T nginx sh -lc "wget -q --tries=1 --timeout=5 --no-check-certificate --spider https://127.0.0.1/nginx-health" >/dev/null 2>&1; then
               echo "All services responded to health checks."
               break
             fi
 
             echo "Waiting for service health checks... ($i/45)"
             if [ "$i" -eq 45 ]; then
-              echo "Services did not become healthy in time. Collecting logs..."
+              echo "Services did not become healthy in time. Collecting logs and service health..."
+              docker compose -f docker-compose.stealth.yml ps --all
               docker compose -f docker-compose.stealth.yml logs --no-color --tail 200 gateway orchestrator web workers redis postgres nginx || true
               exit 1
             fi
@@ -242,4 +244,4 @@ jobs:
         run: |
           sleep 10
           echo "Checking site..."
-          curl -sf https://ignite.cam/ -o /dev/null && echo "✓ Site is up" || echo "✗ Site check failed"
+          curl -sf https://ignite.cam/nginx-health -o /dev/null && echo "✓ Nginx health check is up" || echo "✗ Nginx health check failed"
