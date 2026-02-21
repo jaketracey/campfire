@@ -634,9 +634,9 @@ export interface KGEdgeInsert {
 export interface Subscription {
   id: UUID;
   user_id: UUID;
-  flowguard_customer_id: string;
-  flowguard_subscription_id: string;
-  flowguard_price_id: string | null;
+  stripe_customer_id: string;
+  stripe_subscription_id: string;
+  stripe_price_id: string | null;
   status: SubscriptionStatus;
   plan: SubscriptionPlan;
   current_period_start: Timestamp;
@@ -663,9 +663,9 @@ export type SubscriptionPlan = 'free' | 'starter' | 'pro' | 'enterprise';
 
 export interface SubscriptionInsert {
   user_id: UUID;
-  flowguard_customer_id: string;
-  flowguard_subscription_id: string;
-  flowguard_price_id?: string | null;
+  stripe_customer_id: string;
+  stripe_subscription_id: string;
+  stripe_price_id?: string | null;
   status: SubscriptionStatus;
   plan: SubscriptionPlan;
   current_period_start: Timestamp;
@@ -679,8 +679,8 @@ export interface SubscriptionInsert {
 export interface BillingEvent {
   id: UUID;
   user_id: UUID | null;
-  flowguard_event_id: string;
-  flowguard_event_type: string;
+  stripe_event_id: string;
+  stripe_event_type: string;
   payload: JSONObject;
   processed: boolean;
   processed_at: Timestamp | null;
@@ -690,8 +690,8 @@ export interface BillingEvent {
 
 export interface BillingEventInsert {
   user_id?: UUID | null;
-  flowguard_event_id: string;
-  flowguard_event_type: string;
+  stripe_event_id: string;
+  stripe_event_type: string;
   payload: JSONObject;
   processed?: boolean;
   error?: string | null;
@@ -777,8 +777,8 @@ export interface TokenTransaction {
   transaction_type: TokenTransactionType;
   amount: number;
   balance_after: number;
-  flowguard_transaction_id: string | null;
-  flowguard_session_id: string | null;
+  stripe_transaction_id: string | null;
+  stripe_session_id: string | null;
   gift_id: UUID | null;
   subscription_id: UUID | null;
   description: string | null;
@@ -792,8 +792,8 @@ export interface TokenTransactionInsert {
   transaction_type: TokenTransactionType;
   amount: number;
   balance_after: number;
-  flowguard_transaction_id?: string | null;
-  flowguard_session_id?: string | null;
+  stripe_transaction_id?: string | null;
+  stripe_session_id?: string | null;
   gift_id?: UUID | null;
   subscription_id?: UUID | null;
   description?: string | null;
@@ -808,8 +808,8 @@ export interface TokenBundle {
   tokens: number;
   price_cents: number;
   currency: string;
-  flowguard_price_id: string | null;
-  flowguard_product_id: string | null;
+  stripe_price_id: string | null;
+  stripe_product_id: string | null;
   is_active: boolean;
   display_order: number;
   bonus_tokens: number;
@@ -824,8 +824,8 @@ export interface TokenBundleInsert {
   tokens: number;
   price_cents: number;
   currency?: string;
-  flowguard_price_id?: string | null;
-  flowguard_product_id?: string | null;
+  stripe_price_id?: string | null;
+  stripe_product_id?: string | null;
   is_active?: boolean;
   display_order?: number;
   bonus_tokens?: number;
@@ -1409,7 +1409,7 @@ export interface AffiliateConversion {
   status: ConversionStatus;
   rejection_reason: string | null;
   paid_at: Timestamp | null;
-  flowguard_transaction_id: string | null;
+  stripe_transaction_id: string | null;
   created_at: Timestamp;
   updated_at: Timestamp;
 }
@@ -1422,7 +1422,7 @@ export interface AffiliateConversionInsert {
   plan_tier: PlanTier;
   commission_amount: number;
   status?: ConversionStatus;
-  flowguard_transaction_id?: string | null;
+  stripe_transaction_id?: string | null;
 }
 
 export interface AffiliateConversionUpdate {
