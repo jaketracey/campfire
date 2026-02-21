@@ -166,6 +166,11 @@ jobs:
           set -e
           cd /opt/campfire/infra/docker
 
+          echo "=== Removing stale named containers ==="
+          for container in campfire-gateway campfire-web campfire-orchestrator campfire-workers; do
+            docker rm -f "$container" 2>/dev/null || true
+          done
+
           echo "=== Logging into ECR ==="
           aws ecr get-login-password --region us-east-1 | docker login --username AWS --password-stdin 932630290000.dkr.ecr.us-east-1.amazonaws.com
 
