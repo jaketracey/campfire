@@ -16,7 +16,14 @@ import {
 import { IgnitingFlame } from '@/components/ui/igniting-flame';
 import Image from 'next/image';
 import Link from 'next/link';
-import { createCompanion, createSession, generateBackstory, generateRandomIdentity, type GenerateBackstoryResult } from '@/lib/api';
+import {
+  activateCompanion,
+  createCompanion,
+  createSession,
+  generateBackstory,
+  generateRandomIdentity,
+  type GenerateBackstoryResult,
+} from '@/lib/api';
 import { streamAnchorImages, type AnchorImage } from '@/lib/api/imagegen';
 import { useToast } from '@/hooks/use-toast';
 import { useAuth } from '@/hooks/use-auth';
@@ -123,6 +130,71 @@ interface QuickStartProps {
 }
 
 type RevealPhase = 'loading' | 'images' | 'ready';
+
+const QUICK_START_PENDING_KEY = 'pendingQuickStart';
+const QUICK_START_PENDING_TTL_MS = 15 * 60 * 1000;
+const QUICK_START_PENDING_VERSION = 1;
+
+interface PendingQuickStartPayload {
+  version: number;
+  createdAt: number;
+  expiresAt: number;
+  name: string;
+  companion: GeneratedCompanionData;
+}
+
+function isPendingQuickStartPayload(value: unknown): value is PendingQuickStartPayload {
+  if (!value || typeof value !== 'object') return false;
+
+  const candidate = value as {
+    version?: unknown;
+    createdAt?: unknown;
+    expiresAt?: unknown;
+    name?: unknown;
+    companion?: unknown;
+  };
+
+  return (
+    typeof candidate.version === 'number' &&
+    typeof candidate.createdAt === 'number' &&
+    typeof candidate.expiresAt === 'number' &&
+    candidate.version <= QUICK_START_PENDING_VERSION &&
+    typeof candidate.name === 'string' &&
+    Boolean(candidate.name.trim()) &&
+    typeof candidate.companion === 'object' &&
+    candidate.companion !== null
+  );
+}
+
+function isPendingQuickStartFresh(payload: PendingQuickStartPayload, now = Date.now()): boolean {
+  return payload.expiresAt > now && payload.createdAt <= now;
+}
+
+function getPendingQuickStartPayload(): PendingQuickStartPayload | null {
+  const raw = sessionStorage.getItem(QUICK_START_PENDING_KEY);
+  if (!raw) return null;
+
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    return null;
+  }
+
+  if (!isPendingQuickStartPayload(parsed)) return null;
+  return parsed;
+}
+
+function buildPendingQuickStartPayload(name: string, companion: GeneratedCompanionData): PendingQuickStartPayload {
+  const now = Date.now();
+  return {
+    version: QUICK_START_PENDING_VERSION,
+    createdAt: now,
+    expiresAt: now + QUICK_START_PENDING_TTL_MS,
+    name,
+    companion,
+  };
+}
 
 // Generate random companion data locally (for unauthenticated users)
 function generateLocalRandomCompanion(): GeneratedCompanionData {
@@ -450,6 +522,9 @@ export function QuickStart({ onBack }: QuickStartProps) {
     await firstAnchorPromise;
     console.log('[QuickStart] First anchor received, creating session...');
 
+    console.log('[QuickStart] Activating companion before session creation...');
+    await activateCompanion(companion.id);
+
     // Create a session
     const session = await createSession({
       companionId: companion.id,
@@ -469,14 +544,24 @@ export function QuickStart({ onBack }: QuickStartProps) {
   useEffect(() => {
     if (hasRestoredPendingRef.current || !isAuthenticated) return;
 
-    const pendingRaw = sessionStorage.getItem('pendingQuickStart');
-    if (!pendingRaw) return;
+    const payload = getPendingQuickStartPayload();
+    if (!payload) {
+      sessionStorage.removeItem(QUICK_START_PENDING_KEY);
+      hasRestoredPendingRef.current = true;
+      return;
+    }
+
+    if (!isPendingQuickStartFresh(payload)) {
+      sessionStorage.removeItem(QUICK_START_PENDING_KEY);
+      hasRestoredPendingRef.current = true;
+      return;
+    }
 
     hasRestoredPendingRef.current = true;
-    sessionStorage.removeItem('pendingQuickStart');
+    sessionStorage.removeItem(QUICK_START_PENDING_KEY);
 
     try {
-      const parsed = JSON.parse(pendingRaw) as { name?: string; companion?: GeneratedCompanionData };
+      const parsed = payload;
       if (!parsed.name || !parsed.companion) return;
 
       setValue('name', parsed.name, { shouldValidate: true });
@@ -721,10 +806,8 @@ export function QuickStart({ onBack }: QuickStartProps) {
     if (!isAuthenticated) {
       // Store companion data for after signup and redirect to signup
       if (generatedCompanion && companionName) {
-        sessionStorage.setItem('pendingQuickStart', JSON.stringify({
-          name: companionName,
-          companion: generatedCompanion,
-        }));
+        const payload = buildPendingQuickStartPayload(companionName, generatedCompanion);
+        sessionStorage.setItem(QUICK_START_PENDING_KEY, JSON.stringify(payload));
       }
       const returnTo = pathname || '/onboard';
       router.push(`/signup?returnTo=${encodeURIComponent(returnTo)}`);
