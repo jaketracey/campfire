@@ -926,6 +926,13 @@ export function useChatSession({
     }
   }, [wsConnected]);
 
+  // Re-focus input when companion message completes (pulse trigger fires)
+  useEffect(() => {
+    if (messageReceivedPulseTrigger > 0 && inputRef.current) {
+      inputRef.current.focus();
+    }
+  }, [messageReceivedPulseTrigger]);
+
   // Mark pulse as shown once user starts typing
   useEffect(() => {
     if (input.length > 0 && !hasShownPulse) {

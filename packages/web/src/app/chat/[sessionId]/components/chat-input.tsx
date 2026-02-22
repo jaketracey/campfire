@@ -1,6 +1,7 @@
 'use client';
 
-import { motion } from 'framer-motion';
+import { motion, useAnimationControls } from 'framer-motion';
+import { useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card } from '@/components/ui/card';
@@ -51,6 +52,22 @@ export function ChatInput({
   inputRef,
   inputContainerRef,
 }: ChatInputProps) {
+  const controls = useAnimationControls();
+
+  useEffect(() => {
+    if (messageReceivedPulseTrigger > 0) {
+      controls.start({
+        boxShadow: [
+          '0 0 0 0 rgba(39, 35, 34, 0)',
+          '0 0 0 5px rgba(39, 35, 34, 0.9)',
+          '0 0 0 5px rgba(39, 35, 34, 0.6)',
+          '0 0 0 0 rgba(39, 35, 34, 0)',
+        ],
+        transition: { duration: 0.8, ease: 'easeOut' },
+      });
+    }
+  }, [messageReceivedPulseTrigger, controls]);
+
   return (
     <div ref={inputContainerRef} className="py-4 px-0 lg:px-4 bg-background z-40">
       {/* Live transcription display */}
@@ -82,18 +99,8 @@ export function ChatInput({
 
       <div className="flex gap-2 w-full lg:max-w-4xl lg:mx-auto">
         <motion.div
-          key={messageReceivedPulseTrigger}
           className="flex-1 min-w-0 rounded-xl"
-          initial={messageReceivedPulseTrigger > 0 ? { boxShadow: '0 0 0 0 rgba(39, 35, 34, 0)' } : false}
-          animate={messageReceivedPulseTrigger > 0 ? {
-            boxShadow: [
-              '0 0 0 0 rgba(39, 35, 34, 0)',
-              '0 0 0 5px rgba(39, 35, 34, 0.9)',
-              '0 0 0 5px rgba(39, 35, 34, 0.6)',
-              '0 0 0 0 rgba(39, 35, 34, 0)',
-            ],
-          } : undefined}
-          transition={{ duration: 0.8, ease: 'easeOut' }}
+          animate={controls}
         >
           <Input
             ref={inputRef}
