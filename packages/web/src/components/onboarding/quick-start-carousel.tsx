@@ -1,15 +1,15 @@
 'use client';
 
 import { useCallback, useEffect } from 'react';
-import { useSearchParams, useRouter } from 'next/navigation';
+import { usePathname, useSearchParams, useRouter } from 'next/navigation';
 import { motion, AnimatePresence } from 'framer-motion';
 import { IdentityDisplay } from './quick-start/identity-display';
 import { VisualsDisplay } from './quick-start/visuals-display';
 import { ArchetypeDisplay } from './quick-start/archetype-display';
 import { VoiceDisplay } from './quick-start/voice-display';
 import { useOnboardingStore } from '@/stores/onboarding-store';
-import type { AppearanceEthnicity, AppearanceBodyType, AppearanceHairColor, SizeCategory, CompanionGender } from '@/stores/onboarding-store';
 import type { CompanionAppearance } from '@/lib/api/companions';
+import { quickStepToIndex } from '@/components/onboarding/onboarding-flow';
 
 type CarouselSection = 'identity' | 'visuals' | 'archetype' | 'voice';
 
@@ -134,12 +134,12 @@ export function QuickStartCarousel({
 }: QuickStartCarouselProps) {
   const searchParams = useSearchParams();
   const router = useRouter();
+  const pathname = usePathname();
   const { setQuickStartStep } = useOnboardingStore();
 
   // Derive current section from URL - URL is the source of truth
   const qsParam = searchParams.get('qs');
-  const qsIndex = qsParam ? parseInt(qsParam, 10) : 0;
-  const currentIndex = (!isNaN(qsIndex) && qsIndex >= 0 && qsIndex < SECTIONS.length) ? qsIndex : 0;
+  const currentIndex = quickStepToIndex(qsParam ? parseInt(qsParam, 10) : 0);
   const currentSection = SECTIONS[currentIndex];
 
   const backstory = generateBackstorySnippet(generatedData.primaryArchetype.id);
@@ -151,12 +151,15 @@ export function QuickStartCarousel({
 
   // Ensure URL has qs param on mount (for initial state)
   useEffect(() => {
-    if (qsParam === null) {
+    const parsed = qsParam !== null ? parseInt(qsParam, 10) : 0;
+    const normalized = quickStepToIndex(parsed);
+
+    if (qsParam === null || Number.isNaN(parsed) || normalized !== parsed) {
       const newParams = new URLSearchParams(searchParams.toString());
-      newParams.set('qs', '0');
-      router.replace(`/onboard?${newParams.toString()}`, { scroll: false });
+      newParams.set('qs', normalized.toString());
+      router.replace(`${pathname}?${newParams.toString()}` as string, { scroll: false });
     }
-  }, [qsParam, searchParams, router]);
+  }, [pathname, qsParam, searchParams, router]);
 
   // Handle section completion - advance to next step via URL
   const handleSectionComplete = useCallback(() => {
@@ -164,16 +167,16 @@ export function QuickStartCarousel({
     if (nextIndex < SECTIONS.length) {
       const newParams = new URLSearchParams(searchParams.toString());
       newParams.set('qs', nextIndex.toString());
-      router.push(`/onboard?${newParams.toString()}`, { scroll: false });
+      router.push(`${pathname}?${newParams.toString()}` as string, { scroll: false });
     } else {
       // Clean up qs param when completing carousel
       const newParams = new URLSearchParams(searchParams.toString());
       newParams.delete('qs');
       const queryString = newParams.toString();
-      router.replace(queryString ? `/onboard?${queryString}` : '/onboard', { scroll: false });
+      router.replace((queryString ? `${pathname}?${queryString}` : pathname) as string, { scroll: false });
       onComplete();
     }
-  }, [currentIndex, onComplete, searchParams, router]);
+  }, [currentIndex, onComplete, pathname, searchParams, router]);
 
   const renderSection = () => {
     switch (currentSection) {
