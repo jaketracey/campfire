@@ -157,7 +157,8 @@ export function QuickStartCarousel({
     if (qsParam === null || Number.isNaN(parsed) || normalized !== parsed) {
       const newParams = new URLSearchParams(searchParams.toString());
       newParams.set('qs', normalized.toString());
-      router.replace(`${pathname}?${newParams.toString()}` as string, { scroll: false });
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      router.replace(`${pathname}?${newParams.toString()}` as any, { scroll: false });
     }
   }, [pathname, qsParam, searchParams, router]);
 
@@ -167,13 +168,15 @@ export function QuickStartCarousel({
     if (nextIndex < SECTIONS.length) {
       const newParams = new URLSearchParams(searchParams.toString());
       newParams.set('qs', nextIndex.toString());
-      router.push(`${pathname}?${newParams.toString()}` as string, { scroll: false });
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      router.push(`${pathname}?${newParams.toString()}` as any, { scroll: false });
     } else {
       // Clean up qs param when completing carousel
       const newParams = new URLSearchParams(searchParams.toString());
       newParams.delete('qs');
       const queryString = newParams.toString();
-      router.replace((queryString ? `${pathname}?${queryString}` : pathname) as string, { scroll: false });
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      router.replace((queryString ? `${pathname}?${queryString}` : pathname) as any, { scroll: false });
       onComplete();
     }
   }, [currentIndex, onComplete, pathname, searchParams, router]);
