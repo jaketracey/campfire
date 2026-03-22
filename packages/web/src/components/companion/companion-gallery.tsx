@@ -79,6 +79,23 @@ export function CompanionGallery({ sessionId, isOpen, onClose }: CompanionGaller
     }
   }
 
+  // Preload adjacent lightbox images for instant navigation
+  useEffect(() => {
+    if (selectedIndex === null || images.length === 0) return;
+    const adjacentIndices = [selectedIndex - 1, selectedIndex + 1].filter(
+      (i) => i >= 0 && i < images.length
+    );
+    for (const idx of adjacentIndices) {
+      const url =
+        selectRenditionUrl(images[idx]!.renditions, { displayWidth: 800 }) ??
+        images[idx]!.s3_url;
+      if (url) {
+        const img = new Image();
+        img.src = url;
+      }
+    }
+  }, [selectedIndex, images]);
+
   if (!isOpen) return null;
 
   return (
@@ -141,6 +158,8 @@ export function CompanionGallery({ sessionId, isOpen, onClose }: CompanionGaller
                   <img
                     src={selectRenditionUrl(image.renditions, { displayWidth: 200 }) ?? image.s3_url}
                     alt={`Companion - ${image.emotional_state}`}
+                    loading="lazy"
+                    decoding="async"
                     className="h-full w-full object-cover transition-transform group-hover:scale-105"
                   />
                 </div>

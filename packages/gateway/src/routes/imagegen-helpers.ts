@@ -4,6 +4,7 @@
  */
 
 import { createHash } from 'crypto';
+import sharp from 'sharp';
 import { PutObjectCommand } from '@aws-sdk/client-s3';
 import { logger } from '../observability/logger.js';
 import { db } from '../db/index.js';
@@ -19,6 +20,53 @@ import { getS3Client, getMediaBucket, buildMediaUrl } from '../utils/storage.js'
 
 // Orchestrator configuration
 export const ORCHESTRATOR_URL = env.ORCHESTRATOR_URL;
+
+/**
+ * Comprehensive negative prompt for photorealistic image generation.
+ * Covers AI artifacts, unrealistic skin, bad anatomy, and stylistic pitfalls.
+ * Used as the default for all companion image generation endpoints.
+ */
+export const REALISTIC_NEGATIVE_PROMPT = [
+  // Anatomical errors
+  'bad anatomy', 'bad hands', 'bad fingers', 'extra fingers', 'fewer fingers',
+  'extra limbs', 'missing limbs', 'floating limbs', 'disconnected limbs',
+  'mutation', 'mutated', 'deformed', 'disfigured', 'malformed face',
+  'cross-eyed', 'asymmetric eyes', 'wrong proportions',
+  // AI skin artifacts
+  'plastic skin', 'waxy skin', 'airbrushed skin', 'poreless skin',
+  'uncanny valley', 'mannequin', 'wax figure', 'doll-like',
+  // Over-processing & filters
+  'oversaturated', 'HDR look', 'beauty filter', 'snapchat filter',
+  'overprocessed', 'oversharpened', 'oversmoothed',
+  // Quality issues
+  'low quality', 'worst quality', 'blurry', 'pixelated', 'grainy',
+  'low resolution', 'artifacts', 'noise', 'jpeg artifacts',
+  'overexposed', 'underexposed', 'bad lighting',
+  // Style contamination
+  'cartoon', 'anime', '3d render', 'illustration', 'painting',
+  'sketch', 'drawing', 'digital art', 'cgi',
+  // Unwanted overlays
+  'watermark', 'text', 'signature', 'logo', 'border', 'frame',
+  // Studio / stock look
+  'stock photo', 'glamour shot', 'fashion editorial',
+  'overly posed', 'stiff pose', 'awkward pose',
+].join(', ');
+
+/**
+ * Quality suffix appended to prompts for realistic-style companion images.
+ * Emphasizes natural skin texture, authentic lighting, and casual photography
+ * aesthetics -- the opposite of airbrushed perfection.
+ */
+export const REALISTIC_QUALITY_SUFFIX = [
+  'natural skin texture with visible pores',
+  'authentic lighting',
+  'shot on smartphone',
+  'candid moment',
+  'no retouching',
+  'natural imperfections',
+  'real person',
+  'casual photography',
+].join(', ');
 
 // S3 configuration - use shared client
 export const S3_MEDIA_BUCKET = getMediaBucket();
@@ -102,8 +150,43 @@ export interface ImageGenResult {
 }
 
 // In-memory cache for generated images (in production, use Redis)
+// Bounded to prevent unbounded memory growth; evicts oldest entries when full.
+const IMAGE_CACHE_MAX_SIZE = 500;
 export const imageCache = new Map<string, { url: string; timestamp: number }>();
 export const CACHE_TTL_MS = 1000 * 60 * 60 * 24; // 24 hours
+
+/**
+ * Set a value in the image cache with bounded size.
+ * Evicts expired entries first, then oldest entries if still over capacity.
+ * Refuses to cache data: URLs to avoid storing multi-MB base64 strings in memory.
+ */
+export function imageCacheSet(key: string, url: string): void {
+  // Never cache data: URLs - they can be several MB and defeat the purpose
+  if (url.startsWith('data:')) return;
+
+  imageCache.set(key, { url, timestamp: Date.now() });
+
+  // Evict if over capacity
+  if (imageCache.size > IMAGE_CACHE_MAX_SIZE) {
+    const now = Date.now();
+    // First pass: remove expired entries
+    for (const [k, v] of imageCache) {
+      if (now - v.timestamp > CACHE_TTL_MS) {
+        imageCache.delete(k);
+      }
+    }
+    // Second pass: if still over, remove oldest entries
+    if (imageCache.size > IMAGE_CACHE_MAX_SIZE) {
+      const entriesToRemove = imageCache.size - IMAGE_CACHE_MAX_SIZE;
+      let removed = 0;
+      for (const k of imageCache.keys()) {
+        if (removed >= entriesToRemove) break;
+        imageCache.delete(k);
+        removed++;
+      }
+    }
+  }
+}
 
 /**
  * Maps emotional states to anchor types for emotion-matched reference selection.
@@ -278,18 +361,140 @@ export function generateCacheKey(params: ImageGenRequest): string {
 }
 
 /**
+ * Phrases that signal overly polished / studio-style imagery.
+ * We strip these from the LLM-generated prompt so the downstream
+ * quality suffix can steer toward a phone-camera aesthetic instead.
+ */
+const STUDIO_PHRASES_RE = new RegExp(
+  [
+    '8[kK]\\s*resolution',
+    'photorealistic',
+    'photo[- ]?realistic',
+    'flawless skin',
+    'perfect skin',
+    'studio lighting',
+    'studio portrait',
+    'professional photography',
+    'professional portrait',
+    'shallow depth of field',
+    'bokeh',
+    'shot on 85mm lens',
+    '85mm lens',
+    'DSLR',
+    'high resolution',
+    'hyper[- ]?realistic',
+    'ultra[- ]?realistic',
+    'magazine quality',
+    'fashion photography',
+    'beauty shot',
+  ].join('|'),
+  'gi',
+);
+
+/**
  * Build the full prompt for image generation.
  *
- * Since the companion LLM now provides full imagePrompt with scene, mood, style,
- * and expression details, we use that directly. IP-Adapter preserves identity
- * from the anchor image, so the companion has full creative control.
+ * The companion LLM provides the creative scene description via imagePrompt.
+ * This function:
+ *  1. Strips studio/glamour photography language the LLM may inject
+ *  2. Appends a phone-camera quality suffix so the final image looks like
+ *     a candid smartphone photo rather than a studio portrait
  *
- * Only add minimal quality suffix for best results.
+ * For realistic-style images, the shared REALISTIC_QUALITY_SUFFIX is appended.
+ * Identity is preserved by IP-Adapter from the anchor image, so we only
+ * need to control the *aesthetic* here.
  */
 export function buildPrompt(params: ImageGenRequest): string {
-  // The prompt from companion already contains the full scene description
-  // Note: "high quality, detailed" is added by the orchestrator, don't duplicate here
-  return params.prompt;
+  // Strip studio-photography language the LLM may have included
+  let prompt = params.prompt
+    .replace(STUDIO_PHRASES_RE, '')
+    // Collapse any leftover double-commas / extra whitespace from removals
+    .replace(/,\s*,/g, ',')
+    .replace(/\.\s*\./g, '.')
+    .replace(/\s{2,}/g, ' ')
+    .trim();
+
+  // Remove trailing comma left after stripping
+  if (prompt.endsWith(',')) {
+    prompt = prompt.slice(0, -1).trim();
+  }
+
+  // For realistic / stylized styles, append the shared quality suffix.
+  // Other styles (anime, abstract, minimal) skip the realism treatment.
+  const style = params.style || 'realistic';
+  if (style === 'realistic' || style === 'stylized') {
+    return `${prompt}. ${REALISTIC_QUALITY_SUFFIX}`;
+  }
+
+  return prompt;
+}
+
+/**
+ * Lightweight validation for generated images.
+ * Checks dimensions, brightness, and file size to catch obviously bad generations.
+ * Designed to run in < 50ms using sharp's stats() which operates on raw pixel data.
+ */
+export async function validateGeneratedImage(
+  imageBuffer: Buffer,
+  expectedWidth: number,
+  expectedHeight: number
+): Promise<{ valid: boolean; reason?: string }> {
+  const MIN_FILE_SIZE_BYTES = 5 * 1024; // 5KB - smaller likely means an error placeholder
+  const MIN_BRIGHTNESS = 5;   // < 5% average brightness = mostly black
+  const MAX_BRIGHTNESS = 95;  // > 95% average brightness = mostly white/blown out
+
+  // Check file size first (cheapest check)
+  if (imageBuffer.length < MIN_FILE_SIZE_BYTES) {
+    return {
+      valid: false,
+      reason: `File size too small: ${imageBuffer.length} bytes (min ${MIN_FILE_SIZE_BYTES})`,
+    };
+  }
+
+  try {
+    const image = sharp(imageBuffer);
+    const metadata = await image.metadata();
+
+    // Check dimensions match expected (allow some tolerance for rounding)
+    const actualWidth = metadata.width || 0;
+    const actualHeight = metadata.height || 0;
+    const widthDiff = Math.abs(actualWidth - expectedWidth);
+    const heightDiff = Math.abs(actualHeight - expectedHeight);
+
+    if (widthDiff > 2 || heightDiff > 2) {
+      return {
+        valid: false,
+        reason: `Dimension mismatch: got ${actualWidth}x${actualHeight}, expected ${expectedWidth}x${expectedHeight}`,
+      };
+    }
+
+    // Check brightness using sharp stats (mean of all channels)
+    const stats = await image.stats();
+    // Average the mean brightness across all channels, normalize to 0-100
+    const channelMeans = stats.channels.map(c => c.mean);
+    const avgBrightness = (channelMeans.reduce((sum, m) => sum + m, 0) / channelMeans.length) / 2.55;
+
+    if (avgBrightness < MIN_BRIGHTNESS) {
+      return {
+        valid: false,
+        reason: `Image too dark: average brightness ${avgBrightness.toFixed(1)}% (min ${MIN_BRIGHTNESS}%)`,
+      };
+    }
+
+    if (avgBrightness > MAX_BRIGHTNESS) {
+      return {
+        valid: false,
+        reason: `Image too bright: average brightness ${avgBrightness.toFixed(1)}% (max ${MAX_BRIGHTNESS}%)`,
+      };
+    }
+
+    return { valid: true };
+  } catch (error) {
+    return {
+      valid: false,
+      reason: `Failed to analyze image: ${error instanceof Error ? error.message : 'unknown error'}`,
+    };
+  }
 }
 
 export function shouldRequireNsfwRouting(prompt: string, contentRating: string | undefined): boolean {
@@ -348,10 +553,15 @@ export async function generateWithOrchestrator(
   loras?: Array<{ path: string; scale: number }>,
   loraTriggerWord?: string,
   seed?: number,
+  negativePrompt?: string,
 ): Promise<{ imageBuffer: Buffer; latencyMs: number; provider: string; modelId: string; format: string }> {
   const url = `${ORCHESTRATOR_URL}/imagegen/generate`;
 
-  logger.info({ url, prompt: prompt.slice(0, 100), emotionalState, style, hasReference: !!referenceImageUrl, isAnchor }, 'Calling orchestrator for image generation');
+  // Default to REALISTIC_NEGATIVE_PROMPT for realistic/stylized styles
+  const effectiveNegative = negativePrompt ??
+    ((style === 'realistic' || style === 'stylized') ? REALISTIC_NEGATIVE_PROMPT : undefined);
+
+  logger.info({ url, prompt: prompt.slice(0, 100), emotionalState, style, hasReference: !!referenceImageUrl, isAnchor, hasNegativePrompt: !!effectiveNegative }, 'Calling orchestrator for image generation');
 
   const response = await fetch(url, {
     method: 'POST',
@@ -362,6 +572,7 @@ export async function generateWithOrchestrator(
       prompt,
       emotional_state: emotionalState,
       style,
+      negative_prompt: effectiveNegative,
       width,
       height,
       reference_image_url: referenceImageUrl,

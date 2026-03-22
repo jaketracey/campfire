@@ -20,12 +20,14 @@ import {
   type GenerateAnchorsResult,
   type ImageGenResult,
   imageCache,
+  imageCacheSet,
   CACHE_TTL_MS,
   S3_MEDIA_BUCKET,
   s3Client,
   getCompanionIdentityAnchorUrl,
   generateCacheKey,
   buildPrompt,
+  validateGeneratedImage,
   shouldRequireNsfwRouting,
   generateWithOrchestrator,
   downloadImage,
@@ -360,8 +362,8 @@ export async function imagegenRoutes(app: FastifyInstance): Promise<void> {
       }
 
       try {
-        // Build the full prompt
-        const fullPrompt = buildPrompt(params);
+        // Build the full prompt (pass resolved style so quality suffix matches)
+        const fullPrompt = buildPrompt({ ...params, style });
         const requireNsfw = shouldRequireNsfwRouting(fullPrompt, companionContentRating);
 
         logger.info({
@@ -380,7 +382,7 @@ export async function imagegenRoutes(app: FastifyInstance): Promise<void> {
 
         // Generate with orchestrator (uses ComfyUI or FAL)
         // If referenceImageUrl is provided, ComfyUI will use IP-Adapter for consistency
-        const { imageBuffer, latencyMs, provider, modelId, format } = await generateWithOrchestrator(
+        let orchestratorResult = await generateWithOrchestrator(
           fullPrompt,
           emotionalState,
           style,
@@ -395,6 +397,45 @@ export async function imagegenRoutes(app: FastifyInstance): Promise<void> {
           loraTriggerWord,
           params.seed
         );
+
+        // Validate image quality - retry once on failure
+        const validation = await validateGeneratedImage(orchestratorResult.imageBuffer, width, height);
+        if (!validation.valid) {
+          logger.warn({
+            reason: validation.reason,
+            companionId: params.companionId,
+            cacheKey,
+            width,
+            height,
+          }, 'Image quality validation failed, retrying once');
+
+          orchestratorResult = await generateWithOrchestrator(
+            fullPrompt,
+            emotionalState,
+            style,
+            width,
+            height,
+            referenceImageUrl,
+            params.referenceStrength,
+            false,
+            params.companionId,
+            requireNsfw,
+            loras,
+            loraTriggerWord,
+            params.seed
+          );
+
+          const retryValidation = await validateGeneratedImage(orchestratorResult.imageBuffer, width, height);
+          if (!retryValidation.valid) {
+            logger.warn({
+              reason: retryValidation.reason,
+              companionId: params.companionId,
+              cacheKey,
+            }, 'Image quality validation failed on retry, proceeding anyway');
+          }
+        }
+
+        const { imageBuffer, latencyMs, provider, modelId, format } = orchestratorResult;
 
         let finalUrl: string;
         let s3Key: string | undefined;
@@ -476,8 +517,8 @@ export async function imagegenRoutes(app: FastifyInstance): Promise<void> {
           finalUrl = `data:image/${format};base64,${imageBuffer.toString('base64')}`;
         }
 
-        // Cache the result
-        imageCache.set(cacheKey, { url: finalUrl, timestamp: Date.now() });
+        // Cache the result (bounded, skips data: URLs)
+        imageCacheSet(cacheKey, finalUrl);
 
         logger.info({ cacheKey, latencyMs, s3Key, provider }, 'Image generated successfully');
 
@@ -653,7 +694,18 @@ export async function imagegenRoutes(app: FastifyInstance): Promise<void> {
           }, 'Processing generated anchor');
 
           // Download image from FAL URL
-          const imageBuffer = await downloadImage(anchor.image_url);
+          let imageBuffer = await downloadImage(anchor.image_url);
+
+          // Validate anchor image quality - retry once on failure
+          const anchorValidation = await validateGeneratedImage(imageBuffer, anchor.width, anchor.height);
+          if (!anchorValidation.valid) {
+            logger.warn({
+              reason: anchorValidation.reason,
+              companionId,
+              emotionalState,
+              index: i,
+            }, 'Anchor image quality validation failed, proceeding with image');
+          }
 
           // Upload to S3 under anchors path
           const cacheKey = `anchor-${emotionalState}-${Date.now()}`;

@@ -213,10 +213,10 @@ export function getBasePrompt(style: ImageGenRequest['style'], isMale = false): 
   const subject = isMale ? 'Handsome man' : 'Beautiful woman';
 
   const basePrompts: Record<string, string> = {
-    realistic: `Portrait photography of a ${subject.toLowerCase()}, natural expression, soft diffused lighting, shallow depth of field, shot on 85mm lens, high resolution`,
-    stylized: `${subject}, portrait photography, warm natural lighting, shallow depth of field, photorealistic style`,
-    abstract: `Artistic portrait of a ${subject.toLowerCase()}, creative lighting, contemporary photography style`,
-    minimal: `Clean portrait of a ${subject.toLowerCase()}, minimalist composition, soft natural light, professional photography`,
+    realistic: `Casual phone photo of a ${subject.toLowerCase()}, natural expression, natural ambient lighting, everything in focus, candid authentic moment, smartphone quality`,
+    stylized: `${subject}, candid photo, warm natural lighting, everything in focus, authentic and unposed`,
+    abstract: `Artistic portrait of a ${subject.toLowerCase()}, creative natural lighting, contemporary photography style`,
+    minimal: `Clean candid photo of a ${subject.toLowerCase()}, minimalist composition, soft natural light, taken on a phone`,
     anime: `${subject}, anime art style, expressive features, detailed illustration`,
   };
 
@@ -320,11 +320,12 @@ export function buildPromptFromCompanion(
   const subjectDesc = subjectParts.join(', ');
 
   // Photography and technical terms based on style
+  // Uses phone-camera aesthetic to match the anchor generation pipeline
   const photoTerms: Record<string, string> = {
-    realistic: 'portrait photography, natural relaxed expression, soft diffused studio lighting, shallow depth of field, shot on 85mm lens, photorealistic, high resolution',
-    stylized: 'portrait photography, warm natural lighting, shallow depth of field, cinematic style, photorealistic',
-    abstract: 'artistic portrait, creative studio lighting, contemporary photography, high detail',
-    minimal: 'clean portrait, minimalist composition, soft natural light, professional photography, high resolution',
+    realistic: 'casual phone photo, natural relaxed expression, natural ambient lighting, everything in focus, deep depth of field, candid authentic moment, not retouched, smartphone quality',
+    stylized: 'phone photo, warm natural lighting, everything in focus, candid moment, authentic and not overly polished',
+    abstract: 'artistic portrait, creative natural lighting, contemporary photography, authentic feel',
+    minimal: 'clean candid photo, minimalist composition, soft natural light, taken on a phone, not retouched',
     anime: 'anime art style, detailed illustration, expressive features, high quality artwork',
   };
 

@@ -136,6 +136,8 @@ export function CompanionCardImage({ images, fallbackImage, avatarRenditions, av
         <img
           src={displayImage}
           alt={alt}
+          loading="lazy"
+          decoding="async"
           onLoad={() => setIsLoaded(true)}
           onError={() => setHasError(true)}
           className={`w-full h-full object-cover object-top transition-all duration-500 ${

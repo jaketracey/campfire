@@ -30,13 +30,13 @@ export type RenditionFormat = (typeof RENDITION_FORMATS)[number];
 
 /**
  * Quality settings for each format
- * - WebP: 82 (balanced quality/size for portraits)
- * - AVIF: 75 (higher compression, maintains detail)
+ * - WebP: 82 (balanced quality/size for photorealistic portraits)
+ * - AVIF: 80 (was 75, bumped to reduce softness on facial detail)
  * - PNG: lossless (archive only)
  */
 export const FORMAT_QUALITY: Record<RenditionFormat, number | undefined> = {
   webp: 82,
-  avif: 75,
+  avif: 80,
   png: undefined, // lossless
 };
 

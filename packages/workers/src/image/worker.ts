@@ -130,8 +130,22 @@ export class ImageRenditionWorker {
 
     // Download original image from S3
     await job.updateProgress(10);
-    const originalBuffer = await this.downloadFromS3(bucket, originalS3Key);
+    let originalBuffer: Buffer;
+    try {
+      originalBuffer = await this.downloadFromS3(bucket, originalS3Key);
+    } catch (err) {
+      this.config.logger.error(
+        { imageId, originalS3Key, error: (err as Error).message },
+        'Failed to download original image from S3'
+      );
+      throw err;
+    }
     const originalSize = originalBuffer.length;
+
+    // Validate that we received a valid image
+    if (originalSize < 100) {
+      throw new Error(`Downloaded image is too small (${originalSize} bytes), likely corrupted: ${originalS3Key}`);
+    }
 
     // Determine which sizes to generate
     const sizesToGenerate = isAnchor
@@ -140,21 +154,45 @@ export class ImageRenditionWorker {
 
     // Process renditions
     await job.updateProgress(25);
-    const renditions = await processImageRenditions(originalBuffer, {
-      sizes: [...sizesToGenerate],
-      keepOriginal: true,
-    });
+    let renditions: ProcessedRendition[];
+    try {
+      renditions = await processImageRenditions(originalBuffer, {
+        sizes: [...sizesToGenerate],
+        keepOriginal: true,
+      });
+    } catch (err) {
+      this.config.logger.error(
+        { imageId, originalSize, error: (err as Error).message },
+        'Failed to process image renditions (sharp error)'
+      );
+      throw err;
+    }
+
+    if (renditions.length === 0) {
+      throw new Error(`No renditions generated for image ${imageId}`);
+    }
 
     // Upload all renditions to S3
     // Use explicit keyPrefix if provided (for anchor images), otherwise construct from path components
     await job.updateProgress(70);
     const keyPrefix = explicitKeyPrefix || getRenditionKeyPrefix(userId, sessionId, cacheKey);
-    await this.uploadRenditions(bucket, keyPrefix, renditions);
+    const { uploaded, failed: uploadFailures } = await this.uploadRenditionsWithRetry(bucket, keyPrefix, renditions);
 
-    // Group renditions into structured object
+    if (uploadFailures.length > 0) {
+      this.config.logger.warn(
+        { imageId, failedCount: uploadFailures.length, failures: uploadFailures },
+        'Some rendition uploads failed'
+      );
+    }
+
+    if (uploaded.length === 0) {
+      throw new Error(`All rendition uploads failed for image ${imageId}`);
+    }
+
+    // Group only successfully uploaded renditions into structured object
     await job.updateProgress(90);
     const groupedRenditions = groupRenditions(
-      renditions,
+      uploaded,
       (size, format) => getRenditionS3Key(keyPrefix, size, format),
       (s3Key) => this.buildS3Url(bucket, s3Key)
     );
@@ -164,12 +202,12 @@ export class ImageRenditionWorker {
     await this.updateImageRenditions(imageId, groupedRenditions);
 
     const processingTimeMs = Date.now() - startTime;
-    const bytesSaved = calculateBytesSaved(originalSize, renditions);
+    const bytesSaved = calculateBytesSaved(originalSize, uploaded);
 
     this.config.logger.info(
       {
         imageId,
-        renditionCount: renditions.length,
+        renditionCount: uploaded.length,
         processingTimeMs,
         bytesSaved,
         originalSize,
@@ -201,32 +239,54 @@ export class ImageRenditionWorker {
     return Buffer.concat(chunks);
   }
 
-  private async uploadRenditions(
+  /**
+   * Upload renditions to S3 with per-rendition error isolation.
+   * Returns which renditions succeeded and which failed, so a single
+   * upload failure (e.g., AVIF for one size) doesn't kill the whole job.
+   */
+  private async uploadRenditionsWithRetry(
     bucket: string,
     keyPrefix: string,
     renditions: ProcessedRendition[]
-  ): Promise<void> {
+  ): Promise<{ uploaded: ProcessedRendition[]; failed: Array<{ size: string; format: string; error: string }> }> {
+    const uploaded: ProcessedRendition[] = [];
+    const failed: Array<{ size: string; format: string; error: string }> = [];
+
     const uploads = renditions.map(async (r) => {
       const s3Key = getRenditionS3Key(keyPrefix, r.size, r.format);
       const contentType = getContentType(r.format);
 
-      await this.s3Client.send(
-        new PutObjectCommand({
-          Bucket: bucket,
-          Key: s3Key,
-          Body: r.buffer,
-          ContentType: contentType,
-          CacheControl: 'max-age=31536000', // 1 year
-        })
-      );
+      try {
+        await this.s3Client.send(
+          new PutObjectCommand({
+            Bucket: bucket,
+            Key: s3Key,
+            Body: r.buffer,
+            ContentType: contentType,
+            CacheControl: 'max-age=31536000, immutable', // 1 year, immutable (content-addressed)
+          })
+        );
 
-      this.config.logger.debug(
-        { s3Key, size: r.size, format: r.format, bytes: r.buffer.length },
-        'Uploaded rendition'
-      );
+        this.config.logger.debug(
+          { s3Key, size: r.size, format: r.format, bytes: r.buffer.length },
+          'Uploaded rendition'
+        );
+        uploaded.push(r);
+      } catch (err) {
+        failed.push({
+          size: String(r.size),
+          format: r.format,
+          error: (err as Error).message,
+        });
+        this.config.logger.warn(
+          { s3Key, size: r.size, format: r.format, error: (err as Error).message },
+          'Failed to upload rendition'
+        );
+      }
     });
 
     await Promise.all(uploads);
+    return { uploaded, failed };
   }
 
   private buildS3Url(bucket: string, key: string): string {

@@ -26,7 +26,11 @@ const SIZE_THRESHOLDS: Array<{ maxWidth: number; size: RenditionSize }> = [
 ];
 
 /**
- * Check if the browser supports a specific image format
+ * Check if the browser supports a specific image format.
+ *
+ * For AVIF: canvas.toDataURL('image/avif') is unreliable -- many browsers
+ * that can *decode* AVIF cannot *encode* it to canvas. Instead we probe with
+ * a tiny 1x1 AVIF data URI. The result is cached via `formatSupportCache`.
  */
 function checkFormatSupport(format: RenditionFormat): boolean {
   if (typeof document === 'undefined') {
@@ -34,17 +38,20 @@ function checkFormatSupport(format: RenditionFormat): boolean {
     return format !== 'avif';
   }
 
-  const canvas = document.createElement('canvas');
-  canvas.width = 1;
-  canvas.height = 1;
-
   switch (format) {
     case 'avif':
-      return canvas.toDataURL('image/avif').startsWith('data:image/avif');
-    case 'webp':
+      // Synchronous canvas check is unreliable for AVIF decoding support.
+      // Fall back to conservative default; the async probe below will update
+      // the cache once it resolves.
+      return false;
+    case 'webp': {
+      const canvas = document.createElement('canvas');
+      canvas.width = 1;
+      canvas.height = 1;
       return canvas.toDataURL('image/webp').startsWith('data:image/webp');
+    }
     case 'png':
-      return true; // PNG is always supported
+      return true;
     default:
       return false;
   }
@@ -52,6 +59,27 @@ function checkFormatSupport(format: RenditionFormat): boolean {
 
 // Cache format support results
 let formatSupportCache: Record<RenditionFormat, boolean> | null = null;
+
+/**
+ * Probe AVIF support by attempting to decode a tiny 1x1 AVIF image.
+ * Updates the format support cache asynchronously on first call.
+ */
+let avifProbeStarted = false;
+function probeAvifSupport(): void {
+  if (avifProbeStarted || typeof document === 'undefined') return;
+  avifProbeStarted = true;
+
+  const img = new Image();
+  // 1x1 AVIF encoded as base64 (smallest valid AVIF file)
+  img.src =
+    'data:image/avif;base64,AAAAIGZ0eXBhdmlmAAAAAGF2aWZtaWYxbWlhZk1BMUIAAADybWV0YQAAAAAAAAAoaGRscgAAAAAAAAAAcGljdAAAAAAAAAAAAAAAAGxpYmF2aWYAAAAADnBpdG0AAAAAAAEAAAAeaWxvYwAAAABEAAABAAEAAAABAAABGgAAAB0AAAAoaWluZgAAAAAAAQAAABppbmZlAgAAAAABAABhdjAxQ29sb3IAAAAAamlwcnAAAABLaXBjbwAAABRpc3BlAAAAAAAAAAIAAAACAAAADGF2MUOBAAAAAAAAFWlzcGUAAAAAAAAAAgAAAAIAAAAOcGl4aQAAAAADCAgIAAAAAxNjb2xybnJjbAACAAIAAYAAAAAXaXBtYQAAAAAAAAABAAEEAQKDBAAAACVtZGF0EgAKBBgABogQEAwgMg8f8D///8WfhwB8+ErZ';
+  img.onload = () => {
+    if (formatSupportCache) {
+      formatSupportCache.avif = true;
+    }
+  };
+  // On error, avif stays false (the default)
+}
 
 function getFormatSupport(): Record<RenditionFormat, boolean> {
   if (formatSupportCache) return formatSupportCache;
@@ -61,6 +89,9 @@ function getFormatSupport(): Record<RenditionFormat, boolean> {
     webp: checkFormatSupport('webp'),
     png: checkFormatSupport('png'),
   };
+
+  // Kick off async AVIF probe to update cache for subsequent calls
+  probeAvifSupport();
 
   return formatSupportCache;
 }

@@ -65,12 +65,28 @@ export async function processImageRenditions(
       continue;
     }
 
+    // Skip if target matches original dimensions (avoids duplicating original)
+    if (width === originalWidth && height === originalHeight) {
+      continue;
+    }
+
     // Create resized base image
-    const resized = sharp(imageBuffer)
+    // - toColorspace('srgb') ensures consistent color output
+    // - sharp strips EXIF/metadata by default
+    // - Light sharpen after downscale to counteract softening (especially for small sizes)
+    const isHeavyDownscale = width <= originalWidth / 3;
+    let resized = sharp(imageBuffer)
       .resize(width, height, {
         fit: 'cover',
         position: 'center',
-      });
+        kernel: sharp.kernel.lanczos3,
+      })
+      .toColorspace('srgb');
+
+    // Apply subtle sharpening for heavy downscales (thumb, small) to preserve detail
+    if (isHeavyDownscale) {
+      resized = resized.sharpen({ sigma: 0.5, m1: 0.5, m2: 0.3 });
+    }
 
     // Generate each format
     for (const format of opts.formats) {
@@ -85,10 +101,13 @@ export async function processImageRenditions(
     }
   }
 
-  // Add original in requested formats
+  // Add original in requested formats (with metadata stripped)
   if (opts.keepOriginal) {
     for (const format of opts.formats) {
-      const processed = await convertToFormat(sharp(imageBuffer), format);
+      const processed = await convertToFormat(
+        sharp(imageBuffer).toColorspace('srgb'),
+        format
+      );
       results.push({
         size: 'original',
         format,
@@ -98,11 +117,14 @@ export async function processImageRenditions(
       });
     }
 
-    // Also keep original PNG for archive
+    // Also keep original PNG for archive (sharp strips metadata by default)
+    const archivedOriginal = await sharp(imageBuffer)
+      .png({ compressionLevel: 6 })
+      .toBuffer();
     results.push({
       size: 'original',
       format: 'png',
-      buffer: imageBuffer,
+      buffer: archivedOriginal,
       width: originalWidth,
       height: originalHeight,
     });
@@ -131,7 +153,7 @@ async function convertToFormat(
       return image
         .avif({
           quality: FORMAT_QUALITY.avif,
-          effort: 6,
+          effort: 4, // Reduced from 6: ~2x faster encode with minimal size increase
         })
         .toBuffer();
 
