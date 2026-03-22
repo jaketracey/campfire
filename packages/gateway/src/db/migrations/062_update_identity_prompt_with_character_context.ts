@@ -75,15 +75,8 @@ export async function up(sql: postgres.Sql): Promise<void> {
   await sql`
     UPDATE prompt_templates
     SET template = ${UPDATED_TEMPLATE}, updated_at = NOW()
-    WHERE key = 'orchestrator.random_identity_system_prompt'
+    WHERE prompt_key = 'orchestrator.random_identity_system_prompt'
       AND version = '1.0.0'
-  `;
-
-  // Also try prompt_definitions table (used in some deployments)
-  await sql`
-    UPDATE prompt_definitions
-    SET template = ${UPDATED_TEMPLATE}, updated_at = NOW()
-    WHERE key = 'orchestrator.random_identity_system_prompt'
   `;
 }
 
@@ -145,13 +138,7 @@ IMPORTANT: The body_type MUST match the gender:
   await sql`
     UPDATE prompt_templates
     SET template = ${ORIGINAL_TEMPLATE}, updated_at = NOW()
-    WHERE key = 'orchestrator.random_identity_system_prompt'
+    WHERE prompt_key = 'orchestrator.random_identity_system_prompt'
       AND version = '1.0.0'
-  `;
-
-  await sql`
-    UPDATE prompt_definitions
-    SET template = ${ORIGINAL_TEMPLATE}, updated_at = NOW()
-    WHERE key = 'orchestrator.random_identity_system_prompt'
   `;
 }
