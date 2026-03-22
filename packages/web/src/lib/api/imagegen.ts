@@ -75,11 +75,19 @@ export interface GalleryResponse {
 // Import appearance types from companions
 import type { CompanionAppearance } from './companions';
 
+export interface BackstoryContext {
+  occupation?: string;
+  distinctiveFeatures?: string[];
+  dressStyle?: string;
+  vibe?: string;
+}
+
 export interface GenerateAnchorsRequest {
   companionId: string;
   appearance: CompanionAppearance;
   personality?: PersonalitySliders;
   style?: 'realistic' | 'stylized' | 'abstract' | 'minimal' | 'anime';
+  backstoryContext?: BackstoryContext;
 }
 
 export interface AnchorImage {
@@ -397,6 +405,18 @@ export function streamAnchorImages(
     params.set('personality', JSON.stringify(request.personality));
   }
 
+  if (request.backstoryContext) {
+    // Map frontend field names to gateway's expected format
+    const gatewayContext: Record<string, unknown> = {};
+    if (request.backstoryContext.occupation) gatewayContext.occupation = request.backstoryContext.occupation;
+    if (request.backstoryContext.vibe) gatewayContext.vibe = request.backstoryContext.vibe;
+    if (request.backstoryContext.dressStyle) gatewayContext.style = request.backstoryContext.dressStyle;
+    if (request.backstoryContext.distinctiveFeatures?.length) {
+      gatewayContext.personalityQuirks = request.backstoryContext.distinctiveFeatures;
+    }
+    params.set('backstoryContext', JSON.stringify(gatewayContext));
+  }
+
   const url = `${baseUrl}/api/v1/imagegen/generate-anchors-stream?${params.toString()}`;
   console.log('[SSE] URL:', url);
 
@@ -404,9 +424,52 @@ export function streamAnchorImages(
   let aborted = false;
   const controller = new AbortController();
   let reader: ReadableStreamDefaultReader<Uint8Array> | null = null;
+  let retryTimer: ReturnType<typeof setTimeout> | null = null;
+  const seenAnchorKeys = new Set<string>();
+  const seenAnchors: AnchorImage[] = [];
+
+  const retryDelaysMs = [250, 750];
+  const maxAttempts = 1 + retryDelaysMs.length;
+  let attempt = 0;
+
+  const isRetryableStatus = (status: number): boolean => status >= 500 || status === 429 || status === 408;
+
+  const getAnchorKey = (anchor: AnchorImage): string => {
+    if (anchor.id) return `id:${anchor.id}`;
+    return `url:${anchor.url}`;
+  };
+
+  const waitMs = (ms: number) => {
+    return new Promise<void>((resolve) => {
+      retryTimer = setTimeout(() => {
+        retryTimer = null;
+        resolve();
+      }, ms);
+    });
+  };
+
+  const extractErrorMessage = (error: unknown): string => {
+    if (error instanceof Error) return error.message;
+    if (typeof error === 'string') return error;
+    if (error && typeof error === 'object') {
+      const errObj = error as Record<string, unknown>;
+      if (typeof errObj.message === 'string') return errObj.message;
+      if (typeof errObj.error === 'string') return errObj.error;
+      const json = JSON.stringify(error);
+      if (json && json !== '{}') return json;
+    }
+    return 'Unknown error';
+  };
+
+  const makeRetryableError = (status: number, message: string) => {
+    const error = new Error(message) as Error & { status?: number; retryable?: boolean };
+    error.status = status;
+    error.retryable = isRetryableStatus(status);
+    return error;
+  };
 
   const connectSSE = async () => {
-    try {
+    const doOneAttempt = async (): Promise<void> => {
       console.log('[SSE] Connecting to:', url);
 
       const response = await fetch(url, {
@@ -431,8 +494,8 @@ export function streamAnchorImages(
         } catch {
           if (errorBody) errorMessage = errorBody;
         }
-        console.error('[SSE] Connection failed:', response.status, errorMessage);
-        throw new Error(errorMessage || `SSE connection failed: ${response.status}`);
+
+        throw makeRetryableError(response.status, errorMessage || `SSE connection failed: ${response.status}`);
       }
 
       // Verify we got an SSE response
@@ -479,14 +542,23 @@ export function streamAnchorImages(
                 case 'progress':
                   callbacks.onProgress?.(data);
                   break;
-                case 'anchor':
+                case 'anchor': {
                   console.log('[SSE] Anchor received, calling onAnchor callback');
-                  callbacks.onAnchor?.(data);
+                  const anchor = data as AnchorImage;
+                  const anchorKey = getAnchorKey(anchor);
+                  if (seenAnchorKeys.has(anchorKey)) {
+                    console.log('[SSE] Duplicate anchor ignored', anchorKey);
+                    break;
+                  }
+                  seenAnchorKeys.add(anchorKey);
+                  seenAnchors.push(anchor);
+                  callbacks.onAnchor?.(anchor);
                   break;
+                }
                 case 'complete':
                   console.log('[SSE] Complete received');
-                  callbacks.onComplete?.(data);
-                  break;
+                  callbacks.onComplete?.(data as GenerateAnchorsResult);
+                  return;
                 case 'error':
                   console.error('[SSE] Error event received:', data);
                   callbacks.onError?.(data);
@@ -503,31 +575,38 @@ export function streamAnchorImages(
           }
         }
       }
-    } catch (error) {
-      if (aborted || controller.signal.aborted) {
+    };
+
+    while (!aborted && attempt < maxAttempts) {
+      try {
+        await doOneAttempt();
         return;
-      }
-      console.error('[SSE] Error:', error);
-      let message = 'Unknown error';
-      if (error instanceof Error) {
-        message = error.message;
-      } else if (typeof error === 'string') {
-        message = error;
-      } else if (error && typeof error === 'object') {
-        // Check for common error properties
-        const errObj = error as Record<string, unknown>;
-        if (typeof errObj.message === 'string') {
-          message = errObj.message;
-        } else if (typeof errObj.error === 'string') {
-          message = errObj.error;
-        } else {
-          const json = JSON.stringify(error);
-          if (json && json !== '{}') {
-            message = json;
-          }
+      } catch (error) {
+        if (aborted || controller.signal.aborted) {
+          return;
         }
+
+        const status = error && typeof error === 'object' && 'status' in error
+          ? Number((error as { status?: number }).status)
+          : undefined;
+        const retryable = error && typeof error === 'object'
+          && (error as { retryable?: boolean }).retryable !== undefined
+            ? Boolean((error as { retryable?: boolean }).retryable)
+            : isRetryableStatus(status || 0);
+
+        attempt += 1;
+
+        if (!retryable || attempt >= maxAttempts) {
+          callbacks.onError?.({
+            message: extractErrorMessage(error),
+            partialAnchors: [...seenAnchors],
+          });
+          return;
+        }
+
+        const delay = retryDelaysMs[attempt - 1] ?? retryDelaysMs[retryDelaysMs.length - 1];
+        await waitMs(delay);
       }
-      callbacks.onError?.({ message });
     }
   };
 
@@ -536,6 +615,10 @@ export function streamAnchorImages(
   // Return cleanup function
   return () => {
     aborted = true;
+    if (retryTimer) {
+      clearTimeout(retryTimer);
+      retryTimer = null;
+    }
     controller.abort();
     if (reader) {
       void reader.cancel().catch(() => {

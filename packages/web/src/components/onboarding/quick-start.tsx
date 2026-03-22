@@ -123,6 +123,12 @@ interface GeneratedCompanionData {
     topics_avoid: string[];
     safe_topics: string[];
   };
+  backstoryContext?: {
+    occupation?: string;
+    distinctiveFeatures?: string[];
+    dressStyle?: string;
+    vibe?: string;
+  };
 }
 
 interface QuickStartProps {
@@ -448,6 +454,7 @@ export function QuickStart({ onBack }: QuickStartProps) {
             empathy: Math.round(randomCompanion.personality.empathy * 100),
             assertiveness: Math.round(randomCompanion.personality.assertiveness * 100),
           },
+          backstoryContext: randomCompanion.backstoryContext,
         },
         {
           onProgress: (data) => {
@@ -676,6 +683,12 @@ export function QuickStart({ onBack }: QuickStartProps) {
             emotional_depth: 'moderate' as const,
             topics_avoid: [] as string[],
             safe_topics: [] as string[],
+          },
+          backstoryContext: {
+            occupation: llmGenerated.occupation || undefined,
+            distinctiveFeatures: llmGenerated.distinctiveFeatures.length > 0 ? llmGenerated.distinctiveFeatures : undefined,
+            dressStyle: llmGenerated.dressStyle || undefined,
+            vibe: llmGenerated.vibe || undefined,
           },
         };
 

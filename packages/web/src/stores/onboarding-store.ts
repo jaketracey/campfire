@@ -139,6 +139,17 @@ export interface AnchorImage {
   isIdentityAnchor: boolean;
 }
 
+/**
+ * Lightweight character context from identity generation,
+ * used to inform anchor image prompts without waiting for full backstory.
+ */
+export interface BackstoryContext {
+  occupation?: string;
+  distinctiveFeatures?: string[];
+  dressStyle?: string;
+  vibe?: string;
+}
+
 export interface OnboardingState {
   currentStep: number;
   archetype: CompanionArchetype | null;
@@ -153,6 +164,7 @@ export interface OnboardingState {
   voice: VoiceOption | null;
   visualStyle: VisualStyle;
   boundaries: Boundaries;
+  backstoryContext: BackstoryContext | null;
 
   // Generation state (persists across steps)
   companionId: string | null;
@@ -167,6 +179,12 @@ export interface OnboardingState {
   // Quick start state (for stepper positioning)
   quickStartActive: boolean;
   quickStartStep: number; // 0-3 for Identity, Visuals, Archetype, Voice
+
+  // Readiness flags that represent onboarding progression explicitly.
+  companionReady: boolean;
+  companionActive: boolean;
+  anchorReady: boolean;
+  backstoryReady: boolean;
 
   // Change tracking for appearance modifications after Surprise Me
   appearanceChangedAfterGeneration: boolean;
@@ -197,8 +215,13 @@ export interface OnboardingState {
   setAnchorStreamStarted: (started: boolean) => void;
   setQuickStartActive: (active: boolean) => void;
   setQuickStartStep: (step: number) => void;
+  setCompanionReady: (ready: boolean) => void;
+  setCompanionActive: (active: boolean) => void;
+  setAnchorReady: (ready: boolean) => void;
+  setBackstoryReady: (ready: boolean) => void;
   setAppearanceChangedAfterGeneration: (changed: boolean) => void;
   setAnchorAppearanceSnapshot: (appearance: PhysicalAppearance | null) => void;
+  setBackstoryContext: (context: BackstoryContext | null) => void;
   reset: () => void;
 }
 
@@ -262,6 +285,11 @@ export const useOnboardingStore = create<OnboardingState>()(
       anchorStreamStarted: false,
       quickStartActive: false,
       quickStartStep: 0,
+      companionReady: false,
+      companionActive: false,
+      anchorReady: false,
+      backstoryReady: false,
+      backstoryContext: null,
       appearanceChangedAfterGeneration: false,
       anchorAppearanceSnapshot: null,
 
@@ -357,17 +385,27 @@ export const useOnboardingStore = create<OnboardingState>()(
       setCompanionId: (id) => set({ companionId: id }),
       setSessionId: (id) => set({ sessionId: id }),
       setGenerationStarted: (started) => set({ generationStarted: started }),
+      setCompanionReady: (ready) => set({ companionReady: ready }),
+      setCompanionActive: (active) => set({ companionActive: active }),
+      setAnchorReady: (ready) => set({ anchorReady: ready }),
+      setBackstoryReady: (ready) => set({ backstoryReady: ready }),
       addAnchorImage: (anchor) =>
         set((state) => ({
           anchorImages: [...state.anchorImages, anchor],
         })),
-      clearAnchorImages: () => set({ anchorImages: [], anchorImagesComplete: false, anchorStreamStarted: false }),
+      clearAnchorImages: () => set({
+        anchorImages: [],
+        anchorImagesComplete: false,
+        anchorStreamStarted: false,
+        anchorReady: false,
+      }),
       setAnchorImagesComplete: (complete) => set({ anchorImagesComplete: complete }),
       setAnchorStreamStarted: (started) => set({ anchorStreamStarted: started }),
       setQuickStartActive: (active) => set({ quickStartActive: active }),
       setQuickStartStep: (step) => set({ quickStartStep: step }),
       setAppearanceChangedAfterGeneration: (changed) => set({ appearanceChangedAfterGeneration: changed }),
       setAnchorAppearanceSnapshot: (appearance) => set({ anchorAppearanceSnapshot: appearance }),
+      setBackstoryContext: (context) => set({ backstoryContext: context }),
       reset: () =>
         set({
           currentStep: 1,
@@ -394,6 +432,11 @@ export const useOnboardingStore = create<OnboardingState>()(
           anchorStreamStarted: false,
           quickStartActive: false,
           quickStartStep: 0,
+          companionReady: false,
+          companionActive: false,
+          anchorReady: false,
+          backstoryReady: false,
+          backstoryContext: null,
           appearanceChangedAfterGeneration: false,
           anchorAppearanceSnapshot: null,
         }),

@@ -37,6 +37,172 @@ import {
 
 
 /**
+ * Maps backstory context into concrete visual hints for image generation.
+ * Returns clothing, setting, expression, and distinctive feature suggestions
+ * based on the companion's occupation, style, vibe, and personality quirks.
+ */
+function mapBackstoryToVisualHints(backstoryContext?: {
+  occupation?: string;
+  style?: string;
+  vibe?: string;
+  setting?: string;
+  personalityQuirks?: string[];
+}): {
+  clothingHint: string;
+  settingHint: string;
+  expressionHint: string;
+  distinctiveFeature: string;
+} {
+  if (!backstoryContext) {
+    // No backstory - return empty hints so the prompt still works with defaults
+    return {
+      clothingHint: '',
+      settingHint: '',
+      expressionHint: '',
+      distinctiveFeature: pickRandom(DISTINCTIVE_FEATURES),
+    };
+  }
+
+  // Map occupation to clothing
+  const occupationClothingMap: Record<string, string[]> = {
+    'nurse': ['scrubs and a stethoscope', 'casual scrubs with a cardigan'],
+    'doctor': ['a white coat over a blouse', 'scrubs and a stethoscope'],
+    'teacher': ['a cozy cardigan and reading glasses', 'a casual blazer over a t-shirt'],
+    'engineer': ['a band t-shirt and jeans', 'a hoodie and sneakers'],
+    'artist': ['paint-stained overalls', 'a vintage thrift-store jacket'],
+    'musician': ['a leather jacket and vintage band tee', 'a flannel shirt with rolled sleeves'],
+    'chef': ['a casual chef coat, sleeves rolled up', 'a simple apron over a t-shirt'],
+    'athlete': ['athletic wear and sneakers', 'a track jacket and joggers'],
+    'writer': ['a chunky knit sweater', 'an oversized flannel and glasses'],
+    'lawyer': ['a tailored blazer with no tie', 'smart casual - button down and slacks'],
+    'entrepreneur': ['a sleek bomber jacket', 'business casual with sneakers'],
+    'photographer': ['a utility vest with camera straps', 'all black with a vintage camera around neck'],
+    'student': ['a university hoodie and backpack', 'casual jeans and a graphic tee'],
+    'bartender': ['a simple black shirt with rolled sleeves', 'a vest over a henley'],
+    'firefighter': ['a casual FDNY t-shirt', 'an off-duty flannel and boots'],
+    'military': ['a simple olive tee and dog tags', 'an off-duty henley and cargo pants'],
+    'scientist': ['a lab coat over a casual top', 'smart casual with quirky science-themed accessories'],
+    'therapist': ['a soft knit sweater and comfortable slacks', 'casual professional, warm colors'],
+    'dancer': ['dance warmups and leg warmers', 'athletic wear with a wrap top'],
+    'mechanic': ['a work shirt with grease stains', 'a simple tank top and work boots'],
+  };
+
+  // Map occupation to settings
+  const occupationSettingMap: Record<string, string[]> = {
+    'nurse': ['in a hospital break room', 'grabbing coffee before a shift'],
+    'doctor': ['in a clinic hallway', 'at a cafe after rounds'],
+    'teacher': ['in a cozy classroom', 'at a bookstore'],
+    'engineer': ['at a co-working space', 'in a tech office lounge'],
+    'artist': ['in a sunlit art studio', 'at a gallery opening'],
+    'musician': ['backstage at a small venue', 'in a recording studio'],
+    'chef': ['in a restaurant kitchen', 'at a farmers market'],
+    'athlete': ['at a gym', 'on a running trail'],
+    'writer': ['at a corner booth in a coffee shop', 'in a home office surrounded by books'],
+    'lawyer': ['in a downtown office lobby', 'at a upscale lunch spot'],
+    'entrepreneur': ['at a startup office', 'at a rooftop networking event'],
+    'photographer': ['on a city street with camera', 'in a photo studio'],
+    'student': ['in a university library', 'at a campus coffee shop'],
+    'bartender': ['behind a craft cocktail bar', 'at a late-night diner'],
+    'firefighter': ['at the firehouse', 'at a neighborhood cookout'],
+    'military': ['on a base rec area', 'at a casual outdoor BBQ'],
+    'scientist': ['in a research lab', 'at a conference coffee break'],
+    'therapist': ['in a warm, comfortable office', 'at a quiet park bench'],
+    'dancer': ['in a dance studio mirror', 'stretching in a sunlit room'],
+    'mechanic': ['in a garage with vintage cars', 'leaning against a classic truck'],
+  };
+
+  // Map vibe/style to expression
+  const vibeExpressionMap: Record<string, string[]> = {
+    'warm': ['warm, inviting smile', 'soft genuine smile, kind eyes'],
+    'mysterious': ['slight enigmatic smirk', 'intense eyes with a subtle half-smile'],
+    'playful': ['playful grin, mischievous eyes', 'cheeky smile, one eyebrow slightly raised'],
+    'confident': ['confident steady gaze', 'self-assured smile, relaxed posture'],
+    'gentle': ['gentle, tender expression', 'soft eyes, serene and calm'],
+    'intense': ['piercing focused gaze', 'intense look, jaw slightly set'],
+    'nerdy': ['enthusiastic grin, eyes bright', 'adorably focused expression, slight glasses adjustment'],
+    'rebellious': ['defiant smirk', 'cool detached expression with a hint of amusement'],
+    'romantic': ['dreamy soft gaze', 'looking through lashes with a slight smile'],
+    'adventurous': ['excited wide grin', 'windswept and energized expression'],
+  };
+
+  let clothingHint = '';
+  let settingHint = '';
+  let expressionHint = '';
+
+  // Determine clothing from occupation
+  if (backstoryContext.occupation) {
+    const occupationKey = backstoryContext.occupation.toLowerCase();
+    // Try exact match first, then partial match
+    const clothingOptions = occupationClothingMap[occupationKey]
+      || Object.entries(occupationClothingMap).find(([key]) => occupationKey.includes(key) || key.includes(occupationKey))?.[1];
+    if (clothingOptions) {
+      clothingHint = pickRandom(clothingOptions);
+    }
+  }
+
+  // Determine setting from occupation or explicit setting
+  if (backstoryContext.setting) {
+    settingHint = backstoryContext.setting;
+  } else if (backstoryContext.occupation) {
+    const occupationKey = backstoryContext.occupation.toLowerCase();
+    const settingOptions = occupationSettingMap[occupationKey]
+      || Object.entries(occupationSettingMap).find(([key]) => occupationKey.includes(key) || key.includes(occupationKey))?.[1];
+    if (settingOptions) {
+      settingHint = pickRandom(settingOptions);
+    }
+  }
+
+  // Determine expression from vibe or style
+  const vibeKey = (backstoryContext.vibe || backstoryContext.style || '').toLowerCase();
+  if (vibeKey) {
+    const expressionOptions = vibeExpressionMap[vibeKey]
+      || Object.entries(vibeExpressionMap).find(([key]) => vibeKey.includes(key) || key.includes(vibeKey))?.[1];
+    if (expressionOptions) {
+      expressionHint = pickRandom(expressionOptions);
+    }
+  }
+
+  // Pick a distinctive feature (random imperfection for realism)
+  let distinctiveFeature = pickRandom(DISTINCTIVE_FEATURES);
+
+  // If personalityQuirks mention something visual, try to use it
+  if (backstoryContext.personalityQuirks && backstoryContext.personalityQuirks.length > 0) {
+    const visualQuirks = backstoryContext.personalityQuirks.filter(q =>
+      /scar|tattoo|freckle|piercing|glasses|dimple|birthmark|gap.*tooth|curly|braid/i.test(q)
+    );
+    if (visualQuirks.length > 0) {
+      distinctiveFeature = visualQuirks[0]!;
+    }
+  }
+
+  return { clothingHint, settingHint, expressionHint, distinctiveFeature };
+}
+
+/** Pool of subtle imperfections to make generated faces more distinctive and realistic */
+const DISTINCTIVE_FEATURES = [
+  'light freckles across the nose',
+  'a small scar on the eyebrow',
+  'subtle laugh lines',
+  'a beauty mark near the lip',
+  'slightly crooked smile',
+  'visible dimples',
+  'a few forehead lines',
+  'sun-kissed freckles on cheeks',
+  'a small nose piercing',
+  'faint crow\'s feet from smiling',
+  'a tiny chin scar',
+  'naturally thick eyebrows',
+  'a gap between front teeth',
+  'visible smile lines',
+  'a subtle birthmark on the cheek',
+];
+
+/** Pick a random element from an array */
+function pickRandom<T>(arr: T[]): T {
+  return arr[Math.floor(Math.random() * arr.length)]!;
+}
+
+/**
  * Register image generation routes
  */
 export async function imagegenRoutes(app: FastifyInstance): Promise<void> {
@@ -642,7 +808,7 @@ export async function imagegenRoutes(app: FastifyInstance): Promise<void> {
 
   // Generate anchor images with SSE streaming (for real-time progress)
   // This is the preferred endpoint for onboarding as it streams each image as it's generated
-  app.get<{ Querystring: { companionId: string; appearance: string; style: string; personality?: string } }>(
+  app.get<{ Querystring: { companionId: string; appearance: string; style: string; personality?: string; backstoryContext?: string } }>(
     '/generate-anchors-stream',
     {
       preHandler: requireAuth,
@@ -655,11 +821,12 @@ export async function imagegenRoutes(app: FastifyInstance): Promise<void> {
             appearance: { type: 'string' },  // JSON stringified
             style: { type: 'string' },
             personality: { type: 'string' },  // JSON stringified, optional
+            backstoryContext: { type: 'string' },  // JSON stringified, optional
           },
         },
       },
     },
-    async (request: FastifyRequest<{ Querystring: { companionId: string; appearance: string; style: string; personality?: string } }>, reply: FastifyReply) => {
+    async (request: FastifyRequest<{ Querystring: { companionId: string; appearance: string; style: string; personality?: string; backstoryContext?: string } }>, reply: FastifyReply) => {
       const userId = request.user!.userId;
       const { companionId } = request.query;
       const style = request.query.style as 'realistic' | 'stylized' | 'abstract' | 'minimal' | 'anime';
@@ -667,11 +834,15 @@ export async function imagegenRoutes(app: FastifyInstance): Promise<void> {
       // Parse JSON from query params
       let appearance: { ethnicity: string; bodyType: string; hairColor: string; breastSize?: number };
       let personality: { warmth?: number; playfulness?: number; directness?: number; curiosity?: number; empathy?: number; assertiveness?: number } | undefined;
+      let backstoryContext: { occupation?: string; style?: string; vibe?: string; setting?: string; personalityQuirks?: string[] } | undefined;
 
       try {
         appearance = JSON.parse(request.query.appearance);
         if (request.query.personality) {
           personality = JSON.parse(request.query.personality);
+        }
+        if (request.query.backstoryContext) {
+          backstoryContext = JSON.parse(request.query.backstoryContext);
         }
       } catch (e) {
         return reply.status(400).send({ error: 'Invalid JSON in query params' });
@@ -707,10 +878,11 @@ export async function imagegenRoutes(app: FastifyInstance): Promise<void> {
         }
       };
 
-      // Build base prompt from appearance using Seedream 4.5 best practices
-      // Subject description FIRST (most important), then photography terms
+      // Map backstory to visual hints for more distinctive, character-driven images
+      const visualHints = mapBackstoryToVisualHints(backstoryContext);
+
+      // Build base prompt from appearance - character-driven, not generic beauty
       const isMale = (appearance as { gender?: string }).gender === 'male';
-      const basePromptParts: string[] = [isMale ? 'Handsome man' : 'Beautiful woman'];
 
       const ethnicityMap: Record<string, string> = {
         'east-asian': 'East Asian',
@@ -722,22 +894,16 @@ export async function imagegenRoutes(app: FastifyInstance): Promise<void> {
         'mixed': 'mixed ethnicity',
       };
       const ethnicityDesc = appearance.ethnicity ? ethnicityMap[appearance.ethnicity] : undefined;
-      if (ethnicityDesc) {
-        basePromptParts.push(ethnicityDesc);
-      }
 
       const bodyTypeMap: Record<string, string> = {
-        'slim': 'with a slim build',
-        'athletic': 'with an athletic build',
-        'curvy': 'with a curvy figure',
-        'plus-size': 'with a full figure',
-        'muscular': 'with a muscular build',
-        'dad-bod': 'with an average build',
+        'slim': 'slim build',
+        'athletic': 'athletic build',
+        'curvy': 'curvy figure',
+        'plus-size': 'full figure',
+        'muscular': 'muscular build',
+        'dad-bod': 'average build',
       };
       const bodyTypeDesc = appearance.bodyType ? bodyTypeMap[appearance.bodyType] : undefined;
-      if (bodyTypeDesc) {
-        basePromptParts.push(bodyTypeDesc);
-      }
 
       const hairColorMap: Record<string, string> = {
         'black': 'black hair',
@@ -747,31 +913,37 @@ export async function imagegenRoutes(app: FastifyInstance): Promise<void> {
         'fantasy': 'colorful hair',
       };
       const hairColorDesc = appearance.hairColor ? hairColorMap[appearance.hairColor] : undefined;
-      if (hairColorDesc) {
-        basePromptParts.push(hairColorDesc);
-      }
 
-      // Build subject description
-      const subjectDesc = basePromptParts.join(', ');
+      // Build subject description: "East Asian woman, slim build, black hair, light freckles"
+      const subjectParts: string[] = [];
+      if (ethnicityDesc) subjectParts.push(`${ethnicityDesc} ${isMale ? 'man' : 'woman'}`);
+      else subjectParts.push(isMale ? 'man' : 'woman');
+      if (bodyTypeDesc) subjectParts.push(bodyTypeDesc);
+      if (hairColorDesc) subjectParts.push(hairColorDesc);
+      if (visualHints.distinctiveFeature) subjectParts.push(visualHints.distinctiveFeature);
+      const subjectDesc = subjectParts.join(', ');
 
-      // Define diverse anchor scenes - each anchor gets a different style/scenario
-      // This creates variety: portrait, lifestyle, and candid/activity shots
-      // Randomly select from scene options to add more variety across different companions
+      // Build clothing/setting context from backstory
+      const clothingClause = visualHints.clothingHint ? `Wearing ${visualHints.clothingHint}` : '';
+      const settingClause = visualHints.settingHint || '';
+
+      // Define diverse anchor scenes - casual iPhone-style photography
+      // These feel like dating profile photos or candid shots from friends
       const sceneOptions = {
         neutral: [
-          'Portrait photography, natural expression, soft diffused lighting, shallow depth of field, shot on 85mm lens, photorealistic, high resolution',
-          'Relaxed seated pose on a comfortable couch, casual home setting, natural window light, authentic and approachable, lifestyle photography, photorealistic',
-          'Standing with arms crossed and a confident smile, modern urban background, soft bokeh, environmental portrait, photorealistic',
+          `Casual iPhone photo of SUBJECT. ${clothingClause}${settingClause ? `, ${settingClause}` : ', at a restaurant table'}. ${visualHints.expressionHint || 'Relaxed, natural expression'}. Natural lighting, everything in focus, taken by a friend. Authentic, not retouched.`,
+          `Smartphone selfie of SUBJECT. ${clothingClause}${settingClause ? `, ${settingClause}` : ', leaning against a doorway at home'}. ${visualHints.expressionHint || 'Slight smile, looking at camera'}. Casual, everyday moment. Not posed, not filtered.`,
+          `Candid photo of SUBJECT. ${clothingClause}${settingClause ? `, standing ${settingClause}` : ', standing on a rooftop bar'}. ${visualHints.expressionHint || 'Confident, easy smile'}. Shot on phone by a friend, natural lighting, no retouching.`,
         ],
         happy: [
-          'Candid lifestyle photography, genuine laugh, relaxed pose in a cozy cafe setting, warm ambient lighting, natural and authentic moment, shot on 50mm lens, photorealistic',
-          'Walking through a sunlit park, joyful expression, golden hour lighting, full body shot, lifestyle photography, natural and candid, photorealistic',
-          'Cooking in a bright kitchen, playful expression, warm natural light, hands busy with food prep, lifestyle moment, photorealistic',
+          `Candid iPhone photo of SUBJECT caught mid-laugh. ${clothingClause}${settingClause ? `, ${settingClause}` : ', at an outdoor brunch with friends'}. Genuine, unposed moment of joy. Natural daylight, everything in focus, taken by a friend. Feels real.`,
+          `Phone photo of SUBJECT laughing during ${settingClause || 'a weekend hike'}. ${clothingClause}. Sunlight on face, eyes crinkled, totally natural. Looks like a photo you\'d post on Instagram. Not studio, not retouched.`,
+          `Casual snapshot of SUBJECT grinning at the camera. ${clothingClause}${settingClause ? `, ${settingClause}` : ', at a friend\'s backyard party'}. Golden hour lighting, relaxed and happy. Taken on a phone, authentic moment.`,
         ],
         thoughtful: [
-          'Environmental portrait, gazing out a window, soft natural daylight, contemplative mood, three-quarter view, bokeh background, intimate and personal, photorealistic',
-          'Reading a book in a cozy corner, soft lamp light, peaceful and absorbed, intimate lifestyle moment, photorealistic',
-          'Sitting at a desk working on laptop, focused expression, warm office lighting, professional candid moment, photorealistic',
+          `Candid phone photo of SUBJECT, lost in thought. ${clothingClause}${settingClause ? `, ${settingClause}` : ', sitting by a window at a coffee shop'}. ${visualHints.expressionHint || 'Pensive, looking slightly away from camera'}. Natural light, not posed, intimate moment captured by a friend.`,
+          `iPhone photo of SUBJECT reading ${settingClause ? settingClause : 'at a cozy cafe'}. ${clothingClause}. Absorbed and peaceful, candid moment. Warm ambient light, no flash, everything in focus. Authentic.`,
+          `Casual photo of SUBJECT working ${settingClause ? settingClause : 'at a laptop in a bright apartment'}. ${clothingClause}. ${visualHints.expressionHint || 'Focused, slight concentration'}. Natural window light, taken without them noticing. Real, unfiltered.`,
         ],
       };
 
@@ -819,8 +991,9 @@ export async function imagegenRoutes(app: FastifyInstance): Promise<void> {
 
           try {
             // Use scene-specific prompt for variety (portrait, lifestyle, candid)
+            // Scene templates use SUBJECT placeholder which gets replaced with the appearance description
             const sceneConfig = anchorScenes[i]!;
-            const scenePrompt = `${subjectDesc}. ${sceneConfig.scene}`;
+            const scenePrompt = sceneConfig.scene.replace('SUBJECT', subjectDesc);
 
             const fullPrompt = buildPrompt({
               prompt: scenePrompt,

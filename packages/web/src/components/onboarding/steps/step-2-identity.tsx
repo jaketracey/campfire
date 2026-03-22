@@ -78,7 +78,12 @@ export function Step2Identity() {
     setAnchorImagesComplete,
     setAnchorStreamStarted,
     setAnchorAppearanceSnapshot,
+    setAnchorReady,
+    setCompanionReady,
+    setCompanionActive,
+    setBackstoryReady,
     setAppearanceChangedAfterGeneration,
+    setBackstoryContext,
   } = store;
   const [isGenerating, setIsGenerating] = useState(false);
   const [justGenerated, setJustGenerated] = useState(false);
@@ -180,12 +185,12 @@ export function Step2Identity() {
 
       // Store all LLM-generated attributes in the onboarding store
       // IMPORTANT: Store name and identity so review step can access them
-      setName(generated.name);
-      setIdentity({
-        pronouns: generated.pronouns,
-        backstory: generated.backstory || '',
-      });
-      setArchetype(primaryArchetype);
+        setName(generated.name);
+        setIdentity({
+          pronouns: generated.pronouns,
+          backstory: generated.backstory || '',
+        });
+        setArchetype(primaryArchetype);
       setSecondaryArchetype(secondaryArchetype);
       setPersonality({
         warmth: generated.personality.warmth,
@@ -201,6 +206,15 @@ export function Step2Identity() {
       });
       setVisualStyle(visualStyle);
       setVoice(selectedVoice);
+
+      // Store character context hints for image generation
+      const backstoryCtx = {
+        occupation: generated.occupation || undefined,
+        distinctiveFeatures: generated.distinctiveFeatures.length > 0 ? generated.distinctiveFeatures : undefined,
+        dressStyle: generated.dressStyle || undefined,
+        vibe: generated.vibe || undefined,
+      };
+      setBackstoryContext(backstoryCtx);
 
       // Only create companion and generate images if authenticated
       // For unauthenticated users, we just store the data locally
@@ -262,6 +276,10 @@ export function Step2Identity() {
         setAnchorAppearanceSnapshot(visualStyle.appearance);
         // Reset the change flag since we're generating fresh
         setAppearanceChangedAfterGeneration(false);
+        setCompanionReady(true);
+        setCompanionActive(companion.isActive);
+        setAnchorReady(false);
+        setBackstoryReady(false);
         setAnchorStreamStarted(true);
 
         if (anchorStreamCleanupRef.current) {
@@ -284,6 +302,7 @@ export function Step2Identity() {
               empathy: generated.personality.empathy,
               assertiveness: generated.personality.assertiveness,
             },
+            backstoryContext: backstoryCtx,
           },
           {
             onProgress: (data) => {
@@ -297,12 +316,14 @@ export function Step2Identity() {
               console.log('[SurpriseMe] Anchor generation complete:', result);
               setAnchorStreamStarted(false);
               setAnchorImagesComplete(true);
+              setAnchorReady(true);
             },
             onError: (error) => {
               console.error('[SurpriseMe] Anchor generation error:', error);
               // Still mark as complete so we can proceed with any partial results
               setAnchorStreamStarted(false);
               setAnchorImagesComplete(true);
+              setAnchorReady(true);
             },
           }
         );

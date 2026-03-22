@@ -116,6 +116,8 @@ export interface Companion {
   latestSessionUpdatedAt?: string | null;
   /** URL of the most recent image generated during conversations */
   latestConversationImageUrl?: string | null;
+  /** Lifecycle state maintained by the gateway */
+  status?: 'draft' | 'active' | 'archived';
 }
 
 export interface CreateCompanionInput {
@@ -179,6 +181,8 @@ export interface CompanionListResponse {
   offset: number;
 }
 
+export interface CompanionActivationResponse extends Companion {}
+
 /**
  * List companions for current user
  */
@@ -222,6 +226,13 @@ export function updateCompanion(
   input: UpdateCompanionInput
 ): Promise<Companion> {
   return patch<Companion>(`/companions/${companionId}`, input);
+}
+
+/**
+ * Activate a companion created in draft mode.
+ */
+export async function activateCompanion(companionId: string): Promise<CompanionActivationResponse> {
+  return post<CompanionActivationResponse>(`/companions/${companionId}/activate`);
 }
 
 /**
@@ -367,6 +378,10 @@ export interface GeneratedIdentity {
   appearance: GeneratedAppearance;
   visualStyle: 'realistic' | 'anime' | 'stylized' | 'abstract' | 'minimal';
   voiceGender: 'feminine' | 'masculine' | 'neutral';
+  occupation: string | null;
+  distinctiveFeatures: string[];
+  dressStyle: string | null;
+  vibe: string | null;
   latencyMs: number;
 }
 
@@ -403,6 +418,10 @@ export async function generateRandomIdentity(name?: string): Promise<GeneratedId
     };
     visual_style: string;
     voice_gender: string;
+    occupation?: string | null;
+    distinctive_features?: string[];
+    dress_style?: string | null;
+    vibe?: string | null;
     latency_ms: number;
   }>('/companions/generate-identity', { name: name || null });
 
@@ -435,6 +454,10 @@ export async function generateRandomIdentity(name?: string): Promise<GeneratedId
     },
     visualStyle: response.visual_style as GeneratedIdentity['visualStyle'],
     voiceGender: response.voice_gender as GeneratedIdentity['voiceGender'],
+    occupation: response.occupation || null,
+    distinctiveFeatures: response.distinctive_features || [],
+    dressStyle: response.dress_style || null,
+    vibe: response.vibe || null,
     latencyMs: response.latency_ms,
   };
 }

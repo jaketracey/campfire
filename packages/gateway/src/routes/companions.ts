@@ -660,13 +660,81 @@ export async function companionsRoutes(app: FastifyInstance): Promise<void> {
       user_id: request.user!.userId,
       name: input.name,
       spec,
-      status: 'active', // Auto-activate for now
+      status: 'draft', // Create as draft; activate later when onboarding is complete.
       is_public: input.isPublic,
     });
 
     logger.info({ companionId: companion.id, userId: request.user!.userId }, 'Companion created');
 
     return reply.status(201).send(mapCompanionResponse(companion));
+  });
+
+  /**
+   * POST /companions/:companionId/activate - Activate a draft companion
+   */
+  app.post('/:companionId/activate', { preHandler: requireAuth }, async (request: FastifyRequest, reply: FastifyReply) => {
+    const { companionId } = request.params as { companionId: string };
+
+    const companion = await companionRepo.findById(companionId);
+    if (!companion) {
+      return reply.status(404).send({
+        error: 'Not Found',
+        message: 'Companion not found',
+      });
+    }
+
+    if (companion.user_id !== request.user!.userId) {
+      return reply.status(403).send({
+        error: 'Forbidden',
+        message: 'You can only activate your own companions',
+      });
+    }
+
+    if (companion.status === 'active') {
+      const alreadyActive = await companionRepo.findByIdWithAvatar(companionId);
+      if (!alreadyActive) {
+        return reply.status(500).send({
+          error: 'Server Error',
+          message: 'Unable to load activated companion',
+        });
+      }
+
+      let avatarRenditions: ImageRenditions | null = null;
+      const avatarS3Key = alreadyActive.activeAvatar?.s3_key;
+      if (avatarS3Key) {
+        const renditionsMap = await getAvatarRenditionsForS3Keys([avatarS3Key]);
+        avatarRenditions = renditionsMap.get(avatarS3Key) || null;
+      }
+
+      return reply.send(mapCompanionResponse(alreadyActive, alreadyActive.activeAvatar?.asset_url, avatarRenditions));
+    }
+
+    if (companion.status !== 'draft') {
+      return reply.status(400).send({
+        error: 'Validation Error',
+        message: 'Only draft companions can be activated',
+      });
+    }
+
+    await companionRepo.update(companionId, { status: 'active' });
+    const activated = await companionRepo.findByIdWithAvatar(companionId);
+    if (!activated) {
+      return reply.status(500).send({
+        error: 'Server Error',
+        message: 'Unable to load activated companion',
+      });
+    }
+
+    let avatarRenditions: ImageRenditions | null = null;
+    const avatarS3Key = activated.activeAvatar?.s3_key;
+    if (avatarS3Key) {
+      const renditionsMap = await getAvatarRenditionsForS3Keys([avatarS3Key]);
+      avatarRenditions = renditionsMap.get(avatarS3Key) || null;
+    }
+
+    logger.info({ companionId, userId: request.user!.userId }, 'Companion activated');
+
+    return reply.send(mapCompanionResponse(activated, activated.activeAvatar?.asset_url, avatarRenditions));
   });
 
   /**
@@ -1273,6 +1341,10 @@ export async function companionsRoutes(app: FastifyInstance): Promise<void> {
         };
         visual_style: string;
         voice_gender: string;
+        occupation: string | null;
+        distinctive_features: string[];
+        dress_style: string | null;
+        vibe: string | null;
         latency_ms: number;
       };
 

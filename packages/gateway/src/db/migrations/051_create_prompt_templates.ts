@@ -1000,6 +1000,10 @@ You must respond with valid JSON in this exact format:
   "backstory": "A brief, grounded backstory (1-2 sentences)",
   "archetype": "one of: caregiver, sage, explorer, creator, hero, jester, lover, magician, ruler, everyperson, innocent, rebel",
   "secondary_archetype": "another archetype or null",
+  "occupation": "their job or role (nurse, architect, bartender, grad student, tattoo artist, etc.)",
+  "distinctive_features": ["1-2 physical features that add character, e.g. freckles, gap tooth, small scar on chin, sleeve tattoo, nose piercing, dimples, beauty mark"],
+  "dress_style": "how they typically dress (scrubs, business casual, streetwear, bohemian, vintage thrift, athleisure, etc.)",
+  "vibe": "their overall energy in one word (warm, mysterious, nerdy, rebellious, confident, gentle, playful, intense, adventurous, romantic)",
   "personality": {{
     "warmth": 30-90,
     "energy": 20-90,

@@ -6,7 +6,14 @@ import { Button } from '@/components/ui/button';
 import { Flame, Loader2 } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { useToast } from '@/hooks/use-toast';
-import { createSession, streamAnchorImages, generateBackstory, type AnchorImage, type GenerateBackstoryResult } from '@/lib/api';
+import {
+  createSession,
+  streamAnchorImages,
+  generateBackstory,
+  activateCompanion,
+  type AnchorImage,
+  type GenerateBackstoryResult,
+} from '@/lib/api';
 import Image from 'next/image';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useAuth } from '@/hooks/use-auth';
@@ -25,6 +32,10 @@ export function Step9Review() {
     setSessionId: storeSetSessionId,
     anchorImages: storeAnchorImages,
     anchorImagesComplete: storeAnchorImagesComplete,
+    companionActive,
+    setCompanionActive,
+    setAnchorReady,
+    setBackstoryReady,
     anchorStreamStarted,
     addAnchorImage,
     setAnchorImagesComplete,
@@ -82,6 +93,7 @@ export function Step9Review() {
     if (shouldStartStream) {
       // Connect to anchor image stream
       console.log('[Review] Starting anchor image stream');
+      setAnchorReady(false);
       setAnchorStreamStarted(true);
       streamCleanupRef.current = streamAnchorImages(
         {
@@ -95,6 +107,7 @@ export function Step9Review() {
             empathy: state.personality.empathy,
             assertiveness: state.personality.assertiveness,
           },
+          backstoryContext: state.backstoryContext || undefined,
         },
         {
           onProgress: (data) => {
@@ -110,12 +123,14 @@ export function Step9Review() {
             console.log('Anchor generation complete:', result);
             setLocalImagesGenerated(true);
             setAnchorImagesComplete(true);
+            setAnchorReady(true);
             setAnchorStreamStarted(false);
           },
           onError: (error) => {
             console.error('Anchor generation error:', error);
             setLocalImagesGenerated(true);
             setAnchorImagesComplete(true);
+            setAnchorReady(true);
             setAnchorStreamStarted(false);
           },
         }
@@ -143,16 +158,20 @@ export function Step9Review() {
     }).then((result) => {
       console.log('Backstory generated:', result);
       setBackstoryResult(result);
+      setBackstoryReady(true);
     }).catch((error) => {
       console.error('Backstory generation failed:', error);
       // Still allow progression even without backstory
       setBackstoryResult({ backstory: '', motivations: [], keyMemories: [], personalityQuirks: [], latencyMs: 0 });
+      setBackstoryReady(true);
     });
   }, [
     companionId,
     state,
     storeAnchorImages.length,
     storeAnchorImagesComplete,
+    setAnchorReady,
+    setBackstoryReady,
     anchorStreamStarted,
     addAnchorImage,
     setAnchorImagesComplete,
@@ -206,6 +225,11 @@ export function Step9Review() {
     setSessionError(null);
 
     try {
+      if (!companionActive) {
+        const activated = await activateCompanion(companionId);
+        setCompanionActive(activated.status === 'active' || activated.isActive);
+      }
+
       const session = await createSession({
         companionId: companionId,
         title: `Chat with ${state.name}`,
@@ -229,7 +253,16 @@ export function Step9Review() {
       isCreatingSessionRef.current = false;
       setIsPreparingSession(false);
     }
-  }, [companionId, localSessionId, isPreparingSession, state.name, storeSetSessionId, toast]);
+  }, [
+    companionId,
+    localSessionId,
+    isPreparingSession,
+    state.name,
+    storeSetSessionId,
+    toast,
+    companionActive,
+    setCompanionActive,
+  ]);
 
   // Create session when we have enough generated content to continue.
   useEffect(() => {

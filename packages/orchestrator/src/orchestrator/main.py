@@ -440,6 +440,10 @@ class GenerateRandomIdentityResponse(BaseModel):
     appearance: GeneratedAppearance
     visual_style: str  # realistic, anime, stylized, abstract, minimal
     voice_gender: str  # feminine, masculine, neutral
+    occupation: str | None = None  # What they do (nurse, architect, bartender, etc.)
+    distinctive_features: list[str] = []  # 1-2 physical features (freckles, gap tooth, scar, etc.)
+    dress_style: str | None = None  # How they dress (scrubs, business casual, streetwear, etc.)
+    vibe: str | None = None  # Overall energy (warm, mysterious, nerdy, rebellious, etc.)
     latency_ms: float
 
 
@@ -2586,6 +2590,11 @@ IMPORTANT - NAME PROVIDED: The user has already chosen the name "{request.name}"
             build=appearance_data.get("build", "M") if gender == "male" else None,
         )
 
+        # Extract character context fields for image generation
+        distinctive_features = result.get("distinctive_features", [])
+        if isinstance(distinctive_features, str):
+            distinctive_features = [distinctive_features]
+
         return GenerateRandomIdentityResponse(
             name=result.get("name", "Luna"),
             pronouns=result.get("pronouns", "they/them"),
@@ -2596,6 +2605,10 @@ IMPORTANT - NAME PROVIDED: The user has already chosen the name "{request.name}"
             appearance=appearance,
             visual_style=result.get("visual_style", "realistic"),
             voice_gender=result.get("voice_gender", "neutral"),
+            occupation=result.get("occupation"),
+            distinctive_features=distinctive_features[:2],  # Cap at 2 features
+            dress_style=result.get("dress_style"),
+            vibe=result.get("vibe"),
             latency_ms=latency_ms,
         )
 
