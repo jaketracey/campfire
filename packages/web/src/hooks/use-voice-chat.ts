@@ -59,36 +59,56 @@ export function useVoiceChat({
   const intentionalStopRef = useRef(false);
   const messageTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  // Stable refs for tool dependencies so clientTools object doesn't change
+  const companionIdRef = useRef(companionId);
+  const sessionIdRef = useRef(sessionId);
+  const userIdRef = useRef(userId);
+  const onImageGeneratedRef = useRef(onImageGenerated);
+  companionIdRef.current = companionId;
+  sessionIdRef.current = sessionId;
+  userIdRef.current = userId;
+  onImageGeneratedRef.current = onImageGenerated;
+
   const conversation = useConversation({
     micMuted: isMuted,
     clientTools: {
-      generate_image: async (params: { prompt: string }) => {
-        if (!companionId || !sessionId || !userId) return 'Image generation not available in this session.';
+      generate_image: async (params: Record<string, unknown>) => {
+        console.log('[VoiceChat] generate_image called with:', params);
+        const cId = companionIdRef.current;
+        const sId = sessionIdRef.current;
+        const uId = userIdRef.current;
+        if (!cId || !sId || !uId) return 'Image generation not available in this session.';
         try {
+          const prompt = (params.prompt as string) || 'portrait photo';
           const result = await apiClient<{ imageUrl: string }>('/imagegen/generate', {
             method: 'POST',
             body: JSON.stringify({
-              prompt: params.prompt,
-              companionId,
-              sessionId,
-              userId,
+              prompt,
+              companionId: cId,
+              sessionId: sId,
+              userId: uId,
               emotionalState: 'neutral',
               style: 'realistic',
               width: 832,
               height: 1248,
             }),
           });
-          onImageGenerated?.(result.imageUrl);
-          return `Image generated successfully. The user can see it now.`;
+          console.log('[VoiceChat] Image generated:', result.imageUrl);
+          onImageGeneratedRef.current?.(result.imageUrl);
+          return 'Image generated successfully. The user can see it now.';
         } catch (e) {
+          console.error('[VoiceChat] Image generation failed:', e);
           return `Image generation failed: ${e instanceof Error ? e.message : 'unknown error'}`;
         }
       },
-      recall_memories: async (params: { query: string }) => {
-        if (!companionId || !sessionId) return 'No memories available.';
+      recall_memories: async (params: Record<string, unknown>) => {
+        console.log('[VoiceChat] recall_memories called with:', params);
+        const cId = companionIdRef.current;
+        if (!cId) return 'No memories available.';
         try {
+          const query = (params.query as string) || '';
           const result = await apiClient<{ data: { memories: Array<{ content: string; type: string }> } }>(
-            `/companions/${companionId}/memories?query=${encodeURIComponent(params.query)}&limit=5`,
+            `/companions/${cId}/memories?query=${encodeURIComponent(query)}&limit=5`,
           );
           const memories = result.data?.memories || [];
           if (memories.length === 0) return 'No relevant memories found.';
@@ -97,6 +117,9 @@ export function useVoiceChat({
           return 'Could not retrieve memories.';
         }
       },
+    },
+    onUnhandledClientToolCall: (params) => {
+      console.warn('[VoiceChat] Unhandled client tool call:', params);
     },
     onConnect: ({ conversationId: connId }) => {
       setVoiceState('listening');
