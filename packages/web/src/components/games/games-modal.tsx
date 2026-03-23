@@ -1,9 +1,14 @@
 'use client';
 
-import { motion, AnimatePresence } from 'framer-motion';
-import { X, Gamepad2, Grid3X3, Crown, CircleDot } from 'lucide-react';
-import { Button } from '@/components/ui/button';
-import { Card } from '@/components/ui/card';
+import { motion } from 'framer-motion';
+import { Gamepad2, Grid3X3, Crown, CircleDot } from 'lucide-react';
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+} from '@/components/ui/dialog';
 
 interface Game {
   id: string;
@@ -52,95 +57,59 @@ export function GamesModal({ isOpen, onClose, onSelectGame, companionName = 'you
   };
 
   return (
-    <AnimatePresence>
-      {isOpen && (
-        <>
-          {/* Backdrop */}
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50"
-            onClick={onClose}
-          />
+    <Dialog open={isOpen} onOpenChange={(open) => !open && onClose()}>
+      <DialogContent className="max-w-md bg-background/95 backdrop-blur-xl border-border/50">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            <Gamepad2 className="h-5 w-5 text-primary" />
+            Play a Game
+          </DialogTitle>
+          <DialogDescription>
+            Challenge {companionName} to a game! Select one to start playing.
+          </DialogDescription>
+        </DialogHeader>
 
-          {/* Modal */}
-          <motion.div
-            initial={{ opacity: 0, scale: 0.95, y: 20 }}
-            animate={{ opacity: 1, scale: 1, y: 0 }}
-            exit={{ opacity: 0, scale: 0.95, y: 20 }}
-            transition={{ type: 'spring', damping: 25, stiffness: 300 }}
-            className="fixed inset-0 z-50 flex items-center justify-center p-4"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <Card className="relative w-full max-w-md bg-background/95 backdrop-blur-xl border-border/50 shadow-2xl overflow-hidden">
-              {/* Header */}
-              <div className="flex items-center justify-between p-4 border-b border-border/50">
-                <div className="flex items-center gap-2">
-                  <Gamepad2 className="h-5 w-5 text-primary" />
-                  <h2 className="text-lg font-semibold">Play a Game</h2>
+        <div className="space-y-3">
+          {AVAILABLE_GAMES.map((game) => (
+            <motion.button
+              key={game.id}
+              whileHover={game.available ? { scale: 1.02 } : {}}
+              whileTap={game.available ? { scale: 0.98 } : {}}
+              onClick={() => handleGameSelect(game)}
+              disabled={!game.available}
+              className={`
+                w-full p-4 rounded-lg border text-left transition-colors
+                ${game.available
+                  ? 'border-border/50 hover:border-primary/50 hover:bg-primary/5 cursor-pointer'
+                  : 'border-border/30 opacity-50 cursor-not-allowed'
+                }
+              `}
+            >
+              <div className="flex items-center gap-4">
+                <div className={`
+                  p-2 rounded-lg
+                  ${game.available ? 'bg-primary/10 text-primary' : 'bg-muted text-muted-foreground'}
+                `}>
+                  {game.icon}
                 </div>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  onClick={onClose}
-                  className="h-8 w-8"
-                >
-                  <X className="h-4 w-4" />
-                </Button>
-              </div>
-
-              {/* Content */}
-              <div className="p-4">
-                <p className="text-sm text-muted-foreground mb-4">
-                  Challenge {companionName} to a game! Select one to start playing.
-                </p>
-
-                <div className="space-y-3">
-                  {AVAILABLE_GAMES.map((game) => (
-                    <motion.button
-                      key={game.id}
-                      whileHover={game.available ? { scale: 1.02 } : {}}
-                      whileTap={game.available ? { scale: 0.98 } : {}}
-                      onClick={() => handleGameSelect(game)}
-                      disabled={!game.available}
-                      className={`
-                        w-full p-4 rounded-lg border text-left transition-colors
-                        ${game.available
-                          ? 'border-border/50 hover:border-primary/50 hover:bg-primary/5 cursor-pointer'
-                          : 'border-border/30 opacity-50 cursor-not-allowed'
-                        }
-                      `}
-                    >
-                      <div className="flex items-center gap-4">
-                        <div className={`
-                          p-2 rounded-lg
-                          ${game.available ? 'bg-primary/10 text-primary' : 'bg-muted text-muted-foreground'}
-                        `}>
-                          {game.icon}
-                        </div>
-                        <div className="flex-1">
-                          <div className="flex items-center gap-2">
-                            <span className="font-medium">{game.name}</span>
-                            {!game.available && (
-                              <span className="text-xs bg-muted px-2 py-0.5 rounded-full text-muted-foreground">
-                                Coming Soon
-                              </span>
-                            )}
-                          </div>
-                          <p className="text-sm text-muted-foreground mt-0.5">
-                            {game.description}
-                          </p>
-                        </div>
-                      </div>
-                    </motion.button>
-                  ))}
+                <div className="flex-1">
+                  <div className="flex items-center gap-2">
+                    <span className="font-medium">{game.name}</span>
+                    {!game.available && (
+                      <span className="text-xs bg-muted px-2 py-0.5 rounded-full text-muted-foreground">
+                        Coming Soon
+                      </span>
+                    )}
+                  </div>
+                  <p className="text-sm text-muted-foreground mt-0.5">
+                    {game.description}
+                  </p>
                 </div>
               </div>
-            </Card>
-          </motion.div>
-        </>
-      )}
-    </AnimatePresence>
+            </motion.button>
+          ))}
+        </div>
+      </DialogContent>
+    </Dialog>
   );
 }
