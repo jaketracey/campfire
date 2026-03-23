@@ -41,7 +41,7 @@ export function MobileActionBar({
   };
 
   return (
-    <div className="lg:hidden pb-3 -mx-6 px-6 overflow-x-auto scrollbar-hide">
+    <div className="lg:hidden pb-3 -mx-6 px-6 overflow-x-auto scrollbar-hide relative" style={{ maskImage: 'linear-gradient(to right, black 85%, transparent)', WebkitMaskImage: 'linear-gradient(to right, black 85%, transparent)' }}>
       <div className="flex gap-2 w-max">
         <Button
           variant="outline"
