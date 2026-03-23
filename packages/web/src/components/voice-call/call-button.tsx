@@ -36,6 +36,7 @@ export function CallButton({ onClick, disabled }: CallButtonProps) {
       <motion.button
         onClick={onClick}
         disabled={disabled}
+        aria-label="Start voice call"
         whileHover={{ scale: 1.1 }}
         whileTap={{ scale: 0.95 }}
         className="relative w-14 h-14 rounded-full bg-gradient-to-br from-emerald-500 to-teal-600 text-white shadow-lg shadow-emerald-500/30 hover:shadow-emerald-500/50 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center transition-shadow duration-300"

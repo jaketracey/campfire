@@ -125,6 +125,7 @@ export function CallSidebar({
               : 'hover:bg-muted'
           }`}
           onClick={onToggleMute}
+          aria-label={isMuted ? 'Unmute microphone' : 'Mute microphone'}
         >
           {isMuted ? <MicOff className="h-6 w-6" /> : <Mic className="h-6 w-6" />}
         </Button>
@@ -134,6 +135,7 @@ export function CallSidebar({
           size="lg"
           className="rounded-full w-14 h-14 p-0 bg-red-600 hover:bg-red-700"
           onClick={onEndCall}
+          aria-label="End call"
         >
           <PhoneOff className="h-6 w-6" />
         </Button>

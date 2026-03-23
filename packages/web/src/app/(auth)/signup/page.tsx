@@ -268,6 +268,7 @@ export default function SignupPage() {
                 onClick={() => setShowPassword(!showPassword)}
                 disabled={isLoading}
                 data-testid="signup-password-toggle"
+                aria-label={showPassword ? 'Hide password' : 'Show password'}
               >
                 {showPassword ? (
                   <EyeOff className="h-4 w-4 text-muted-foreground" />
@@ -330,6 +331,7 @@ export default function SignupPage() {
                 onClick={() => setShowConfirmPassword(!showConfirmPassword)}
                 disabled={isLoading}
                 data-testid="signup-confirm-password-toggle"
+                aria-label={showConfirmPassword ? 'Hide password' : 'Show password'}
               >
                 {showConfirmPassword ? (
                   <EyeOff className="h-4 w-4 text-muted-foreground" />

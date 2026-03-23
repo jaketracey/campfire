@@ -335,7 +335,7 @@ export function GiftsPanel({
       <div className="fixed bottom-4 right-4 w-[400px] z-50 shadow-2xl rounded-lg border bg-background p-4">
         <div className="flex items-center justify-between mb-2">
           <span className="font-semibold text-sm">Gifts</span>
-          <Button variant="ghost" size="icon" className="h-7 w-7" onClick={onClose}>
+          <Button variant="ghost" size="icon" className="h-7 w-7" onClick={onClose} aria-label="Close gifts panel">
             <X className="h-4 w-4" />
           </Button>
         </div>
@@ -368,7 +368,7 @@ export function GiftsPanel({
         </div>
         <div className="flex items-center gap-2">
           <TokenBalanceDisplay balance={tokenBalance} showPurchaseLink compact />
-          <Button variant="ghost" size="icon" className="h-7 w-7" onClick={onClose}>
+          <Button variant="ghost" size="icon" className="h-7 w-7" onClick={onClose} aria-label="Close gifts panel">
             <X className="h-4 w-4" />
           </Button>
         </div>

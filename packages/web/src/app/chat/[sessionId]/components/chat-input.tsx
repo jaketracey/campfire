@@ -145,6 +145,7 @@ export function ChatInput({
           disabled={!input.trim() || isRecording}
           className="h-12 w-12 lg:h-10 lg:w-10 flex-shrink-0 rounded-full"
           data-testid="chat-send-button"
+          aria-label="Send message"
         >
           <ArrowRight className="h-7 w-7 lg:h-5 lg:w-5" />
         </Button>
@@ -157,6 +158,7 @@ export function ChatInput({
             variant="outline"
             className="h-12 w-12 flex-shrink-0 rounded-full lg:hidden"
             data-testid="next-companion-button"
+            aria-label="Next companion"
           >
             <SkipForward className={`h-6 w-6 ${isSwitchingCompanion ? 'animate-pulse' : ''}`} />
           </Button>
