@@ -67,13 +67,13 @@ export default function ForgotPasswordPage() {
 
   if (emailSent) {
     return (
-      <Card>
+      <Card className="bg-white/[0.03] backdrop-blur-xl border-white/10">
         <CardHeader className="space-y-1 text-center">
           <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-campfire-500/10">
             <Mail className="h-8 w-8 text-campfire-500" />
           </div>
-          <CardTitle className="text-2xl font-bold">Check your email</CardTitle>
-          <CardDescription data-testid="forgot-success-message">
+          <CardTitle className="text-2xl font-bold text-white">Check your email</CardTitle>
+          <CardDescription className="text-white/60" data-testid="forgot-success-message">
             We&apos;ve sent password reset instructions to{' '}
             <span className="font-medium text-foreground">{submittedEmail}</span>
           </CardDescription>
@@ -107,10 +107,10 @@ export default function ForgotPasswordPage() {
   }
 
   return (
-    <Card>
+    <Card className="bg-white/[0.03] backdrop-blur-xl border-white/10">
       <CardHeader className="space-y-1">
-        <CardTitle className="text-2xl font-bold">Forgot password?</CardTitle>
-        <CardDescription>
+        <CardTitle className="text-2xl font-bold text-white">Forgot password?</CardTitle>
+        <CardDescription className="text-white/60">
           Enter your email address and we&apos;ll send you a link to reset your
           password.
         </CardDescription>
