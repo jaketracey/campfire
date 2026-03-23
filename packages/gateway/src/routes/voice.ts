@@ -8,9 +8,11 @@ import type { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
 import { z } from 'zod';
 import { logger } from '../observability/logger.js';
 import { env } from '../env.js';
+import { requireAuth } from '../middleware/auth.js';
 
 // ElevenLabs API configuration
 const ELEVENLABS_API_KEY = env.ELEVENLABS_API_KEY || '';
+const ELEVENLABS_AGENT_ID = env.ELEVENLABS_AGENT_ID || '';
 const ELEVENLABS_TTS_MODEL = env.ELEVENLABS_TTS_MODEL || 'eleven_turbo_v2_5';
 
 // Flirty sample text for voice previews
@@ -251,6 +253,66 @@ export async function voiceRoutes(app: FastifyInstance): Promise<void> {
         error: {
           code: 'INTERNAL_ERROR',
           message: 'Failed to generate voice sample',
+          timestamp: new Date().toISOString(),
+        },
+      });
+    }
+  });
+
+  /**
+   * GET /voice/signed-url
+   * Returns a signed WebSocket URL for ElevenLabs Conversational AI agent.
+   * Requires authentication.
+   */
+  app.get('/signed-url', { preHandler: requireAuth }, async (_request: FastifyRequest, reply: FastifyReply) => {
+    if (!ELEVENLABS_API_KEY || !ELEVENLABS_AGENT_ID) {
+      return reply.status(503).send({
+        success: false,
+        error: {
+          code: 'SERVICE_UNAVAILABLE',
+          message: 'Voice agent not configured',
+          timestamp: new Date().toISOString(),
+        },
+      });
+    }
+
+    try {
+      const response = await fetch(
+        `https://api.elevenlabs.io/v1/convai/conversation/get-signed-url?agent_id=${ELEVENLABS_AGENT_ID}`,
+        {
+          method: 'GET',
+          headers: {
+            'xi-api-key': ELEVENLABS_API_KEY,
+          },
+        }
+      );
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        logger.error({ status: response.status, error: errorText }, 'Failed to get signed URL from ElevenLabs');
+        return reply.status(502).send({
+          success: false,
+          error: {
+            code: 'SIGNED_URL_FAILED',
+            message: 'Failed to get voice agent signed URL',
+            timestamp: new Date().toISOString(),
+          },
+        });
+      }
+
+      const data = await response.json() as { signed_url: string };
+
+      return reply.send({
+        success: true,
+        data: { signedUrl: data.signed_url },
+      });
+    } catch (error) {
+      logger.error({ err: error }, 'Failed to get signed URL');
+      return reply.status(500).send({
+        success: false,
+        error: {
+          code: 'INTERNAL_ERROR',
+          message: 'Failed to get voice agent signed URL',
           timestamp: new Date().toISOString(),
         },
       });

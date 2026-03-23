@@ -14,7 +14,7 @@ import type { Companion } from '@/lib/api';
 import type { CompanionBackstory } from '@/lib/api';
 import type { EmotionalState } from '@/lib/api/imagegen';
 import type { SignupTrigger } from '@/components/demo/signup-modal';
-import type { VoiceCallState } from '@/hooks/use-voice-call';
+import type { VoiceChatState } from '@/hooks/use-voice-chat';
 
 interface ChatSidebarProps {
   // Companion data
@@ -43,13 +43,15 @@ interface ChatSidebarProps {
 
   // Voice call
   isCallActive: boolean;
-  callState: VoiceCallState;
+  voiceState: VoiceChatState;
   isCallMuted: boolean;
-  currentTranscript: string;
-  analyserNode: AnalyserNode | null;
+  agentMessage: string;
+  userTranscript: string;
   onEndCall: () => void;
   onToggleMute: () => void;
   onCallClick: () => void;
+  getInputFrequencyData?: () => Uint8Array | undefined;
+  getOutputFrequencyData?: () => Uint8Array | undefined;
 
   // Webcam
   isWebcamEnabled: boolean;
@@ -102,13 +104,15 @@ export function ChatSidebar({
   sessionTotalLikes,
   likeAnimationTrigger,
   isCallActive,
-  callState,
+  voiceState,
   isCallMuted,
-  currentTranscript,
-  analyserNode,
+  agentMessage,
+  userTranscript,
   onEndCall,
   onToggleMute,
   onCallClick,
+  getInputFrequencyData,
+  getOutputFrequencyData,
   isWebcamEnabled,
   isCapturing,
   latestFrame,
@@ -170,12 +174,14 @@ export function ChatSidebar({
         <CallSidebar
           companionName={companion.name}
           companionAvatarUrl={currentAvatarUrl || companion.avatarUrl}
-          callState={callState}
+          voiceState={voiceState}
           isMuted={isCallMuted}
-          currentTranscript={currentTranscript}
-          analyserNode={analyserNode}
+          agentMessage={agentMessage}
+          userTranscript={userTranscript}
           onEndCall={onEndCall}
           onToggleMute={onToggleMute}
+          getInputFrequencyData={getInputFrequencyData}
+          getOutputFrequencyData={getOutputFrequencyData}
         />
       ) : (
         <>

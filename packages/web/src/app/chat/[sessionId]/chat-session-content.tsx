@@ -83,13 +83,15 @@ export function ChatSessionContent({
         sessionTotalLikes={chat.sessionTotalLikes}
         likeAnimationTrigger={chat.likeAnimationTrigger}
         isCallActive={chat.isCallActive}
-        callState={chat.callState}
+        voiceState={chat.voiceState}
         isCallMuted={chat.isCallMuted}
-        currentTranscript={chat.currentTranscript}
-        analyserNode={chat.getCallAnalyserNode()}
-        onEndCall={chat.endCall}
+        agentMessage={chat.agentMessage}
+        userTranscript={chat.userTranscript}
+        onEndCall={chat.stopVoiceChat}
         onToggleMute={chat.toggleCallMute}
         onCallClick={chat.handleCallClick}
+        getInputFrequencyData={chat.getInputFrequencyData}
+        getOutputFrequencyData={chat.getOutputFrequencyData}
         isWebcamEnabled={chat.isWebcamEnabled}
         isCapturing={chat.isCapturing}
         latestFrame={chat.latestFrame}
@@ -324,11 +326,11 @@ export function ChatSessionContent({
         />
       )}
 
-      {/* Insufficient Tokens Modal (Voice Call) */}
+      {/* Insufficient Tokens Modal (Voice Call) - TODO: re-enable with new billing */}
       <InsufficientTokensModal
-        isOpen={chat.insufficientTokens}
-        onClose={chat.clearInsufficientTokens}
-        currentBalance={chat.voiceCallBalance ?? 0}
+        isOpen={false}
+        onClose={() => {}}
+        currentBalance={0}
       />
 
       {/* Support Modal */}

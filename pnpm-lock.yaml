@@ -253,6 +253,9 @@ importers:
       '@campfire/shared':
         specifier: workspace:*
         version: link:../shared
+      '@elevenlabs/react':
+        specifier: ^0.14.3
+        version: 0.14.3(@types/dom-mediacapture-record@1.0.22)(react@19.2.3)
       '@fingerprintjs/fingerprintjs':
         specifier: ^5.0.1
         version: 5.0.1
@@ -1376,6 +1379,9 @@ packages:
     resolution: {integrity: sha512-ctxtJ/eA+t+6q2++vj5j7FYX3nRu311q1wfYH3xjlLOsczhlhxAg2FWNUXhpGvAw3BWo1xBcvOV6/YLc2r5FJw==}
     hasBin: true
 
+  '@bufbuild/protobuf@1.10.1':
+    resolution: {integrity: sha512-wJ8ReQbHxsAfXhrf9ixl0aYbZorRuOWpBNzm8pL8ftmSxQx/wnJD5Eg861NwJU/czy2VXFIebCeZnZrI9rktIQ==}
+
   '@csstools/color-helpers@5.1.0':
     resolution: {integrity: sha512-S11EXWJyy0Mz5SYvRmY8nJYTFFd1LCNV+7cXyAgQtOOuzb4EsgfqDufL+9esx72/eLhsRdGZwaldu/h+E4t4BA==}
     engines: {node: '>=18'}
@@ -1435,9 +1441,20 @@ packages:
     resolution: {integrity: sha512-QxULHAm7cNu72w97JUNCBFODFaXpbDg+dP8b/oWFAZ2MTRppA3U00Y2L1HqaS4J6yBqxwa/Y3nMBaxVKbB/NsA==}
     engines: {node: '>=20.19.0'}
 
+  '@elevenlabs/client@0.15.2':
+    resolution: {integrity: sha512-IKEs0OUHol9ZQ/gKBh5ThN5udRp6bnU70DxyRxprWop3zA8oYUdBa+LE+2tlWho9A4UKubD5UjvjCBJLh2cDVw==}
+
   '@elevenlabs/elevenlabs-js@2.35.0':
     resolution: {integrity: sha512-iQO8Q7nxBnMpP494ziRD4e0dtMQcqI2IVFacBbH2huOrqetg0DG+BPFLC4IHa/KLT6u6UXYq5Hc7HnxZsqmQ9w==}
     engines: {node: '>=18.0.0'}
+
+  '@elevenlabs/react@0.14.3':
+    resolution: {integrity: sha512-nb+8pbbWGVCA/J7P8F5MckVYvKCOIi48I0chu5XkuAPOl4UPq4lw5RjrPQk10hDuoVtq7ccHl44F4652yh8hoA==}
+    peerDependencies:
+      react: '>=16.8.0'
+
+  '@elevenlabs/types@0.6.1':
+    resolution: {integrity: sha512-SNFrKWw5w/JHy9QGt3WWBj0kc71diPRuXHc/7/hdr46ghYz8mTPlFZJBmSPGwXQAfS29jxYXojEmBfKKfgoPCQ==}
 
   '@emnapi/core@1.7.1':
     resolution: {integrity: sha512-o1uhUASyo921r2XtHYOHy7gdkGLge8ghBEQHMWmyJFoXlpU58kIrhhN3w26lpQb6dspetweapMn2CSNwQ8I4wg==}
@@ -2193,6 +2210,12 @@ packages:
 
   '@js-sdsl/ordered-map@4.4.2':
     resolution: {integrity: sha512-iUKgm52T8HOE/makSxjqoWhe95ZJA1/G1sYsGev2JDKUSS14KAgg1LHb+Ba+IPow0xflbnSkOsZcO08C7w1gYw==}
+
+  '@livekit/mutex@1.1.1':
+    resolution: {integrity: sha512-EsshAucklmpuUAfkABPxJNhzj9v2sG7JuzFDL4ML1oJQSV14sqrpTYnsaOudMAw9yOaW53NU3QQTlUQoRs4czw==}
+
+  '@livekit/protocol@1.44.0':
+    resolution: {integrity: sha512-/vfhDUGcUKO8Q43r6i+5FrDhl5oZjm/X3U4x2Iciqvgn5C8qbj+57YPcWSJ1kyIZm5Cm6AV2nAPjMm3ETD/iyg==}
 
   '@lukeed/ms@2.0.2':
     resolution: {integrity: sha512-9I2Zn6+NJLfaGoz9jN3lpwDgAYvfGeNYdbAIjJOqzs4Tpc+VU3Jqq4IofSUBKajiDS8k9fZIg18/z13mpk1bsA==}
@@ -4367,6 +4390,9 @@ packages:
 
   '@types/dockerode@3.3.47':
     resolution: {integrity: sha512-ShM1mz7rCjdssXt7Xz0u1/R2BJC7piWa3SJpUBiVjCf2A3XNn4cP6pUVaD8bLanpPVVn4IKzJuw3dOvkJ8IbYw==}
+
+  '@types/dom-mediacapture-record@1.0.22':
+    resolution: {integrity: sha512-mUMZLK3NvwRLcAAT9qmcK+9p7tpU2FHdDsntR3YI4+GY88XrgG4XiE7u1Q2LAN2/FZOz/tdMDC3GQCR4T8nFuw==}
 
   '@types/estree@1.0.8':
     resolution: {integrity: sha512-dWHzHa2WqEXI/O1E9OjrocMTKJl2mSrEolh1Iomrv6U+JuNwaHXsXx9bLu5gG7BUWFIN0skIQJQ/L1rIex4X6w==}
@@ -6673,6 +6699,9 @@ packages:
   jose@5.10.0:
     resolution: {integrity: sha512-s+3Al/p9g32Iq+oqXxkW//7jk2Vig6FF1CFqzVXoTUXt2qz89YWbL+OwS17NFYEvxC35n0FKeGO2LGYSxeM2Gg==}
 
+  jose@6.2.2:
+    resolution: {integrity: sha512-d7kPDd34KO/YnzaDOlikGpOurfF0ByC2sEV4cANCtdqLlTfBlw2p14O/5d/zv40gJPbIQxfES3nSx1/oYNyuZQ==}
+
   joycon@3.1.1:
     resolution: {integrity: sha512-34wB/Y7MW7bzjKRjUKTa46I2Z7eV62Rkhva+KkopW7Qvv/OSWBqvkSY7vusOPrNuZcUG3tApvdVgNB8POj3SPw==}
     engines: {node: '>=10'}
@@ -6870,6 +6899,11 @@ packages:
   lines-and-columns@1.2.4:
     resolution: {integrity: sha512-7ylylesZQ/PV29jhEDl3Ufjo6ZX7gCqJr5F7PKrqc93v7fzSymt1BpwEU8nAUXs8qzzvqhbjhK5QZg6Mt/HkBg==}
 
+  livekit-client@2.17.3:
+    resolution: {integrity: sha512-htwsAL/BMylY/zwdcT/z00U789csbi9DldSW7DO+5tz7Q15pwu++E1X+ZdtZDfkmlysfQLLibdcqlyg9FY7veQ==}
+    peerDependencies:
+      '@types/dom-mediacapture-record': ^1
+
   locate-path@5.0.0:
     resolution: {integrity: sha512-t7hw9pI+WvuwNJXwk5zVHpyhIqzg2qTlklJOf0mVxGSbe3Fp2VieZcduNYjaLDoy6p9uGpQEGWG87WpMKlNq8g==}
     engines: {node: '>=8'}
@@ -6908,6 +6942,10 @@ packages:
   log-symbols@2.2.0:
     resolution: {integrity: sha512-VeIAFslyIerEJLXHziedo2basKbMKtTw3vfn5IzG0XTjhAVEJyNHnL2p7vc+wBDSdQuUpNw3M2u6xb9QsAY5Eg==}
     engines: {node: '>=4'}
+
+  loglevel@1.9.2:
+    resolution: {integrity: sha512-HgMmCqIJSAKqo68l0rS2AanEWfkxaZ5wNiEFb5ggm08lDs9Xl2KxBlX3PTcaD2chBM1gXAYf491/M2Rv8Jwayg==}
+    engines: {node: '>= 0.6.0'}
 
   long@5.3.2:
     resolution: {integrity: sha512-mNAgZ1GmyNhD7AuqnTG3/VQ26o760+ZYBPKjPvugO8+nLbYfX6TVpJPseBvopbdY+qpZ/lKUnmEc1LeZYS3QAA==}
@@ -8204,6 +8242,9 @@ packages:
   run-parallel@1.2.0:
     resolution: {integrity: sha512-5l4VyZR86LZ/lDxZTR6jqL8AFE2S0IFLMP26AbjsLVADxHdhB/c0GUsH+y39UfCi3dzz8OlQuPmnaJOMoDHQBA==}
 
+  rxjs@7.8.2:
+    resolution: {integrity: sha512-dhKf903U/PQZY6boNNtAGdWbG85WAbjT/1xYoZIC7FAY0yWapOBQVsVrDl58W86//e1VpMNBtRV4MaXfdMySFA==}
+
   safe-array-concat@1.1.3:
     resolution: {integrity: sha512-AURm5f0jYEOydBj7VQlVvDrjeFgthDdEF5H1dP+6mNpoXOMo1quQqJ4wvJDyRZ9+pO3kGWoOdmV08cSv2aJV6Q==}
     engines: {node: '>=0.4'}
@@ -8244,6 +8285,13 @@ packages:
 
   scheduler@0.27.0:
     resolution: {integrity: sha512-eNv+WrVbKu1f3vbYJT/xtiF5syA5HPIMtf9IgY/nKg0sWqzAUEvqY/xm7OcZc/qafLx/iO9FgOmeSAp4v5ti/Q==}
+
+  sdp-transform@2.15.0:
+    resolution: {integrity: sha512-KrOH82c/W+GYQ0LHqtr3caRpM3ITglq3ljGUIb8LTki7ByacJZ9z+piSGiwZDsRyhQbYBOBJgr2k6X4BZXi3Kw==}
+    hasBin: true
+
+  sdp@3.2.1:
+    resolution: {integrity: sha512-lwsAIzOPlH8/7IIjjz3K0zYBk7aBVVcvjMwt3M4fLxpjMYyy7i3I97SLHebgn4YBjirkzfp3RvRDWSKsh/+WFw==}
 
   secure-json-parse@4.1.0:
     resolution: {integrity: sha512-l4KnYfEyqYJxDwlNVyRfO2E4NTHfMKAWdUuA8J0yve2Dz/E/PdBepY03RvyJpssIpRFwJoCD55wA+mEDs6ByWA==}
@@ -8799,6 +8847,9 @@ packages:
     resolution: {integrity: sha512-3KS2b+kL7fsuk/eJZ7EQdnEmQoaho/r6KUef7hxvltNA5DR8NAUM+8wJMbJyZ4G9/7i3v5zPBIMN5aybAh2/Jg==}
     engines: {node: '>= 0.4'}
 
+  typed-emitter@2.1.0:
+    resolution: {integrity: sha512-g/KzbYKbH5C2vPkaXGu8DJlHrGKHLsM25Zg9WuC9pMGfuvT+X25tZQWo5fK1BjBm8+UrVE9LDCvaY0CQk+fXDA==}
+
   typescript-eslint@8.51.0:
     resolution: {integrity: sha512-jh8ZuM5oEh2PSdyQG9YAEM1TCGuWenLSuSUhf/irbVUNW9O5FhbFVONviN2TgMTBnUmyHv7E56rYnfLZK6TkiA==}
     engines: {node: ^18.18.0 || ^20.9.0 || >=21.1.0}
@@ -9027,6 +9078,10 @@ packages:
   webidl-conversions@8.0.1:
     resolution: {integrity: sha512-BMhLD/Sw+GbJC21C/UgyaZX41nPt8bUTg+jWyDeg7e7YN4xOM05YPSIXceACnXVtqyEw/LMClUQMtMZ+PGGpqQ==}
     engines: {node: '>=20'}
+
+  webrtc-adapter@9.0.4:
+    resolution: {integrity: sha512-5ZZY1+lGq8LEKuDlg9M2RPJHlH3R7OVwyHqMcUsLKCgd9Wvf+QrFTCItkXXYPmrJn8H6gRLXbSgxLLdexiqHxw==}
+    engines: {node: '>=6.0.0', npm: '>=3.10.0'}
 
   whatwg-encoding@3.1.1:
     resolution: {integrity: sha512-6qN4hJdMwfYBtE3YBTTHhoeuUrDBPZmbQaxWAqSALV/MeEnR5z1xd8UKud2RAkFoPkmB+hli1TZSnyi84xz1vQ==}
@@ -10808,6 +10863,8 @@ snapshots:
     dependencies:
       css-tree: 3.1.0
 
+  '@bufbuild/protobuf@1.10.1': {}
+
   '@csstools/color-helpers@5.1.0': {}
 
   '@csstools/color-helpers@6.0.1': {}
@@ -10850,6 +10907,13 @@ snapshots:
 
   '@csstools/css-tokenizer@4.0.0': {}
 
+  '@elevenlabs/client@0.15.2(@types/dom-mediacapture-record@1.0.22)':
+    dependencies:
+      '@elevenlabs/types': 0.6.1
+      livekit-client: 2.17.3(@types/dom-mediacapture-record@1.0.22)
+    transitivePeerDependencies:
+      - '@types/dom-mediacapture-record'
+
   '@elevenlabs/elevenlabs-js@2.35.0':
     dependencies:
       command-exists: 1.2.9
@@ -10859,6 +10923,15 @@ snapshots:
       - bufferutil
       - encoding
       - utf-8-validate
+
+  '@elevenlabs/react@0.14.3(@types/dom-mediacapture-record@1.0.22)(react@19.2.3)':
+    dependencies:
+      '@elevenlabs/client': 0.15.2(@types/dom-mediacapture-record@1.0.22)
+      react: 19.2.3
+    transitivePeerDependencies:
+      - '@types/dom-mediacapture-record'
+
+  '@elevenlabs/types@0.6.1': {}
 
   '@emnapi/core@1.7.1':
     dependencies:
@@ -11671,6 +11744,12 @@ snapshots:
       '@jridgewell/sourcemap-codec': 1.5.5
 
   '@js-sdsl/ordered-map@4.4.2': {}
+
+  '@livekit/mutex@1.1.1': {}
+
+  '@livekit/protocol@1.44.0':
+    dependencies:
+      '@bufbuild/protobuf': 1.10.1
 
   '@lukeed/ms@2.0.2': {}
 
@@ -14432,6 +14511,8 @@ snapshots:
       '@types/node': 22.19.3
       '@types/ssh2': 1.15.5
 
+  '@types/dom-mediacapture-record@1.0.22': {}
+
   '@types/estree@1.0.8': {}
 
   '@types/graceful-fs@4.1.9':
@@ -16036,7 +16117,7 @@ snapshots:
       '@next/eslint-plugin-next': 16.1.0
       eslint: 9.39.2(jiti@1.21.7)
       eslint-import-resolver-node: 0.3.9
-      eslint-import-resolver-typescript: 3.10.1(eslint-plugin-import@2.32.0(@typescript-eslint/parser@8.51.0(eslint@9.39.2(jiti@1.21.7))(typescript@5.9.3))(eslint@9.39.2(jiti@1.21.7)))(eslint@9.39.2(jiti@1.21.7))
+      eslint-import-resolver-typescript: 3.10.1(eslint-plugin-import@2.32.0)(eslint@9.39.2(jiti@1.21.7))
       eslint-plugin-import: 2.32.0(@typescript-eslint/parser@8.51.0(eslint@9.39.2(jiti@1.21.7))(typescript@5.9.3))(eslint-import-resolver-typescript@3.10.1)(eslint@9.39.2(jiti@1.21.7))
       eslint-plugin-jsx-a11y: 6.10.2(eslint@9.39.2(jiti@1.21.7))
       eslint-plugin-react: 7.37.5(eslint@9.39.2(jiti@1.21.7))
@@ -16059,7 +16140,7 @@ snapshots:
     transitivePeerDependencies:
       - supports-color
 
-  eslint-import-resolver-typescript@3.10.1(eslint-plugin-import@2.32.0(@typescript-eslint/parser@8.51.0(eslint@9.39.2(jiti@1.21.7))(typescript@5.9.3))(eslint@9.39.2(jiti@1.21.7)))(eslint@9.39.2(jiti@1.21.7)):
+  eslint-import-resolver-typescript@3.10.1(eslint-plugin-import@2.32.0)(eslint@9.39.2(jiti@1.21.7)):
     dependencies:
       '@nolyfill/is-core-module': 1.0.39
       debug: 4.4.3
@@ -16074,14 +16155,14 @@ snapshots:
     transitivePeerDependencies:
       - supports-color
 
-  eslint-module-utils@2.12.1(@typescript-eslint/parser@8.51.0(eslint@9.39.2(jiti@1.21.7))(typescript@5.9.3))(eslint-import-resolver-node@0.3.9)(eslint-import-resolver-typescript@3.10.1(eslint-plugin-import@2.32.0(@typescript-eslint/parser@8.51.0(eslint@9.39.2(jiti@1.21.7))(typescript@5.9.3))(eslint@9.39.2(jiti@1.21.7)))(eslint@9.39.2(jiti@1.21.7)))(eslint@9.39.2(jiti@1.21.7)):
+  eslint-module-utils@2.12.1(@typescript-eslint/parser@8.51.0(eslint@9.39.2(jiti@1.21.7))(typescript@5.9.3))(eslint-import-resolver-node@0.3.9)(eslint-import-resolver-typescript@3.10.1)(eslint@9.39.2(jiti@1.21.7)):
     dependencies:
       debug: 3.2.7
     optionalDependencies:
       '@typescript-eslint/parser': 8.51.0(eslint@9.39.2(jiti@1.21.7))(typescript@5.9.3)
       eslint: 9.39.2(jiti@1.21.7)
       eslint-import-resolver-node: 0.3.9
-      eslint-import-resolver-typescript: 3.10.1(eslint-plugin-import@2.32.0(@typescript-eslint/parser@8.51.0(eslint@9.39.2(jiti@1.21.7))(typescript@5.9.3))(eslint@9.39.2(jiti@1.21.7)))(eslint@9.39.2(jiti@1.21.7))
+      eslint-import-resolver-typescript: 3.10.1(eslint-plugin-import@2.32.0)(eslint@9.39.2(jiti@1.21.7))
     transitivePeerDependencies:
       - supports-color
 
@@ -16096,7 +16177,7 @@ snapshots:
       doctrine: 2.1.0
       eslint: 9.39.2(jiti@1.21.7)
       eslint-import-resolver-node: 0.3.9
-      eslint-module-utils: 2.12.1(@typescript-eslint/parser@8.51.0(eslint@9.39.2(jiti@1.21.7))(typescript@5.9.3))(eslint-import-resolver-node@0.3.9)(eslint-import-resolver-typescript@3.10.1(eslint-plugin-import@2.32.0(@typescript-eslint/parser@8.51.0(eslint@9.39.2(jiti@1.21.7))(typescript@5.9.3))(eslint@9.39.2(jiti@1.21.7)))(eslint@9.39.2(jiti@1.21.7)))(eslint@9.39.2(jiti@1.21.7))
+      eslint-module-utils: 2.12.1(@typescript-eslint/parser@8.51.0(eslint@9.39.2(jiti@1.21.7))(typescript@5.9.3))(eslint-import-resolver-node@0.3.9)(eslint-import-resolver-typescript@3.10.1)(eslint@9.39.2(jiti@1.21.7))
       hasown: 2.0.2
       is-core-module: 2.16.1
       is-glob: 4.0.3
@@ -17206,6 +17287,8 @@ snapshots:
 
   jose@5.10.0: {}
 
+  jose@6.2.2: {}
+
   joycon@3.1.1: {}
 
   js-tokens@4.0.0: {}
@@ -17414,6 +17497,19 @@ snapshots:
 
   lines-and-columns@1.2.4: {}
 
+  livekit-client@2.17.3(@types/dom-mediacapture-record@1.0.22):
+    dependencies:
+      '@livekit/mutex': 1.1.1
+      '@livekit/protocol': 1.44.0
+      '@types/dom-mediacapture-record': 1.0.22
+      events: 3.3.0
+      jose: 6.2.2
+      loglevel: 1.9.2
+      sdp-transform: 2.15.0
+      tslib: 2.8.1
+      typed-emitter: 2.1.0
+      webrtc-adapter: 9.0.4
+
   locate-path@5.0.0:
     dependencies:
       p-locate: 4.1.0
@@ -17443,6 +17539,8 @@ snapshots:
   log-symbols@2.2.0:
     dependencies:
       chalk: 2.4.2
+
+  loglevel@1.9.2: {}
 
   long@5.3.2: {}
 
@@ -19245,6 +19343,11 @@ snapshots:
     dependencies:
       queue-microtask: 1.2.3
 
+  rxjs@7.8.2:
+    dependencies:
+      tslib: 2.8.1
+    optional: true
+
   safe-array-concat@1.1.3:
     dependencies:
       call-bind: 1.0.8
@@ -19285,6 +19388,10 @@ snapshots:
   scheduler@0.26.0: {}
 
   scheduler@0.27.0: {}
+
+  sdp-transform@2.15.0: {}
+
+  sdp@3.2.1: {}
 
   secure-json-parse@4.1.0: {}
 
@@ -19931,6 +20038,10 @@ snapshots:
       possible-typed-array-names: 1.1.0
       reflect.getprototypeof: 1.0.10
 
+  typed-emitter@2.1.0:
+    optionalDependencies:
+      rxjs: 7.8.2
+
   typescript-eslint@8.51.0(eslint@9.39.2(jiti@1.21.7))(typescript@5.9.3):
     dependencies:
       '@typescript-eslint/eslint-plugin': 8.51.0(@typescript-eslint/parser@8.51.0(eslint@9.39.2(jiti@1.21.7))(typescript@5.9.3))(eslint@9.39.2(jiti@1.21.7))(typescript@5.9.3)
@@ -20189,6 +20300,10 @@ snapshots:
   webidl-conversions@7.0.0: {}
 
   webidl-conversions@8.0.1: {}
+
+  webrtc-adapter@9.0.4:
+    dependencies:
+      sdp: 3.2.1
 
   whatwg-encoding@3.1.1:
     dependencies:

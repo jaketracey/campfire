@@ -11,7 +11,7 @@ import { buildPromptFromCompanion, getSessionGallery, type EmotionalState, type 
 import { useVoiceRecording } from '@/hooks/use-voice-recording';
 import { useAudioPlayer } from '@/hooks/use-audio-player';
 import { useWebcamCapture } from '@/hooks/use-webcam-capture';
-import { useVoiceCall } from '@/hooks/use-voice-call';
+import { useVoiceChat } from '@/hooks/use-voice-chat';
 import { getTokenBalance } from '@/lib/api/tokens';
 import type { Gift } from '@/lib/api/gifts';
 import { toast } from 'sonner';
@@ -219,24 +219,49 @@ export function useChatSession({
     quality: 0.75,
   });
 
-  // Voice call hook
+  // Build system prompt for voice chat from companion spec
+  const voiceSystemPrompt = useMemo(() => {
+    if (!companion?.spec) return '';
+    const spec = companion.spec;
+    const lines: string[] = [];
+    lines.push(`You are ${companion.name}.`);
+    if (spec.identity?.backstory) lines.push(`Background: ${spec.identity.backstory}`);
+    if (spec.identity?.pronouns) lines.push(`Use ${spec.identity.pronouns} pronouns.`);
+    if (spec.personality?.archetype) lines.push(`Personality: ${spec.personality.archetype}`);
+    if (spec.personality?.traits) {
+      const traitList = Object.entries(spec.personality.traits)
+        .filter(([, v]) => v > 0.5)
+        .map(([k]) => k)
+        .join(', ');
+      if (traitList) lines.push(`Key traits: ${traitList}`);
+    }
+    if (spec.boundaries?.content_rating) lines.push(`Content rating: ${spec.boundaries.content_rating}`);
+    lines.push('Be conversational, warm, and engaging. Keep responses concise for voice — 1-3 sentences max.');
+    return lines.join('\n');
+  }, [companion]);
+
+  const companionVoiceId = companion?.spec?.voice?.voice_id ?? null;
+
+  // Voice chat hook (ElevenLabs Conversational AI)
   const {
-    callState,
-    isCallActive,
+    voiceState,
+    isActive: isCallActive,
     isMuted: isCallMuted,
-    currentTranscript,
+    setMuted: setCallMuted,
+    agentMessage,
+    userTranscript: voiceUserTranscript,
+    startChat: startVoiceChat,
+    stopChat: stopVoiceChat,
     error: voiceCallError,
-    startCall,
-    endCall,
-    toggleMute: toggleCallMute,
-    getAnalyserNode: getCallAnalyserNode,
-    currentBalance: voiceCallBalance,
-    tokensUsed: voiceCallTokensUsed,
-    insufficientTokens,
-    clearInsufficientTokens,
-  } = useVoiceCall(wsRef, audioPlayerRef, {
-    onTranscription: (text, isFinal) => {
-      if (isFinal && text.trim()) {
+    getInputFrequencyData,
+    getOutputFrequencyData,
+  } = useVoiceChat({
+    companionName: companion?.name ?? '',
+    systemPrompt: voiceSystemPrompt,
+    voiceId: companionVoiceId,
+    firstMessage: companion ? `Hey, it's ${companion.name}. What's on your mind?` : undefined,
+    onMessage: (text, role) => {
+      if (role === 'user' && text.trim()) {
         const userMessage: Message = {
           id: crypto.randomUUID(),
           role: 'user',
@@ -244,10 +269,18 @@ export function useChatSession({
           timestamp: new Date(),
         };
         setMessages((prev) => [...prev, userMessage]);
+      } else if (role === 'assistant' && text.trim()) {
+        const assistantMessage: Message = {
+          id: crypto.randomUUID(),
+          role: 'assistant',
+          content: text,
+          timestamp: new Date(),
+        };
+        setMessages((prev) => [...prev, assistantMessage]);
       }
     },
     onError: (error) => {
-      console.error('[Chat] Voice call error:', error);
+      console.error('[Chat] Voice chat error:', error);
     },
   });
 
@@ -1136,8 +1169,8 @@ export function useChatSession({
       onRequireAuth('call');
       return;
     }
-    startCall();
-  }, [isDemo, onRequireAuth, startCall]);
+    startVoiceChat();
+  }, [isDemo, onRequireAuth, startVoiceChat]);
 
   const handleResizeStart = useCallback((e: React.MouseEvent) => {
     e.preventDefault();
@@ -1302,20 +1335,18 @@ export function useChatSession({
     latestFrame,
     toggleWebcam,
 
-    // Voice call
-    callState,
+    // Voice chat
+    voiceState,
     isCallActive,
     isCallMuted,
-    currentTranscript,
+    agentMessage,
+    userTranscript: voiceUserTranscript,
     voiceCallError,
-    startCall,
-    endCall,
-    toggleCallMute,
-    getCallAnalyserNode,
-    voiceCallBalance,
-    voiceCallTokensUsed,
-    insufficientTokens,
-    clearInsufficientTokens,
+    startVoiceChat,
+    stopVoiceChat,
+    toggleCallMute: () => setCallMuted(!isCallMuted),
+    getInputFrequencyData,
+    getOutputFrequencyData,
     handleCallClick,
 
     // UI toggles

@@ -103,11 +103,17 @@ export const GatewayEnvSchema = z.object({
   FLOWGUARD_SHOP_ID: z.string().optional(),
   FLOWGUARD_SIGNATURE_KEY: z.string().optional(),
 
+  // Stripe Payment Processing
+  STRIPE_SECRET_KEY: z.string().optional(),
+  STRIPE_WEBHOOK_SECRET: z.string().optional(),
+  STRIPE_PUBLISHABLE_KEY: z.string().optional(),
+
   OPENAI_API_KEY: z.string().optional(),
   EMBEDDING_MODEL: z.string().optional(),
   EMBEDDING_DIMENSIONS: IntSchema.pipe(z.number().int().positive()).optional(),
 
   ELEVENLABS_API_KEY: z.string().optional(),
+  ELEVENLABS_AGENT_ID: z.string().optional(),
   ELEVENLABS_TTS_MODEL: z.string().optional(),
   ELEVENLABS_STT_MODEL: z.string().optional(),
 
