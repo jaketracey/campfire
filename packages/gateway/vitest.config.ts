@@ -4,6 +4,7 @@ import path from 'path';
 export default defineConfig({
   resolve: {
     alias: {
+      '@campfire/shared/tooling': path.resolve(__dirname, '../shared/src/tooling/index.ts'),
       '@campfire/shared': path.resolve(__dirname, '../shared/src/index.ts'),
     },
   },
