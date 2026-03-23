@@ -36,6 +36,9 @@ interface ChatMessagesProps {
   // Mobile background avatar
   mobileAvatarUrl?: string | null;
   onMobileAvatarClick?: () => void;
+
+  // Conversation starters
+  onStarterClick?: (text: string) => void;
 }
 
 export function ChatMessages({
@@ -56,7 +59,13 @@ export function ChatMessages({
   isDemo,
   mobileAvatarUrl,
   onMobileAvatarClick,
+  onStarterClick,
 }: ChatMessagesProps) {
+  const conversationStarters = [
+    'Tell me about yourself',
+    'What do you enjoy?',
+    'Surprise me with something fun',
+  ];
   return (
     <div
       role="log"
@@ -98,8 +107,22 @@ export function ChatMessages({
         </div>
       )}
       {messages.length === 0 && !streamingContent && !isLoading && (
-        <div className="flex items-center justify-center h-full text-muted-foreground relative z-10" data-testid="chat-empty-state">
-          Start a conversation with your companion
+        <div className="flex flex-col items-center justify-center h-full relative z-10 gap-6" data-testid="chat-empty-state">
+          <p className="text-lg text-muted-foreground">
+            Say hi to <span className="text-foreground font-medium">{companionName}</span>!
+          </p>
+          <div className="flex flex-wrap justify-center gap-2">
+            {conversationStarters.map((starter) => (
+              <button
+                key={starter}
+                type="button"
+                onClick={() => onStarterClick?.(starter)}
+                className="px-4 py-2 rounded-full border border-border bg-muted/50 text-sm text-muted-foreground hover:bg-muted hover:text-foreground hover:border-foreground/20 transition-colors"
+              >
+                {starter}
+              </button>
+            ))}
+          </div>
         </div>
       )}
 

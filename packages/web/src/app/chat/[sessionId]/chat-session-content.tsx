@@ -186,6 +186,10 @@ export function ChatSessionContent({
           isDemo={isDemo}
           mobileAvatarUrl={chat.currentAvatarUrl}
           onMobileAvatarClick={() => chat.setShowMobileAvatar(true)}
+          onStarterClick={(text) => {
+            chat.setInput(text);
+            chat.inputRef.current?.focus();
+          }}
         />
 
         {/* Input Area with Mobile Action Bar - Fixed on mobile/tablet, static on desktop */}
