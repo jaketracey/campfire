@@ -133,35 +133,34 @@ export async function buildApp(opts: BuildAppOptions = {}): Promise<FastifyInsta
   // minimal test setups), the endpoints still respond with 200.
 
   app.get('/health', async (_request, reply) => {
+    const result: Record<string, unknown> = {
+      status: 'healthy',
+      version: env.SERVICE_VERSION,
+      environment: env.NODE_ENV,
+    };
+
     try {
       const { checkDatabaseHealth } = await import('./db/client.js');
       const { checkRedisHealth } = await import('./utils/queue.js');
 
-      const [dbHealthy, redisHealth] = await Promise.all([
+      const [dbHealthy, redisHealth] = await Promise.allSettled([
         checkDatabaseHealth(),
         checkRedisHealth(),
       ]);
 
-      const status = dbHealthy && redisHealth.ok ? 'healthy' : 'unhealthy';
-      const statusCode = status === 'healthy' ? 200 : 503;
+      const dbOk = dbHealthy.status === 'fulfilled' && dbHealthy.value;
+      const redisOk = redisHealth.status === 'fulfilled' && (redisHealth.value as { ok: boolean }).ok;
 
-      return reply.status(statusCode).send({
-        status,
-        version: env.SERVICE_VERSION,
-        environment: env.NODE_ENV,
-        checks: {
-          database: dbHealthy ? 'connected' : 'disconnected',
-          redis: redisHealth.ok ? 'connected' : 'disconnected',
-        },
-      });
+      result.status = dbOk && redisOk ? 'healthy' : 'degraded';
+      result.checks = {
+        database: dbOk ? 'connected' : 'disconnected',
+        redis: redisOk ? 'connected' : 'disconnected',
+      };
     } catch {
-      // Fallback when DB/Redis modules aren't available
-      return reply.send({
-        status: 'healthy',
-        version: env.SERVICE_VERSION,
-        environment: env.NODE_ENV,
-      });
+      // DB/Redis modules not available - that's fine
     }
+
+    return reply.status(200).send(result);
   });
 
   app.get('/ready', async (_request, reply) => {
@@ -169,20 +168,18 @@ export async function buildApp(opts: BuildAppOptions = {}): Promise<FastifyInsta
       const { checkDatabaseHealth } = await import('./db/client.js');
       const { checkRedisHealth } = await import('./utils/queue.js');
 
-      const [dbHealthy, redisHealth] = await Promise.all([
+      const [dbHealthy, redisHealth] = await Promise.allSettled([
         checkDatabaseHealth(),
         checkRedisHealth(),
       ]);
 
-      const ready = dbHealthy && redisHealth.ok;
+      const dbOk = dbHealthy.status === 'fulfilled' && dbHealthy.value;
+      const redisOk = redisHealth.status === 'fulfilled' && (redisHealth.value as { ok: boolean }).ok;
 
-      if (!ready) {
+      if (!dbOk || !redisOk) {
         return reply.status(503).send({
           ready: false,
-          checks: {
-            database: dbHealthy,
-            redis: redisHealth.ok,
-          },
+          checks: { database: dbOk, redis: redisOk },
         });
       }
 
