@@ -18,7 +18,10 @@ const mockLogger = {
 };
 
 // Mock the logger module directly
+// Must include all named exports that app code imports (logger, withContext, etc.)
 vi.mock('../src/observability/logger.js', () => ({
   logger: mockLogger,
   createLogger: vi.fn(() => mockLogger),
+  withContext: vi.fn((_ctx: unknown, fn: () => unknown) => fn()),
+  getRequestContext: vi.fn(() => undefined),
 }));
