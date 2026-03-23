@@ -47,6 +47,7 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
     },
     package: 'cam.ignite.app',
     versionCode: 1,
+    softwareKeyboardLayoutMode: 'resize',
     permissions: [
       'android.permission.RECORD_AUDIO',
       'android.permission.VIBRATE',

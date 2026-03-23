@@ -82,33 +82,31 @@ class AudioPlaybackService {
         encoding: FileSystem.EncodingType.Base64,
       });
 
-      // Create and load the sound
-      const { sound } = await Audio.Sound.createAsync(
-        { uri: tempUri },
-        { shouldPlay: true },
-        this.onPlaybackStatusUpdate.bind(this)
-      );
-
-      this.sound = sound;
-      this.isPlaying = true;
-
-      // Wait for playback to complete
+      // Wait for playback to complete using callback-based Promise
       await new Promise<void>((resolve, reject) => {
-        const checkStatus = async () => {
-          try {
-            const status = await sound.getStatusAsync();
-            if (status.isLoaded && !status.isPlaying && status.didJustFinish) {
-              resolve();
-            } else if (!status.isLoaded) {
-              reject(new Error('Sound unloaded'));
-            } else {
-              setTimeout(checkStatus, 100);
-            }
-          } catch {
-            reject(new Error('Status check failed'));
+        const onStatusUpdate = (status: AVPlaybackStatus) => {
+          if (!status.isLoaded) {
+            this.isPlaying = false;
+            reject(new Error('Sound unloaded'));
+            return;
+          }
+
+          if (status.didJustFinish) {
+            this.isPlaying = false;
+            resolve();
           }
         };
-        checkStatus();
+
+        Audio.Sound.createAsync(
+          { uri: tempUri },
+          { shouldPlay: true },
+          onStatusUpdate
+        )
+          .then(({ sound }) => {
+            this.sound = sound;
+            this.isPlaying = true;
+          })
+          .catch(reject);
       });
 
       // Clean up
@@ -120,20 +118,6 @@ class AudioPlaybackService {
       console.error('[AudioPlayback] Play error:', error);
       await this.unloadSound();
       throw error;
-    }
-  }
-
-  /**
-   * Playback status update handler
-   */
-  private onPlaybackStatusUpdate(status: AVPlaybackStatus): void {
-    if (!status.isLoaded) {
-      this.isPlaying = false;
-      return;
-    }
-
-    if (status.didJustFinish) {
-      this.isPlaying = false;
     }
   }
 

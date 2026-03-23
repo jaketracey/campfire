@@ -9,6 +9,7 @@ import {
   Text,
   TouchableOpacity,
   Animated,
+  KeyboardAvoidingView,
 } from 'react-native';
 import { WebView, WebViewNavigation } from 'react-native-webview';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -264,6 +265,10 @@ export function WebViewContainer({ initialPath, onContentReady }: WebViewContain
           />
         </View>
       )}
+      <KeyboardAvoidingView
+        style={styles.keyboardAvoidingView}
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+      >
       <WebView
         ref={webViewRef}
         source={{ uri: initialUrl }}
@@ -338,6 +343,7 @@ export function WebViewContainer({ initialPath, onContentReady }: WebViewContain
         // User agent
         applicationNameForUserAgent="IgniteApp/1.0"
       />
+      </KeyboardAvoidingView>
       {isLoading && (
         <View style={styles.loadingOverlay}>
           <ActivityIndicator size="large" color="#FF6B00" />
@@ -351,6 +357,9 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#000000',
+  },
+  keyboardAvoidingView: {
+    flex: 1,
   },
   webview: {
     flex: 1,

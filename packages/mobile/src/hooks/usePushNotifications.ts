@@ -38,6 +38,12 @@ export function usePushNotifications(
 
   const notificationListener = useRef<Notifications.EventSubscription | null>(null);
   const responseListener = useRef<Notifications.EventSubscription | null>(null);
+  const onNotificationTapRef = useRef(onNotificationTap);
+
+  // Keep the ref up to date with the latest callback
+  useEffect(() => {
+    onNotificationTapRef.current = onNotificationTap;
+  }, [onNotificationTap]);
 
   /**
    * Register for push notifications and get the Expo push token
@@ -114,10 +120,10 @@ export function usePushNotifications(
       setNotification(notification);
     });
 
-    // Listen for notification taps
+    // Listen for notification taps (using ref to avoid listener teardown/setup)
     responseListener.current = Notifications.addNotificationResponseReceivedListener((response) => {
       console.log('[PushNotifications] Tapped:', response);
-      onNotificationTap?.(response);
+      onNotificationTapRef.current?.(response);
     });
 
     return () => {
@@ -128,7 +134,7 @@ export function usePushNotifications(
         responseListener.current.remove();
       }
     };
-  }, [registerForPushNotifications, onNotificationTap]);
+  }, [registerForPushNotifications]);
 
   return {
     expoPushToken,

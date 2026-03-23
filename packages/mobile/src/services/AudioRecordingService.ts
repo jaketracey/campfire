@@ -1,5 +1,6 @@
 import { Audio } from 'expo-av';
 import * as FileSystem from 'expo-file-system/legacy';
+import * as Haptics from 'expo-haptics';
 
 /**
  * Recording configuration matching web app expectations
@@ -84,6 +85,13 @@ class AudioRecordingService {
       this.isRecording = true;
       this.startTime = Date.now();
 
+      // Haptic feedback on recording start
+      try {
+        await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+      } catch {
+        // Haptics may not be available on all devices
+      }
+
       console.log('[AudioRecording] Recording started');
     } catch (error) {
       console.error('[AudioRecording] Start error:', error);
@@ -129,6 +137,13 @@ class AudioRecordingService {
 
       this.recording = null;
       this.isRecording = false;
+
+      // Haptic feedback on recording stop
+      try {
+        await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      } catch {
+        // Haptics may not be available on all devices
+      }
 
       console.log('[AudioRecording] Recording stopped, duration:', duration);
 
