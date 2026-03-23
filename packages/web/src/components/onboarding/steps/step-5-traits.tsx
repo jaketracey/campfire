@@ -22,6 +22,34 @@ interface SliderGroup {
   sliders: SliderConfig[];
 }
 
+const colorClasses: Record<string, { text: string; slider: string; sliderBorder: string }> = {
+  'vibes-neon': {
+    text: 'text-vibes-neon',
+    slider: '[&_[role=slider]]:bg-vibes-neon',
+    sliderBorder: '[&_[role=slider]]:border-vibes-neon',
+  },
+  'vibes-hot': {
+    text: 'text-vibes-hot',
+    slider: '[&_[role=slider]]:bg-vibes-hot',
+    sliderBorder: '[&_[role=slider]]:border-vibes-hot',
+  },
+  'vibes-acid': {
+    text: 'text-vibes-acid',
+    slider: '[&_[role=slider]]:bg-vibes-acid',
+    sliderBorder: '[&_[role=slider]]:border-vibes-acid',
+  },
+  'vibes-cyan': {
+    text: 'text-vibes-cyan',
+    slider: '[&_[role=slider]]:bg-vibes-cyan',
+    sliderBorder: '[&_[role=slider]]:border-vibes-cyan',
+  },
+  'vibes-electric': {
+    text: 'text-vibes-electric',
+    slider: '[&_[role=slider]]:bg-vibes-electric',
+    sliderBorder: '[&_[role=slider]]:border-vibes-electric',
+  },
+};
+
 const sliderGroups: SliderGroup[] = [
   {
     name: 'Emotional Expression',
@@ -158,7 +186,7 @@ export function Step5Traits() {
                           {slider.lowLabel} ↔ {slider.highLabel}
                         </span>
                       </div>
-                      <span className={`text-sm font-mono font-bold text-${slider.color}`}>
+                      <span className={`text-sm font-mono font-bold ${colorClasses[slider.color]?.text}`}>
                         {personality[slider.key]}%
                       </span>
                     </div>
@@ -167,7 +195,7 @@ export function Step5Traits() {
                       onValueChange={handleSliderChange(slider.key)}
                       max={100}
                       step={1}
-                      className={`[&_[role=slider]]:bg-${slider.color} [&_[role=slider]]:border-${slider.color} [&_.relative]:bg-white/10`}
+                      className={`${colorClasses[slider.color]?.slider} ${colorClasses[slider.color]?.sliderBorder} [&_.relative]:bg-white/10`}
                     />
                   </div>
                 ))}
