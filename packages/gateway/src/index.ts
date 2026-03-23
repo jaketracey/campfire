@@ -44,50 +44,8 @@ async function start() {
       }
     });
 
-    // Health check endpoint - checks all critical dependencies
-    app.get('/health', async (request, reply) => {
-      const [dbHealthy, redisHealth] = await Promise.all([
-        checkDatabaseHealth(),
-        checkRedisHealth(),
-      ]);
-
-      const status = dbHealthy && redisHealth.ok ? 'healthy' : 'unhealthy';
-      const statusCode = status === 'healthy' ? 200 : 503;
-
-      return reply.status(statusCode).send({
-        status,
-        version: env.SERVICE_VERSION,
-        environment: env.NODE_ENV,
-        checks: {
-          database: dbHealthy ? 'connected' : 'disconnected',
-          redis: redisHealth.ok ? 'connected' : 'disconnected',
-        },
-      });
-    });
-
-    // Ready check endpoint (for k8s) - checks if service can accept traffic
-    app.get('/ready', async (request, reply) => {
-      const [dbHealthy, redisHealth] = await Promise.all([
-        checkDatabaseHealth(),
-        checkRedisHealth(),
-      ]);
-
-      const ready = dbHealthy && redisHealth.ok;
-
-      if (!ready) {
-        return reply.status(503).send({
-          ready: false,
-          checks: {
-            database: dbHealthy,
-            redis: redisHealth.ok,
-          },
-        });
-      }
-
-      return reply.send({ ready: true });
-    });
-
     // Detailed health endpoint - returns latency and queue stats for monitoring
+    // (The basic /health and /ready endpoints are registered inside buildApp.)
     app.get('/health/detailed', async (request, reply) => {
       const start = Date.now();
       const [dbHealthy, redisHealth, queueStats] = await Promise.all([

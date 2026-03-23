@@ -254,10 +254,27 @@ export function sleep(ms: number): Promise<void> {
 }
 
 /**
- * Create a test JWT token for authenticated requests
+ * Create a valid test JWT token for authenticated requests.
+ * Uses the same jose SignJWT flow as the real auth middleware,
+ * signing with the JWT_SECRET set in tests/setup.ts.
  */
-export function createTestToken(userId: string): string {
-  // This is a mock implementation - replace with actual JWT generation
-  // matching your auth system
-  return Buffer.from(JSON.stringify({ userId, exp: Date.now() + 3600000 })).toString('base64');
+export async function createTestToken(
+  userId: string = 'test-user-123',
+  email: string = 'test@example.com',
+  role: 'user' | 'admin' = 'user',
+): Promise<string> {
+  const { SignJWT } = await import('jose');
+  const secret = new TextEncoder().encode(
+    process.env['JWT_SECRET'] || 'test-jwt-secret-for-testing-only-min-32-chars',
+  );
+  const issuer = process.env['JWT_ISSUER'] || 'campfire-test';
+  const audience = process.env['JWT_AUDIENCE'] || 'campfire-api-test';
+
+  return new SignJWT({ userId, email, role })
+    .setProtectedHeader({ alg: 'HS256' })
+    .setIssuedAt()
+    .setIssuer(issuer)
+    .setAudience(audience)
+    .setExpirationTime('1h')
+    .sign(secret);
 }

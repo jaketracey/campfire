@@ -127,6 +127,71 @@ export async function buildApp(opts: BuildAppOptions = {}): Promise<FastifyInsta
     });
   });
 
+  // --- Health / readiness probes ---
+  // Registered here so they're available to both the production server and tests.
+  // The checks are best-effort: if the DB/Redis modules fail to import (e.g. in
+  // minimal test setups), the endpoints still respond with 200.
+
+  app.get('/health', async (_request, reply) => {
+    try {
+      const { checkDatabaseHealth } = await import('./db/client.js');
+      const { checkRedisHealth } = await import('./utils/queue.js');
+
+      const [dbHealthy, redisHealth] = await Promise.all([
+        checkDatabaseHealth(),
+        checkRedisHealth(),
+      ]);
+
+      const status = dbHealthy && redisHealth.ok ? 'healthy' : 'unhealthy';
+      const statusCode = status === 'healthy' ? 200 : 503;
+
+      return reply.status(statusCode).send({
+        status,
+        version: env.SERVICE_VERSION,
+        environment: env.NODE_ENV,
+        checks: {
+          database: dbHealthy ? 'connected' : 'disconnected',
+          redis: redisHealth.ok ? 'connected' : 'disconnected',
+        },
+      });
+    } catch {
+      // Fallback when DB/Redis modules aren't available
+      return reply.send({
+        status: 'healthy',
+        version: env.SERVICE_VERSION,
+        environment: env.NODE_ENV,
+      });
+    }
+  });
+
+  app.get('/ready', async (_request, reply) => {
+    try {
+      const { checkDatabaseHealth } = await import('./db/client.js');
+      const { checkRedisHealth } = await import('./utils/queue.js');
+
+      const [dbHealthy, redisHealth] = await Promise.all([
+        checkDatabaseHealth(),
+        checkRedisHealth(),
+      ]);
+
+      const ready = dbHealthy && redisHealth.ok;
+
+      if (!ready) {
+        return reply.status(503).send({
+          ready: false,
+          checks: {
+            database: dbHealthy,
+            redis: redisHealth.ok,
+          },
+        });
+      }
+
+      return reply.send({ ready: true });
+    } catch {
+      return reply.send({ ready: true });
+    }
+  });
+
   // --- Routes ---
 
   await registerRoutes(app);

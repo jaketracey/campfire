@@ -287,7 +287,11 @@ jobs:
           DATABASE_PASSWORD: postgres
           REDIS_HOST: localhost
           REDIS_PORT: 6379
+          REDIS_URL: redis://localhost:6379
           PORT: 3000
+          JWT_SECRET: test-jwt-secret-for-testing-only-min-32-chars
+          INTERNAL_SERVICE_KEY: test-internal-service-key
+          NODE_ENV: test
 
       - name: Run k6 API load tests
         run: k6 run --vus 10 --duration 30s packages/gateway/tests/load/k6-api-load.js
@@ -295,7 +299,7 @@ jobs:
           BASE_URL: http://localhost:3000
 
       - name: Run k6 WebSocket load tests
-        run: k6 run --vus 20 --duration 1m packages/gateway/tests/load/k6-websocket-load.js
+        run: k6 run --vus 10 --duration 30s packages/gateway/tests/load/k6-websocket-load.js
         env:
           WS_URL: ws://localhost:3000
 

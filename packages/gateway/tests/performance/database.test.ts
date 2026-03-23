@@ -76,7 +76,7 @@ describe('Database Performance Tests', () => {
   afterAll(async () => {
     // Clean up
     await sql`DROP TABLE IF EXISTS perf_test_sessions CASCADE`;
-    await sql`DROP TABLE IF NOT EXISTS perf_test_users CASCADE`;
+    await sql`DROP TABLE IF EXISTS perf_test_users CASCADE`;
     await sql.end();
   });
 
