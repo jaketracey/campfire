@@ -70,11 +70,21 @@ jobs:
         run: pnpm db:migrate
         env:
           DATABASE_URL: postgresql://postgres:postgres@localhost:5432/campfire_test
+          DATABASE_HOST: localhost
+          DATABASE_PORT: 5432
+          DATABASE_NAME: campfire_test
+          DATABASE_USER: postgres
+          DATABASE_PASSWORD: postgres
 
       - name: Run API latency tests
         run: pnpm --filter @campfire/gateway test tests/performance/api-latency.test.ts
         env:
           DATABASE_URL: postgresql://postgres:postgres@localhost:5432/campfire_test
+          DATABASE_HOST: localhost
+          DATABASE_PORT: 5432
+          DATABASE_NAME: campfire_test
+          DATABASE_USER: postgres
+          DATABASE_PASSWORD: postgres
           REDIS_HOST: localhost
           REDIS_PORT: 6379
           NODE_OPTIONS: --expose-gc
@@ -83,6 +93,11 @@ jobs:
         run: pnpm --filter @campfire/gateway test tests/performance/database.test.ts
         env:
           DATABASE_URL: postgresql://postgres:postgres@localhost:5432/campfire_test
+          DATABASE_HOST: localhost
+          DATABASE_PORT: 5432
+          DATABASE_NAME: campfire_test
+          DATABASE_USER: postgres
+          DATABASE_PASSWORD: postgres
           NODE_OPTIONS: --expose-gc
 
       - name: Upload performance results
@@ -140,11 +155,21 @@ jobs:
         run: pnpm db:migrate
         env:
           DATABASE_URL: postgresql://postgres:postgres@localhost:5432/campfire_test
+          DATABASE_HOST: localhost
+          DATABASE_PORT: 5432
+          DATABASE_NAME: campfire_test
+          DATABASE_USER: postgres
+          DATABASE_PASSWORD: postgres
 
       - name: Run WebSocket performance tests
         run: pnpm --filter @campfire/gateway test tests/performance/websocket.test.ts
         env:
           DATABASE_URL: postgresql://postgres:postgres@localhost:5432/campfire_test
+          DATABASE_HOST: localhost
+          DATABASE_PORT: 5432
+          DATABASE_NAME: campfire_test
+          DATABASE_USER: postgres
+          DATABASE_PASSWORD: postgres
           REDIS_HOST: localhost
           REDIS_PORT: 6379
           NODE_OPTIONS: --expose-gc
@@ -231,12 +256,17 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       - name: Build application
-        run: pnpm --filter @campfire/gateway build
+        run: pnpm --filter @campfire/shared build && pnpm --filter @campfire/gateway build
 
       - name: Run database migrations
         run: pnpm db:migrate
         env:
           DATABASE_URL: postgresql://postgres:postgres@localhost:5432/campfire_test
+          DATABASE_HOST: localhost
+          DATABASE_PORT: 5432
+          DATABASE_NAME: campfire_test
+          DATABASE_USER: postgres
+          DATABASE_PASSWORD: postgres
 
       - name: Start application
         run: |
@@ -244,6 +274,11 @@ jobs:
           sleep 10
         env:
           DATABASE_URL: postgresql://postgres:postgres@localhost:5432/campfire_test
+          DATABASE_HOST: localhost
+          DATABASE_PORT: 5432
+          DATABASE_NAME: campfire_test
+          DATABASE_USER: postgres
+          DATABASE_PASSWORD: postgres
           REDIS_HOST: localhost
           REDIS_PORT: 6379
           PORT: 3000
@@ -308,11 +343,21 @@ jobs:
         run: pnpm db:migrate
         env:
           DATABASE_URL: postgresql://postgres:postgres@localhost:5432/campfire_test
+          DATABASE_HOST: localhost
+          DATABASE_PORT: 5432
+          DATABASE_NAME: campfire_test
+          DATABASE_USER: postgres
+          DATABASE_PASSWORD: postgres
 
       - name: Run memory leak detection tests
         run: pnpm --filter @campfire/gateway test tests/stability/memory-leak.test.ts
         env:
           DATABASE_URL: postgresql://postgres:postgres@localhost:5432/campfire_test
+          DATABASE_HOST: localhost
+          DATABASE_PORT: 5432
+          DATABASE_NAME: campfire_test
+          DATABASE_USER: postgres
+          DATABASE_PASSWORD: postgres
           REDIS_HOST: localhost
           REDIS_PORT: 6379
           NODE_OPTIONS: --expose-gc
@@ -321,6 +366,11 @@ jobs:
         run: pnpm --filter @campfire/gateway test tests/stability/recovery.test.ts
         env:
           DATABASE_URL: postgresql://postgres:postgres@localhost:5432/campfire_test
+          DATABASE_HOST: localhost
+          DATABASE_PORT: 5432
+          DATABASE_NAME: campfire_test
+          DATABASE_USER: postgres
+          DATABASE_PASSWORD: postgres
           REDIS_HOST: localhost
           REDIS_PORT: 6379
 
@@ -366,11 +416,21 @@ jobs:
         run: pnpm db:migrate
         env:
           DATABASE_URL: postgresql://postgres:postgres@localhost:5432/campfire_test
+          DATABASE_HOST: localhost
+          DATABASE_PORT: 5432
+          DATABASE_NAME: campfire_test
+          DATABASE_USER: postgres
+          DATABASE_PASSWORD: postgres
 
       - name: Run E2E performance tests
         run: pnpm --filter @campfire/gateway test tests/e2e/conversation-flow.test.ts
         env:
           DATABASE_URL: postgresql://postgres:postgres@localhost:5432/campfire_test
+          DATABASE_HOST: localhost
+          DATABASE_PORT: 5432
+          DATABASE_NAME: campfire_test
+          DATABASE_USER: postgres
+          DATABASE_PASSWORD: postgres
           REDIS_HOST: localhost
           REDIS_PORT: 6379
 

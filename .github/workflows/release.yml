@@ -306,31 +306,33 @@ jobs:
           git config user.email "github-actions[bot]@users.noreply.github.com"
 
       - name: Update CHANGELOG.md
+        env:
+          CHANGELOG_ENTRY: ${{ needs.analyze.outputs.changelog }}
         run: |
-          VERSION="${{ needs.analyze.outputs.version }}"
-          DATE=$(date +%Y-%m-%d)
-
           # Create CHANGELOG.md if it doesn't exist
           if [[ ! -f CHANGELOG.md ]]; then
-            cat > CHANGELOG.md << 'EOF'
-          # Changelog
-
-          All notable changes to this project will be documented in this file.
-
-          The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
-          and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
-
-          EOF
+            printf '# Changelog\n\nAll notable changes to this project will be documented in this file.\n\nThe format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),\nand this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).\n\n' > CHANGELOG.md
           fi
 
-          # Prepend new changelog entry after the header
-          CHANGELOG_ENTRY='${{ needs.analyze.outputs.changelog }}'
+          # Write entry to temp file using env var (avoids shell quoting issues)
+          printf '%s\n' "$CHANGELOG_ENTRY" > /tmp/changelog_entry.md
 
-          # Use awk to insert after the header section
-          awk -v entry="${CHANGELOG_ENTRY}" '
-            /^# Changelog/ { print; getline; print; getline; print; getline; print; print entry; next }
-            { print }
-          ' CHANGELOG.md > CHANGELOG.tmp && mv CHANGELOG.tmp CHANGELOG.md
+          # Insert after header using python3 for reliable text manipulation
+          python3 << 'PYEOF'
+          entry = open('/tmp/changelog_entry.md').read().strip()
+          changelog = open('CHANGELOG.md').read()
+          marker = 'Semantic Versioning'
+          idx = changelog.find(marker)
+          if idx >= 0:
+              nl = changelog.find('\n', idx)
+              if nl >= 0:
+                  result = changelog[:nl+1] + '\n' + entry + '\n\n' + changelog[nl+1:]
+              else:
+                  result = changelog + '\n' + entry + '\n'
+          else:
+              result = changelog + '\n' + entry + '\n'
+          open('CHANGELOG.md', 'w').write(result)
+          PYEOF
 
       - name: Update package.json versions
         run: |
