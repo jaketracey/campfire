@@ -79,7 +79,8 @@ export function useVoiceChat({
         const uId = userIdRef.current;
         if (!cId || !sId || !uId) return 'Image generation not available in this session.';
         try {
-          const prompt = (params.prompt as string) || 'portrait photo';
+          const rawPrompt = (params.prompt as string) || 'portrait photo';
+          const prompt = `${rawPrompt}. Photorealistic, natural skin texture, real person. NOT a cartoon, illustration, anime, or 3D render.`;
           const result = await apiClient<{ imageUrl: string }>('/imagegen/generate', {
             method: 'POST',
             body: JSON.stringify({

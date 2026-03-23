@@ -190,7 +190,7 @@ export function ChatMessages({
                       <img
                         src={message.imageUrl}
                         alt="Generated image"
-                        className="rounded-lg max-w-full mb-2 cursor-pointer hover:opacity-90 transition-opacity"
+                        className="rounded-lg max-w-[280px] mb-2 cursor-pointer hover:opacity-90 transition-opacity"
                         onClick={() => window.open(message.imageUrl, '_blank')}
                       />
                     )}
