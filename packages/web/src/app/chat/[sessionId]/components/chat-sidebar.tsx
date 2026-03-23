@@ -189,6 +189,7 @@ export function ChatSidebar({
           <Link
             href="/"
             className="mb-4 self-start hover:opacity-80 transition-opacity"
+            aria-label="Campfire home"
           >
             <AnimatedFlame size="md" />
           </Link>
