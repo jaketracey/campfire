@@ -50,6 +50,10 @@ export async function buildApp(opts: BuildAppOptions = {}): Promise<FastifyInsta
     keyGenerator: (request) => {
       return request.headers['x-forwarded-for'] as string ?? request.ip;
     },
+    allowList: (request) => {
+      // Exempt health/readiness probes from rate limiting
+      return request.url === '/health' || request.url === '/ready';
+    },
   });
 
   await app.register(websocket, {
