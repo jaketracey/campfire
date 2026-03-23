@@ -5,6 +5,18 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [v0.2.8] - 2026-03-23
+
+## What's Changed
+
+### Bug Fixes
+- fix(voice): enforce photorealistic style and cap image display size (cfd04e1)
+- fix(voice): reduce image gen size to 512x768 for faster voice chat images (c126517)
+
+### Contributors
+- @Jake Tracey
+
+
 ## [v0.2.7] - 2026-03-23
 
 ## What's Changed
