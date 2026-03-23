@@ -1,9 +1,8 @@
 'use client';
 
 import { motion, useAnimationControls } from 'framer-motion';
-import { useEffect } from 'react';
+import { useEffect, useCallback, useRef } from 'react';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
 import { Card } from '@/components/ui/card';
 import { ArrowRight, SkipForward } from 'lucide-react';
 
@@ -30,7 +29,7 @@ interface ChatInputProps {
   isDemo?: boolean;
 
   // Refs
-  inputRef: React.RefObject<HTMLInputElement | null>;
+  inputRef: React.RefObject<HTMLTextAreaElement | null>;
   inputContainerRef: React.RefObject<HTMLDivElement | null>;
 }
 
@@ -53,9 +52,24 @@ export function ChatInput({
   inputContainerRef,
 }: ChatInputProps) {
   const controls = useAnimationControls();
+  const hassentFirstMessage = useRef(false);
+
+  const autoResize = useCallback(() => {
+    const textarea = inputRef.current;
+    if (!textarea) return;
+    textarea.style.height = 'auto';
+    const maxHeight = 5 * 24; // ~5 lines
+    textarea.style.height = `${Math.min(textarea.scrollHeight, maxHeight)}px`;
+    textarea.style.overflowY = textarea.scrollHeight > maxHeight ? 'auto' : 'hidden';
+  }, [inputRef]);
+
+  useEffect(() => {
+    autoResize();
+  }, [input, autoResize]);
 
   useEffect(() => {
     if (messageReceivedPulseTrigger > 0) {
+      hassentFirstMessage.current = true;
       controls.start({
         boxShadow: [
           '0 0 0 0 rgba(39, 35, 34, 0)',
@@ -67,6 +81,13 @@ export function ChatInput({
       });
     }
   }, [messageReceivedPulseTrigger, controls]);
+
+  const handleKeyDown = useCallback((e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if (e.key === 'Enter' && !e.shiftKey && !isRecording) {
+      e.preventDefault();
+      onSend();
+    }
+  }, [isRecording, onSend]);
 
   return (
     <div ref={inputContainerRef} className="py-4 px-0 lg:px-4 bg-background z-40">
@@ -102,15 +123,16 @@ export function ChatInput({
           className="flex-1 min-w-0 rounded-xl"
           animate={controls}
         >
-          <Input
+          <textarea
             ref={inputRef}
             value={input}
             onChange={(e) => onInputChange(e.target.value)}
-            onKeyDown={(e) => e.key === 'Enter' && !isRecording && onSend()}
+            onKeyDown={handleKeyDown}
             placeholder={voiceModeEnabled ? 'Type or hold mic to speak...' : 'Type a message...'}
             readOnly={isRecording}
+            rows={1}
             data-testid="chat-input"
-            className={`w-full h-12 lg:h-10 text-base lg:text-sm ${
+            className={`flex w-full rounded-xl border border-input bg-background px-3 py-2.5 text-base lg:text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-[5px] focus-visible:ring-muted disabled:cursor-not-allowed disabled:opacity-50 resize-none min-h-[48px] lg:min-h-[40px] ${
               !hasShownPulse && input.length === 0
                 ? 'focus:animate-campfire-pulse'
                 : ''
