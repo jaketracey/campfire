@@ -2,7 +2,8 @@
 
 import { useState, useEffect, useRef, useCallback } from 'react';
 import Link from 'next/link';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
+import type { Route } from 'next';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   User,
@@ -46,10 +47,23 @@ const tabs: { id: TabId; label: string; icon: React.ElementType }[] = [
 
 export default function AccountPage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const { isAuthenticated, isLoading: authLoading } = useRequireAuth('/login');
   const { user, logout } = useAuth();
 
-  const [activeTab, setActiveTab] = useState<TabId>('profile');
+  const initialTab = (searchParams.get('tab') as TabId) || 'profile';
+  const [activeTab, setActiveTabState] = useState<TabId>(initialTab);
+  const setActiveTab = useCallback((tab: TabId) => {
+    setActiveTabState(tab);
+    const params = new URLSearchParams(searchParams.toString());
+    if (tab === 'profile') {
+      params.delete('tab');
+    } else {
+      params.set('tab', tab);
+    }
+    const qs = params.toString();
+    router.replace(`/account${qs ? `?${qs}` : ''}` as Route, { scroll: false });
+  }, [router, searchParams]);
   const [tokenBalance, setTokenBalance] = useState<TokenBalance | null>(null);
   const [loadingTokens, setLoadingTokens] = useState(true);
 
