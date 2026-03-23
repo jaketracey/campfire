@@ -236,7 +236,7 @@ export function DashboardHeaderNav() {
         className="flex items-center gap-1.5 sm:gap-2 px-2 sm:px-4 py-2 rounded-full bg-white/[0.05] border border-white/10 hover:bg-red-500/20 hover:border-red-500/30 transition-all group"
       >
         <LogOut className="h-4 w-4 sm:h-5 sm:w-5 text-gray-400 group-hover:text-red-400 transition-colors" />
-        <span className="hidden sm:inline text-sm font-medium text-gray-400 group-hover:text-red-400 transition-colors">Logout</span>
+        <span className="hidden sm:inline text-sm font-medium text-gray-400 group-hover:text-red-400 transition-colors">Sign Out</span>
       </button>
     </div>
   );
