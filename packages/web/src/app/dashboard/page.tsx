@@ -153,9 +153,23 @@ export default function DashboardPage() {
     }
   };
 
-  // Show nothing while checking auth or loading data
+  // Show skeleton while checking auth or loading data
   if (!isInitialized || authLoading || loading) {
-    return null;
+    return (
+      <div className="w-full py-12 px-4 sm:px-6">
+        <div className="space-y-8">
+          <div className="text-center space-y-3">
+            <div className="h-8 w-48 bg-white/[0.05] rounded-lg mx-auto animate-pulse" />
+            <div className="h-4 w-64 bg-white/[0.03] rounded mx-auto animate-pulse" />
+          </div>
+          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3 sm:gap-4">
+            {Array.from({ length: 12 }).map((_, i) => (
+              <div key={i} className="aspect-[3/4] rounded-xl bg-white/[0.03] animate-pulse" />
+            ))}
+          </div>
+        </div>
+      </div>
+    );
   }
 
   const hasCompanions = companions.length > 0;
