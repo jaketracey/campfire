@@ -28,6 +28,7 @@ import { Input } from '@/components/ui/input';
 import { Switch } from '@/components/ui/switch';
 import { Label } from '@/components/ui/label';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
+import { DeleteAccountButton } from '@/components/privacy/account-deletion';
 import { useRequireAuth, useAuth } from '@/hooks/use-auth';
 import { useAuthStore } from '@/stores/auth-store';
 import { getTokenBalance, type TokenBalance } from '@/lib/api/tokens';
@@ -688,19 +689,27 @@ export default function AccountPage() {
             </div>
           </div>
 
-          {/* Sign Out - At the bottom */}
-          <button
-            onClick={logout}
-            className="flex items-center justify-between sm:justify-start gap-2 px-4 py-3 sm:py-2 w-full sm:w-auto rounded-lg bg-white/[0.02] border border-white/5 hover:bg-red-500/10 hover:border-red-500/20 transition-all group"
-          >
-            <div className="flex items-center gap-2">
-              <LogOut className="h-4 w-4 text-red-500" />
-              <span className="text-sm text-gray-400 group-hover:text-red-400 font-medium transition-colors">
-                Sign Out
-              </span>
-            </div>
-            <ChevronRight className="h-4 w-4 text-gray-500 group-hover:text-red-400 transition-colors sm:hidden" />
-          </button>
+          {/* Sign Out & Account Actions */}
+          <div className="flex flex-col sm:flex-row items-start sm:items-center gap-3">
+            <button
+              onClick={logout}
+              className="flex items-center justify-between sm:justify-start gap-2 px-4 py-3 sm:py-2 w-full sm:w-auto rounded-lg bg-white/[0.02] border border-white/5 hover:bg-red-500/10 hover:border-red-500/20 transition-all group"
+            >
+              <div className="flex items-center gap-2">
+                <LogOut className="h-4 w-4 text-red-500" />
+                <span className="text-sm text-gray-400 group-hover:text-red-400 font-medium transition-colors">
+                  Sign Out
+                </span>
+              </div>
+              <ChevronRight className="h-4 w-4 text-gray-500 group-hover:text-red-400 transition-colors sm:hidden" />
+            </button>
+            <DeleteAccountButton
+              userEmail={user?.email || ''}
+              onDeleteAccount={async () => {
+                logout();
+              }}
+            />
+          </div>
         </motion.div>
     </div>
   );
