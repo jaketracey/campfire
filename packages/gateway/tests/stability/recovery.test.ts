@@ -26,37 +26,37 @@ describe('Connection Recovery Tests', () => {
   });
 
   it('should handle API rate limiting gracefully', async () => {
+    // Use a non-exempt endpoint to test rate limiting
+    // /health and /ready are exempt from rate limiting
     const requestCount = 150; // Exceed rate limit (100/min)
     const responses: number[] = [];
 
     for (let i = 0; i < requestCount; i++) {
       const response = await app.inject({
         method: 'GET',
-        url: '/health',
+        url: '/api/users/me',
+        headers: { authorization: `Bearer ${authToken}` },
       });
 
       responses.push(response.statusCode);
     }
 
-    const successCount = responses.filter((code) => code === 200).length;
     const rateLimitCount = responses.filter((code) => code === 429).length;
 
     console.log(`\nRate Limiting:`);
     console.log(`  Total requests: ${requestCount}`);
-    console.log(`  Successful: ${successCount}`);
     console.log(`  Rate limited: ${rateLimitCount}`);
 
-    // Should have some rate limiting
+    // Should have some rate limiting after 100 requests
     expect(rateLimitCount).toBeGreaterThan(0);
 
-    // Note: rate limit window is 1 minute so we don't wait for reset here.
-    // Just verify that the server is still responsive (even if rate-limited).
+    // Health endpoint should still work (it's exempt from rate limiting)
     const afterResponse = await app.inject({
       method: 'GET',
       url: '/health',
     });
 
-    expect([200, 429]).toContain(afterResponse.statusCode);
+    expect(afterResponse.statusCode).toBe(200);
   });
 
   it('should handle concurrent request bursts', async () => {
