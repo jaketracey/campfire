@@ -27,7 +27,7 @@ export function TicTacToeBoard({
   };
 
   return (
-    <div className="flex flex-col gap-2 w-[240px]" role="grid" aria-label="Tic-tac-toe board">
+    <div className="flex flex-col gap-2 w-full max-w-[240px]" role="grid" aria-label="Tic-tac-toe board">
       {board.map((row, rowIdx) => (
         <div key={rowIdx} className="grid grid-cols-3 gap-2" role="row">
           {row.map((cell, colIdx) => {
@@ -41,7 +41,7 @@ export function TicTacToeBoard({
                 key={`${rowIdx}-${colIdx}`}
                 role="gridcell"
                 className={`
-                  w-[72px] h-[72px] rounded-lg text-4xl font-bold
+                  aspect-square rounded-lg text-4xl font-bold
                   flex items-center justify-center
                   transition-all duration-150
                   ${isEmpty
