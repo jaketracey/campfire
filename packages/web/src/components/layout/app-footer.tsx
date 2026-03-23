@@ -18,12 +18,12 @@ export function AppFooter() {
                     >
                         Terms of Service
                     </Link>
-                    <Link
-                        href="/support"
+                    <a
+                        href="mailto:support@ignite.cam"
                         className="hover:text-white/60 transition-colors"
                     >
                         Support
-                    </Link>
+                    </a>
                 </nav>
             </div>
         </footer>
