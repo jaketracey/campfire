@@ -124,11 +124,13 @@ export default function ForgotPasswordPage() {
               type="email"
               placeholder="you@example.com"
               data-testid="forgot-email-input"
+              aria-invalid={!!errors.email}
+              aria-describedby={errors.email ? 'email-error' : undefined}
               {...register('email')}
               disabled={isLoading}
             />
             {errors.email && (
-              <p className="text-sm text-destructive" data-testid="forgot-email-error">{errors.email.message}</p>
+              <p className="text-sm text-destructive" id="email-error" role="alert" data-testid="forgot-email-error">{errors.email.message}</p>
             )}
           </div>
         </CardContent>

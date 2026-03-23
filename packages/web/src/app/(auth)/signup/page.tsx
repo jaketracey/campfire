@@ -220,11 +220,13 @@ export default function SignupPage() {
               type="text"
               placeholder="Your name"
               data-testid="signup-name-input"
+              aria-invalid={!!errors.name}
+              aria-describedby={errors.name ? 'name-error' : undefined}
               {...register('name')}
               disabled={isLoading}
             />
             {errors.name && (
-              <p className="text-sm text-destructive" data-testid="signup-name-error">{errors.name.message}</p>
+              <p className="text-sm text-destructive" id="name-error" role="alert" data-testid="signup-name-error">{errors.name.message}</p>
             )}
           </div>
 
@@ -235,11 +237,13 @@ export default function SignupPage() {
               type="email"
               placeholder="you@example.com"
               data-testid="signup-email-input"
+              aria-invalid={!!errors.email}
+              aria-describedby={errors.email ? 'email-error' : undefined}
               {...register('email')}
               disabled={isLoading}
             />
             {errors.email && (
-              <p className="text-sm text-destructive" data-testid="signup-email-error">{errors.email.message}</p>
+              <p className="text-sm text-destructive" id="email-error" role="alert" data-testid="signup-email-error">{errors.email.message}</p>
             )}
           </div>
 
@@ -251,6 +255,8 @@ export default function SignupPage() {
                 type={showPassword ? 'text' : 'password'}
                 placeholder="Create a password"
                 data-testid="signup-password-input"
+                aria-invalid={!!errors.password}
+                aria-describedby={errors.password ? 'password-error' : undefined}
                 {...register('password')}
                 disabled={isLoading}
               />
@@ -297,7 +303,7 @@ export default function SignupPage() {
               </div>
             )}
             {errors.password && (
-              <p className="text-sm text-destructive" data-testid="signup-password-error">
+              <p className="text-sm text-destructive" id="password-error" role="alert" data-testid="signup-password-error">
                 {errors.password.message}
               </p>
             )}
@@ -311,6 +317,8 @@ export default function SignupPage() {
                 type={showConfirmPassword ? 'text' : 'password'}
                 placeholder="Confirm your password"
                 data-testid="signup-confirm-password-input"
+                aria-invalid={!!errors.confirmPassword}
+                aria-describedby={errors.confirmPassword ? 'confirm-password-error' : undefined}
                 {...register('confirmPassword')}
                 disabled={isLoading}
               />
@@ -331,7 +339,7 @@ export default function SignupPage() {
               </Button>
             </div>
             {errors.confirmPassword && (
-              <p className="text-sm text-destructive" data-testid="signup-confirm-password-error">
+              <p className="text-sm text-destructive" id="confirm-password-error" role="alert" data-testid="signup-confirm-password-error">
                 {errors.confirmPassword.message}
               </p>
             )}
@@ -345,6 +353,8 @@ export default function SignupPage() {
                 setValue('acceptTerms', checked as true)
               }
               disabled={isLoading}
+              aria-invalid={!!errors.acceptTerms}
+              aria-describedby={errors.acceptTerms ? 'terms-error' : undefined}
               className="border-white/30 data-[state=checked]:bg-campfire-500 data-[state=checked]:border-campfire-500"
               data-testid="signup-terms-checkbox"
             />
@@ -373,7 +383,7 @@ export default function SignupPage() {
             </Label>
           </div>
           {errors.acceptTerms && (
-            <p className="text-sm text-destructive" data-testid="signup-terms-error">
+            <p className="text-sm text-destructive" id="terms-error" role="alert" data-testid="signup-terms-error">
               {errors.acceptTerms.message}
             </p>
           )}

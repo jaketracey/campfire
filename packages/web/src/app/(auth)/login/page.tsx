@@ -145,11 +145,13 @@ export default function LoginPage() {
               type="email"
               placeholder="you@example.com"
               data-testid="login-email-input"
+              aria-invalid={!!errors.email}
+              aria-describedby={errors.email ? 'email-error' : undefined}
               {...register('email')}
               disabled={isLoading}
             />
             {errors.email && (
-              <p className="text-sm text-destructive" data-testid="login-email-error">{errors.email.message}</p>
+              <p className="text-sm text-destructive" id="email-error" role="alert" data-testid="login-email-error">{errors.email.message}</p>
             )}
           </div>
 
@@ -170,6 +172,8 @@ export default function LoginPage() {
                 type={showPassword ? 'text' : 'password'}
                 placeholder="Enter your password"
                 data-testid="login-password-input"
+                aria-invalid={!!errors.password}
+                aria-describedby={errors.password ? 'password-error' : undefined}
                 {...register('password')}
                 disabled={isLoading}
               />
@@ -190,7 +194,7 @@ export default function LoginPage() {
               </Button>
             </div>
             {errors.password && (
-              <p className="text-sm text-destructive" data-testid="login-password-error">{errors.password.message}</p>
+              <p className="text-sm text-destructive" id="password-error" role="alert" data-testid="login-password-error">{errors.password.message}</p>
             )}
           </div>
         </CardContent>
