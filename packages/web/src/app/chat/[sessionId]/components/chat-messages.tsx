@@ -186,7 +186,17 @@ export function ChatMessages({
                         : 'bg-muted'
                     }`}
                   >
-                    <p className="text-base lg:text-sm whitespace-pre-wrap break-words">{message.content}</p>
+                    {message.imageUrl && (
+                      <img
+                        src={message.imageUrl}
+                        alt="Generated image"
+                        className="rounded-lg max-w-full mb-2 cursor-pointer hover:opacity-90 transition-opacity"
+                        onClick={() => window.open(message.imageUrl, '_blank')}
+                      />
+                    )}
+                    {message.content && (
+                      <p className="text-base lg:text-sm whitespace-pre-wrap break-words">{message.content}</p>
+                    )}
                     {!isUser && !isDemo && (
                       <div className="flex justify-end mt-1 -mb-1 -mr-1">
                         <LikeButton

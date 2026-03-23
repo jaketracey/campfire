@@ -285,11 +285,11 @@ TOOLS:
     userId: user?.id ?? null,
     firstMessage: companion ? `Hey, it's ${companion.name}. What's on your mind?` : undefined,
     onImageGenerated: (imageUrl) => {
-      // Show the generated image in chat
       const imgMessage: Message = {
         id: crypto.randomUUID(),
         role: 'assistant',
-        content: `![Generated image](${imageUrl})`,
+        content: '',
+        imageUrl,
         timestamp: new Date(),
       };
       setMessages((prev) => [...prev, imgMessage]);

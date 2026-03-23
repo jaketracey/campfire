@@ -7,6 +7,8 @@ export interface Message {
   content: string;
   timestamp: Date;
   emotionalState?: EmotionalState;
+  /** Image URL generated during voice chat */
+  imageUrl?: string;
   // Group chat fields
   companionId?: string;
   companionName?: string;
