@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
 import type { Route } from 'next';
 import { motion } from 'framer-motion';
-import { Coins, Check, Loader2 } from 'lucide-react';
+import { Coins, Check, Loader2, Heart, Gem, Sparkles, ImagePlus } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { useToast } from '@/hooks/use-toast';
@@ -317,6 +317,32 @@ export default function TokensPage() {
                   </CardContent>
                 </Card>
               ))}
+            </div>
+
+            {/* What You Can Do section */}
+            <div className="mt-8">
+              <h2 className="text-xl font-semibold mb-4">What You Can Do</h2>
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                {[
+                  { icon: Heart, name: 'Simple Gift', cost: 10, color: 'text-pink-400', bg: 'from-pink-500/10 to-pink-500/5' },
+                  { icon: Sparkles, name: 'Custom Gift', cost: 25, color: 'text-violet-400', bg: 'from-violet-500/10 to-violet-500/5' },
+                  { icon: Gem, name: 'Premium Gift', cost: 50, color: 'text-cyan-400', bg: 'from-cyan-500/10 to-cyan-500/5' },
+                  { icon: ImagePlus, name: 'Generate Image', cost: 25, color: 'text-amber-400', bg: 'from-amber-500/10 to-amber-500/5' },
+                ].map((item) => (
+                  <div
+                    key={item.name}
+                    className={`flex flex-col items-center gap-2 p-4 rounded-lg bg-gradient-to-br ${item.bg} border border-white/5`}
+                  >
+                    <item.icon className={`h-6 w-6 ${item.color}`} />
+                    <span className="text-sm font-medium text-white">{item.name}</span>
+                    <span className="flex items-center gap-1 text-xs text-gray-400">
+                      <Coins className="h-3 w-3 text-amber-500" />
+                      {item.cost} tokens
+                    </span>
+                  </div>
+                ))}
+              </div>
+              <p className="text-xs text-gray-500 mt-2">Costs vary by gift type and rarity</p>
             </div>
 
             {/* Info section */}
