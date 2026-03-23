@@ -59,6 +59,9 @@ export function ChatMessages({
 }: ChatMessagesProps) {
   return (
     <div
+      role="log"
+      aria-live="polite"
+      aria-label="Chat messages"
       className="flex-1 overflow-y-auto py-4 px-6 lg:px-4 space-y-4 scrollbar-chat relative pb-36 lg:pb-4"
       style={{ paddingBottom: keyboardHeight > 0 ? `${keyboardHeight + 80}px` : undefined }}
       data-testid="chat-messages"
