@@ -67,10 +67,9 @@ export function BackstoryModal({
   }, [isOpen, backstory]);
 
   const handleSkip = useCallback(() => {
-    setDisplayedText('');
+    setDisplayedText(backstory);
     setIsTyping(false);
-    onClose();
-  }, [onClose]);
+  }, [backstory]);
 
   const handleClose = useCallback(() => {
     setDisplayedText('');
@@ -140,7 +139,7 @@ export function BackstoryModal({
                     onClick={handleSkip}
                     className="px-3 py-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors"
                   >
-                    Skip
+                    Show All
                   </button>
                 </div>
               )}
