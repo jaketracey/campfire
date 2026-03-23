@@ -24,10 +24,13 @@ import {
   listCompanions,
   browseCompanions,
   deleteCompanion,
+  listSessions,
 } from '@/lib/api';
 import type {
   Companion as APICompanion,
+  Session,
 } from '@/lib/api';
+import { ContinueConversation } from '@/components/dashboard/continue-conversation';
 import type { ImageRenditions } from '@/lib/utils/image-renditions';
 import Link from 'next/link';
 import type { Route } from 'next';
@@ -56,6 +59,15 @@ export default function DashboardPage() {
   const router = useRouter();
   const { isAuthenticated, isInitialized, user, isLoading: authLoading } = useAuth();
   const [companions, setCompanions] = useState<Companion[]>([]);
+  const [recentSessions, setRecentSessions] = useState<{
+    id: string;
+    companionId: string;
+    companionName: string;
+    companionAvatarUrl: string | null;
+    companionImageUrl: string | null;
+    lastMessage: string;
+    updatedAt: string;
+  }[]>([]);
   const [loading, setLoading] = useState(true);
   const [companionToDelete, setCompanionToDelete] = useState<Companion | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
@@ -91,6 +103,35 @@ export default function DashboardPage() {
       }));
 
       setCompanions(mappedCompanions);
+
+      // Build recent sessions from companions that have active sessions
+      if (isAuthenticated) {
+        try {
+          const sessionsRes = await listSessions({ limit: 10, status: 'active' });
+
+          // Build a lookup from companion ID to companion data
+          const companionMap = new Map(mappedCompanions.map(c => [c.id, c]));
+
+          const recent = sessionsRes.sessions
+            .filter((s: Session) => s.turnCount > 0 && companionMap.has(s.companionId))
+            .map((s: Session) => {
+              const companion = companionMap.get(s.companionId)!;
+              return {
+                id: s.id,
+                companionId: s.companionId,
+                companionName: companion.name,
+                companionAvatarUrl: companion.avatarUrl,
+                companionImageUrl: companion.latestConversationImageUrl,
+                lastMessage: s.summary || 'Continue your conversation...',
+                updatedAt: s.lastMessageAt || s.startedAt,
+              };
+            });
+
+          setRecentSessions(recent);
+        } catch (error) {
+          console.error('Failed to fetch recent sessions:', error);
+        }
+      }
     } catch (error) {
       console.error('Failed to fetch dashboard data:', error);
     } finally {
@@ -227,6 +268,11 @@ export default function DashboardPage() {
               </CardContent>
             </Card>
           </motion.div>
+        )}
+
+        {/* Continue Conversation - recent sessions for returning users */}
+        {isAuthenticated && recentSessions.length > 0 && (
+          <ContinueConversation sessions={recentSessions} />
         )}
 
         {/* Companions Grid - dense mosaic of small thumbnails */}
