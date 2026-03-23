@@ -1,6 +1,6 @@
 {
   "name": "@campfire/shared",
-  "version": "0.2.5",
+  "version": "0.2.6",
   "description": "Shared types, event schemas, and validation for Campfire platform",
   "type": "module",
   "main": "./dist/index.js",
