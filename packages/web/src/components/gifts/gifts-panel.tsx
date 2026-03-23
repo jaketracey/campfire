@@ -332,7 +332,7 @@ export function GiftsPanel({
 
   if (!isValidCompanionId) {
     return (
-      <div className="fixed bottom-4 right-4 w-[400px] z-50 shadow-2xl rounded-lg border bg-background p-4">
+      <div className="fixed w-full left-0 right-0 bottom-0 rounded-t-xl rounded-b-none lg:w-[400px] lg:left-auto lg:right-4 lg:bottom-4 lg:rounded-xl z-50 shadow-2xl border bg-background p-4">
         <div className="flex items-center justify-between mb-2">
           <span className="font-semibold text-sm">Gifts</span>
           <Button variant="ghost" size="icon" className="h-7 w-7" onClick={onClose} aria-label="Close gifts panel">
@@ -347,7 +347,7 @@ export function GiftsPanel({
   }
 
   return (
-    <div className="fixed bottom-4 right-4 w-[400px] max-h-[500px] z-50 shadow-2xl rounded-lg border bg-background">
+    <div className="fixed w-full left-0 right-0 bottom-0 rounded-t-xl rounded-b-none max-h-[85vh] lg:w-[400px] lg:left-auto lg:right-4 lg:bottom-4 lg:rounded-xl lg:max-h-[500px] z-50 shadow-2xl border bg-background">
       {/* Animation overlay */}
       {animationType && (
         <GiftAnimation
