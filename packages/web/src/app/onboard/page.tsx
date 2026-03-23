@@ -112,31 +112,36 @@ export default function OnboardingPage() {
       {showNormalStepper && !showQuickStartStepper && (
         <div className="flex justify-center px-4 pt-20 lg:pt-6 pb-8 md:pb-6">
           <div className="w-full max-w-md">
-            {/* Step labels */}
-            <div className="flex justify-between mb-2">
-              {FULL_ONBOARDING_LABELS.map((label, index) => {
-                const stepNumber = index + FULL_STEP_LABEL_MIN; // Steps 2-6 (step 1 is welcome)
-                const isCompleted = stepNumber < currentStep;
-                const isCurrent = stepNumber === currentStep;
-                const canNavigate = stepNumber < currentStep;
+            {/* Step counter */}
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-xs text-white/50">
+                Step {currentStep - FULL_STEP_LABEL_MIN + 1} of {FULL_ONBOARDING_LABELS.length}
+              </span>
+              <div className="flex gap-3">
+                {FULL_ONBOARDING_LABELS.map((label, index) => {
+                  const stepNumber = index + FULL_STEP_LABEL_MIN;
+                  const isCompleted = stepNumber < currentStep;
+                  const isCurrent = stepNumber === currentStep;
+                  const canNavigate = stepNumber < currentStep;
 
-                return (
-                  <button
-                    key={label}
-                    onClick={() => canNavigate && setStep(stepNumber)}
-                    disabled={!canNavigate}
-                    className={`text-[10px] font-bold tracking-widest uppercase transition-all ${
-                      isCompleted
-                        ? 'text-white/60 hover:text-white/80 cursor-pointer'
-                        : isCurrent
-                          ? 'text-campfire-500 cursor-default'
-                          : 'text-gray-600 cursor-default'
-                    }`}
-                  >
-                    {label}
-                  </button>
-                );
-              })}
+                  return (
+                    <button
+                      key={label}
+                      onClick={() => canNavigate && setStep(stepNumber)}
+                      disabled={!canNavigate}
+                      className={`text-xs font-medium tracking-wide transition-all ${
+                        isCompleted
+                          ? 'text-white/60 hover:text-white/80 cursor-pointer'
+                          : isCurrent
+                            ? 'text-campfire-500 cursor-default'
+                            : 'text-gray-600 cursor-default'
+                      }`}
+                    >
+                      {label}
+                    </button>
+                  );
+                })}
+              </div>
             </div>
             {/* Progress bar */}
             <div
