@@ -201,6 +201,11 @@ export default function SignupPage() {
             text="signup"
             disabled={isLoading}
           />
+          <p className="text-[11px] text-white/40 text-center -mt-1">
+            By signing up with Google, you agree to our{' '}
+            <Link href="/terms" className="underline hover:text-white/60">Terms</Link> and{' '}
+            <Link href="/privacy" className="underline hover:text-white/60">Privacy Policy</Link>.
+          </p>
 
           <div className="relative w-full">
             <div className="absolute inset-0 flex items-center">
