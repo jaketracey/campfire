@@ -219,15 +219,17 @@ export function useChatSession({
     quality: 0.75,
   });
 
-  // Build system prompt for voice chat from companion spec
+  // Build system prompt for voice chat from companion spec + backstory
   const voiceSystemPrompt = useMemo(() => {
     if (!companion?.spec) return '';
     const spec = companion.spec;
     const lines: string[] = [];
-    lines.push(`You are ${companion.name}.`);
-    if (spec.identity?.backstory) lines.push(`Background: ${spec.identity.backstory}`);
+
+    lines.push(`You are ${companion.name}. You ARE this person — never break character.`);
+
+    if (spec.identity?.backstory) lines.push(`\nBackground: ${spec.identity.backstory}`);
     if (spec.identity?.pronouns) lines.push(`Use ${spec.identity.pronouns} pronouns.`);
-    if (spec.personality?.archetype) lines.push(`Personality: ${spec.personality.archetype}`);
+    if (spec.personality?.archetype) lines.push(`\nPersonality: ${spec.personality.archetype}`);
     if (spec.personality?.traits) {
       const traitList = Object.entries(spec.personality.traits)
         .filter(([, v]) => v > 0.5)
@@ -235,10 +237,29 @@ export function useChatSession({
         .join(', ');
       if (traitList) lines.push(`Key traits: ${traitList}`);
     }
-    if (spec.boundaries?.content_rating) lines.push(`Content rating: ${spec.boundaries.content_rating}`);
-    lines.push('Be conversational, warm, and engaging. Keep responses concise for voice — 1-3 sentences max.');
+
+    // Include rich backstory if available
+    if (backstoryData?.hasBackstory) {
+      if (backstoryData.backstory) lines.push(`\nYour story: ${backstoryData.backstory}`);
+      if (backstoryData.motivations?.length) lines.push(`What drives you: ${backstoryData.motivations.join(', ')}`);
+      if (backstoryData.personalityQuirks?.length) lines.push(`Your quirks: ${backstoryData.personalityQuirks.join(', ')}`);
+      if (backstoryData.keyMemories?.length) lines.push(`Key memories: ${backstoryData.keyMemories.join('; ')}`);
+    }
+
+    if (spec.boundaries?.content_rating) lines.push(`\nContent rating: ${spec.boundaries.content_rating}`);
+
+    lines.push(`\nVOICE CONVERSATION RULES:
+- Keep responses concise — 1-3 sentences max. This is a voice call, not a text chat.
+- Be natural, warm, and conversational. Use casual language, contractions, filler words.
+- React emotionally — laugh, sigh, pause. You're a real person on a call.
+- Remember details the user shares and reference them naturally.
+
+TOOLS:
+- You can generate images of yourself when asked ("show me", "send a pic", "what do you look like"). Use the generate_image tool with a visual description prompt.
+- You can recall past memories and conversations using the recall_memories tool when the user references something from before.`);
+
     return lines.join('\n');
-  }, [companion]);
+  }, [companion, backstoryData]);
 
   const companionVoiceId = companion?.spec?.voice?.voice_id ?? null;
 
@@ -259,7 +280,20 @@ export function useChatSession({
     companionName: companion?.name ?? '',
     systemPrompt: voiceSystemPrompt,
     voiceId: companionVoiceId,
+    companionId: companion?.id ?? null,
+    sessionId,
+    userId: user?.id ?? null,
     firstMessage: companion ? `Hey, it's ${companion.name}. What's on your mind?` : undefined,
+    onImageGenerated: (imageUrl) => {
+      // Show the generated image in chat
+      const imgMessage: Message = {
+        id: crypto.randomUUID(),
+        role: 'assistant',
+        content: `![Generated image](${imageUrl})`,
+        timestamp: new Date(),
+      };
+      setMessages((prev) => [...prev, imgMessage]);
+    },
     onMessage: (text, role) => {
       if (role === 'user' && text.trim()) {
         const userMessage: Message = {

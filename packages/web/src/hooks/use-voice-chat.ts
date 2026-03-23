@@ -2,7 +2,7 @@
 
 import { useState, useCallback, useRef } from 'react';
 import { useConversation } from '@elevenlabs/react';
-import { get } from '@/lib/api/client';
+import { get, apiClient } from '@/lib/api/client';
 
 export type VoiceChatState = 'idle' | 'connecting' | 'listening' | 'thinking' | 'speaking';
 
@@ -11,7 +11,14 @@ interface UseVoiceChatOptions {
   systemPrompt: string;
   voiceId: string | null;
   firstMessage?: string;
+  /** Companion ID for tool calls (image gen, memories) */
+  companionId?: string | null;
+  /** Session ID for tool calls */
+  sessionId?: string | null;
+  /** User ID for tool calls */
+  userId?: string | null;
   onMessage?: (message: string, role: 'user' | 'assistant') => void;
+  onImageGenerated?: (imageUrl: string) => void;
   onError?: (error: string) => void;
 }
 
@@ -35,7 +42,11 @@ export function useVoiceChat({
   systemPrompt,
   voiceId,
   firstMessage,
+  companionId,
+  sessionId,
+  userId,
   onMessage,
+  onImageGenerated,
   onError,
 }: UseVoiceChatOptions): UseVoiceChatReturn {
   const [voiceState, setVoiceState] = useState<VoiceChatState>('idle');
@@ -50,6 +61,43 @@ export function useVoiceChat({
 
   const conversation = useConversation({
     micMuted: isMuted,
+    clientTools: {
+      generate_image: async (params: { prompt: string }) => {
+        if (!companionId || !sessionId || !userId) return 'Image generation not available in this session.';
+        try {
+          const result = await apiClient<{ imageUrl: string }>('/imagegen/generate', {
+            method: 'POST',
+            body: JSON.stringify({
+              prompt: params.prompt,
+              companionId,
+              sessionId,
+              userId,
+              emotionalState: 'neutral',
+              style: 'realistic',
+              width: 832,
+              height: 1248,
+            }),
+          });
+          onImageGenerated?.(result.imageUrl);
+          return `Image generated successfully. The user can see it now.`;
+        } catch (e) {
+          return `Image generation failed: ${e instanceof Error ? e.message : 'unknown error'}`;
+        }
+      },
+      recall_memories: async (params: { query: string }) => {
+        if (!companionId || !sessionId) return 'No memories available.';
+        try {
+          const result = await apiClient<{ data: { memories: Array<{ content: string; type: string }> } }>(
+            `/companions/${companionId}/memories?query=${encodeURIComponent(params.query)}&limit=5`,
+          );
+          const memories = result.data?.memories || [];
+          if (memories.length === 0) return 'No relevant memories found.';
+          return memories.map((m) => `[${m.type}] ${m.content}`).join('\n');
+        } catch {
+          return 'Could not retrieve memories.';
+        }
+      },
+    },
     onConnect: ({ conversationId: connId }) => {
       setVoiceState('listening');
       setConversationId(connId);

@@ -47,6 +47,26 @@ function mintAdminToken(userId: string): string {
 
 const ADMIN_USER_ID = '00000000-0000-0000-0000-000000000001';
 
+const FEMININE_VOICES = [
+  'EXAVITQu4vr4xnSDxMaL', // Sarah
+  'FGY2WhTYpPnrIDTdsKH5', // Laura
+  'XB0fDUnXU5powFXDhCwa', // Charlotte
+  'pFZP5JQG7iQjIQuC4Bku', // Lily
+  'cgSgspJ2msm6clMCkdW9', // Jessica
+];
+
+const MASCULINE_VOICES = [
+  'onwK4e9ZLuTAKqWW03F9', // Daniel
+  'cjVigY5qzO86Huf0OWal', // Eric
+  'N2lVS1w4EtoT3dr4eOWO', // Callum
+  'JBFqnCBsd6RMkjVDRZzb', // George
+];
+
+function pickVoiceId(gender: string): string {
+  const pool = gender === 'male' ? MASCULINE_VOICES : FEMININE_VOICES;
+  return pool[Math.floor(Math.random() * pool.length)];
+}
+
 async function apiFetch(method: string, path: string, body?: any, token?: string): Promise<any> {
   const headers: Record<string, string> = {};
   if (body) headers['Content-Type'] = 'application/json';
@@ -130,6 +150,7 @@ async function createOneCompanion(index: number, total: number, token: string, d
       },
       voice: {
         provider: 'elevenlabs',
+        voice_id: pickVoiceId(appearance.gender),
       },
     };
 
