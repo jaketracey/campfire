@@ -124,8 +124,9 @@ export function CookieConsent() {
                     </div>
                   </div>
                   <button
-                    onClick={() => setVisible(false)}
+                    onClick={rejectNonEssential}
                     className="p-1.5 rounded-full hover:bg-muted/50 transition-colors"
+                    aria-label="Dismiss and reject non-essential cookies"
                   >
                     <X className="w-4 h-4 text-muted-foreground" />
                   </button>
