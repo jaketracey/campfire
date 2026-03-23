@@ -200,6 +200,7 @@ export interface OnboardingState {
   addTenet: (tenet: OnboardingTenet) => void;
   removeTenet: (id: string) => void;
   updateTenet: (id: string, updates: Partial<OnboardingTenet>) => void;
+  setTenets: (tenets: OnboardingTenet[]) => void;
   setName: (name: string) => void;
   setIdentity: (identity: { pronouns: string; backstory: string }) => void;
   setVoice: (voice: VoiceOption) => void;
@@ -328,6 +329,8 @@ export const useOnboardingStore = create<OnboardingState>()(
         set((state) => ({
           tenets: state.tenets.map((t) => (t.id === id ? { ...t, ...updates } : t)),
         })),
+
+      setTenets: (tenets) => set({ tenets }),
 
       setName: (name) => set({ name }),
       setIdentity: (identity) => set({ identity }),
