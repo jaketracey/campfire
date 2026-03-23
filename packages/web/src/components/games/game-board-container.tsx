@@ -90,7 +90,7 @@ export function GameBoardContainer({
         <div className="flex items-center justify-between mb-4">
           <div>
             <h3 className="font-semibold">{getGameTitle()}</h3>
-            <div className="flex items-center gap-2 text-sm text-muted-foreground">
+            <div className="flex items-center gap-2 text-sm text-muted-foreground" role="status" aria-live="polite">
               {isWaitingForCompanion && !isGameOver && (
                 <Loader2 className="h-3 w-3 animate-spin" />
               )}

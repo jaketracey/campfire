@@ -86,7 +86,7 @@ export function CallSidebar({
 
       {/* Name + Status */}
       <h3 className="text-lg font-semibold text-center mb-1">{companionName}</h3>
-      <p className={`text-sm font-medium ${getStatusColor()} mb-3`}>
+      <p className={`text-sm font-medium ${getStatusColor()} mb-3`} role="status" aria-live="polite">
         {getStatusText()}
       </p>
 
