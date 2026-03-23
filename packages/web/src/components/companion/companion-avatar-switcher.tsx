@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { ChevronLeft, ChevronRight, Loader2 } from 'lucide-react';
+import { RefreshCw, Loader2 } from 'lucide-react';
 
 interface CompanionAvatarSwitcherProps {
   children: React.ReactNode;
@@ -37,40 +37,24 @@ export function CompanionAvatarSwitcher({
     >
       {children}
 
-      {/* Navigation arrows - desktop only */}
+      {/* Generate new look button - desktop only */}
       <AnimatePresence>
         {isHovered && !isGenerating && !disabled && (
-          <>
-            {/* Left arrow */}
-            <motion.button
-              initial={{ opacity: 0, scale: 0.8 }}
-              animate={{ opacity: 1, scale: 1 }}
-              exit={{ opacity: 0, scale: 0.8 }}
-              transition={{ duration: 0.2 }}
-              whileHover={{ scale: 1.1, backgroundColor: 'rgba(255,255,255,0.3)' }}
-              whileTap={{ scale: 0.95 }}
-              onClick={handleSwitch}
-              className="hidden md:flex absolute left-2 top-1/2 -translate-y-1/2 z-10 items-center justify-center w-10 h-10 rounded-full bg-black/40 backdrop-blur-sm text-white shadow-lg hover:shadow-xl transition-shadow"
-              aria-label="Generate new companion"
-            >
-              <ChevronLeft className="w-6 h-6" />
-            </motion.button>
-
-            {/* Right arrow */}
-            <motion.button
-              initial={{ opacity: 0, scale: 0.8 }}
-              animate={{ opacity: 1, scale: 1 }}
-              exit={{ opacity: 0, scale: 0.8 }}
-              transition={{ duration: 0.2 }}
-              whileHover={{ scale: 1.1, backgroundColor: 'rgba(255,255,255,0.3)' }}
-              whileTap={{ scale: 0.95 }}
-              onClick={handleSwitch}
-              className="hidden md:flex absolute right-2 top-1/2 -translate-y-1/2 z-10 items-center justify-center w-10 h-10 rounded-full bg-black/40 backdrop-blur-sm text-white shadow-lg hover:shadow-xl transition-shadow"
-              aria-label="Generate new companion"
-            >
-              <ChevronRight className="w-6 h-6" />
-            </motion.button>
-          </>
+          <motion.button
+            initial={{ opacity: 0, scale: 0.8 }}
+            animate={{ opacity: 1, scale: 1 }}
+            exit={{ opacity: 0, scale: 0.8 }}
+            transition={{ duration: 0.2 }}
+            whileHover={{ scale: 1.1, backgroundColor: 'rgba(255,255,255,0.3)' }}
+            whileTap={{ scale: 0.95 }}
+            onClick={handleSwitch}
+            className="hidden md:flex absolute bottom-3 right-3 z-10 items-center justify-center gap-1.5 px-3 py-1.5 rounded-full bg-black/50 backdrop-blur-sm text-white text-xs shadow-lg hover:shadow-xl transition-shadow"
+            aria-label="Generate new look"
+            title="Generate new look"
+          >
+            <RefreshCw className="w-3.5 h-3.5" />
+            <span>New look</span>
+          </motion.button>
         )}
       </AnimatePresence>
 
