@@ -140,7 +140,7 @@ export function ChatMessages({
               />
             ) : (
               <Card
-                className={`max-w-[80%] p-3 ${
+                className={`max-w-[80%] lg:max-w-xl p-3 ${
                   isUser
                     ? 'bg-primary text-primary-foreground'
                     : 'bg-muted'
@@ -165,7 +165,7 @@ export function ChatMessages({
       {/* Streaming message */}
       {streamingContent && (
         <div className="flex justify-start relative z-10" data-testid="streaming-message">
-          <Card className="bg-muted p-3 max-w-[80%]">
+          <Card className="bg-muted p-3 max-w-[80%] lg:max-w-xl">
             <p className="text-base lg:text-sm whitespace-pre-wrap break-words">{streamingContent}</p>
           </Card>
         </div>
@@ -181,7 +181,7 @@ export function ChatMessages({
           data-testid="typing-indicator"
         >
           <Card className={`bg-muted p-3 ${showTypingBetweenMessages ? 'mt-1' : ''}`}>
-            <div className="flex gap-1">
+            <div className="flex gap-1" role="status" aria-label="Companion is typing">
               <motion.span
                 className="w-2 h-2 bg-foreground/50 rounded-full"
                 animate={{ y: [0, -4, 0], opacity: [0.5, 1, 0.5] }}
