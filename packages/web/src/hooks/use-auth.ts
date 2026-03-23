@@ -37,7 +37,7 @@ export function useAuth() {
   }, []);
 
   const login = useCallback(
-    async (credentials: LoginCredentials) => {
+    async (credentials: LoginCredentials, options?: { returnTo?: string | null }) => {
       setLoading(true);
       try {
         const response = await authApi.login(credentials);
@@ -58,14 +58,15 @@ export function useAuth() {
         // Update Zustand state and set cookie
         setSession(user, tokens);
 
-        router.push('/dashboard');
+        const redirectPath = (getSafeReturnPath(options?.returnTo) || '/dashboard') as Route;
+        router.push(redirectPath);
         return { success: true };
       } catch (error) {
         setLoading(false);
         throw error;
       }
     },
-    [router, setSession, setLoading]
+    [router, setSession, setLoading, getSafeReturnPath]
   );
 
   const signup = useCallback(

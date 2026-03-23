@@ -2,6 +2,7 @@
 
 import { useState, useCallback } from 'react';
 import Link from 'next/link';
+import { useSearchParams } from 'next/navigation';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
@@ -31,6 +32,8 @@ type LoginFormData = z.infer<typeof loginSchema>;
 export default function LoginPage() {
   const { toast } = useToast();
   const { login, loginWithGoogle, isLoading: authLoading } = useAuth();
+  const searchParams = useSearchParams();
+  const returnTo = searchParams.get('returnTo');
   const [showPassword, setShowPassword] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isGoogleLoading, setIsGoogleLoading] = useState(false);
@@ -41,7 +44,7 @@ export default function LoginPage() {
     async (idToken: string) => {
       setIsGoogleLoading(true);
       try {
-        await loginWithGoogle({ idToken }, false);
+        await loginWithGoogle({ idToken }, false, { returnTo });
         toast({
           title: 'Welcome back!',
           description: 'You have successfully signed in with Google.',
@@ -83,7 +86,7 @@ export default function LoginPage() {
   const onSubmit = async (data: LoginFormData) => {
     setIsSubmitting(true);
     try {
-      const result = await login(data);
+      const result = await login(data, { returnTo });
 
       if (result.requiresMFA) {
         toast({
@@ -214,7 +217,7 @@ export default function LoginPage() {
 
           <p className="text-sm text-white/40 text-center">
             Don&apos;t have an account?{' '}
-            <Link href="/signup" className="text-campfire-400 hover:text-campfire-300 hover:underline" data-testid="login-signup-link">
+            <Link href={returnTo ? `/signup?returnTo=${encodeURIComponent(returnTo)}` : '/signup'} className="text-campfire-400 hover:text-campfire-300 hover:underline" data-testid="login-signup-link">
               Sign up
             </Link>
           </p>
