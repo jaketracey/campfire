@@ -434,7 +434,7 @@ class FalProvider(ImageProvider):
         start_time = time.time()
         client = await self._get_client()
 
-        endpoint = MODEL_TO_FAL_ENDPOINT["fal/dreamina-v3.1"]
+        endpoint = MODEL_TO_FAL_ENDPOINT["fal/seedream-4.5"]
 
         input_params: dict[str, Any] = {
             "prompt": prompt,
