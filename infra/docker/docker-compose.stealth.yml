@@ -120,6 +120,7 @@ services:
       AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY}
       # ElevenLabs Voice
       ELEVENLABS_API_KEY: ${ELEVENLABS_API_KEY:-}
+      ELEVENLABS_AGENT_ID: ${ELEVENLABS_AGENT_ID:-}
     extra_hosts:
       - "host.docker.internal:host-gateway"
     volumes:
@@ -168,6 +169,7 @@ services:
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       ELEVENLABS_API_KEY: ${ELEVENLABS_API_KEY:-}
+      ELEVENLABS_AGENT_ID: ${ELEVENLABS_AGENT_ID:-}
       # AWS S3
       S3_MEDIA_BUCKET: ${S3_MEDIA_BUCKET}
       AWS_REGION: ${AWS_REGION:-us-east-1}
