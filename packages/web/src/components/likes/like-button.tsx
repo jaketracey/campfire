@@ -22,21 +22,25 @@ export function LikeButton({
 }: LikeButtonProps) {
   const [count, setCount] = useState(initialCount);
   const [isAnimating, setIsAnimating] = useState(false);
+  const [cooldown, setCooldown] = useState(false);
 
   const handleClick = useCallback(() => {
-    if (disabled) return;
+    if (disabled || cooldown) return;
 
-    // Optimistic update
+    // Optimistic update with cooldown to prevent spam
     const newCount = count + 1;
     setCount(newCount);
     setIsAnimating(true);
+    setCooldown(true);
 
     // Notify parent
     onLike?.(turnId, newCount);
 
     // Animation cleanup
     setTimeout(() => setIsAnimating(false), 600);
-  }, [count, disabled, onLike, turnId]);
+    // Cooldown to prevent rapid clicks
+    setTimeout(() => setCooldown(false), 500);
+  }, [count, disabled, cooldown, onLike, turnId]);
 
   // Sync with external count updates
   const updateCount = useCallback((newCount: number) => {
