@@ -117,10 +117,7 @@ export function SessionSearch({ className }: SessionSearchProps) {
   }, [query]);
 
   const handleInputBlur = useCallback(() => {
-    // Delay closing to allow clicking results
-    setTimeout(() => {
-      setIsOpen(false);
-    }, 200);
+    setIsOpen(false);
   }, []);
 
   const showResults = isOpen && debouncedQuery.length >= 2;
@@ -207,6 +204,7 @@ function SearchResultItem({
   return (
     <button
       type="button"
+      onMouseDown={(e) => e.preventDefault()}
       onClick={onClick}
       className="w-full p-3 rounded-lg hover:bg-accent/50 transition-colors text-left flex items-start gap-3"
     >
