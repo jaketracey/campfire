@@ -4,7 +4,7 @@ import { useState, useCallback, useEffect, useRef, type KeyboardEvent } from 're
 import { useOnboardingStore } from '@/stores/onboarding-store';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardTitle } from '@/components/ui/card';
-import { ArrowRight, Sparkles, Wand2 } from 'lucide-react';
+import { ArrowLeft, ArrowRight, Sparkles, Wand2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { motion, AnimatePresence } from 'framer-motion';
 import { trackOnboardingStep } from '@/lib/analytics/meta-pixel';
@@ -100,7 +100,7 @@ const archetypes = [
 ];
 
 export function Step4Archetype() {
-  const { archetype, secondaryArchetype, setArchetype, setSecondaryArchetype, nextStep } =
+  const { archetype, secondaryArchetype, setArchetype, setSecondaryArchetype, nextStep, prevStep } =
     useOnboardingStore();
   const [isSurprising, setIsSurprising] = useState(false);
   const [highlightedPrimary, setHighlightedPrimary] = useState<string | null>(null);
@@ -357,7 +357,16 @@ export function Step4Archetype() {
         )}
       </AnimatePresence>
 
-      <div className="flex justify-end pt-4">
+      <div className="flex justify-between pt-4">
+        <Button
+          variant="ghost"
+          size="lg"
+          onClick={prevStep}
+          className="group h-16 px-6 rounded-full text-gray-400 hover:text-white transition-all font-bold text-xl"
+        >
+          <ArrowLeft className="mr-2 h-6 w-6 group-hover:-translate-x-2 transition-transform duration-300" />
+          Back
+        </Button>
         <Button
           size="lg"
           disabled={!archetype || isSurprising}

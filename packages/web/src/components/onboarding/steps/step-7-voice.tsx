@@ -6,7 +6,7 @@ import { motion } from 'framer-motion';
 import { useOnboardingStore, type VoiceOption } from '@/stores/onboarding-store';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
-import { Play, Pause, ArrowRight, Loader2, Wand2 } from 'lucide-react';
+import { Play, Pause, ArrowLeft, ArrowRight, Loader2, Wand2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { createCompanion, updateCompanion } from '@/lib/api';
 import { useToast } from '@/hooks/use-toast';
@@ -42,6 +42,8 @@ function getVoiceSampleUrl(voiceId: string): string {
   return `${baseUrl}/api/v1/voice/${voiceId}/sample?${params.toString()}`;
 }
 
+type GenderFilter = 'all' | 'feminine' | 'masculine';
+
 export function Step7Voice() {
   const router = useRouter();
   const { isAuthenticated } = useAuth();
@@ -50,6 +52,7 @@ export function Step7Voice() {
     voice,
     setVoice,
     nextStep,
+    prevStep,
     setCompanionId,
     setGenerationStarted,
     setCompanionReady,
@@ -69,6 +72,13 @@ export function Step7Voice() {
   const [highlightedVoice, setHighlightedVoice] = useState<string | null>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const hasTrackedRef = useRef(false);
+
+  // Derive default gender filter from the companion's appearance gender
+  const companionGender = state.visualStyle.appearance.gender;
+  const defaultGenderFilter: GenderFilter = companionGender === 'female' ? 'feminine' : companionGender === 'male' ? 'masculine' : 'all';
+  const [genderFilter, setGenderFilter] = useState<GenderFilter>(defaultGenderFilter);
+
+  const filteredVoices = genderFilter === 'all' ? voices : voices.filter((v) => v.gender === genderFilter);
 
   // Track step on mount
   useEffect(() => {
@@ -250,13 +260,14 @@ export function Step7Voice() {
       setPlayingId(null);
     }
 
-    const targetIndex = Math.floor(Math.random() * voices.length);
-    const targetVoice = voices[targetIndex];
+    const currentFiltered = genderFilter === 'all' ? voices : voices.filter((v) => v.gender === genderFilter);
+    const targetIndex = Math.floor(Math.random() * currentFiltered.length);
+    const targetVoice = currentFiltered[targetIndex];
 
     const steps = 10;
     for (let i = 0; i < steps; i++) {
-      const randomIndex = Math.floor(Math.random() * voices.length);
-      setHighlightedVoice(voices[randomIndex].id);
+      const randomIndex = Math.floor(Math.random() * currentFiltered.length);
+      setHighlightedVoice(currentFiltered[randomIndex].id);
       await new Promise((r) => setTimeout(r, 80 + i * 15));
     }
 
@@ -284,7 +295,7 @@ export function Step7Voice() {
       });
       setIsCreating(false);
     }
-  }, [setVoice, persistVoiceSelection, nextStep, toast]);
+  }, [setVoice, persistVoiceSelection, nextStep, toast, genderFilter]);
 
   const togglePlay = useCallback(async (id: string) => {
     // If already playing this voice, stop it
@@ -352,8 +363,32 @@ export function Step7Voice() {
         <p className="text-gray-400 max-w-md mx-auto">Select the voice that best fits your companion&apos;s essence.</p>
       </div>
 
+      {/* Gender filter tabs */}
+      <div className="flex justify-center">
+        <div className="inline-flex rounded-full border border-white/10 bg-white/[0.02] p-1">
+          {([
+            { value: 'all' as GenderFilter, label: 'All' },
+            { value: 'feminine' as GenderFilter, label: 'Feminine' },
+            { value: 'masculine' as GenderFilter, label: 'Masculine' },
+          ]).map((tab) => (
+            <button
+              key={tab.value}
+              onClick={() => setGenderFilter(tab.value)}
+              className={cn(
+                'px-6 py-2 rounded-full text-sm font-bold tracking-wider uppercase transition-all',
+                genderFilter === tab.value
+                  ? 'bg-white/10 text-white shadow-sm'
+                  : 'text-gray-500 hover:text-gray-300'
+              )}
+            >
+              {tab.label}
+            </button>
+          ))}
+        </div>
+      </div>
+
       <div className="grid grid-cols-1 gap-4">
-        {voices.map((v) => {
+        {filteredVoices.map((v) => {
           const isHighlighted = highlightedVoice === v.id;
           const isSelected = voice?.id === v.id;
           return (
@@ -450,7 +485,17 @@ export function Step7Voice() {
         })}
       </div>
 
-      <div className="flex justify-end pt-8">
+      <div className="flex justify-between pt-8">
+        <Button
+          variant="ghost"
+          size="lg"
+          onClick={prevStep}
+          disabled={isCreating}
+          className="group h-16 px-6 rounded-full text-gray-400 hover:text-white transition-all font-bold text-xl"
+        >
+          <ArrowLeft className="mr-2 h-6 w-6 group-hover:-translate-x-2 transition-transform duration-300" />
+          Back
+        </Button>
         <Button
           size="lg"
           disabled={!voice || isCreating || isSurprising}

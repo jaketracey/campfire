@@ -13,7 +13,7 @@ import {
   isFemaleAppearance,
 } from '@/stores/onboarding-store';
 import { Button } from '@/components/ui/button';
-import { ArrowRight, Check, Sparkles, Wand2 } from 'lucide-react';
+import { ArrowLeft, ArrowRight, Check, Sparkles, Wand2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import Image from 'next/image';
 import { trackOnboardingStep } from '@/lib/analytics/meta-pixel';
@@ -75,7 +75,7 @@ function getFallbackImagePath(ethnicity: AppearanceEthnicity, gender: CompanionG
 }
 
 export function Step3Visuals() {
-  const { visualStyle, setAppearance, nextStep } = useOnboardingStore();
+  const { visualStyle, setAppearance, nextStep, prevStep } = useOnboardingStore();
   const [imageError, setImageError] = useState(false);
   const [displayedImage, setDisplayedImage] = useState<string | null>(null);
   const [nextImage, setNextImage] = useState<string | null>(null);
@@ -485,7 +485,16 @@ export function Step3Visuals() {
         </div>
       </div>
 
-      <div className="flex justify-end pt-8">
+      <div className="flex justify-between pt-8">
+        <Button
+          variant="ghost"
+          size="lg"
+          onClick={prevStep}
+          className="group h-16 px-6 rounded-full text-gray-400 hover:text-white transition-all font-bold text-xl"
+        >
+          <ArrowLeft className="mr-2 h-6 w-6 group-hover:-translate-x-2 transition-transform duration-300" />
+          Back
+        </Button>
         <Button
           size="lg"
           disabled={isSurprising}

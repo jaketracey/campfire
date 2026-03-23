@@ -11,7 +11,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
-import { ArrowRight, Sparkles, Wand2 } from 'lucide-react';
+import { ArrowLeft, ArrowRight, Sparkles, Wand2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { generateRandomIdentity, createCompanion } from '@/lib/api/companions';
 import { streamAnchorImages } from '@/lib/api/imagegen';
@@ -84,6 +84,7 @@ export function Step2Identity() {
     setBackstoryReady,
     setAppearanceChangedAfterGeneration,
     setBackstoryContext,
+    prevStep,
   } = store;
   const [isGenerating, setIsGenerating] = useState(false);
   const [justGenerated, setJustGenerated] = useState(false);
@@ -480,7 +481,17 @@ export function Step2Identity() {
             </motion.div>
           </div>
 
-          <div className="pt-6 flex justify-end">
+          <div className="pt-6 flex justify-between">
+            <Button
+              type="button"
+              variant="ghost"
+              size="lg"
+              onClick={prevStep}
+              className="group h-14 px-6 rounded-full text-gray-400 hover:text-white transition-all font-bold text-lg"
+            >
+              <ArrowLeft className="mr-2 h-5 w-5 group-hover:-translate-x-2 transition-transform duration-300" />
+              Back
+            </Button>
             <motion.div
               whileHover={{ scale: 1.03 }}
               whileTap={{ scale: 0.97 }}
