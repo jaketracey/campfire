@@ -9,7 +9,7 @@ import type { FastifyInstance } from 'fastify';
 import postgres from 'postgres';
 import Redis from 'ioredis';
 import WebSocket from 'ws';
-import { buildApp } from '../../src/index';
+import { buildApp } from '../../src/app';
 import { sleep, formatDuration } from '../performance/setup';
 
 describe('Connection Recovery Tests', () => {

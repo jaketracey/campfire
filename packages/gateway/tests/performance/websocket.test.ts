@@ -7,7 +7,7 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import type { FastifyInstance } from 'fastify';
 import WebSocket from 'ws';
-import { buildApp } from '../../src/index';
+import { buildApp } from '../../src/app';
 import {
   runConcurrent,
   calculateMetrics,

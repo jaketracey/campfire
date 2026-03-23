@@ -6,7 +6,7 @@
 
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import type { FastifyInstance } from 'fastify';
-import { buildApp } from '../../src/index';
+import { buildApp } from '../../src/app';
 import {
   runBenchmark,
   calculateMetrics,
