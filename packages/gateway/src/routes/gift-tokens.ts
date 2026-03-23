@@ -1,6 +1,6 @@
 /**
  * Gift Token Routes
- * Token balance, bundles, purchase sessions, and Flowguard postbacks.
+ * Token balance, bundles, purchase sessions, and Stripe webhooks.
  */
 
 import type { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
@@ -14,12 +14,11 @@ import { withSpan } from '../observability/tracing.js';
 import { getGiftsRepository } from '../repositories/gifts.js';
 import { getEventStore } from '../db/event-store.js';
 import {
-  isFlowguardConfigured,
-  startPurchaseSession,
-  verifyPostbackSignature,
-  parsePostback,
-  type FlowguardPostback,
-} from '../utils/flowguard.js';
+  isStripeConfigured,
+  createCheckoutSession,
+  verifyWebhookSignature,
+} from '../utils/stripe.js';
+import type Stripe from 'stripe';
 
 // ============================================================================
 // Request Schemas
@@ -95,8 +94,8 @@ export async function giftTokensRoutes(app: FastifyInstance): Promise<void> {
   });
 
   /**
-   * POST /gifts/tokens/session - Create Flowguard purchase session for token purchase
-   * Returns a sessionId for use with the Flowguard frontend SDK.
+   * POST /gifts/tokens/session - Create Stripe Checkout Session for token purchase
+   * Returns a sessionId and URL for redirecting to Stripe Checkout.
    */
   app.post('/tokens/session', { preHandler: requireAuth }, async (request: FastifyRequest, reply: FastifyReply) => {
     return withSpan('gifts.createTokenSession', async (span) => {
@@ -144,9 +143,9 @@ export async function giftTokensRoutes(app: FastifyInstance): Promise<void> {
 
       logger.info({ userId: user.userId, bundleId, tokens: bundle.tokens }, 'Token session requested');
 
-      // Check if Flowguard is configured
-      if (!isFlowguardConfigured()) {
-        logger.error('Flowguard is not configured - FLOWGUARD_SHOP_ID or FLOWGUARD_SIGNATURE_KEY missing');
+      // Check if Stripe is configured
+      if (!isStripeConfigured()) {
+        logger.error('Stripe is not configured - STRIPE_SECRET_KEY missing');
         return reply.status(503).send({
           success: false,
           error: {
@@ -159,27 +158,40 @@ export async function giftTokensRoutes(app: FastifyInstance): Promise<void> {
 
       const totalTokens = bundle.tokens + bundle.bonus_tokens;
 
-      // Create Flowguard purchase session
+      // Verify bundle has Stripe price ID
+      if (!bundle.stripe_price_id) {
+        logger.error({ bundleId }, 'Bundle missing Stripe price ID');
+        return reply.status(500).send({
+          success: false,
+          error: {
+            code: 'BUNDLE_NOT_CONFIGURED',
+            message: 'Bundle is not configured for payment processing',
+            timestamp: new Date().toISOString(),
+          },
+        });
+      }
+
+      // Create Stripe Checkout Session
       const referenceId = `tok_${nanoid()}`;
-      const apiBaseUrl = env.API_BASE_URL;
-      const postbackUrl = `${apiBaseUrl}/api/v1/gifts/tokens/postback`;
-      const session = await startPurchaseSession({
-        priceAmount: (bundle.price_cents / 100).toFixed(2), // Format as "NNN.NN"
-        priceCurrency: bundle.currency.toUpperCase(),
-        description: `${bundle.name} - ${totalTokens} tokens`,
-        referenceId,
-        custom1: user.userId,
-        custom2: bundleId,
-        custom3: totalTokens.toString(),
+      const session = await createCheckoutSession({
+        priceId: bundle.stripe_price_id,
+        quantity: 1,
         successUrl,
-        declineUrl: cancelUrl,
-        postbackUrl,
-        email: user.email,
+        cancelUrl,
+        customerEmail: user.email,
+        metadata: {
+          userId: user.userId,
+          bundleId,
+          referenceId,
+          tokens: bundle.tokens.toString(),
+          bonusTokens: bundle.bonus_tokens.toString(),
+          totalTokens: totalTokens.toString(),
+        },
       });
 
       span.setAttributes({
-        'flowguard.session_id': session.sessionId,
-        'flowguard.reference_id': referenceId,
+        'stripe.session_id': session.sessionId,
+        'stripe.reference_id': referenceId,
         'bundle.tokens': bundle.tokens,
         'bundle.bonus_tokens': bundle.bonus_tokens,
       });
@@ -199,7 +211,7 @@ export async function giftTokensRoutes(app: FastifyInstance): Promise<void> {
           tokens: bundle.tokens,
           bonusTokens: bundle.bonus_tokens,
           priceCents: bundle.price_cents,
-          flowguardSessionId: session.sessionId,
+          stripeSessionId: session.sessionId,
           referenceId,
         },
         version: '1.0',
@@ -208,15 +220,16 @@ export async function giftTokensRoutes(app: FastifyInstance): Promise<void> {
       });
 
       logger.info(
-        { userId: user.userId, bundleId, flowguardSessionId: session.sessionId, totalTokens },
-        'Flowguard purchase session created'
+        { userId: user.userId, bundleId, stripeSessionId: session.sessionId, totalTokens },
+        'Stripe Checkout Session created'
       );
 
-      // Return sessionId for frontend SDK (no redirect URL - inline payment form)
+      // Return session URL for redirect to Stripe Checkout
       return reply.status(201).send({
         success: true,
         data: {
           sessionId: session.sessionId,
+          url: session.url,
           referenceId,
           bundle: {
             id: bundle.id,
@@ -266,61 +279,65 @@ export async function giftTokensRoutes(app: FastifyInstance): Promise<void> {
   });
 
   /**
-   * POST /gifts/tokens/postback - Handle Flowguard postback for token purchases
-   * This endpoint receives postbacks from Flowguard when a purchase completes.
+   * POST /gifts/tokens/webhook - Handle Stripe webhook for token purchases
+   * This endpoint receives webhooks from Stripe when a purchase completes.
    * It verifies the signature and credits tokens to the user's account.
    */
-  app.post('/tokens/postback', async (request: FastifyRequest, reply: FastifyReply) => {
-    return withSpan('gifts.handleTokenPostback', async (span) => {
-      // Parse postback payload
-      let postback: FlowguardPostback;
-      try {
-        postback = parsePostback(request.body as Record<string, unknown>);
-      } catch (error) {
-        logger.warn({ error, body: request.body }, 'Invalid postback payload');
+  app.post('/tokens/webhook', async (request: FastifyRequest, reply: FastifyReply) => {
+    return withSpan('gifts.handleTokenWebhook', async (span) => {
+      // Get Stripe signature from headers
+      const signature = request.headers['stripe-signature'] as string;
+      if (!signature) {
+        logger.warn('Missing Stripe signature header');
         return reply.status(400).send({
           success: false,
           error: {
-            code: 'INVALID_PAYLOAD',
-            message: 'Invalid postback payload',
+            code: 'MISSING_SIGNATURE',
+            message: 'Missing Stripe signature',
             timestamp: new Date().toISOString(),
           },
         });
       }
 
-      // Verify signature
-      if (!verifyPostbackSignature(postback)) {
-        logger.warn({ transactionId: postback.transactionId }, 'Invalid postback signature');
+      // Verify webhook signature
+      let event: Stripe.Event;
+      try {
+        const rawBody = (request as unknown as { rawBody: string | Buffer }).rawBody;
+        event = verifyWebhookSignature(rawBody, signature);
+      } catch (error) {
+        logger.warn({ error }, 'Invalid webhook signature');
         return reply.status(400).send({
           success: false,
           error: {
             code: 'INVALID_SIGNATURE',
-            message: 'Invalid postback signature',
+            message: 'Invalid webhook signature',
             timestamp: new Date().toISOString(),
           },
         });
       }
 
       span.setAttributes({
-        'flowguard.event': postback.event,
-        'flowguard.transaction_id': postback.transactionId,
+        'stripe.event_type': event.type,
+        'stripe.event_id': event.id,
       });
 
       logger.info(
-        { event: postback.event, transactionId: postback.transactionId, referenceId: postback.referenceId },
-        'Token postback received'
+        { eventType: event.type, eventId: event.id },
+        'Stripe webhook received'
       );
 
-      // Handle purchase:completed event
-      if (postback.event === 'purchase:completed') {
-        // Extract metadata from custom fields
-        const userId = postback.custom1;
-        const bundleId = postback.custom2;
-        const totalTokens = parseInt(postback.custom3 ?? '0', 10);
+      // Handle checkout.session.completed event
+      if (event.type === 'checkout.session.completed') {
+        const session = event.data.object as Stripe.Checkout.Session;
+
+        // Extract metadata
+        const userId = session.metadata?.userId;
+        const bundleId = session.metadata?.bundleId;
+        const totalTokens = parseInt(session.metadata?.totalTokens ?? '0', 10);
 
         if (!userId || !bundleId || totalTokens === 0) {
-          logger.warn({ transactionId: postback.transactionId, custom1: postback.custom1, custom2: postback.custom2, custom3: postback.custom3 }, 'Missing metadata in postback');
-          return reply.send({ received: true, status: 'OK' });
+          logger.warn({ sessionId: session.id, metadata: session.metadata }, 'Missing metadata in webhook');
+          return reply.send({ received: true });
         }
 
         span.setAttributes({
@@ -329,8 +346,8 @@ export async function giftTokensRoutes(app: FastifyInstance): Promise<void> {
           'tokens.total': totalTokens,
         });
 
-        // Use transaction ID as idempotency key to prevent duplicate credits
-        const idempotencyKey = `flowguard_${postback.transactionId}`;
+        // Use session ID as idempotency key to prevent duplicate credits
+        const idempotencyKey = `stripe_${session.id}`;
 
         try {
           // Credit tokens using existing repository function
@@ -339,26 +356,26 @@ export async function giftTokensRoutes(app: FastifyInstance): Promise<void> {
             totalTokens,
             'purchase',
             {
-              flowguardSessionId: postback.referenceId,
-              flowguardTransactionId: postback.transactionId,
+              stripeCheckoutSessionId: session.id,
+              stripePaymentIntentId: session.payment_intent as string,
               description: `Token purchase: ${totalTokens} tokens`,
               idempotencyKey,
               metadata: {
                 bundleId,
-                transactionId: postback.transactionId,
+                sessionId: session.id,
               },
             }
           );
 
           if (result.wasDuplicate) {
             logger.info(
-              { userId, transactionId: postback.transactionId },
+              { userId, sessionId: session.id },
               'Duplicate token credit ignored (already processed)'
             );
           } else {
             logger.info(
               { userId, tokensAdded: totalTokens, newBalance: result.newBalance, transactionId: result.transactionId },
-              'Tokens credited from Flowguard purchase'
+              'Tokens credited from Stripe purchase'
             );
 
             // Emit event for audit trail
@@ -376,26 +393,26 @@ export async function giftTokensRoutes(app: FastifyInstance): Promise<void> {
                 tokensAdded: totalTokens,
                 newBalance: result.newBalance,
                 transactionId: result.transactionId,
-                flowguardTransactionId: postback.transactionId,
-                flowguardReferenceId: postback.referenceId,
+                stripeSessionId: session.id,
+                stripePaymentIntentId: session.payment_intent,
               },
               version: '1.0',
               causationId: null,
-              correlationId: postback.transactionId,
+              correlationId: session.id,
             });
           }
         } catch (error) {
           logger.error(
-            { error, userId, transactionId: postback.transactionId },
-            'Failed to credit tokens from postback'
+            { error, userId, sessionId: session.id },
+            'Failed to credit tokens from webhook'
           );
-          // Return 200 to acknowledge receipt - Flowguard will retry if we return error
+          // Return 200 to acknowledge receipt - Stripe will retry if we return error
           // But we log the error for manual investigation
         }
       }
 
-      // Acknowledge receipt - Flowguard expects "OK" response
-      return reply.send({ received: true, status: 'OK' });
+      // Acknowledge receipt
+      return reply.send({ received: true });
     });
   });
 }

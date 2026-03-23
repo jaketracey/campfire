@@ -11,10 +11,14 @@ import { Step4Archetype } from '@/components/onboarding/steps/step-4-archetype';
 import { Step7Voice as Step5Voice } from '@/components/onboarding/steps/step-7-voice';
 import { Step9Review as Step6Review } from '@/components/onboarding/steps/step-9-review';
 import { WelcomeTransition } from '@/components/auth/welcome-transition';
-
-// Step labels for the progress indicator
-const STEP_LABELS = ['Identity', 'Visuals', 'Archetype', 'Voice', 'Review'];
-const QUICK_START_LABELS = ['Identity', 'Visuals', 'Archetype', 'Voice'];
+import {
+  FULL_STEP_LABEL_MIN,
+  FULL_ONBOARDING_LABELS,
+  QUICK_ONBOARDING_LABELS,
+  clampFullStep,
+  fullReviewStepProgress,
+  quickStartProgress,
+} from '@/components/onboarding/onboarding-flow';
 
 export default function OnboardingPage() {
   const searchParams = useSearchParams();
@@ -46,13 +50,11 @@ export default function OnboardingPage() {
   useEffect(() => {
     const stepParam = searchParams.get('step');
     if (stepParam) {
-      const stepNum = parseInt(stepParam, 10);
-      if (!isNaN(stepNum) && stepNum >= 1 && stepNum <= 6) {
-        // Use getState() to get current value without adding dependency
-        const current = useOnboardingStore.getState().currentStep;
-        if (stepNum !== current) {
-          setStep(stepNum);
-        }
+      const stepNum = clampFullStep(parseInt(stepParam, 10));
+      // Use getState() to get current value without adding dependency
+      const current = useOnboardingStore.getState().currentStep;
+      if (stepNum !== current) {
+        setStep(stepNum);
       }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -96,8 +98,8 @@ export default function OnboardingPage() {
     }
   };
 
-  const progress = ((currentStep - 1) / 5) * 100;
-  const quickStartProgress = ((quickStartStep + 1) / QUICK_START_LABELS.length) * 100;
+  const progress = fullReviewStepProgress(currentStep);
+  const quickStartProgressPercent = quickStartProgress(quickStartStep);
 
   // Show stepper for normal flow (steps 2-5) OR quick start carousel
   const showNormalStepper = currentStep > 1 && currentStep < 6;
@@ -112,8 +114,8 @@ export default function OnboardingPage() {
           <div className="w-full max-w-md">
             {/* Step labels */}
             <div className="flex justify-between mb-2">
-              {STEP_LABELS.map((label, index) => {
-                const stepNumber = index + 2; // Steps 2-6 (step 1 is welcome)
+              {FULL_ONBOARDING_LABELS.map((label, index) => {
+                const stepNumber = index + FULL_STEP_LABEL_MIN; // Steps 2-6 (step 1 is welcome)
                 const isCompleted = stepNumber < currentStep;
                 const isCurrent = stepNumber === currentStep;
                 const canNavigate = stepNumber < currentStep;
@@ -162,7 +164,7 @@ export default function OnboardingPage() {
           <div className="w-full max-w-md">
             {/* Step labels */}
             <div className="flex justify-between mb-2">
-              {QUICK_START_LABELS.map((label, index) => {
+              {QUICK_ONBOARDING_LABELS.map((label, index) => {
                 const isCompleted = index < quickStartStep;
                 const isCurrent = index === quickStartStep;
 
@@ -186,7 +188,7 @@ export default function OnboardingPage() {
             <div
               className="h-1 w-full bg-white/10 rounded-full overflow-hidden border border-white/5"
               role="progressbar"
-              aria-valuenow={Math.round(quickStartProgress)}
+              aria-valuenow={Math.round(quickStartProgressPercent)}
               aria-valuemin={0}
               aria-valuemax={100}
               aria-label="Quick start progress"
@@ -194,7 +196,7 @@ export default function OnboardingPage() {
               <motion.div
                 className="h-full bg-white shadow-[0_0_10px_rgba(255,255,255,0.3)]"
                 initial={{ width: 0 }}
-                animate={{ width: `${quickStartProgress}%` }}
+                animate={{ width: `${quickStartProgressPercent}%` }}
                 transition={{ duration: 0.4, ease: 'easeOut' }}
               />
             </div>

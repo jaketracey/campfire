@@ -52,7 +52,11 @@ export function Step7Voice() {
     nextStep,
     setCompanionId,
     setGenerationStarted,
+    setCompanionReady,
+    setCompanionActive,
     clearAnchorImages,
+    setAnchorReady,
+    setBackstoryReady,
     setAppearanceChangedAfterGeneration,
     setAnchorAppearanceSnapshot,
     setAnchorStreamStarted,
@@ -133,6 +137,10 @@ export function Step7Voice() {
         setAnchorStreamStarted(false);
       }
 
+      setCompanionReady(true);
+      setCompanionActive(false);
+      setAnchorReady(false);
+      setBackstoryReady(false);
       return true;
     }
 
@@ -199,12 +207,16 @@ export function Step7Voice() {
 
     setCompanionId(companion.id);
     setGenerationStarted(true);
+    setCompanionReady(true);
+    setCompanionActive(companion.isActive);
     trackCompanionCreated(companion.id);
+    setAnchorReady(false);
+    setBackstoryReady(false);
     clearAnchorImages();
     setAnchorAppearanceSnapshot(state.visualStyle.appearance);
     setAnchorStreamStarted(false);
     return true;
-  }, [isAuthenticated, router, state, clearAnchorImages, setAnchorAppearanceSnapshot, setAppearanceChangedAfterGeneration, setAnchorStreamStarted, coreTenets, setCompanionId, setGenerationStarted]);
+  }, [isAuthenticated, router, state, clearAnchorImages, setAnchorAppearanceSnapshot, setAppearanceChangedAfterGeneration, setAnchorStreamStarted, coreTenets, setCompanionId, setGenerationStarted, setCompanionReady, setCompanionActive, setAnchorReady, setBackstoryReady]);
 
   const handleProceed = useCallback(async () => {
     if (!voice) return;

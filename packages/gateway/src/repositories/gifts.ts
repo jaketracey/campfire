@@ -141,8 +141,8 @@ export class GiftsRepository {
     amount: number,
     type: TokenTransactionType,
     options: {
-      flowguardTransactionId?: string;
-      flowguardSessionId?: string;
+      stripePaymentIntentId?: string;
+      stripeCheckoutSessionId?: string;
       subscriptionId?: string;
       description?: string;
       metadata?: JSONObject;
@@ -157,8 +157,8 @@ export class GiftsRepository {
         ${userId},
         ${amount},
         ${type}::token_transaction_type,
-        ${options.flowguardTransactionId ?? null},
-        ${options.flowguardSessionId ?? null},
+        ${options.stripePaymentIntentId ?? null},
+        ${options.stripeCheckoutSessionId ?? null},
         ${options.subscriptionId ?? null},
         ${options.description ?? null},
         ${db.json((options.metadata ?? {}) as postgres.JSONValue)},

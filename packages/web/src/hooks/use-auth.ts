@@ -8,6 +8,7 @@ import * as authApi from '@/lib/api/auth';
 import type { LoginCredentials, SignupCredentials, GoogleAuthCredentials, User, AuthTokens } from '@/lib/auth/types';
 import { setWelcomeTransition } from '@/components/auth/welcome-transition';
 import { trackSignup } from '@/lib/analytics/meta-pixel';
+import { useOnboardingStore } from '@/stores/onboarding-store';
 
 /**
  * Main auth hook providing auth state and actions
@@ -107,6 +108,11 @@ export function useAuth() {
     } catch {
       // Ignore errors during logout
     } finally {
+      useOnboardingStore.getState().reset();
+      if (typeof window !== 'undefined') {
+        window.sessionStorage.removeItem('pendingQuickStart');
+        window.sessionStorage.removeItem('campfire:onboard-completion-session');
+      }
       clearSession();
       router.push('/login');
     }

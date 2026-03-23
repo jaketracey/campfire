@@ -155,3 +155,9 @@
 .glow-campfire-strong {
   box-shadow: 0 0 40px rgba(249, 115, 22, 0.6);
 }
+
+/* Remove typography plugin heading overrides */
+.prose h1, .prose h2, .prose h3, .prose h4, .prose h5, .prose h6 {
+  color: inherit;
+  letter-spacing: normal;
+}

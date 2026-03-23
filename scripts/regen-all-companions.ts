@@ -44,7 +44,7 @@ const GATEWAY_URL = process.env.GATEWAY_URL || 'http://localhost:3002';
 const JWT_SECRET = process.env.JWT_SECRET || 'your-jwt-secret-change-in-production';
 
 // Delay between companions to avoid overwhelming the orchestrator/FAL
-const DELAY_BETWEEN_COMPANIONS_MS = 5000;
+const DELAY_BETWEEN_COMPANIONS_MS = 20000;
 
 // ============================================================================
 // JWT Helper (minimal, no dependencies)
@@ -349,7 +349,7 @@ Environment:
       let userId = companion.userId;
       if (!userId) {
         const detail = await getCompanionDetails(companion.id, adminToken);
-        userId = detail.userId || detail.user_id;
+        userId = detail.userId || detail.user_id || detail.ownerId;
       }
 
       if (!userId) {

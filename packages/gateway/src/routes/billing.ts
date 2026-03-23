@@ -1,6 +1,6 @@
 /**
  * Billing Routes
- * Subscription management and payment processing via Flowguard.
+ * Subscription management and payment processing via Stripe.
  */
 
 import type { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
@@ -14,12 +14,11 @@ import { getEventStore } from '../db/event-store.js';
 import { getUsersRepository } from '../repositories/index.js';
 import { getAffiliatesService } from '../services/affiliates.js';
 import {
-  isFlowguardConfigured,
-  startSubscriptionSession,
-  verifyPostbackSignature,
-  parsePostback,
-  type FlowguardPostback,
-} from '../utils/flowguard.js';
+  isStripeConfigured,
+  createSubscriptionSession,
+  verifyWebhookSignature,
+} from '../utils/stripe.js';
+import type Stripe from 'stripe';
 import type { PlanTier } from '../db/types.js';
 
 /**
@@ -36,8 +35,8 @@ const CreateSessionSchema = z.object({
  */
 export async function billingRoutes(app: FastifyInstance): Promise<void> {
   /**
-   * POST /billing/session - Create a Flowguard subscription session
-   * Returns a sessionId for use with the Flowguard frontend SDK.
+   * POST /billing/session - Create a Stripe subscription session
+   * Returns a sessionId and URL for redirecting to Stripe Checkout.
    */
   app.post('/session', { preHandler: requireAuth }, async (request: FastifyRequest, reply: FastifyReply) => {
     return withSpan('billing.createSession', async (span) => {
@@ -60,9 +59,9 @@ export async function billingRoutes(app: FastifyInstance): Promise<void> {
 
       const { priceId, successUrl, cancelUrl } = parseResult.data;
 
-      // Check if Flowguard is configured
-      if (!isFlowguardConfigured()) {
-        logger.error('Flowguard is not configured - FLOWGUARD_SHOP_ID or FLOWGUARD_SIGNATURE_KEY missing');
+      // Check if Stripe is configured
+      if (!isStripeConfigured()) {
+        logger.error('Stripe is not configured - STRIPE_SECRET_KEY missing');
         return reply.status(503).send({
           success: false,
           error: {
@@ -78,28 +77,23 @@ export async function billingRoutes(app: FastifyInstance): Promise<void> {
         'Subscription session creation requested'
       );
 
-      // Create Flowguard subscription session
+      // Create Stripe subscription session
       const referenceId = `sub_${nanoid()}`;
-      const apiBaseUrl = env.API_BASE_URL;
-      const postbackUrl = `${apiBaseUrl}/api/v1/billing/postback`;
-      const session = await startSubscriptionSession({
-        subscriptionType: 'recurring',
-        period: 'P1M', // Monthly
-        priceAmount: 9.99, // TODO: Look up from price catalog
-        priceCurrency: 'USD',
-        description: 'Campfire Premium Subscription',
-        referenceId,
-        custom1: user.userId,
-        custom2: priceId,
+      const session = await createSubscriptionSession({
+        priceId,
+        customerEmail: user.email,
         successUrl,
-        declineUrl: cancelUrl,
-        postbackUrl,
-        email: user.email,
+        cancelUrl,
+        metadata: {
+          userId: user.userId,
+          referenceId,
+          priceId,
+        },
       });
 
       span.setAttributes({
-        'flowguard.session_id': session.sessionId,
-        'flowguard.reference_id': referenceId,
+        'stripe.session_id': session.sessionId,
+        'stripe.reference_id': referenceId,
       });
 
       // Emit billing.session_started event
@@ -114,7 +108,7 @@ export async function billingRoutes(app: FastifyInstance): Promise<void> {
         type: 'billing.session_started',
         payload: {
           priceId,
-          flowguardSessionId: session.sessionId,
+          stripeSessionId: session.sessionId,
           referenceId,
         },
         version: '1.0',
@@ -122,11 +116,12 @@ export async function billingRoutes(app: FastifyInstance): Promise<void> {
         correlationId: request.id,
       });
 
-      // Return sessionId for frontend SDK
+      // Return session URL for redirect to Stripe Checkout
       return reply.status(201).send({
         success: true,
         data: {
           sessionId: session.sessionId,
+          url: session.url,
           referenceId,
           expiresAt: new Date(Date.now() + 30 * 60 * 1000).toISOString(), // 30 minutes
         },
@@ -135,130 +130,134 @@ export async function billingRoutes(app: FastifyInstance): Promise<void> {
   });
 
   /**
-   * POST /billing/postback - Handle Flowguard postback events
+   * POST /billing/webhook - Handle Stripe webhook events
    */
-  app.post('/postback', async (request: FastifyRequest, reply: FastifyReply) => {
-    return withSpan('billing.handlePostback', async (span) => {
-      // Parse postback payload
-      let postback: FlowguardPostback;
-      try {
-        postback = parsePostback(request.body as Record<string, unknown>);
-      } catch (error) {
-        logger.warn({ error, body: request.body }, 'Invalid postback payload');
+  app.post('/webhook', async (request: FastifyRequest, reply: FastifyReply) => {
+    return withSpan('billing.handleWebhook', async (span) => {
+      // Get Stripe signature from headers
+      const signature = request.headers['stripe-signature'] as string;
+      if (!signature) {
+        logger.warn('Missing Stripe signature header');
         return reply.status(400).send({
           success: false,
           error: {
-            code: 'INVALID_PAYLOAD',
-            message: 'Invalid postback payload',
+            code: 'MISSING_SIGNATURE',
+            message: 'Missing Stripe signature',
             timestamp: new Date().toISOString(),
           },
         });
       }
 
-      // Verify signature
-      if (!verifyPostbackSignature(postback)) {
-        logger.warn({ transactionId: postback.transactionId }, 'Invalid postback signature');
+      // Verify webhook signature
+      let event: Stripe.Event;
+      try {
+        const rawBody = (request as unknown as { rawBody: string | Buffer }).rawBody;
+        event = verifyWebhookSignature(rawBody, signature);
+      } catch (error) {
+        logger.warn({ error }, 'Invalid webhook signature');
         return reply.status(400).send({
           success: false,
           error: {
             code: 'INVALID_SIGNATURE',
-            message: 'Invalid postback signature',
+            message: 'Invalid webhook signature',
             timestamp: new Date().toISOString(),
           },
         });
       }
 
       span.setAttributes({
-        'flowguard.event': postback.event,
-        'flowguard.transaction_id': postback.transactionId,
-        'flowguard.subscription_id': postback.subscriptionId ?? 'none',
+        'stripe.event_type': event.type,
+        'stripe.event_id': event.id,
       });
 
       logger.info(
-        { event: postback.event, transactionId: postback.transactionId, subscriptionId: postback.subscriptionId },
-        'Flowguard postback received'
+        { eventType: event.type, eventId: event.id },
+        'Stripe webhook received'
       );
 
-      // Store postback event
+      // Store webhook event
       const eventStore = getEventStore();
       await eventStore.append({
         eventId: nanoid(),
         timestamp: new Date().toISOString(),
-        userId: postback.custom1 ?? 'system', // custom1 contains userId
+        userId: 'system',
         sessionId: 'billing',
         turnId: null,
         traceId: request.id,
-        type: `flowguard.${postback.event}`,
-        payload: postback as unknown as Record<string, unknown>,
+        type: `stripe.${event.type}`,
+        payload: event.data.object as unknown as Record<string, unknown>,
         version: '1.0',
         causationId: null,
-        correlationId: postback.transactionId,
+        correlationId: event.id,
       });
 
       // Handle specific event types
-      switch (postback.event) {
-        case 'subscription:initial': {
-          // New subscription created and initial payment successful
-          logger.info({ transactionId: postback.transactionId, subscriptionId: postback.subscriptionId }, 'Subscription created');
+      switch (event.type) {
+        case 'checkout.session.completed': {
+          const session = event.data.object as Stripe.Checkout.Session;
 
-          // Handle affiliate conversion tracking
-          const userId = postback.custom1;
-          const planTier = (postback.custom2 || 'standard') as PlanTier;
+          // Check if this is a subscription (not a one-time payment)
+          if (session.mode === 'subscription') {
+            logger.info({ sessionId: session.id, subscriptionId: session.subscription }, 'Subscription created');
 
-          if (userId) {
-            try {
-              const usersRepo = getUsersRepository();
-              const affiliateInfo = await usersRepo.getUserAffiliateInfo(userId);
+            // Handle affiliate conversion tracking
+            const userId = session.metadata?.userId;
+            const planTier = (session.metadata?.planTier || 'standard') as PlanTier;
 
-              if (affiliateInfo?.affiliate_id) {
-                const affiliatesService = getAffiliatesService();
-                await affiliatesService.createConversion(
-                  userId,
-                  affiliateInfo.affiliate_id,
-                  affiliateInfo.affiliate_click_id ?? null,
-                  planTier,
-                  postback.transactionId
-                );
+            if (userId) {
+              try {
+                const usersRepo = getUsersRepository();
+                const affiliateInfo = await usersRepo.getUserAffiliateInfo(userId);
 
-                logger.info(
-                  { userId, affiliateId: affiliateInfo.affiliate_id, planTier },
-                  'Affiliate conversion created from subscription'
-                );
+                if (affiliateInfo?.affiliate_id) {
+                  const affiliatesService = getAffiliatesService();
+                  await affiliatesService.createConversion(
+                    userId,
+                    affiliateInfo.affiliate_id,
+                    affiliateInfo.affiliate_click_id ?? null,
+                    planTier,
+                    session.id
+                  );
+
+                  logger.info(
+                    { userId, affiliateId: affiliateInfo.affiliate_id, planTier },
+                    'Affiliate conversion created from subscription'
+                  );
+                }
+              } catch (convError) {
+                // Don't fail webhook if conversion tracking fails
+                logger.error({ error: convError, userId }, 'Failed to create affiliate conversion');
               }
-            } catch (convError) {
-              // Don't fail postback if conversion tracking fails
-              logger.error({ error: convError, userId }, 'Failed to create affiliate conversion');
             }
           }
           break;
         }
 
-        case 'subscription:rebill':
-          // Recurring payment successful
-          logger.info({ transactionId: postback.transactionId, subscriptionId: postback.subscriptionId }, 'Subscription rebill successful');
+        case 'invoice.payment_succeeded': {
+          const invoice = event.data.object as Stripe.Invoice;
+          logger.info({ invoiceId: invoice.id }, 'Subscription payment successful');
           break;
+        }
 
-        case 'subscription:cancel':
-          // Subscription cancelled
-          logger.info({ transactionId: postback.transactionId, subscriptionId: postback.subscriptionId }, 'Subscription cancelled');
+        case 'customer.subscription.deleted':
+        case 'customer.subscription.updated': {
+          const subscription = event.data.object as Stripe.Subscription;
+          logger.info({ subscriptionId: subscription.id, status: subscription.status }, 'Subscription status changed');
           break;
+        }
 
-        case 'subscription:expire':
-          // Subscription expired
-          logger.info({ transactionId: postback.transactionId, subscriptionId: postback.subscriptionId }, 'Subscription expired');
+        case 'charge.refunded': {
+          const charge = event.data.object as Stripe.Charge;
+          logger.warn({ chargeId: charge.id }, 'Charge refunded');
           break;
-
-        case 'credit':
-          // Refund/credit issued
-          logger.warn({ transactionId: postback.transactionId }, 'Credit/refund issued');
-          break;
+        }
 
         default:
-          logger.debug({ event: postback.event }, 'Unhandled Flowguard event type');
+          logger.debug({ eventType: event.type }, 'Unhandled Stripe event type');
       }
 
-      // Acknowledge receipt - Flowguard expects "OK" response
-      return reply.send({ received: true, status: 'OK' });
+      // Acknowledge receipt
+      return reply.send({ received: true });
     });
   });
 
