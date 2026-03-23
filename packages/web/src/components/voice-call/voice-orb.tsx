@@ -132,10 +132,27 @@ export function VoiceOrb({
     return () => cancelAnimationFrame(animFrameRef.current);
   }, [state, size, getInputFrequencyData, getOutputFrequencyData]);
 
+  const ariaLabel = (() => {
+    switch (state) {
+      case 'listening':
+        return 'Voice chat visualization - listening';
+      case 'speaking':
+        return 'Voice chat visualization - companion is speaking';
+      case 'thinking':
+        return 'Voice chat visualization - thinking';
+      case 'connecting':
+        return 'Voice chat visualization - connecting';
+      default:
+        return 'Voice chat visualization - idle';
+    }
+  })();
+
   return (
     <canvas
       ref={canvasRef}
       style={{ width: size, height: size }}
+      role="img"
+      aria-label={ariaLabel}
       className={className}
     />
   );

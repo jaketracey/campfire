@@ -15,7 +15,7 @@ import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { Switch } from '@/components/ui/switch';
 import { Card, CardContent } from '@/components/ui/card';
-import { Plus, X, Star, Sparkles } from 'lucide-react';
+import { Plus, X, Star, Sparkles, Check } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { updateCompanionPersonality, type Companion } from '@/lib/api/companions';
 import {
@@ -214,6 +214,13 @@ export function PersonalityModal({ companion, isOpen, onClose, onSave }: Persona
   const [selectedCategory, setSelectedCategory] = useState<TenetCategory>('communication');
   const [isNegation, setIsNegation] = useState(false);
 
+  // Inline save indicator
+  const [ruleSaveMessage, setRuleSaveMessage] = useState<string | null>(null);
+  const showRuleSaveIndicator = (message: string) => {
+    setRuleSaveMessage(message);
+    setTimeout(() => setRuleSaveMessage(null), 2000);
+  };
+
   // Initialize traits from companion spec when modal opens
   useEffect(() => {
     if (isOpen && companion?.spec?.personality?.traits) {
@@ -293,6 +300,7 @@ export function PersonalityModal({ companion, isOpen, onClose, onSave }: Persona
         isNegation: preset.isNegation,
       });
       setTenets((prev) => [...prev, newTenet]);
+      showRuleSaveIndicator('Rule saved');
     } catch (error) {
       console.error('Failed to add tenet:', error);
     }
@@ -313,6 +321,7 @@ export function PersonalityModal({ companion, isOpen, onClose, onSave }: Persona
       setTenets((prev) => [...prev, newTenet]);
       setCustomRule('');
       setIsNegation(false);
+      showRuleSaveIndicator('Rule saved');
     } catch (error) {
       console.error('Failed to add custom tenet:', error);
     }
@@ -329,6 +338,7 @@ export function PersonalityModal({ companion, isOpen, onClose, onSave }: Persona
     try {
       const updated = await updateTenetPriority(companion.id, tenet.id, newPriority);
       setTenets((prev) => prev.map((t) => (t.id === tenet.id ? updated : t)));
+      showRuleSaveIndicator('Priority updated');
     } catch (error) {
       console.error('Failed to update tenet priority:', error);
     }
@@ -340,6 +350,7 @@ export function PersonalityModal({ companion, isOpen, onClose, onSave }: Persona
     try {
       await deleteTenet(companion.id, tenetId);
       setTenets((prev) => prev.filter((t) => t.id !== tenetId));
+      showRuleSaveIndicator('Rule removed');
     } catch (error) {
       console.error('Failed to delete tenet:', error);
     }
@@ -451,6 +462,22 @@ export function PersonalityModal({ companion, isOpen, onClose, onSave }: Persona
 
                 {/* Rules Tab */}
                 <TabsContent value="rules" className="flex-1 overflow-y-auto px-6 py-4 space-y-6">
+            {/* Inline save indicator */}
+            <AnimatePresence>
+              {ruleSaveMessage && (
+                <motion.div
+                  initial={{ opacity: 0, y: -8 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: -8 }}
+                  transition={{ duration: 0.2 }}
+                  className="flex items-center gap-1.5 text-xs text-emerald-400"
+                >
+                  <Check className="h-3 w-3" />
+                  <span>{ruleSaveMessage}</span>
+                </motion.div>
+              )}
+            </AnimatePresence>
+
             {isLoadingTenets ? (
               <div className="flex items-center justify-center py-8">
                 <span className="text-muted-foreground">Loading rules...</span>

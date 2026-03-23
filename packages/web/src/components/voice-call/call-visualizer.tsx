@@ -119,11 +119,30 @@ export function CallVisualizer({ analyserNode, callState, className = '' }: Call
     };
   }, [analyserNode, callState]);
 
+  const ariaLabel = (() => {
+    switch (callState) {
+      case 'speaking':
+        return 'Voice call audio visualization - you are speaking';
+      case 'companion_speaking':
+        return 'Voice call audio visualization - companion is speaking';
+      case 'processing':
+        return 'Voice call audio visualization - processing';
+      case 'listening':
+        return 'Voice call audio visualization - listening';
+      case 'connecting':
+        return 'Voice call audio visualization - connecting';
+      default:
+        return 'Voice call audio visualization - idle';
+    }
+  })();
+
   return (
     <canvas
       ref={canvasRef}
       width={200}
       height={60}
+      role="img"
+      aria-label={ariaLabel}
       className={`rounded-lg bg-muted/20 ${className}`}
     />
   );

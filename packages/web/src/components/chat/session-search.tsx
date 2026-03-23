@@ -10,6 +10,7 @@ import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Search, X, MessageCircle, User, Loader2 } from 'lucide-react';
 import { searchSessions, SessionSearchResult } from '@/lib/api/sessions';
 import { cn } from '@/lib/utils';
+import { formatRelativeTime } from '@/lib/utils/date';
 
 interface SessionSearchProps {
   className?: string;
@@ -40,27 +41,6 @@ function HighlightedSnippet({
       {after}
     </span>
   );
-}
-
-/**
- * Format relative time
- */
-function formatRelativeTime(dateString: string | null): string {
-  if (!dateString) return '';
-
-  const date = new Date(dateString);
-  const now = new Date();
-  const diffMs = now.getTime() - date.getTime();
-  const diffMins = Math.floor(diffMs / (1000 * 60));
-  const diffHours = Math.floor(diffMs / (1000 * 60 * 60));
-  const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
-
-  if (diffMins < 1) return 'Just now';
-  if (diffMins < 60) return `${diffMins}m ago`;
-  if (diffHours < 24) return `${diffHours}h ago`;
-  if (diffDays < 7) return `${diffDays}d ago`;
-
-  return date.toLocaleDateString();
 }
 
 export function SessionSearch({ className }: SessionSearchProps) {
