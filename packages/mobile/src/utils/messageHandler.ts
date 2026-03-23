@@ -117,7 +117,7 @@ export function createMessageHandler(
  */
 export function navigateWebView(webViewRef: React.RefObject<WebView | null>, path: string): void {
   webViewRef.current?.injectJavaScript(`
-    window.location.href = '${path}';
+    window.location.href = ${JSON.stringify(path)};
     true;
   `);
 }

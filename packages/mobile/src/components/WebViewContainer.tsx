@@ -44,7 +44,7 @@ export function WebViewContainer({ initialPath }: WebViewContainerProps): React.
     const data = response.notification.request.content.data;
     if (data?.path) {
       webViewRef.current?.injectJavaScript(`
-        window.location.href = '${data.path}';
+        window.location.href = ${JSON.stringify(data.path)};
         true;
       `);
     }
@@ -226,7 +226,7 @@ export function WebViewContainer({ initialPath }: WebViewContainerProps): React.
     if (expoPushToken) {
       webViewRef.current?.injectJavaScript(`
         if (window.CampfireNativeBridge) {
-          window.CampfireNativeBridge.registerPushToken('${expoPushToken}', '${getPushPlatform()}');
+          window.CampfireNativeBridge.registerPushToken(${JSON.stringify(expoPushToken)}, ${JSON.stringify(getPushPlatform())});
         }
         true;
       `);

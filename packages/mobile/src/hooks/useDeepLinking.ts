@@ -83,7 +83,7 @@ export function useDeepLinking(
     (path: string) => {
       console.log('[DeepLinking] Navigating to:', path);
       webViewRef.current?.injectJavaScript(`
-        window.location.href = '${path}';
+        window.location.href = ${JSON.stringify(path)};
         true;
       `);
     },
