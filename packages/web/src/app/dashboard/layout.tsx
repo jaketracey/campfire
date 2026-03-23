@@ -10,11 +10,15 @@ export default function DashboardLayout({
 }) {
     return (
         <div className="min-h-screen flex flex-col relative">
+            <a href="#main-content" className="sr-only focus:not-sr-only focus:absolute focus:top-4 focus:left-4 focus:z-[100] focus:px-4 focus:py-2 focus:bg-background focus:text-foreground focus:rounded-md focus:ring-2 focus:ring-ring">
+                Skip to main content
+            </a>
+
             <CompanionBackground />
 
             {/* Header */}
             <header className="fixed top-0 left-0 right-0 z-50 flex items-start justify-between gap-3 p-3 sm:p-6 bg-black/20 backdrop-blur-lg border-b border-white/5">
-                <Link href="/" className="hover:opacity-80 transition-opacity">
+                <Link href="/" className="hover:opacity-80 transition-opacity" aria-label="Campfire home">
                     <AnimatedFlame size="md" />
                 </Link>
                 <div className="w-full sm:w-auto min-w-0">
@@ -22,7 +26,7 @@ export default function DashboardLayout({
                 </div>
             </header>
 
-            <main className="flex-1 pt-24 z-10">
+            <main id="main-content" className="flex-1 pt-24 z-10">
                 {children}
             </main>
         </div>
