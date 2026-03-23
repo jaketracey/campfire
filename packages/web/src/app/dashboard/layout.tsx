@@ -2,6 +2,7 @@ import Link from 'next/link';
 import { CompanionBackground } from '@/components/onboarding/companion-background';
 import { DashboardHeaderNav } from '@/components/layout/dashboard-header-nav';
 import { AnimatedFlame } from '@/components/ui/animated-flame';
+import { FloatingHelpButton } from '@/components/support/floating-help-button';
 
 export default function DashboardLayout({
     children,
@@ -29,6 +30,8 @@ export default function DashboardLayout({
             <main id="main-content" className="flex-1 pt-24 z-10">
                 {children}
             </main>
+
+            <FloatingHelpButton />
         </div>
     );
 }
