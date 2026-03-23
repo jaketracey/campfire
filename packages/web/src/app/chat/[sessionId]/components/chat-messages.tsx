@@ -211,7 +211,10 @@ export function ChatMessages({
       {streamingContent && (
         <div className="flex justify-start relative z-10" data-testid="streaming-message">
           <Card className="bg-muted p-3 max-w-[80%] lg:max-w-xl">
-            <p className="text-base lg:text-sm whitespace-pre-wrap break-words">{streamingContent}</p>
+            <p className="text-base lg:text-sm whitespace-pre-wrap break-words">
+              {streamingContent}
+              <span className="inline-block w-0.5 h-4 bg-foreground/70 animate-pulse ml-0.5 align-text-bottom" />
+            </p>
           </Card>
         </div>
       )}
