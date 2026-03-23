@@ -31,13 +31,6 @@ interface AccountDeletionModalProps {
   onDeleteAccount: () => Promise<void>;
 }
 
-interface DataSummary {
-  conversations: number;
-  memories: number;
-  companions: number;
-  images: number;
-}
-
 export function AccountDeletionModal({
   open,
   onOpenChange,
@@ -55,14 +48,6 @@ export function AccountDeletionModal({
   const [isExporting, setIsExporting] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
   const [error, setError] = useState<string | null>(null);
-
-  // Mock data summary - replace with actual API call
-  const [dataSummary] = useState<DataSummary>({
-    conversations: 127,
-    memories: 384,
-    companions: 3,
-    images: 52,
-  });
 
   // Reset state when modal closes
   useEffect(() => {
@@ -129,28 +114,26 @@ export function AccountDeletionModal({
 
             {/* What will be deleted */}
             <div className="space-y-3">
-              <p className="text-sm font-medium text-muted-foreground">What will be deleted:</p>
+              <p className="text-sm font-medium text-muted-foreground">
+                All your data will be permanently deleted, including:
+              </p>
 
-              <div className="grid grid-cols-2 gap-3">
-                <div className="p-4 rounded-2xl bg-muted/30">
-                  <MessageSquare className="w-5 h-5 text-vibes-electric mb-2" />
-                  <p className="text-2xl font-bold">{dataSummary.conversations}</p>
-                  <p className="text-xs text-muted-foreground">Conversations</p>
+              <div className="space-y-2">
+                <div className="flex items-center gap-3 p-3 rounded-2xl bg-muted/30">
+                  <MessageSquare className="w-5 h-5 text-vibes-electric shrink-0" />
+                  <span className="text-sm">Conversations and chat history</span>
                 </div>
-                <div className="p-4 rounded-2xl bg-muted/30">
-                  <Heart className="w-5 h-5 text-vibes-hot mb-2" />
-                  <p className="text-2xl font-bold">{dataSummary.memories}</p>
-                  <p className="text-xs text-muted-foreground">Memories</p>
+                <div className="flex items-center gap-3 p-3 rounded-2xl bg-muted/30">
+                  <Heart className="w-5 h-5 text-vibes-hot shrink-0" />
+                  <span className="text-sm">Memories and relationship data</span>
                 </div>
-                <div className="p-4 rounded-2xl bg-muted/30">
-                  <span className="text-2xl mb-2 block">👤</span>
-                  <p className="text-2xl font-bold">{dataSummary.companions}</p>
-                  <p className="text-xs text-muted-foreground">Companions</p>
+                <div className="flex items-center gap-3 p-3 rounded-2xl bg-muted/30">
+                  <X className="w-5 h-5 text-ember-500 shrink-0" />
+                  <span className="text-sm">Companion configurations</span>
                 </div>
-                <div className="p-4 rounded-2xl bg-muted/30">
-                  <Image className="w-5 h-5 text-vibes-neon mb-2" />
-                  <p className="text-2xl font-bold">{dataSummary.images}</p>
-                  <p className="text-xs text-muted-foreground">Images</p>
+                <div className="flex items-center gap-3 p-3 rounded-2xl bg-muted/30">
+                  <Image className="w-5 h-5 text-vibes-neon shrink-0" />
+                  <span className="text-sm">Generated images and media</span>
                 </div>
               </div>
             </div>
