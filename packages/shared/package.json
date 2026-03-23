@@ -11,6 +11,10 @@
       "import": "./dist/index.js",
       "types": "./dist/index.d.ts"
     },
+    "./tooling": {
+      "import": "./dist/tooling/index.js",
+      "types": "./dist/tooling/index.d.ts"
+    },
     "./events": {
       "import": "./dist/events/index.js",
       "types": "./dist/events/index.d.ts"
@@ -36,28 +40,6 @@
     "lint": "eslint src --ext .ts",
     "typecheck": "tsc --noEmit",
     "clean": "rm -rf dist"
-  },
-  "exports": {
-    ".": {
-      "import": "./dist/index.js",
-      "types": "./dist/index.d.ts"
-    },
-    "./tooling": {
-      "import": "./dist/tooling/index.js",
-      "types": "./dist/tooling/index.d.ts"
-    },
-    "./events": {
-      "import": "./dist/events/index.js",
-      "types": "./dist/events/index.d.ts"
-    },
-    "./companion": {
-      "import": "./dist/companion/index.js",
-      "types": "./dist/companion/index.d.ts"
-    },
-    "./api": {
-      "import": "./dist/api/index.js",
-      "types": "./dist/api/index.d.ts"
-    }
   },
   "dependencies": {
     "zod": "^3.23.8"
