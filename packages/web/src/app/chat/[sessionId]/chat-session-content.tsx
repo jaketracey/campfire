@@ -7,7 +7,7 @@ import { GiftsPanel } from '@/components/gifts';
 import { FriendsPanel } from '@/components/friends';
 import { GamesModal } from '@/components/games';
 import { VideoRequestModal } from '@/components/video';
-import { InsufficientTokensModal } from '@/components/voice-call';
+import { InsufficientTokensModal, MobileCallOverlay } from '@/components/voice-call';
 import { SupportModal } from '@/components/support/support-modal';
 
 import { useChatSession } from './hooks/use-chat-session';
@@ -191,6 +191,19 @@ export function ChatSessionContent({
             chat.inputRef.current?.focus();
           }}
         />
+
+        {/* Mobile Voice Call Overlay */}
+        {chat.isCallActive && (
+          <MobileCallOverlay
+            companionName={chat.companion?.name || 'Companion'}
+            voiceState={chat.voiceState}
+            isMuted={chat.isCallMuted}
+            onEndCall={chat.stopVoiceChat}
+            onToggleMute={chat.toggleCallMute}
+            getInputFrequencyData={chat.getInputFrequencyData}
+            getOutputFrequencyData={chat.getOutputFrequencyData}
+          />
+        )}
 
         {/* Input Area with Mobile Action Bar - Fixed on mobile/tablet, static on desktop */}
         <div ref={chat.inputContainerRef} className="py-4 px-6 lg:px-4 bg-background z-40 fixed bottom-0 left-0 right-0 lg:relative lg:bottom-auto lg:left-auto lg:right-auto">
