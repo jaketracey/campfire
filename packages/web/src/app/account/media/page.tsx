@@ -66,11 +66,26 @@ export default function MediaGalleryPage() {
     }
 
     loadMedia();
-
-    // Poll for status updates every 10 seconds
-    const interval = setInterval(loadMedia, 10000);
-    return () => clearInterval(interval);
   }, [isAuthenticated, authLoading]);
+
+  // Only poll when there are pending/generating items
+  useEffect(() => {
+    const hasPending = media.some((m) =>
+      ['pending', 'generating', 'encoding'].includes(m.status)
+    );
+    if (!hasPending) return;
+
+    const interval = setInterval(async () => {
+      if (document.hidden) return;
+      try {
+        const response = await getUserMedia();
+        if (response.data) setMedia(response.data);
+      } catch (err) {
+        console.error('Failed to poll media:', err);
+      }
+    }, 10000);
+    return () => clearInterval(interval);
+  }, [media]);
 
   if (authLoading || !isAuthenticated) {
     return (
