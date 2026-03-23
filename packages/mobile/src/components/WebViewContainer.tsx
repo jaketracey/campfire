@@ -6,6 +6,9 @@ import {
   Platform,
   BackHandler,
   Linking,
+  Text,
+  TouchableOpacity,
+  Animated,
 } from 'react-native';
 import { WebView, WebViewNavigation } from 'react-native-webview';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -27,12 +30,16 @@ const AUTH_STORAGE_KEY = 'campfire_auth';
 interface WebViewContainerProps {
   /** Optional initial path to navigate to */
   initialPath?: string;
+  /** Called when WebView content has finished loading (used for splash screen) */
+  onContentReady?: () => void;
 }
 
-export function WebViewContainer({ initialPath }: WebViewContainerProps): React.JSX.Element {
+export function WebViewContainer({ initialPath, onContentReady }: WebViewContainerProps): React.JSX.Element {
   const webViewRef = useRef<WebView>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [canGoBack, setCanGoBack] = useState(false);
+  const progressAnim = useRef(new Animated.Value(0)).current;
+  const contentReadyCalled = useRef(false);
 
   // Get base URL from config
   const baseUrl = Constants.expoConfig?.extra?.webAppUrl || 'https://ignite.cam';
@@ -215,6 +222,12 @@ export function WebViewContainer({ initialPath }: WebViewContainerProps): React.
   const handleLoadEnd = useCallback(async () => {
     setIsLoading(false);
 
+    // Hide splash screen now that content is ready
+    if (!contentReadyCalled.current && onContentReady) {
+      contentReadyCalled.current = true;
+      onContentReady();
+    }
+
     // Inject stored auth tokens
     const authTokens = await loadAuthTokens();
     if (authTokens) {
@@ -231,11 +244,26 @@ export function WebViewContainer({ initialPath }: WebViewContainerProps): React.
         true;
       `);
     }
-  }, [loadAuthTokens, expoPushToken]);
+  }, [loadAuthTokens, expoPushToken, onContentReady]);
 
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
       <StatusBar style="light" />
+      {isLoading && (
+        <View style={styles.progressBarContainer}>
+          <Animated.View
+            style={[
+              styles.progressBar,
+              {
+                width: progressAnim.interpolate({
+                  inputRange: [0, 1],
+                  outputRange: ['0%', '100%'],
+                }),
+              },
+            ]}
+          />
+        </View>
+      )}
       <WebView
         ref={webViewRef}
         source={{ uri: initialUrl }}
@@ -245,7 +273,46 @@ export function WebViewContainer({ initialPath }: WebViewContainerProps): React.
         onNavigationStateChange={handleNavigationStateChange}
         onShouldStartLoadWithRequest={handleShouldStartLoadWithRequest}
         onLoadEnd={handleLoadEnd}
-        onLoadStart={() => setIsLoading(true)}
+        onLoadStart={() => {
+          setIsLoading(true);
+          progressAnim.setValue(0);
+        }}
+        onLoadProgress={({ nativeEvent }) => {
+          Animated.timing(progressAnim, {
+            toValue: nativeEvent.progress,
+            duration: 100,
+            useNativeDriver: false,
+          }).start();
+        }}
+        // Error handling
+        onError={(syntheticEvent) => {
+          const { nativeEvent } = syntheticEvent;
+          console.error('[WebView] Error:', nativeEvent.description);
+          setIsLoading(false);
+          // Still hide splash if it hasn't been hidden yet
+          if (!contentReadyCalled.current && onContentReady) {
+            contentReadyCalled.current = true;
+            onContentReady();
+          }
+        }}
+        onHttpError={(syntheticEvent) => {
+          const { nativeEvent } = syntheticEvent;
+          console.error('[WebView] HTTP error:', nativeEvent.statusCode, nativeEvent.url);
+        }}
+        renderError={(errorDomain, errorCode, errorDesc) => (
+          <View style={styles.errorContainer}>
+            <Text style={styles.errorTitle}>Unable to Load</Text>
+            <Text style={styles.errorMessage}>
+              {errorDesc || 'Please check your connection and try again.'}
+            </Text>
+            <TouchableOpacity
+              style={styles.retryButton}
+              onPress={() => webViewRef.current?.reload()}
+            >
+              <Text style={styles.retryButtonText}>Retry</Text>
+            </TouchableOpacity>
+          </View>
+        )}
         // Security settings
         javaScriptEnabled={true}
         domStorageEnabled={true}
@@ -257,8 +324,9 @@ export function WebViewContainer({ initialPath }: WebViewContainerProps): React.
         // Media settings
         allowsInlineMediaPlayback={true}
         mediaPlaybackRequiresUserAction={false}
-        // iOS specific
+        // iOS specific - safe area support
         allowsBackForwardNavigationGestures={true}
+        contentInsetAdjustmentBehavior="automatic"
         // Android specific
         allowFileAccess={false}
         allowFileAccessFromFileURLs={false}
@@ -293,5 +361,49 @@ const styles = StyleSheet.create({
     backgroundColor: '#000000',
     justifyContent: 'center',
     alignItems: 'center',
+  },
+  progressBarContainer: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    height: 3,
+    backgroundColor: 'transparent',
+    zIndex: 10,
+  },
+  progressBar: {
+    height: '100%',
+    backgroundColor: '#FF6B00',
+  },
+  errorContainer: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: '#000000',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 32,
+  },
+  errorTitle: {
+    color: '#FFFFFF',
+    fontSize: 20,
+    fontWeight: '600',
+    marginBottom: 12,
+  },
+  errorMessage: {
+    color: '#999999',
+    fontSize: 15,
+    textAlign: 'center',
+    marginBottom: 24,
+    lineHeight: 22,
+  },
+  retryButton: {
+    backgroundColor: '#FF6B00',
+    paddingHorizontal: 32,
+    paddingVertical: 12,
+    borderRadius: 8,
+  },
+  retryButtonText: {
+    color: '#FFFFFF',
+    fontSize: 16,
+    fontWeight: '600',
   },
 });

@@ -3,22 +3,17 @@ import { SafeAreaProvider } from 'react-native-safe-area-context';
 import * as SplashScreen from 'expo-splash-screen';
 import { WebViewContainer } from './src/components/WebViewContainer';
 
-// Keep the splash screen visible while we load
+// Keep the splash screen visible until WebView content is ready
 SplashScreen.preventAutoHideAsync();
 
 export default function App(): React.JSX.Element {
-  const onReady = React.useCallback(async () => {
-    // Hide splash screen once the app is ready
+  const onWebViewReady = React.useCallback(async () => {
     await SplashScreen.hideAsync();
   }, []);
 
-  React.useEffect(() => {
-    onReady();
-  }, [onReady]);
-
   return (
     <SafeAreaProvider>
-      <WebViewContainer />
+      <WebViewContainer onContentReady={onWebViewReady} />
     </SafeAreaProvider>
   );
 }
