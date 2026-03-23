@@ -3,6 +3,7 @@ import { CompanionBackground } from '@/components/onboarding/companion-backgroun
 import { DashboardHeaderNav } from '@/components/layout/dashboard-header-nav';
 import { AnimatedFlame } from '@/components/ui/animated-flame';
 import { FloatingHelpButton } from '@/components/support/floating-help-button';
+import { AppFooter } from '@/components/layout/app-footer';
 
 export default function DashboardLayout({
     children,
@@ -31,6 +32,7 @@ export default function DashboardLayout({
                 {children}
             </main>
 
+            <AppFooter />
             <FloatingHelpButton />
         </div>
     );
