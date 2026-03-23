@@ -166,71 +166,57 @@ jobs:
           set -e
           cd /opt/campfire/infra/docker
 
-          echo "=== Removing stale named containers ==="
-          for container in campfire-gateway campfire-web campfire-orchestrator campfire-workers; do
-            docker rm -f "$container" 2>/dev/null || true
-          done
-
           echo "=== Logging into ECR ==="
           aws ecr get-login-password --region us-east-1 | docker login --username AWS --password-stdin 932630290000.dkr.ecr.us-east-1.amazonaws.com
 
           echo "=== Pulling latest images ==="
           export ECR_REGISTRY=932630290000.dkr.ecr.us-east-1.amazonaws.com
-          docker compose -f docker-compose.stealth.yml --env-file /opt/campfire/.env.stealth pull gateway web workers orchestrator nginx
+          ENV="--env-file /opt/campfire/.env.stealth"
+          DC="docker compose -f docker-compose.stealth.yml $ENV"
+          $DC pull gateway web workers orchestrator nginx
 
-          echo "=== Starting infrastructure dependencies ==="
-          docker compose -f docker-compose.stealth.yml --env-file /opt/campfire/.env.stealth up -d --no-deps postgres redis
-
-          echo "=== Waiting for PostgreSQL ==="
-          for i in {1..45}; do
-            if docker compose -f docker-compose.stealth.yml --env-file /opt/campfire/.env.stealth exec -T postgres pg_isready -U campfire -d campfire >/dev/null 2>&1; then
-              break
-            fi
-
-            echo "Waiting for postgres... ($i/45)"
-            if [ "$i" -eq 45 ]; then
-              echo "Postgres did not become ready."
-              docker compose -f docker-compose.stealth.yml logs --no-color --tail 200 postgres || true
-              exit 1
-            fi
-            sleep 4
+          echo "=== Ensuring infra is up ==="
+          $DC up -d --no-deps postgres redis
+          for i in {1..30}; do
+            $DC exec -T postgres pg_isready -U campfire -d campfire >/dev/null 2>&1 && break
+            echo "Waiting for postgres... ($i/30)"
+            [ "$i" -eq 30 ] && { echo "Postgres not ready"; exit 1; }
+            sleep 3
           done
 
-          echo "=== Running gateway migrations ==="
-          docker compose -f docker-compose.stealth.yml --env-file /opt/campfire/.env.stealth run --rm --no-deps gateway node dist/db/migrate.js up
+          echo "=== Running migrations ==="
+          $DC run --rm --no-deps gateway node dist/db/migrate.js up
 
-          echo "=== Restarting services ==="
-          if ! docker compose -f docker-compose.stealth.yml --env-file /opt/campfire/.env.stealth up -d --remove-orphans; then
-            echo "Deployment startup failed. Collecting recent logs..."
-            docker compose -f docker-compose.stealth.yml logs --no-color --tail 200 gateway orchestrator web workers redis postgres nginx || true
-            exit 1
-          fi
-
-          echo "=== Waiting for services to start ==="
+          echo "=== Rolling restart: gateway ==="
+          $DC up -d --no-deps --force-recreate gateway
           sleep 10
+
+          echo "=== Rolling restart: orchestrator ==="
+          $DC up -d --no-deps --force-recreate orchestrator
+          sleep 8
+
+          echo "=== Rolling restart: web ==="
+          $DC up -d --no-deps --force-recreate web
+          sleep 5
+
+          echo "=== Rolling restart: workers ==="
+          $DC up -d --no-deps --force-recreate workers
+          sleep 5
 
           echo "=== Waiting for health checks ==="
           for i in {1..45}; do
-            if docker compose -f docker-compose.stealth.yml exec -T gateway sh -lc "wget -q --tries=1 --timeout=5 --spider http://localhost:4000/health" >/dev/null 2>&1 \
-              && docker compose -f docker-compose.stealth.yml exec -T orchestrator sh -lc "wget -q --tries=1 --timeout=5 --spider http://localhost:5000/health" >/dev/null 2>&1 \
-              && docker compose -f docker-compose.stealth.yml exec -T workers sh -lc "wget -q --tries=1 --timeout=5 --spider http://localhost:8080/health" >/dev/null 2>&1 \
-              && docker compose -f docker-compose.stealth.yml exec -T nginx sh -lc "wget -q --tries=1 --timeout=5 --no-check-certificate --spider https://127.0.0.1/nginx-health" >/dev/null 2>&1; then
-              echo "All services responded to health checks."
+            if $DC exec -T gateway sh -lc "wget -q --tries=1 --timeout=5 --spider http://localhost:4000/health" >/dev/null 2>&1 \
+              && $DC exec -T orchestrator sh -lc "wget -q --tries=1 --timeout=5 --spider http://localhost:5000/health" >/dev/null 2>&1; then
+              echo "Core services healthy."
               break
             fi
-
-            echo "Waiting for service health checks... ($i/45)"
-            if [ "$i" -eq 45 ]; then
-              echo "Services did not become healthy in time. Collecting logs and service health..."
-              docker compose -f docker-compose.stealth.yml ps --all
-              docker compose -f docker-compose.stealth.yml logs --no-color --tail 200 gateway orchestrator web workers redis postgres nginx || true
-              exit 1
-            fi
+            echo "Waiting for health... ($i/45)"
+            [ "$i" -eq 45 ] && { echo "Health checks failed"; $DC ps --all; exit 1; }
             sleep 4
           done
 
           echo "=== Restarting nginx to pick up new container IPs ==="
-          docker compose -f docker-compose.stealth.yml --env-file /opt/campfire/.env.stealth restart nginx
+          $DC stop nginx && $DC rm -f nginx && $DC up -d nginx
           sleep 5
 
           echo "=== Cleaning up old images ==="
