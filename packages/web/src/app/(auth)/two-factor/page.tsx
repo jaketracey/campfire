@@ -2,8 +2,7 @@
 
 import { useState, useRef, useEffect } from 'react';
 import Link from 'next/link';
-import { useRouter } from 'next/navigation';
-import { ArrowLeft, Loader2, Shield, Smartphone } from 'lucide-react';
+import { ArrowLeft, Shield, Smartphone } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import {
@@ -18,9 +17,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useToast } from '@/hooks/use-toast';
 
 export default function TwoFactorPage() {
-  const router = useRouter();
   const { toast } = useToast();
-  const [isLoading, setIsLoading] = useState(false);
   const [code, setCode] = useState(['', '', '', '', '', '']);
   const inputRefs = useRef<(HTMLInputElement | null)[]>([]);
 
@@ -59,62 +56,20 @@ export default function TwoFactorPage() {
     }
   };
 
-  const handleVerify = async () => {
-    const fullCode = code.join('');
-    if (fullCode.length !== 6) {
-      toast({
-        title: 'Invalid code',
-        description: 'Please enter the complete 6-digit code.',
-        variant: 'destructive',
-      });
-      return;
-    }
-
-    setIsLoading(true);
-    try {
-      // TODO: Implement actual 2FA verification
-
-      // Simulate API call
-      await new Promise((resolve) => setTimeout(resolve, 1000));
-
-      toast({
-        title: 'Verified!',
-        description: 'Two-factor authentication successful.',
-      });
-
-      router.push('/dashboard');
-    } catch (error) {
-      toast({
-        title: 'Verification failed',
-        description: 'Invalid code. Please try again.',
-        variant: 'destructive',
-      });
-      setCode(['', '', '', '', '', '']);
-      inputRefs.current[0]?.focus();
-    } finally {
-      setIsLoading(false);
-    }
+  const handleVerify = () => {
+    toast({
+      title: 'Not yet available',
+      description: 'Two-factor authentication is not yet available. Please sign in without 2FA for now.',
+      variant: 'destructive',
+    });
   };
 
-  const handleResend = async () => {
-    setIsLoading(true);
-    try {
-      // TODO: Implement resend code API call
-      await new Promise((resolve) => setTimeout(resolve, 1000));
-
-      toast({
-        title: 'Code sent!',
-        description: 'A new verification code has been sent.',
-      });
-    } catch (error) {
-      toast({
-        title: 'Failed to resend',
-        description: 'Please try again later.',
-        variant: 'destructive',
-      });
-    } finally {
-      setIsLoading(false);
-    }
+  const handleResend = () => {
+    toast({
+      title: 'Not yet available',
+      description: 'Two-factor authentication is not yet available.',
+      variant: 'destructive',
+    });
   };
 
   return (
@@ -161,7 +116,6 @@ export default function TwoFactorPage() {
                   onChange={(e) => handleCodeChange(index, e.target.value.replace(/\D/g, ''))}
                   onKeyDown={(e) => handleKeyDown(index, e)}
                   className="h-12 w-12 text-center text-lg font-semibold"
-                  disabled={isLoading}
                   aria-label={`Digit ${index + 1} of 6`}
                   autoComplete="one-time-code"
                   data-testid="mfa-code-input"
@@ -171,7 +125,7 @@ export default function TwoFactorPage() {
           </TabsContent>
           <TabsContent value="sms" className="space-y-4 pt-4">
             <p className="text-sm text-muted-foreground text-center">
-              Enter the 6-digit code sent to your phone number ending in ****1234
+              Enter the 6-digit code sent to your registered device
             </p>
             <div className="flex justify-center gap-2">
               {code.map((digit, index) => (
@@ -188,7 +142,6 @@ export default function TwoFactorPage() {
                   onChange={(e) => handleCodeChange(index, e.target.value.replace(/\D/g, ''))}
                   onKeyDown={(e) => handleKeyDown(index, e)}
                   className="h-12 w-12 text-center text-lg font-semibold"
-                  disabled={isLoading}
                   aria-label={`Digit ${index + 1} of 6`}
                   autoComplete="one-time-code"
                   data-testid="mfa-code-input"
@@ -201,7 +154,6 @@ export default function TwoFactorPage() {
                 variant="link"
                 size="sm"
                 onClick={handleResend}
-                disabled={isLoading}
                 data-testid="mfa-resend-button"
               >
                 Didn&apos;t receive a code? Resend
@@ -216,10 +168,9 @@ export default function TwoFactorPage() {
           className="w-full"
           variant="campfire"
           size="lg"
-          disabled={isLoading || code.join('').length !== 6}
+          disabled={code.join('').length !== 6}
           data-testid="mfa-verify-button"
         >
-          {isLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
           Verify
         </Button>
         <Link
