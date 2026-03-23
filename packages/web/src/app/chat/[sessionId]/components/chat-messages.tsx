@@ -6,7 +6,7 @@ import { LikeButton } from '@/components/likes';
 import { GameBoardContainer } from '@/components/games';
 import type { ActiveGame } from '@campfire/shared';
 import type { Message } from '../types';
-import { parseMessageSegments } from '../utils';
+import { parseMessageSegments, shouldShowDateSeparator, dateSeparatorLabel, formatMessageTime } from '../utils';
 import { AnimatedMessageSegments } from './animated-message-segments';
 import { GiftMessage } from './gift-message';
 
@@ -126,11 +126,21 @@ export function ChatMessages({
         </div>
       )}
 
-      {messages.map((message) => {
+      {messages.map((message, index) => {
+        const prevTimestamp = index > 0 ? messages[index - 1].timestamp : null;
+        const showSeparator = shouldShowDateSeparator(message.timestamp, prevTimestamp);
+
         // Handle gift messages specially
         if (message.giftData) {
           return (
             <div key={message.id} className="relative z-10">
+              {showSeparator && (
+                <div className="flex justify-center mb-4">
+                  <span className="text-[11px] text-muted-foreground/60 bg-muted/50 px-3 py-1 rounded-full">
+                    {dateSeparatorLabel(message.timestamp)}
+                  </span>
+                </div>
+              )}
               <GiftMessage
                 giftData={message.giftData}
                 isNew={message.isNew}
@@ -144,43 +154,55 @@ export function ChatMessages({
         const hasMultipleSegments = segments && segments.length > 1;
 
         return (
-          <div
-            key={message.id}
-            className={`flex relative z-10 ${isUser ? 'justify-end' : 'justify-start'}`}
-            data-testid={isUser ? 'user-message' : 'assistant-message'}
-          >
-            {/* Use animated segments for assistant messages with actions */}
-            {!isUser && hasMultipleSegments ? (
-              <AnimatedMessageSegments
-                segments={segments}
-                isUser={false}
-                messageId={message.id}
-                showLikeButton={!isDemo}
-                likeCount={messageLikes[message.id] || 0}
-                onLike={onLikeMessage}
-                isNewMessage={message.isNew}
-                onSegmentReveal={scrollToBottom}
-              />
-            ) : (
-              <Card
-                className={`max-w-[80%] lg:max-w-xl p-3 ${
-                  isUser
-                    ? 'bg-primary text-primary-foreground'
-                    : 'bg-muted'
-                }`}
-              >
-                <p className="text-base lg:text-sm whitespace-pre-wrap break-words">{message.content}</p>
-                {!isUser && !isDemo && (
-                  <div className="flex justify-end mt-1 -mb-1 -mr-1">
-                    <LikeButton
-                      turnId={message.id}
-                      initialCount={messageLikes[message.id] || 0}
-                      onLike={onLikeMessage}
-                    />
-                  </div>
-                )}
-              </Card>
+          <div key={message.id} className="relative z-10">
+            {showSeparator && (
+              <div className="flex justify-center mb-4">
+                <span className="text-[11px] text-muted-foreground/60 bg-muted/50 px-3 py-1 rounded-full">
+                  {dateSeparatorLabel(message.timestamp)}
+                </span>
+              </div>
             )}
+            <div
+              className={`flex ${isUser ? 'justify-end' : 'justify-start'}`}
+              data-testid={isUser ? 'user-message' : 'assistant-message'}
+            >
+              <div className={`flex flex-col ${isUser ? 'items-end' : 'items-start'} max-w-[80%] lg:max-w-xl`}>
+                {!isUser && hasMultipleSegments ? (
+                  <AnimatedMessageSegments
+                    segments={segments}
+                    isUser={false}
+                    messageId={message.id}
+                    showLikeButton={!isDemo}
+                    likeCount={messageLikes[message.id] || 0}
+                    onLike={onLikeMessage}
+                    isNewMessage={message.isNew}
+                    onSegmentReveal={scrollToBottom}
+                  />
+                ) : (
+                  <Card
+                    className={`p-3 ${
+                      isUser
+                        ? 'bg-primary text-primary-foreground'
+                        : 'bg-muted'
+                    }`}
+                  >
+                    <p className="text-base lg:text-sm whitespace-pre-wrap break-words">{message.content}</p>
+                    {!isUser && !isDemo && (
+                      <div className="flex justify-end mt-1 -mb-1 -mr-1">
+                        <LikeButton
+                          turnId={message.id}
+                          initialCount={messageLikes[message.id] || 0}
+                          onLike={onLikeMessage}
+                        />
+                      </div>
+                    )}
+                  </Card>
+                )}
+                <span className="text-[10px] text-muted-foreground/50 mt-0.5 px-1">
+                  {formatMessageTime(message.timestamp)}
+                </span>
+              </div>
+            </div>
           </div>
         );
       })}

@@ -1,6 +1,69 @@
 import type { EmotionalState } from '@/lib/api/imagegen';
 import type { MessageSegment } from './types';
 
+// ── Timestamp & date separator helpers ──
+
+function isToday(date: Date): boolean {
+  const now = new Date();
+  return (
+    date.getFullYear() === now.getFullYear() &&
+    date.getMonth() === now.getMonth() &&
+    date.getDate() === now.getDate()
+  );
+}
+
+function isYesterday(date: Date): boolean {
+  const yesterday = new Date();
+  yesterday.setDate(yesterday.getDate() - 1);
+  return (
+    date.getFullYear() === yesterday.getFullYear() &&
+    date.getMonth() === yesterday.getMonth() &&
+    date.getDate() === yesterday.getDate()
+  );
+}
+
+function isSameDay(a: Date, b: Date): boolean {
+  return (
+    a.getFullYear() === b.getFullYear() &&
+    a.getMonth() === b.getMonth() &&
+    a.getDate() === b.getDate()
+  );
+}
+
+/** Returns a human-readable date label for the separator pill. */
+export function dateSeparatorLabel(date: Date): string {
+  if (isToday(date)) return 'Today';
+  if (isYesterday(date)) return 'Yesterday';
+
+  return date.toLocaleDateString(undefined, {
+    month: 'long',
+    day: 'numeric',
+    ...(date.getFullYear() !== new Date().getFullYear() ? { year: 'numeric' } : {}),
+  });
+}
+
+/**
+ * Returns true when a date separator should be rendered before `current`
+ * (i.e. it is the first message or belongs to a different calendar day than `previous`).
+ */
+export function shouldShowDateSeparator(
+  current: Date,
+  previous: Date | null,
+): boolean {
+  if (!previous) return true;
+  return !isSameDay(current, previous);
+}
+
+/** Formats a message timestamp: time-only for today, date + time for older. */
+export function formatMessageTime(date: Date): string {
+  if (isToday(date)) {
+    return date.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
+  }
+  return date.toLocaleDateString(undefined, { month: 'short', day: 'numeric' }) +
+    ', ' +
+    date.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
+}
+
 // Parse message content into action and dialogue segments
 export function parseMessageSegments(content: string): MessageSegment[] {
   const segments: MessageSegment[] = [];
