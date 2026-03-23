@@ -46,6 +46,7 @@ interface CompanionProfileProps {
 export function CompanionProfile({ page }: CompanionProfileProps) {
   const { contentJson, companion } = page;
   const avatarUrl = companion?.avatarUrl || page.ogImageUrl;
+  const returnTo = encodeURIComponent(`/c/${page.slug}`);
 
   return (
     <div className="min-h-screen bg-zinc-950">
@@ -56,12 +57,20 @@ export function CompanionProfile({ page }: CompanionProfileProps) {
             <Flame className="h-7 w-7 text-campfire-500 group-hover:scale-110 transition-transform" />
             <span className="font-bold font-display text-lg text-white">Ignite</span>
           </Link>
-          <Link
-            href="/signup"
-            className="px-4 py-2 bg-campfire-500 hover:bg-campfire-600 text-white rounded-lg font-medium text-sm transition-colors"
-          >
-            Get Started
-          </Link>
+          <div className="flex items-center gap-3">
+            <Link
+              href={`/login?returnTo=${returnTo}`}
+              className="px-4 py-2 text-gray-300 hover:text-white font-medium text-sm transition-colors"
+            >
+              Log in
+            </Link>
+            <Link
+              href={`/signup?returnTo=${returnTo}`}
+              className="px-4 py-2 bg-campfire-500 hover:bg-campfire-600 text-white rounded-lg font-medium text-sm transition-colors"
+            >
+              Get Started
+            </Link>
+          </div>
         </div>
       </header>
 
@@ -94,14 +103,14 @@ export function CompanionProfile({ page }: CompanionProfileProps) {
           {/* CTA */}
           <div className="mt-8 flex flex-col sm:flex-row gap-4 justify-center">
             <Link
-              href="/signup"
+              href={`/signup?returnTo=${returnTo}`}
               className="inline-flex items-center justify-center px-8 py-4 bg-campfire-500 hover:bg-campfire-600 text-white rounded-xl font-semibold text-lg transition-colors"
             >
               <MessageCircle className="h-5 w-5 mr-2" />
               Start Chatting
             </Link>
             <Link
-              href="/login"
+              href={`/login?returnTo=${returnTo}`}
               className="inline-flex items-center justify-center px-8 py-4 bg-white/10 hover:bg-white/20 text-white rounded-xl font-semibold text-lg transition-colors"
             >
               Sign In
@@ -192,13 +201,21 @@ export function CompanionProfile({ page }: CompanionProfileProps) {
           <p className="text-gray-400 text-lg mb-8 max-w-xl mx-auto">
             Join thousands of others who have found meaningful connections through Ignite.
           </p>
-          <Link
-            href="/signup"
-            className="inline-flex items-center justify-center px-8 py-4 bg-campfire-500 hover:bg-campfire-600 text-white rounded-xl font-semibold text-lg transition-colors"
-          >
-            <Flame className="h-5 w-5 mr-2" />
-            Create Free Account
-          </Link>
+          <div className="flex flex-col sm:flex-row gap-4 justify-center">
+            <Link
+              href={`/signup?returnTo=${returnTo}`}
+              className="inline-flex items-center justify-center px-8 py-4 bg-campfire-500 hover:bg-campfire-600 text-white rounded-xl font-semibold text-lg transition-colors"
+            >
+              <Flame className="h-5 w-5 mr-2" />
+              Create Free Account
+            </Link>
+            <Link
+              href={`/login?returnTo=${returnTo}`}
+              className="inline-flex items-center justify-center px-8 py-4 bg-white/10 hover:bg-white/20 text-white rounded-xl font-semibold text-lg transition-colors"
+            >
+              Already have an account? Log in
+            </Link>
+          </div>
         </div>
       </section>
 
