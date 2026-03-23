@@ -251,7 +251,16 @@ export default function DashboardPage() {
                     animate={{ opacity: 1, scale: 1 }}
                     transition={{ delay: Math.min(idx * 0.02, 1) }}
                   >
-                    <Card className="group relative overflow-hidden bg-white/[0.01] border border-white/5 hover:border-white/30 transition-all duration-300 shadow-lg hover:shadow-xl hover:z-10 hover:scale-105">
+                    <Card
+                      className="group relative overflow-hidden bg-white/[0.01] border border-white/5 hover:border-white/30 transition-all duration-300 shadow-lg hover:shadow-xl hover:z-10 hover:scale-105 cursor-pointer"
+                      onClick={() => {
+                        if (hasExistingSession) {
+                          handleResumeChat(companion.latestSessionId!);
+                        } else {
+                          handleNewChat(companion);
+                        }
+                      }}
+                    >
                       <CardContent className="p-0">
                         <div className="aspect-[2/3] relative overflow-hidden">
                           <CompanionCardImage
@@ -300,14 +309,14 @@ export default function DashboardPage() {
                             {hasExistingSession ? (
                               <div className="flex flex-col gap-1 w-full px-1">
                                 <Button
-                                  onClick={() => handleResumeChat(companion.latestSessionId!)}
+                                  onClick={(e) => { e.stopPropagation(); handleResumeChat(companion.latestSessionId!); }}
                                   className="w-full h-6 rounded-md bg-white/10 hover:bg-white/20 text-white text-[10px] border border-white/20 backdrop-blur-sm px-1"
                                 >
                                   <RotateCcw className="h-2.5 w-2.5 mr-1 flex-shrink-0" />
                                   Resume
                                 </Button>
                                 <Button
-                                  onClick={() => handleNewChat(companion)}
+                                  onClick={(e) => { e.stopPropagation(); handleNewChat(companion); }}
                                   className="w-full h-6 rounded-md bg-campfire-600 hover:bg-campfire-500 text-white text-[10px] px-1"
                                 >
                                   <Plus className="h-2.5 w-2.5 mr-1 flex-shrink-0" />
@@ -316,7 +325,7 @@ export default function DashboardPage() {
                               </div>
                             ) : (
                               <Button
-                                onClick={() => handleNewChat(companion)}
+                                onClick={(e) => { e.stopPropagation(); handleNewChat(companion); }}
                                 className="w-full h-6 rounded-md bg-campfire-600 hover:bg-campfire-500 text-white text-[10px] mx-1 px-1"
                               >
                                 <MessageCircle className="h-2.5 w-2.5 mr-1 flex-shrink-0" />
