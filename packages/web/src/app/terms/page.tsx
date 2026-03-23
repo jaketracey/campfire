@@ -1,12 +1,20 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
+import { fetchBrandForRequest } from '@/lib/brand/server';
 
-export const metadata: Metadata = {
-  title: 'Terms of Service - Ignite',
-  description: 'Terms of Service for Ignite AI Companion',
-};
+export async function generateMetadata(): Promise<Metadata> {
+  const { brand } = await fetchBrandForRequest();
+  return {
+    title: `Terms of Service - ${brand.name}`,
+    description: `Terms of Service for ${brand.name} AI Companion`,
+  };
+}
 
-export default function TermsPage() {
+export default async function TermsPage() {
+  const { brand, baseUrl } = await fetchBrandForRequest();
+  const legalEmail = brand.legalEmail || 'legal@ignite.cam';
+  const domain = baseUrl.replace(/^https?:\/\//, '');
+
   return (
     <div className="min-h-screen bg-background">
       <div className="max-w-3xl mx-auto px-4 py-12">
@@ -14,7 +22,7 @@ export default function TermsPage() {
           href="/"
           className="text-sm text-muted-foreground hover:text-foreground mb-8 inline-block"
         >
-          &larr; Back to Ignite
+          &larr; Back to {brand.name}
         </Link>
 
         <h1 className="text-3xl font-bold mb-8">Terms of Service</h1>
@@ -26,7 +34,7 @@ export default function TermsPage() {
             <p className="text-muted-foreground">
               These Terms of Service (&quot;Terms&quot;) constitute a legally binding agreement between you
               and Noice Pty Ltd (ABN to be registered) (&quot;Noice,&quot; &quot;we,&quot; &quot;our,&quot; or &quot;us&quot;) governing
-              your access to and use of Ignite (accessible at ignite.cam) and all related services
+              your access to and use of {brand.name} (accessible at {domain}) and all related services
               (collectively, the &quot;Service&quot;). By accessing or using the Service, you agree to be
               bound by these Terms. If you do not agree, do not use the Service.
             </p>
@@ -35,7 +43,7 @@ export default function TermsPage() {
           <section>
             <h2 className="text-xl font-semibold mb-4">2. Description of Service</h2>
             <p className="text-muted-foreground">
-              Ignite is an AI companion service that uses artificial intelligence to generate
+              {brand.name} is an AI companion service that uses artificial intelligence to generate
               conversational responses, images, and other content. The Service is provided for
               entertainment and companionship purposes. AI-generated content is created algorithmically
               and does not represent the views or opinions of Noice Pty Ltd.
@@ -226,7 +234,7 @@ export default function TermsPage() {
             </p>
             <div className="text-muted-foreground mt-3">
               <p>Noice Pty Ltd</p>
-              <p>Email: <a href="mailto:legal@ignite.cam" className="text-primary hover:underline">legal@ignite.cam</a></p>
+              <p>Email: <a href={`mailto:${legalEmail}`} className="text-primary hover:underline">{legalEmail}</a></p>
             </div>
           </section>
         </div>

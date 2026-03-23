@@ -1,12 +1,20 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
+import { fetchBrandForRequest } from '@/lib/brand/server';
 
-export const metadata: Metadata = {
-  title: 'Privacy Policy - Ignite',
-  description: 'Privacy Policy for Ignite AI Companion',
-};
+export async function generateMetadata(): Promise<Metadata> {
+  const { brand } = await fetchBrandForRequest();
+  return {
+    title: `Privacy Policy - ${brand.name}`,
+    description: `Privacy Policy for ${brand.name} AI Companion`,
+  };
+}
 
-export default function PrivacyPage() {
+export default async function PrivacyPage() {
+  const { brand, baseUrl } = await fetchBrandForRequest();
+  const privacyEmail = brand.supportEmail?.replace('support@', 'privacy@') || 'privacy@ignite.cam';
+  const domain = baseUrl.replace(/^https?:\/\//, '');
+
   return (
     <div className="min-h-screen bg-background">
       <div className="max-w-3xl mx-auto px-4 py-12">
@@ -14,7 +22,7 @@ export default function PrivacyPage() {
           href="/"
           className="text-sm text-muted-foreground hover:text-foreground mb-8 inline-block"
         >
-          &larr; Back to Ignite
+          &larr; Back to {brand.name}
         </Link>
 
         <h1 className="text-3xl font-bold mb-8">Privacy Policy</h1>
@@ -25,7 +33,7 @@ export default function PrivacyPage() {
             <h2 className="text-xl font-semibold mb-4">1. Introduction</h2>
             <p className="text-muted-foreground">
               Noice Pty Ltd (ABN to be registered) (&quot;Noice,&quot; &quot;we,&quot; &quot;our,&quot; or &quot;us&quot;) operates
-              Ignite (accessible at ignite.cam), an AI companion service. This Privacy Policy
+              {brand.name} (accessible at {domain}), an AI companion service. This Privacy Policy
               explains how we collect, use, disclose, and safeguard your personal information
               in accordance with the Australian Privacy Act 1988 (Cth) and the Australian
               Privacy Principles (APPs).
@@ -112,7 +120,7 @@ export default function PrivacyPage() {
             </ul>
             <p className="text-muted-foreground mt-3">
               To exercise these rights, contact us at{' '}
-              <a href="mailto:privacy@ignite.cam" className="text-primary hover:underline">privacy@ignite.cam</a>.
+              <a href={`mailto:${privacyEmail}`} className="text-primary hover:underline">{privacyEmail}</a>.
             </p>
           </section>
 
@@ -128,7 +136,7 @@ export default function PrivacyPage() {
           <section>
             <h2 className="text-xl font-semibold mb-4">9. Age Restrictions</h2>
             <p className="text-muted-foreground">
-              Ignite is intended for users 18 years of age or older. We do not knowingly
+              {brand.name} is intended for users 18 years of age or older. We do not knowingly
               collect personal information from individuals under 18. If we become aware
               that we have collected data from someone under 18, we will delete it promptly.
             </p>
@@ -150,7 +158,7 @@ export default function PrivacyPage() {
             </p>
             <div className="text-muted-foreground mt-3">
               <p>Noice Pty Ltd</p>
-              <p>Email: <a href="mailto:privacy@ignite.cam" className="text-primary hover:underline">privacy@ignite.cam</a></p>
+              <p>Email: <a href={`mailto:${privacyEmail}`} className="text-primary hover:underline">{privacyEmail}</a></p>
             </div>
             <p className="text-muted-foreground mt-3">
               If you are not satisfied with our response, you may lodge a complaint with the
