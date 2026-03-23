@@ -116,29 +116,43 @@ export function CallSidebar({
 
       {/* Controls */}
       <div className="flex gap-3 mt-auto">
-        <Button
-          variant="outline"
-          size="lg"
-          className={`rounded-full w-14 h-14 p-0 ${
-            isMuted
-              ? 'bg-red-500/20 border-red-500/50 text-red-400 hover:bg-red-500/30'
-              : 'hover:bg-muted'
-          }`}
-          onClick={onToggleMute}
-          aria-label={isMuted ? 'Unmute microphone' : 'Mute microphone'}
-        >
-          {isMuted ? <MicOff className="h-6 w-6" /> : <Mic className="h-6 w-6" />}
-        </Button>
+        {voiceState === 'connecting' ? (
+          <Button
+            variant="outline"
+            size="lg"
+            className="rounded-full px-6 h-14 hover:bg-muted"
+            onClick={onEndCall}
+            aria-label="Cancel call"
+          >
+            Cancel
+          </Button>
+        ) : (
+          <>
+            <Button
+              variant="outline"
+              size="lg"
+              className={`rounded-full w-14 h-14 p-0 ${
+                isMuted
+                  ? 'bg-red-500/20 border-red-500/50 text-red-400 hover:bg-red-500/30'
+                  : 'hover:bg-muted'
+              }`}
+              onClick={onToggleMute}
+              aria-label={isMuted ? 'Unmute microphone' : 'Mute microphone'}
+            >
+              {isMuted ? <MicOff className="h-6 w-6" /> : <Mic className="h-6 w-6" />}
+            </Button>
 
-        <Button
-          variant="destructive"
-          size="lg"
-          className="rounded-full w-14 h-14 p-0 bg-red-600 hover:bg-red-700"
-          onClick={onEndCall}
-          aria-label="End call"
-        >
-          <PhoneOff className="h-6 w-6" />
-        </Button>
+            <Button
+              variant="destructive"
+              size="lg"
+              className="rounded-full w-14 h-14 p-0 bg-red-600 hover:bg-red-700"
+              onClick={onEndCall}
+              aria-label="End call"
+            >
+              <PhoneOff className="h-6 w-6" />
+            </Button>
+          </>
+        )}
       </div>
     </div>
   );
