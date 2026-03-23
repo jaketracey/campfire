@@ -89,8 +89,8 @@ export function useVoiceChat({
               userId: uId,
               emotionalState: 'neutral',
               style: 'realistic',
-              width: 832,
-              height: 1248,
+              width: 512,
+              height: 768,
             }),
           });
           console.log('[VoiceChat] Image generated:', result.imageUrl);
