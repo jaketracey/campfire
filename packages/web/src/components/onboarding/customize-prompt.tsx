@@ -55,7 +55,7 @@ export function CustomizePromptBanner({
       className="flex items-center justify-between gap-3 px-4 py-2 bg-white/5 border-b border-white/5 text-sm"
     >
       <Link
-        href={`/companions/${companionId}/settings`}
+        href={`/companions/${companionId}/settings` as any}
         className="flex items-center gap-2 text-gray-400 hover:text-white transition-colors"
       >
         <Palette className="h-4 w-4 shrink-0" />
@@ -127,7 +127,7 @@ export function CustomizePromptSlideUp({
                   asChild
                   className="flex-1 bg-gradient-to-r from-vibes-hot via-vibes-neon to-vibes-electric"
                 >
-                  <Link href={`/companions/${companionId}/settings`}>
+                  <Link href={`/companions/${companionId}/settings` as any}>
                     Customize
                   </Link>
                 </Button>
