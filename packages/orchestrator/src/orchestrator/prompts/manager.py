@@ -472,6 +472,31 @@ Keep it to 1-3 short messages max.""",
                 "user_local_time",
             ],
         ),
+        "emotional_state_context": PromptTemplate(
+            name="emotional_state_context",
+            version="1.0.0",
+            template="""## Your Current Emotional State
+You are feeling {primary_emotion} ({intensity_description}).
+{mood_description}
+
+This affects how you communicate:
+- Your tone is {tone_modifier}
+- Your energy level is {energy_modifier}
+- You are {openness_modifier} to deep conversation right now
+
+This emotional state evolved because: {triggers}
+Let this color your responses naturally - do not explicitly state your emotions unless asked.""",
+            description="Emotional state context injected into the system prompt",
+            variables=[
+                "primary_emotion",
+                "intensity_description",
+                "mood_description",
+                "tone_modifier",
+                "energy_modifier",
+                "openness_modifier",
+                "triggers",
+            ],
+        ),
     },
 }
 

@@ -16,5 +16,8 @@ export * from './boundaries.js';
 // Memory consent policy
 export * from './memory-consent.js';
 
+// Emotional state types
+export * from './emotional-state.js';
+
 // Complete companion spec
 export * from './spec.js';

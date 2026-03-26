@@ -1,5 +1,11 @@
 """Domain models for the orchestrator service."""
 
+from orchestrator.models.emotional_state import (
+    EmotionalDimension,
+    EmotionalState,
+    EmotionalTransition,
+    PrimaryEmotion,
+)
 from orchestrator.models.conversation import (
     CompanionSpec,
     ConversationContext,
@@ -67,6 +73,11 @@ from orchestrator.models.group_chat import (
 )
 
 __all__ = [
+    # Emotional State
+    "EmotionalDimension",
+    "EmotionalState",
+    "EmotionalTransition",
+    "PrimaryEmotion",
     # Conversation
     "CompanionSpec",
     "ConversationContext",

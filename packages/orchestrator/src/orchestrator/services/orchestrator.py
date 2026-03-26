@@ -48,6 +48,7 @@ from orchestrator.providers.sagemaker import SageMakerProvider
 from orchestrator.queue import JobQueue
 from orchestrator.safety.gate import SafetyGate
 from orchestrator.services.context_builder import ContextBuilder
+from orchestrator.services.emotional_state import EmotionalStateService, get_emotional_state_service
 from orchestrator.services.gift_recall import GiftRecallService
 from orchestrator.services.hybrid_search import (
     get_hybrid_search_service,
@@ -196,6 +197,9 @@ class ConversationOrchestrator:
                 kg_traversal_depth=1,
                 rrf_k=60,
             )
+
+        # Initialize emotional state service
+        self._emotional_state_service = get_emotional_state_service(settings)
 
     async def process_message(
         self,
@@ -510,6 +514,27 @@ class ConversationOrchestrator:
                     companion_id=str(companion_spec.id),
                 )
 
+            # Fetch and optionally decay emotional state
+            emotional_state = None
+            try:
+                emotional_state = await self._emotional_state_service.get_current_state(
+                    companion_id=companion_spec.id,
+                    user_id=user_id,
+                )
+                # Apply time-based decay before using the state
+                emotional_state = await self._emotional_state_service.apply_time_decay(
+                    companion_id=companion_spec.id,
+                    user_id=user_id,
+                    companion_spec=companion_spec,
+                )
+            except Exception as e:
+                logger.warning(
+                    "emotional_state_fetch_failed",
+                    error=str(e),
+                    companion_id=str(companion_spec.id),
+                    user_id=str(user_id),
+                )
+
             # Build context with situational tenets
             context = self.context_builder.build_context(
                 session_id=session_id,
@@ -525,7 +550,7 @@ class ConversationOrchestrator:
                 policy_version=self.safety_gate.policy_version,
             )
 
-            # Build messages with gift context, companion self-knowledge, KG context, and temporal context
+            # Build messages with gift context, companion self-knowledge, KG context, temporal context, and emotional state
             messages = self.context_builder.build_messages(
                 context=context,
                 current_user_message=user_message,
@@ -539,6 +564,7 @@ class ConversationOrchestrator:
                 kg_context=kg_context,
                 temporal_context=temporal_ctx,
                 user_display_name=user_display_name,
+                emotional_state=emotional_state,
             )
 
             # Get available tools
@@ -648,6 +674,17 @@ class ConversationOrchestrator:
                 user_message=user_message,
                 assistant_response=cleaned_content,
             )
+            )
+
+            # Fire-and-forget emotional state update based on turn content
+            asyncio.create_task(
+                self._update_emotional_state_after_turn(
+                    companion_id=companion_spec.id,
+                    user_id=user_id,
+                    user_message=user_message,
+                    assistant_response=cleaned_content,
+                    companion_spec=companion_spec,
+                )
             )
 
             # Record gift recall if one was triggered
@@ -1503,6 +1540,81 @@ class ConversationOrchestrator:
             return [cleaned.strip()], image_prompt
 
         return cleaned_messages, image_prompt
+
+    async def _update_emotional_state_after_turn(
+        self,
+        companion_id: UUID,
+        user_id: UUID,
+        user_message: str,
+        assistant_response: str,
+        companion_spec: CompanionSpec | None = None,
+    ) -> None:
+        """Update the companion emotional state after a conversation turn (fire-and-forget)."""
+        try:
+            # Quick heuristic sentiment detection from user message
+            sentiment = self._detect_simple_sentiment(user_message)
+
+            # Build a compact turn summary
+            summary = user_message[:80]
+
+            await self._emotional_state_service.update_after_turn(
+                companion_id=companion_id,
+                user_id=user_id,
+                turn_summary=summary,
+                user_sentiment=sentiment,
+                companion_spec=companion_spec,
+            )
+        except Exception as e:
+            logger.warning(
+                "emotional_state_update_failed",
+                error=str(e),
+                companion_id=str(companion_id),
+                user_id=str(user_id),
+            )
+
+    @staticmethod
+    def _detect_simple_sentiment(text: str) -> str:
+        """Simple keyword-based sentiment detection for emotional state updates.
+
+        This is intentionally lightweight. A more sophisticated approach would use
+        the LLM or a dedicated sentiment model, but this keeps the emotional state
+        update fast and free of extra API calls.
+        """
+        text_lower = text.lower()
+
+        very_positive_markers = [
+            "love", "amazing", "wonderful", "fantastic", "incredible", "best",
+            "thank you so much", "you're the best", "perfect", "!!!",
+        ]
+        positive_markers = [
+            "good", "great", "nice", "happy", "thanks", "glad", "cool",
+            "awesome", "fun", "like", "enjoy", "appreciate", ":)", "haha",
+        ]
+        negative_markers = [
+            "bad", "sad", "annoyed", "frustrated", "tired", "bored",
+            "worried", "stressed", "upset", "angry", "hate", ":(", "ugh",
+        ]
+        very_negative_markers = [
+            "terrible", "awful", "worst", "depressed", "hopeless", "miserable",
+            "devastated", "furious", "heartbroken",
+        ]
+
+        vp = sum(1 for m in very_positive_markers if m in text_lower)
+        p = sum(1 for m in positive_markers if m in text_lower)
+        n = sum(1 for m in negative_markers if m in text_lower)
+        vn = sum(1 for m in very_negative_markers if m in text_lower)
+
+        score = vp * 2 + p - n - vn * 2
+
+        if score >= 3:
+            return "very_positive"
+        if score >= 1:
+            return "positive"
+        if score <= -3:
+            return "very_negative"
+        if score <= -1:
+            return "negative"
+        return "neutral"
 
     async def _extract_knowledge_graph(
         self,

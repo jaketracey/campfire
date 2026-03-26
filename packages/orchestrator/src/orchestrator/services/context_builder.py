@@ -16,6 +16,7 @@ from orchestrator.models.conversation import (
     SessionSummary,
     SituationalTenetMatch,
 )
+from orchestrator.models.emotional_state import EmotionalState
 from orchestrator.models.gifts import GiftMemory, GiftRecallContext
 from orchestrator.models.memory import LongTermMemory, MemoryQuery, CompanionSelfKnowledge
 from orchestrator.services.hybrid_search import KGContextItem
@@ -98,6 +99,7 @@ class ContextBuilder:
         historical_memories: list[MemoryWithValidity] | None = None,
         temporal_context: TemporalContext | None = None,
         user_display_name: str | None = None,
+        emotional_state: EmotionalState | None = None,
         prompt_version: str = "1.0.0",
     ) -> str:
         """Build the system prompt from companion spec and context."""
@@ -169,6 +171,11 @@ class ContextBuilder:
                 user_name=user_display_name,
             )
             full_prompt += f"\n\n{temporal_section}"
+
+        # Add emotional state context (after personality, before memories)
+        if emotional_state:
+            emotional_section = self._format_emotional_state(emotional_state, prompt_version)
+            full_prompt += f"\n\n{emotional_section}"
 
         # Add session context if available
         if session_summary:
@@ -249,6 +256,7 @@ class ContextBuilder:
         historical_memories: list[MemoryWithValidity] | None = None,
         temporal_context: TemporalContext | None = None,
         user_display_name: str | None = None,
+        emotional_state: EmotionalState | None = None,
     ) -> list[dict[str, Any]]:
         """Build the message list for the model API call."""
         messages: list[dict[str, Any]] = []
@@ -272,6 +280,7 @@ class ContextBuilder:
             historical_memories=historical_memories,
             temporal_context=temporal_context,
             user_display_name=user_display_name,
+            emotional_state=emotional_state,
             prompt_version=context.prompt_version,
         )
         messages.append({"role": "system", "content": system_prompt})
@@ -369,6 +378,32 @@ class ContextBuilder:
                 })
 
         return messages
+
+    def _format_emotional_state(
+        self, state: EmotionalState, prompt_version: str = "1.0.0"
+    ) -> str:
+        """Format emotional state for system prompt injection."""
+        triggers_text = "; ".join(state.triggers[-3:]) if state.triggers else "natural baseline"
+        try:
+            return self.prompt_manager.get_prompt(
+                "emotional_state_context",
+                version=prompt_version,
+                primary_emotion=state.primary_emotion.value,
+                intensity_description=state.intensity_description(),
+                mood_description=state.mood_description,
+                tone_modifier=state.tone_modifier(),
+                energy_modifier=state.energy_modifier(),
+                openness_modifier=state.openness_modifier(),
+                triggers=triggers_text,
+            )
+        except KeyError:
+            # Fallback if template is missing (older prompt version)
+            return (
+                f"## Your Current Emotional State\n"
+                f"You are feeling {state.primary_emotion.value} ({state.intensity_description()}).\n"
+                f"{state.mood_description}\n"
+                f"Let this color your responses naturally."
+            )
 
     def _format_session_summary(self, summary: SessionSummary) -> str:
         """Format session summary for context."""
