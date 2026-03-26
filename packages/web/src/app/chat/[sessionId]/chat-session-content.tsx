@@ -7,6 +7,7 @@ import { GiftsPanel } from '@/components/gifts';
 import { FriendsPanel } from '@/components/friends';
 import { GamesModal } from '@/components/games';
 import { VideoRequestModal } from '@/components/video';
+import { VideoCallContainer } from '@/components/video-call';
 import { InsufficientTokensModal, MobileCallOverlay } from '@/components/voice-call';
 import { SupportModal } from '@/components/support/support-modal';
 
@@ -95,6 +96,8 @@ export function ChatSessionContent({
         isWebcamEnabled={chat.isWebcamEnabled}
         isCapturing={chat.isCapturing}
         latestFrame={chat.latestFrame}
+        onVideoCallClick={chat.handleVideoCallClick}
+        isVideoCallActive={chat.isVideoCallActive}
         onShowGallery={() => chat.setShowGallery(true)}
         onShowPersonality={() => chat.setShowPersonality(true)}
         onShowBackstory={() => chat.setShowBackstory(true)}
@@ -212,6 +215,8 @@ export function ChatSessionContent({
             backstoryData={chat.backstoryData}
             isCallActive={chat.isCallActive}
             onCallClick={chat.handleCallClick}
+            isVideoCallActive={chat.isVideoCallActive}
+            onVideoCallClick={chat.handleVideoCallClick}
             onShowPersonality={() => chat.setShowPersonality(true)}
             onShowBackstory={() => chat.setShowBackstory(true)}
             onShowGames={() => chat.setShowGames(true)}
@@ -355,6 +360,27 @@ export function ChatSessionContent({
         open={chat.showSupportModal}
         onOpenChange={chat.setShowSupportModal}
       />
+
+      {/* Video Call Container */}
+      {chat.showVideoCall && (
+        <VideoCallContainer
+          status={chat.videoCallStatus}
+          companionName={chat.companion?.name || 'Companion'}
+          avatarUrl={chat.companion?.avatarUrl || undefined}
+          remoteVideoTrack={chat.remoteVideoTrack}
+          remoteAudioTrack={chat.remoteAudioTrack}
+          duration={chat.videoCallDuration}
+          isMicMuted={chat.isVideoMicMuted}
+          isCameraEnabled={chat.isVideoCameraEnabled}
+          error={chat.videoCallError}
+          callSummary={chat.videoCallSummary}
+          tokenBalance={chat.tokenBalance}
+          onToggleMic={chat.toggleVideoMic}
+          onToggleCamera={chat.toggleVideoCamera}
+          onEndCall={chat.handleVideoCallEnd}
+          onClose={chat.handleVideoCallClose}
+        />
+      )}
     </div>
   );
 }

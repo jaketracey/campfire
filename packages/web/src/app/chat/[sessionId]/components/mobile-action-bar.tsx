@@ -1,7 +1,7 @@
 'use client';
 
 import { Button } from '@/components/ui/button';
-import { Phone, Sparkles, BookOpen, Gamepad2, Gift, Users } from 'lucide-react';
+import { Phone, Video, Sparkles, BookOpen, Gamepad2, Gift, Users } from 'lucide-react';
 import type { CompanionBackstory } from '@/lib/api';
 import type { SignupTrigger } from '@/components/demo/signup-modal';
 
@@ -9,6 +9,8 @@ interface MobileActionBarProps {
   backstoryData: CompanionBackstory | null;
   isCallActive: boolean;
   onCallClick: () => void;
+  isVideoCallActive: boolean;
+  onVideoCallClick: () => void;
   onShowPersonality: () => void;
   onShowBackstory: () => void;
   onShowGames: () => void;
@@ -24,6 +26,8 @@ export function MobileActionBar({
   backstoryData,
   isCallActive,
   onCallClick,
+  isVideoCallActive,
+  onVideoCallClick,
   onShowPersonality,
   onShowBackstory,
   onShowGames,
@@ -47,10 +51,20 @@ export function MobileActionBar({
           variant="outline"
           className="flex-shrink-0 gap-2 px-4 py-3 h-auto border-emerald-700/30 text-emerald-500 hover:bg-emerald-900/20 hover:text-emerald-400"
           onClick={onCallClick}
-          disabled={isCallActive}
+          disabled={isCallActive || isVideoCallActive}
         >
           <Phone className="h-4 w-4" />
           <span className="text-sm">Call</span>
+        </Button>
+
+        <Button
+          variant="outline"
+          className="flex-shrink-0 gap-2 px-4 py-3 h-auto border-violet-700/30 text-violet-500 hover:bg-violet-900/20 hover:text-violet-400"
+          onClick={onVideoCallClick}
+          disabled={isCallActive || isVideoCallActive}
+        >
+          <Video className="h-4 w-4" />
+          <span className="text-sm">Video</span>
         </Button>
 
         <Button

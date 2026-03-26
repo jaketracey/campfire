@@ -12,6 +12,7 @@ import { useVoiceRecording } from '@/hooks/use-voice-recording';
 import { useAudioPlayer } from '@/hooks/use-audio-player';
 import { useWebcamCapture } from '@/hooks/use-webcam-capture';
 import { useVoiceChat } from '@/hooks/use-voice-chat';
+import { useVideoCall } from '@/hooks/use-video-call';
 import { getTokenBalance } from '@/lib/api/tokens';
 import type { Gift } from '@/lib/api/gifts';
 import { toast } from 'sonner';
@@ -317,6 +318,58 @@ TOOLS:
       console.error('[Chat] Voice chat error:', error);
     },
   });
+
+  // Video call hook (LiveKit)
+  const {
+    status: videoCallStatus,
+    isConnected: isVideoCallActive,
+    duration: videoCallDuration,
+    remoteVideoTrack,
+    remoteAudioTrack,
+    isMicMuted: isVideoMicMuted,
+    isCameraEnabled: isVideoCameraEnabled,
+    error: videoCallError,
+    callSummary: videoCallSummary,
+    startVideoCall,
+    endVideoCall,
+    toggleMic: toggleVideoMic,
+    toggleCamera: toggleVideoCamera,
+  } = useVideoCall({
+    companionId: companion?.id ?? null,
+    sessionId,
+    onError: (error) => {
+      console.error('[Chat] Video call error:', error);
+    },
+    onCallEnded: (_duration, _tokensUsed) => {
+      // Refresh token balance after call ends
+      if (user?.id) {
+        getTokenBalance().then(res => {
+          if (res.balance !== undefined) {
+            setTokenBalance(res.balance);
+          }
+        }).catch(() => {});
+      }
+    },
+  });
+
+  const [showVideoCall, setShowVideoCall] = useState(false);
+
+  const handleVideoCallClick = useCallback(() => {
+    if (isDemo && onRequireAuth) {
+      onRequireAuth('call');
+      return;
+    }
+    setShowVideoCall(true);
+    startVideoCall();
+  }, [isDemo, onRequireAuth, startVideoCall]);
+
+  const handleVideoCallEnd = useCallback(async () => {
+    await endVideoCall();
+  }, [endVideoCall]);
+
+  const handleVideoCallClose = useCallback(() => {
+    setShowVideoCall(false);
+  }, []);
 
   // Refs to store stable references to audio functions for WebSocket callbacks
   const queueAudioRef = useRef(queueAudio);
@@ -1382,6 +1435,23 @@ TOOLS:
     getInputFrequencyData,
     getOutputFrequencyData,
     handleCallClick,
+
+    // Video call
+    videoCallStatus,
+    isVideoCallActive,
+    videoCallDuration,
+    remoteVideoTrack,
+    remoteAudioTrack,
+    isVideoMicMuted,
+    isVideoCameraEnabled,
+    videoCallError,
+    videoCallSummary,
+    showVideoCall,
+    handleVideoCallClick,
+    handleVideoCallEnd,
+    handleVideoCallClose,
+    toggleVideoMic,
+    toggleVideoCamera,
 
     // UI toggles
     showDebugPanel,

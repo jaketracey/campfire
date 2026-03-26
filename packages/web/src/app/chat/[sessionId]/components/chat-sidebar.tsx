@@ -8,6 +8,7 @@ import { AnimatedFlame } from '@/components/ui/animated-flame';
 import Link from 'next/link';
 import { CompanionAvatar, CompanionAvatarSwitcher } from '@/components/companion';
 import { CallButton, CallSidebar } from '@/components/voice-call';
+import { VideoCallButton } from '@/components/video-call';
 import { VideoRequestButton } from '@/components/video';
 import { LikeHeartsAnimation } from '@/components/likes/like-hearts-animation';
 import type { Companion } from '@/lib/api';
@@ -57,6 +58,10 @@ interface ChatSidebarProps {
   isWebcamEnabled: boolean;
   isCapturing: boolean;
   latestFrame: string | null;
+
+  // Video call
+  onVideoCallClick: () => void;
+  isVideoCallActive: boolean;
 
   // Modal toggles
   onShowGallery: () => void;
@@ -116,6 +121,8 @@ export function ChatSidebar({
   isWebcamEnabled,
   isCapturing,
   latestFrame,
+  onVideoCallClick,
+  isVideoCallActive,
   onShowGallery,
   onShowPersonality,
   onShowBackstory,
@@ -301,12 +308,13 @@ export function ChatSidebar({
 
           {/* Buttons section - fade out during companion switch */}
           <div className={`w-full transition-opacity duration-300 ${isGeneratingNewCompanion || (isDemo && isSwitchingDemoCompanion) ? 'opacity-0 pointer-events-none' : 'opacity-100'}`}>
-            {/* Call & Video Buttons - Side by side circles */}
+            {/* Call, Video Call & Video Request Buttons - Side by side circles */}
             <div className="flex items-center justify-center gap-4 mt-3">
-              <CallButton onClick={onCallClick} disabled={isCallActive} />
+              <CallButton onClick={onCallClick} disabled={isCallActive || isVideoCallActive} />
+              <VideoCallButton onClick={onVideoCallClick} disabled={isCallActive || isVideoCallActive} />
               <VideoRequestButton
                 onClick={() => handleDemoGuard('video', onShowVideoRequest)}
-                disabled={isCallActive}
+                disabled={isCallActive || isVideoCallActive}
               />
             </div>
 
