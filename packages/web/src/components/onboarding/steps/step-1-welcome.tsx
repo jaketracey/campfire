@@ -1,10 +1,11 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
+import { useRouter } from 'next/navigation';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useOnboardingStore } from '@/stores/onboarding-store';
 import { Button } from '@/components/ui/button';
-import { ArrowRight, Zap } from 'lucide-react';
+import { ArrowRight, Zap, Compass } from 'lucide-react';
 import gsap from 'gsap';
 import { SplitText } from 'gsap/SplitText';
 import { QuickStart } from '@/components/onboarding/quick-start';
@@ -14,6 +15,7 @@ import { trackStartOnboarding, trackOnboardingStep } from '@/lib/analytics/meta-
 gsap.registerPlugin(SplitText);
 
 export function Step1Welcome() {
+  const router = useRouter();
   const { nextStep } = useOnboardingStore();
   const [showQuickStart, setShowQuickStart] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -261,6 +263,23 @@ export function Step1Welcome() {
             <Zap className="mr-2 h-5 w-5 text-vibes-cyan group-hover:animate-pulse" />
             Quick Start
             <span className="ml-2 text-xs text-gray-500 group-hover:text-gray-400">60 seconds</span>
+          </Button>
+        </motion.div>
+
+        {/* Browse pre-made companions */}
+        <motion.div
+          initial={{ opacity: 0, y: 10 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 1.0 }}
+        >
+          <Button
+            variant="ghost"
+            size="lg"
+            onClick={() => router.push('/explore')}
+            className="group text-base px-8 py-6 rounded-full border border-campfire-500/30 hover:border-campfire-500/60 hover:bg-campfire-500/10 hover:shadow-[0_0_30px_rgba(249,115,22,0.2)] transition-all duration-300"
+          >
+            <Compass className="mr-2 h-5 w-5 text-campfire-500 group-hover:animate-pulse" />
+            Browse Companions
           </Button>
         </motion.div>
       </div>

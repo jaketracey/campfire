@@ -15,7 +15,7 @@ import {
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
 import { motion } from 'framer-motion';
-import { MessageCircle, Plus, RotateCcw, Trash2, Settings, BookOpen } from 'lucide-react';
+import { MessageCircle, Plus, RotateCcw, Trash2, Settings, BookOpen, Compass } from 'lucide-react';
 import { BackstoryModal } from '@/components/companion/backstory-modal';
 import { CompanionCardImage } from '@/components/companion/companion-card-image';
 import { useAuth } from '@/hooks/use-auth';
@@ -269,6 +269,32 @@ export default function DashboardPage() {
             </Card>
           </motion.div>
         )}
+
+        {/* Browse Pre-Made Companions CTA */}
+        <motion.div
+          initial={{ opacity: 0, y: 10 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.15 }}
+        >
+          <Link href={'/explore' as Route}>
+            <Card className="bg-white/[0.02] backdrop-blur-sm border border-white/5 hover:border-campfire-500/30 hover:bg-white/[0.04] transition-all duration-300 cursor-pointer group overflow-hidden">
+              <CardContent className="flex items-center gap-4 p-4 sm:p-5">
+                <div className="flex-shrink-0 w-10 h-10 rounded-full bg-campfire-500/10 border border-campfire-500/20 flex items-center justify-center group-hover:bg-campfire-500/20 transition-colors">
+                  <Compass className="h-5 w-5 text-campfire-500" />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <h3 className="text-sm sm:text-base font-bold text-white group-hover:text-campfire-400 transition-colors">
+                    Browse Pre-Made Companions
+                  </h3>
+                  <p className="text-xs sm:text-sm text-gray-500 truncate">
+                    Curated personalities ready to chat instantly
+                  </p>
+                </div>
+                <span className="text-gray-600 group-hover:text-white/40 transition-colors text-sm">&rarr;</span>
+              </CardContent>
+            </Card>
+          </Link>
+        </motion.div>
 
         {/* Continue Conversation - recent sessions for returning users */}
         {isAuthenticated && recentSessions.length > 0 && (

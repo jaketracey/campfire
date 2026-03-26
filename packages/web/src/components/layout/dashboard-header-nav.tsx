@@ -3,7 +3,7 @@
 import { useEffect, useState, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { motion } from 'framer-motion';
-import { User, LogOut, Coins, Check, Users } from 'lucide-react';
+import { User, LogOut, Coins, Check, Users, Compass } from 'lucide-react';
 import Link from 'next/link';
 import type { Route } from 'next';
 import { useAuth } from '@/hooks/use-auth';
@@ -75,9 +75,16 @@ export function DashboardHeaderNav() {
   };
 
   if (!isAuthenticated) {
-    // Unauthed: show Design + Login/Signup
+    // Unauthed: show Explore + Design + Login/Signup
     return (
       <div className="flex flex-wrap items-center justify-end gap-1.5 sm:gap-2">
+        <Link
+          href={'/explore' as Route}
+          className="flex items-center gap-1.5 px-3 sm:px-4 py-2 rounded-full bg-white/[0.05] border border-white/10 hover:bg-white/[0.1] hover:border-white/20 transition-all group"
+        >
+          <Compass className="h-4 w-4 text-campfire-500 group-hover:text-campfire-400 transition-colors" />
+          <span className="text-xs sm:text-sm font-medium text-gray-400 group-hover:text-white transition-colors hidden sm:inline">Explore</span>
+        </Link>
         <motion.button
           onClick={handleDesignNewCompanion}
           className="relative h-8 sm:h-9 px-3 sm:px-4 rounded-full bg-gradient-to-b from-white via-gray-100 to-gray-300 text-gray-900 font-bold text-xs sm:text-sm shadow-[0_4px_20px_rgba(255,255,255,0.2),inset_0_1px_0_rgba(255,255,255,0.8),inset_0_-2px_4px_rgba(0,0,0,0.1)] border border-white/50 transition-all overflow-hidden"
@@ -115,6 +122,14 @@ export function DashboardHeaderNav() {
 
   return (
     <div className="flex flex-wrap items-center justify-end gap-1.5 sm:gap-2">
+      {/* Explore companions */}
+      <Link
+        href={'/explore' as Route}
+        className="flex items-center gap-1.5 px-3 sm:px-4 py-2 rounded-full bg-white/[0.05] border border-white/10 hover:bg-white/[0.1] hover:border-white/20 transition-all group"
+      >
+        <Compass className="h-4 w-4 text-campfire-500 group-hover:text-campfire-400 transition-colors" />
+        <span className="text-xs sm:text-sm font-medium text-gray-400 group-hover:text-white transition-colors hidden sm:inline">Explore</span>
+      </Link>
       {/* Design new companion */}
       <motion.button
         onClick={handleDesignNewCompanion}
