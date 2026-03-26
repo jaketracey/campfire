@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
 import { AnimatePresence, motion } from 'framer-motion';
 import { useOnboardingStore } from '@/stores/onboarding-store';
@@ -10,6 +10,7 @@ import { Step3Visuals } from '@/components/onboarding/steps/step-3-visuals';
 import { Step4Archetype } from '@/components/onboarding/steps/step-4-archetype';
 import { Step7Voice as Step5Voice } from '@/components/onboarding/steps/step-7-voice';
 import { Step9Review as Step6Review } from '@/components/onboarding/steps/step-9-review';
+import { QuickMeetFlow } from '@/components/onboarding/quick-meet';
 import { WelcomeTransition } from '@/components/auth/welcome-transition';
 import {
   FULL_STEP_LABEL_MIN,
@@ -19,6 +20,8 @@ import {
   fullReviewStepProgress,
   quickStartProgress,
 } from '@/components/onboarding/onboarding-flow';
+
+type OnboardMode = 'quick-meet' | 'wizard';
 
 export default function OnboardingPage() {
   const searchParams = useSearchParams();
@@ -33,10 +36,29 @@ export default function OnboardingPage() {
     sessionId,
   } = useOnboardingStore();
 
+  // Determine the onboarding mode.
+  // - If the URL has a `step` param, show the old wizard.
+  // - If the URL has `mode=wizard`, show the old wizard at step 1.
+  // - Otherwise, default to the new quick-meet flow.
+  const stepParam = searchParams.get('step');
+  const modeParam = searchParams.get('mode');
+  const [mode, setMode] = useState<OnboardMode>(
+    stepParam || modeParam === 'wizard' ? 'wizard' : 'quick-meet'
+  );
+
+  // Keep mode in sync with URL changes (e.g. browser back/forward).
+  useEffect(() => {
+    const sp = searchParams.get('step');
+    const mp = searchParams.get('mode');
+    if (sp || mp === 'wizard') {
+      setMode('wizard');
+    }
+  }, [searchParams]);
+
   // Reset onboarding state when page mounts fresh (only if no step param and no active draft flow)
   useEffect(() => {
-    const stepParam = searchParams.get('step');
-    if (!stepParam) {
+    const sp = searchParams.get('step');
+    if (!sp) {
       if (!quickStartActive && !companionId && !sessionId) {
         reset();
       }
@@ -44,14 +66,10 @@ export default function OnboardingPage() {
   }, [quickStartActive, companionId, reset, searchParams, sessionId]);
 
   // Sync URL to step state on mount and popstate (browser back/forward)
-  // Note: We intentionally exclude currentStep from deps to avoid a feedback loop.
-  // This effect should only run when the URL changes (browser back/forward/direct navigation),
-  // not when the store changes (which is handled by the next effect).
   useEffect(() => {
-    const stepParam = searchParams.get('step');
-    if (stepParam) {
-      const stepNum = clampFullStep(parseInt(stepParam, 10));
-      // Use getState() to get current value without adding dependency
+    const sp = searchParams.get('step');
+    if (sp) {
+      const stepNum = clampFullStep(parseInt(sp, 10));
       const current = useOnboardingStore.getState().currentStep;
       if (stepNum !== current) {
         setStep(stepNum);
@@ -62,22 +80,28 @@ export default function OnboardingPage() {
 
   // Update URL when step changes (push to history for back/forward support)
   useEffect(() => {
-    const stepParam = searchParams.get('step');
+    if (mode !== 'wizard') return;
+
+    const sp = searchParams.get('step');
     const currentStepStr = currentStep.toString();
 
-    // Only update URL if step changed and we're past the welcome step
-    if (currentStep > 1 && stepParam !== currentStepStr) {
+    if (currentStep > 1 && sp !== currentStepStr) {
       const newParams = new URLSearchParams(searchParams.toString());
       newParams.set('step', currentStepStr);
       router.push(`/onboard?${newParams.toString()}`, { scroll: false });
-    } else if (currentStep === 1 && stepParam) {
-      // Remove step param when going back to welcome
+    } else if (currentStep === 1 && sp) {
       const newParams = new URLSearchParams(searchParams.toString());
       newParams.delete('step');
       const queryString = newParams.toString();
       router.push(queryString ? `/onboard?${queryString}` : '/onboard', { scroll: false });
     }
-  }, [currentStep, searchParams, router]);
+  }, [currentStep, searchParams, router, mode]);
+
+  const handleDesignOwn = () => {
+    setMode('wizard');
+    setStep(2);
+    router.push('/onboard?step=2', { scroll: false });
+  };
 
   const renderStep = () => {
     switch (currentStep) {
@@ -102,9 +126,35 @@ export default function OnboardingPage() {
   const quickStartProgressPercent = quickStartProgress(quickStartStep);
 
   // Show stepper for normal flow (steps 2-5) OR quick start carousel
-  const showNormalStepper = currentStep > 1 && currentStep < 6;
+  const showNormalStepper = mode === 'wizard' && currentStep > 1 && currentStep < 6;
   const showQuickStartStepper = quickStartActive;
 
+  // ---- Quick-meet flow (default) ----
+  if (mode === 'quick-meet') {
+    return (
+      <WelcomeTransition>
+        <div className="relative min-h-screen w-full overflow-hidden text-white flex flex-col font-sans">
+          <main className="relative z-10 flex-1 flex flex-col items-center justify-center p-4 md:p-8 pt-20">
+            <motion.div
+              initial={{ opacity: 0, y: 30, scale: 0.95, filter: 'blur(20px)' }}
+              animate={{ opacity: 1, y: 0, scale: 1, filter: 'blur(0px)' }}
+              transition={{
+                duration: 0.6,
+                ease: [0.22, 1, 0.36, 1],
+                opacity: { duration: 0.4 },
+              }}
+              className="w-full max-w-4xl relative z-20"
+              data-hides-logo
+            >
+              <QuickMeetFlow onDesignOwn={handleDesignOwn} />
+            </motion.div>
+          </main>
+        </div>
+      </WelcomeTransition>
+    );
+  }
+
+  // ---- Full wizard flow ----
   return (
     <WelcomeTransition>
     <div className="relative min-h-screen w-full overflow-hidden text-white flex flex-col font-sans">

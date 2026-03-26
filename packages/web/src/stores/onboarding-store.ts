@@ -180,6 +180,9 @@ export interface OnboardingState {
   quickStartActive: boolean;
   quickStartStep: number; // 0-3 for Identity, Visuals, Archetype, Voice
 
+  // Quick-meet flow state (conversational onboarding)
+  quickMeetVibeId: string | null;
+
   // Readiness flags that represent onboarding progression explicitly.
   companionReady: boolean;
   companionActive: boolean;
@@ -216,6 +219,7 @@ export interface OnboardingState {
   setAnchorStreamStarted: (started: boolean) => void;
   setQuickStartActive: (active: boolean) => void;
   setQuickStartStep: (step: number) => void;
+  setQuickMeetVibeId: (vibeId: string | null) => void;
   setCompanionReady: (ready: boolean) => void;
   setCompanionActive: (active: boolean) => void;
   setAnchorReady: (ready: boolean) => void;
@@ -286,6 +290,7 @@ export const useOnboardingStore = create<OnboardingState>()(
       anchorStreamStarted: false,
       quickStartActive: false,
       quickStartStep: 0,
+      quickMeetVibeId: null,
       companionReady: false,
       companionActive: false,
       anchorReady: false,
@@ -406,6 +411,7 @@ export const useOnboardingStore = create<OnboardingState>()(
       setAnchorStreamStarted: (started) => set({ anchorStreamStarted: started }),
       setQuickStartActive: (active) => set({ quickStartActive: active }),
       setQuickStartStep: (step) => set({ quickStartStep: step }),
+      setQuickMeetVibeId: (vibeId) => set({ quickMeetVibeId: vibeId }),
       setAppearanceChangedAfterGeneration: (changed) => set({ appearanceChangedAfterGeneration: changed }),
       setAnchorAppearanceSnapshot: (appearance) => set({ anchorAppearanceSnapshot: appearance }),
       setBackstoryContext: (context) => set({ backstoryContext: context }),
@@ -435,6 +441,7 @@ export const useOnboardingStore = create<OnboardingState>()(
           anchorStreamStarted: false,
           quickStartActive: false,
           quickStartStep: 0,
+          quickMeetVibeId: null,
           companionReady: false,
           companionActive: false,
           anchorReady: false,
