@@ -19,6 +19,7 @@ async function bootstrap() {
   const { InfluencerSampleGenerationWorker } = await import('./influencer/worker.js');
   const { AdSpendSyncWorker, LtvCalculationWorker, createAdSpendSyncQueue, createLtvCalculationQueue } = await import('./ads/index.js');
   const { MemoryDecayWorker, MemoryExpirationWorker, createMemoryDecayQueue, createMemoryExpirationQueue } = await import('./memory/index.js');
+  const { ProactiveOutreachWorker, createProactiveOutreachQueue } = await import('./proactive/index.js');
   const { createDbClient } = await import('./db/client.js');
   const { createS3Client } = await import('./storage/s3.js');
   const { createHealthServer } = await import('./health.js');
@@ -163,6 +164,17 @@ async function bootstrap() {
     concurrency: 1,
   });
 
+  // Proactive outreach worker - evaluates and sends companion check-ins
+  const proactiveOutreachWorker = new ProactiveOutreachWorker({
+    connection,
+    db,
+    logger: logger.child({ worker: 'proactive-outreach' }),
+    orchestratorUrl: env.ORCHESTRATOR_URL,
+    internalServiceKey: process.env.INTERNAL_SERVICE_KEY || 'dev-internal-service-key',
+    gatewayUrl: process.env.GATEWAY_URL || 'http://localhost:3002',
+    concurrency: 1,
+  });
+
   // Start all workers
   await Promise.all([
     vaultWorker.start(),
@@ -179,6 +191,7 @@ async function bootstrap() {
     ltvCalculationWorker.start(),
     memoryDecayWorker.start(),
     memoryExpirationWorker.start(),
+    proactiveOutreachWorker.start(),
   ].filter(Boolean));
 
   logger.info('All projection workers started successfully');
@@ -188,7 +201,7 @@ async function bootstrap() {
     'vault', 'knowledge-graph', 'summary', 'personality-profile',
     'email', 'image-rendition', 'video-generation', 'gift-generation',
     'influencer-sample-generation', 'ad-spend-sync', 'ltv-calculation',
-    'memory-decay', 'memory-expiration',
+    'memory-decay', 'memory-expiration', 'proactive-outreach',
     ...(embeddingWorker ? ['embedding'] : []),
   ];
   const healthServer = createHealthServer({
@@ -221,6 +234,7 @@ async function bootstrap() {
       ltvCalculationWorker.stop(),
       memoryDecayWorker.stop(),
       memoryExpirationWorker.stop(),
+      proactiveOutreachWorker.stop(),
     ].filter(Boolean));
     await connection.quit();
     process.exit(0);
@@ -236,6 +250,7 @@ async function bootstrap() {
     const ltvQueue = createLtvCalculationQueue(redisConnection);
     const memoryDecayQueue = createMemoryDecayQueue(redisConnection);
     const memoryExpirationQueue = createMemoryExpirationQueue(redisConnection);
+    const proactiveOutreachQueue = createProactiveOutreachQueue(redisConnection);
 
     // Schedule daily ad spend sync at 6 AM UTC
     // Syncs yesterday's data from all active ad accounts
@@ -312,6 +327,25 @@ async function bootstrap() {
       }
     );
     log.info('Scheduled hourly memory expiration');
+
+    // Schedule proactive outreach evaluation every 30 minutes
+    // Evaluates all active user-companion pairs for check-in opportunities
+    await proactiveOutreachQueue.upsertJobScheduler(
+      'periodic-proactive-outreach',
+      {
+        pattern: '*/30 * * * *', // Every 30 minutes
+        tz: 'UTC',
+      },
+      {
+        name: 'periodic-proactive-outreach',
+        data: {}, // Empty data = evaluate all active pairs
+        opts: {
+          attempts: 3,
+          backoff: { type: 'exponential', delay: 60000 },
+        },
+      }
+    );
+    log.info('Scheduled proactive outreach evaluation every 30 minutes');
   }
 
   process.on('SIGTERM', shutdown);

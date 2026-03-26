@@ -46,6 +46,7 @@ from orchestrator.api.health import router as health_router
 from orchestrator.api.providers import router as providers_router
 from orchestrator.api.config import router as config_router
 from orchestrator.api.temporal import router as temporal_router
+from orchestrator.api.proactive import router as proactive_router
 from orchestrator.video.router import router as video_router
 from orchestrator.utils import build_tool_context_metadata, normalize_tool_name
 
@@ -559,6 +560,7 @@ class AppState:
     routing_config_service: RoutingConfigService | None
     image_routing_config_service: ImageRoutingConfigService | None
     image_router: ImageModelRouter | None
+    proactive_service: "ProactiveOutreachService | None"
     comfyui_provider: ComfyUIProvider | None
     fal_provider: FalProvider | None
     fal_video_provider: FalVideoProvider | None
@@ -750,6 +752,16 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         fallback_provider=fallback_provider,
     )
 
+    # Initialize proactive outreach service
+    from orchestrator.services.proactive import ProactiveOutreachService
+
+    app_state.proactive_service = ProactiveOutreachService(
+        settings=settings,
+        prompt_manager=app_state.prompt_manager,
+        llm_provider=primary_provider or fallback_provider,
+    )
+    logger.info("proactive_outreach_service_initialized")
+
     # Initialize image providers
     app_state.comfyui_provider = None
     app_state.fal_provider = None
@@ -879,6 +891,7 @@ app.include_router(providers_router)
 app.include_router(config_router)
 app.include_router(temporal_router)
 app.include_router(video_router)
+app.include_router(proactive_router)
 
 
 @app.get("/health", response_model=HealthResponse)

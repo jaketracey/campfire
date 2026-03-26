@@ -61,6 +61,7 @@ import { adminCompanionsRoutes } from './admin-companions.js';
 import { adminMemoriesRoutes } from './admin-memories.js';
 import { analyticsInternalRoutes } from './analytics-internal.js';
 import { videoCallsRoutes } from './video-calls.js';
+import { outreachRoutes, outreachConfigRoutes } from './outreach.js';
 import { logger } from '../observability/logger.js';
 
 /**
@@ -207,6 +208,12 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
 
       // Video call routes (LiveKit-based video chat)
       await api.register(videoCallsRoutes, { prefix: '/video-calls' });
+
+      // Proactive outreach routes
+      await api.register(outreachRoutes, { prefix: '/outreach' });
+
+      // Outreach config routes (nested under /companions)
+      await api.register(outreachConfigRoutes, { prefix: '/companions' });
 
       // Public SEO routes (for SSR/sitemap)
       await api.register(seoPublicRoutes, { prefix: '/public' });

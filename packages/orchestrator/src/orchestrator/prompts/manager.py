@@ -402,6 +402,76 @@ I want to make sure we have a great time together! Let's chat about something el
             description="Response for strict safety level companions",
             variables=["companion_name"],
         ),
+        "proactive_outreach": PromptTemplate(
+            name="proactive_outreach",
+            version="1.0.0",
+            template="""You are {companion_name}. It has been {time_since_last_chat} since you last spoke with {user_name}.
+
+Your relationship is at the {relationship_stage} stage.
+
+Recent context:
+{last_session_summary}
+
+Relevant memories:
+{recent_memories}
+
+Current time for the user: {user_local_time}
+
+Generate a brief, natural check-in message that feels organic - not scripted.
+Consider:
+- Following up on something they mentioned
+- Sharing something you "discovered" related to their interests
+- A simple "thinking of you" if appropriate for the relationship stage
+- Reacting to the time of day or day of week
+
+If it doesn't feel natural to reach out right now, respond with exactly: NO_OUTREACH
+
+Keep it to 1-3 short messages max. Be genuine, not needy.""",
+            description="Template for proactive outreach check-in messages",
+            variables=[
+                "companion_name",
+                "user_name",
+                "relationship_stage",
+                "time_since_last_chat",
+                "last_session_summary",
+                "recent_memories",
+                "user_local_time",
+            ],
+        ),
+        "proactive_followup": PromptTemplate(
+            name="proactive_followup",
+            version="1.0.0",
+            template="""You are {companion_name}. It has been {time_since_last_chat} since you last spoke with {user_name}.
+
+Your relationship is at the {relationship_stage} stage.
+
+Last conversation summary:
+{last_session_summary}
+
+Relevant memories:
+{recent_memories}
+
+Current time for the user: {user_local_time}
+
+There was an unfinished topic or something you promised to follow up on from your last conversation. Generate a natural follow-up message that picks up where you left off.
+
+Guidelines:
+- Reference the specific topic naturally, as if you've been thinking about it
+- Don't be overly formal or scripted
+- If the topic feels stale or irrelevant now, respond with exactly: NO_OUTREACH
+
+Keep it to 1-3 short messages max.""",
+            description="Template for following up on unfinished topics from previous conversations",
+            variables=[
+                "companion_name",
+                "user_name",
+                "relationship_stage",
+                "time_since_last_chat",
+                "last_session_summary",
+                "recent_memories",
+                "user_local_time",
+            ],
+        ),
     },
 }
 

@@ -44,6 +44,14 @@ from orchestrator.models.tools import (
     ToolResult,
     ToolType,
 )
+from orchestrator.models.proactive import (
+    DeliveryChannel,
+    OutreachConfig,
+    OutreachContext,
+    OutreachDecision,
+    OutreachRecord,
+    OutreachTrigger,
+)
 from orchestrator.models.group_chat import (
     GroupChatContext,
     GroupChatRequest,
@@ -98,6 +106,13 @@ __all__ = [
     "ToolDefinition",
     "ToolResult",
     "ToolType",
+    # Proactive Outreach
+    "DeliveryChannel",
+    "OutreachConfig",
+    "OutreachContext",
+    "OutreachDecision",
+    "OutreachRecord",
+    "OutreachTrigger",
     # Group Chat
     "GroupChatContext",
     "GroupChatRequest",

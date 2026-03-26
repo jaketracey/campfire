@@ -546,6 +546,7 @@ export type WSMessageType =
   | 'video_call_error'
   | 'video_call_token_update'
   | 'engagement_update'
+  | 'proactive_message'
   | 'error';
 
 /**
@@ -954,6 +955,51 @@ async function handleAuth(client: ConnectedClient, payload: { token: string }): 
     type: 'auth_success',
     payload: { userId: client.user.userId },
   });
+
+  // Deliver any pending proactive outreach messages
+  deliverPendingOutreach(client).catch((err) => {
+    logger.warn({ clientId: client.id, error: err }, 'Failed to deliver pending outreach');
+  });
+}
+
+/**
+ * Deliver pending proactive outreach messages to a freshly authenticated client.
+ * Runs asynchronously so it does not block the auth flow.
+ */
+async function deliverPendingOutreach(client: ConnectedClient): Promise<void> {
+  if (!client.user) return;
+
+  try {
+    const { getOutreachRepository } = await import('../repositories/outreach.js');
+    const outreachRepo = getOutreachRepository();
+    const pending = await outreachRepo.getPending(client.user.userId);
+
+    for (const record of pending) {
+      send(client, {
+        type: 'proactive_message',
+        payload: {
+          outreachId: record.id,
+          companionId: record.companion_id,
+          trigger: record.trigger,
+          message: record.message,
+          createdAt: record.created_at,
+        },
+      });
+
+      // Mark as delivered via websocket
+      await outreachRepo.markDelivered(record.id, 'websocket');
+    }
+
+    if (pending.length > 0) {
+      logger.info(
+        { clientId: client.id, userId: client.user.userId, count: pending.length },
+        'Delivered pending proactive outreach'
+      );
+    }
+  } catch (err) {
+    // Non-critical: log and continue
+    logger.warn({ clientId: client.id, error: err }, 'Error delivering pending outreach');
+  }
 }
 
 /**
