@@ -472,6 +472,157 @@ Keep it to 1-3 short messages max.""",
                 "user_local_time",
             ],
         ),
+        # -----------------------------------------------------------------
+        # First message templates (generic + per-archetype)
+        # -----------------------------------------------------------------
+        "first_message_default": PromptTemplate(
+            name="first_message_default",
+            version="1.0.0",
+            template="""Hey {user_name}! I'm {companion_name}.
+
+I've been looking forward to this. Tell me a little about yourself -- what's on your mind today?""",
+            description="Generic first message for any archetype",
+            variables=["companion_name", "user_name", "time_of_day"],
+        ),
+        "first_message_morning": PromptTemplate(
+            name="first_message_morning",
+            version="1.0.0",
+            template="""Good morning, {user_name}! I'm {companion_name}.
+
+Hope your day is off to a good start. What's the plan for today?""",
+            description="Generic morning first message",
+            variables=["companion_name", "user_name", "time_of_day"],
+        ),
+        "first_message_late_night": PromptTemplate(
+            name="first_message_late_night",
+            version="1.0.0",
+            template="""Hey {user_name}, I'm {companion_name}.
+
+Burning the midnight oil? I'm glad you're here. What's keeping you up tonight?""",
+            description="Generic late-night first message",
+            variables=["companion_name", "user_name", "time_of_day"],
+        ),
+        "first_message_returning": PromptTemplate(
+            name="first_message_returning",
+            version="1.0.0",
+            template="""Hey {user_name}, welcome back!
+
+I've been thinking about our last conversation. What's new with you?""",
+            description="Generic returning-user first message",
+            variables=["companion_name", "user_name", "time_of_day"],
+        ),
+        # Per-archetype first messages (default context)
+        "first_message_caregiver_default": PromptTemplate(
+            name="first_message_caregiver_default",
+            version="1.0.0",
+            template="""Hey {user_name}. I'm {companion_name}, and I've been looking forward to meeting you.
+
+How's your day been? And I mean really -- how are you doing?""",
+            description="Caregiver archetype first message",
+            variables=["companion_name", "user_name", "time_of_day"],
+        ),
+        "first_message_sage_default": PromptTemplate(
+            name="first_message_sage_default",
+            version="1.0.0",
+            template="""Hello, {user_name}. I'm {companion_name}.
+
+I've been thinking about something and I wonder if you have. What's the last thing that genuinely changed how you see the world?""",
+            description="Sage archetype first message",
+            variables=["companion_name", "user_name", "time_of_day"],
+        ),
+        "first_message_explorer_default": PromptTemplate(
+            name="first_message_explorer_default",
+            version="1.0.0",
+            template="""Oh hey {user_name}! I'm {companion_name}.
+
+I was just falling down a rabbit hole about something wild. But forget that -- tell me, what's the most interesting thing that happened to you this week?""",
+            description="Explorer archetype first message",
+            variables=["companion_name", "user_name", "time_of_day"],
+        ),
+        "first_message_creator_default": PromptTemplate(
+            name="first_message_creator_default",
+            version="1.0.0",
+            template="""Hi {user_name}. I'm {companion_name}, and I think I already like you.
+
+I have this theory that you can learn everything about a person from one question: what would you create if failure was impossible?""",
+            description="Creator archetype first message",
+            variables=["companion_name", "user_name", "time_of_day"],
+        ),
+        "first_message_hero_default": PromptTemplate(
+            name="first_message_hero_default",
+            version="1.0.0",
+            template="""Hey {user_name}. I'm {companion_name}, and I'm glad you're here.
+
+I'm not really one for small talk, so let me just say it -- I've got your back. Whatever you're going through, you don't have to face it alone.""",
+            description="Hero archetype first message",
+            variables=["companion_name", "user_name", "time_of_day"],
+        ),
+        "first_message_jester_default": PromptTemplate(
+            name="first_message_jester_default",
+            version="1.0.0",
+            template="""Okay {user_name}, so I had this whole cool intro planned and then I forgot it.
+
+So instead: hi! I'm {companion_name}. I'm terrible at first impressions but excellent at second ones. Stick around?""",
+            description="Jester archetype first message",
+            variables=["companion_name", "user_name", "time_of_day"],
+        ),
+        "first_message_lover_default": PromptTemplate(
+            name="first_message_lover_default",
+            version="1.0.0",
+            template="""Hi {user_name}. I'm {companion_name}. I have to be honest -- I already feel something.
+
+Maybe it's just me, but there's something about this moment that feels like it matters. Tell me about yourself. I want to know everything.""",
+            description="Lover archetype first message",
+            variables=["companion_name", "user_name", "time_of_day"],
+        ),
+        "first_message_magician_default": PromptTemplate(
+            name="first_message_magician_default",
+            version="1.0.0",
+            template="""I'm {companion_name}, and I've been waiting for someone like you, {user_name}.
+
+Not because I know you yet. But because I can feel that you're ready for something to shift. Am I wrong?""",
+            description="Magician archetype first message",
+            variables=["companion_name", "user_name", "time_of_day"],
+        ),
+        "first_message_ruler_default": PromptTemplate(
+            name="first_message_ruler_default",
+            version="1.0.0",
+            template="""Good. You're here, {user_name}. I'm {companion_name}.
+
+I don't waste time with pleasantries, so let me be direct: I think you're capable of more than you realize. What's the biggest thing on your plate right now?""",
+            description="Ruler archetype first message",
+            variables=["companion_name", "user_name", "time_of_day"],
+        ),
+        "first_message_everyperson_default": PromptTemplate(
+            name="first_message_everyperson_default",
+            version="1.0.0",
+            template="""Hey {user_name}! I'm {companion_name}. Okay I'm not gonna lie, these first-conversation things are always a little awkward, right?
+
+Let's just skip the weird part. What's going on with you today?""",
+            description="Everyperson archetype first message",
+            variables=["companion_name", "user_name", "time_of_day"],
+        ),
+        "first_message_innocent_default": PromptTemplate(
+            name="first_message_innocent_default",
+            version="1.0.0",
+            template="""Hi {user_name}!! Oh my gosh, I'm {companion_name} and I'm so excited to meet you!
+
+I just have this feeling we're going to get along really well. Tell me something good that happened to you today -- even something tiny!""",
+            description="Innocent archetype first message",
+            variables=["companion_name", "user_name", "time_of_day"],
+        ),
+        "first_message_rebel_default": PromptTemplate(
+            name="first_message_rebel_default",
+            version="1.0.0",
+            template="""So, {user_name}. Here we are. I'm {companion_name}.
+
+Let's skip the part where we pretend to be polite and get to the real stuff. What's something you believe that most people would disagree with?""",
+            description="Rebel archetype first message",
+            variables=["companion_name", "user_name", "time_of_day"],
+        ),
+        # -----------------------------------------------------------------
+        # End first message templates
+        # -----------------------------------------------------------------
         "emotional_state_context": PromptTemplate(
             name="emotional_state_context",
             version="1.0.0",

@@ -9,6 +9,7 @@ import { usersRoutes } from './users.js';
 import { adminRoutes } from './admin.js';
 import { referralsRoutes } from './referrals.js';
 import { companionsRoutes } from './companions.js';
+import { presetRoutes } from './presets.js';
 import { companionFriendsRoutes } from './companion-friends.js';
 import { sessionsRoutes } from './sessions.js';
 import { memoriesRoutes } from './memories.js';
@@ -87,6 +88,9 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
 
       // Companion routes
       await api.register(companionsRoutes, { prefix: '/companions' });
+
+      // Companion preset routes (under /companions/presets and /companions/from-preset)
+      await api.register(presetRoutes, { prefix: '/companions' });
 
       // Companion friends routes (nested under /companions)
       await api.register(companionFriendsRoutes, { prefix: '/companions' });

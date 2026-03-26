@@ -19,5 +19,8 @@ export * from './memory-consent.js';
 // Emotional state types
 export * from './emotional-state.js';
 
+// Archetype presets
+export * from './archetype-presets.js';
+
 // Complete companion spec
 export * from './spec.js';
