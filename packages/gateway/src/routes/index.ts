@@ -59,6 +59,7 @@ import { adminPromptsRoutes } from './admin-prompts.js';
 import { adminInfluencerModelsRoutes } from './admin-influencer-models.js';
 import { adminCompanionsRoutes } from './admin-companions.js';
 import { adminMemoriesRoutes } from './admin-memories.js';
+import { analyticsInternalRoutes } from './analytics-internal.js';
 import { logger } from '../observability/logger.js';
 
 /**
@@ -199,6 +200,9 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
 
       // Admin memory maintenance routes (decay/expiration)
       await api.register(adminMemoriesRoutes, { prefix: '/admin/memories' });
+
+      // Analytics internal routes (service-to-service)
+      await api.register(analyticsInternalRoutes, { prefix: '/analytics' });
 
       // Public SEO routes (for SSR/sitemap)
       await api.register(seoPublicRoutes, { prefix: '/public' });

@@ -32,6 +32,7 @@ class ToolType(str, Enum):
     GAME_RESIGN = "game_resign"
     INVITE_FRIEND = "invite_friend"
     DISMISS_FRIEND = "dismiss_friend"
+    RELATIONSHIP_ANALYTICS = "relationship_analytics"
     CUSTOM = "custom"
 
 
@@ -510,6 +511,44 @@ MEMORY_DELETE_TOOL = ToolDefinition(
     required_params=["memory_id"],
 )
 
+WEB_SEARCH_TOOL = ToolDefinition(
+    name="web_search",
+    tool_type=ToolType.WEB_SEARCH,
+    description="Search the web for current information on a topic. Use when the user asks about recent events, facts you're unsure about, or anything that benefits from up-to-date information.",
+    parameters={
+        "query": {
+            "type": "string",
+            "description": "The search query to look up on the web",
+        },
+        "max_results": {
+            "type": "integer",
+            "description": "Maximum number of search results to return",
+            "default": 5,
+        },
+    },
+    required_params=["query"],
+    timeout_seconds=15.0,
+)
+
+RELATIONSHIP_ANALYTICS_TOOL = ToolDefinition(
+    name="relationship_analytics",
+    tool_type=ToolType.RELATIONSHIP_ANALYTICS,
+    description="Retrieve analytics about the relationship between a companion and the user, including conversation history stats, emotional patterns, and topic trends. Use to reflect on the relationship or answer questions about shared history.",
+    parameters={
+        "companion_id": {
+            "type": "string",
+            "description": "The UUID of the companion to analyze the relationship for",
+        },
+        "analysis_type": {
+            "type": "string",
+            "enum": ["summary", "emotional_trajectory", "topic_history", "interaction_stats"],
+            "description": "The type of analysis to perform: 'summary' for overall stats, 'emotional_trajectory' for emotional patterns, 'topic_history' for discussed topics, 'interaction_stats' for frequency and timing data",
+        },
+    },
+    required_params=["companion_id", "analysis_type"],
+    timeout_seconds=15.0,
+)
+
 # Registry of all available tools
 TOOL_REGISTRY: dict[str, ToolDefinition] = {
     "memory_read": MEMORY_READ_TOOL,
@@ -529,4 +568,6 @@ TOOL_REGISTRY: dict[str, ToolDefinition] = {
     "game_resign": GAME_RESIGN_TOOL,
     "invite_friend": INVITE_FRIEND_TOOL,
     "dismiss_friend": DISMISS_FRIEND_TOOL,
+    "web_search": WEB_SEARCH_TOOL,
+    "relationship_analytics": RELATIONSHIP_ANALYTICS_TOOL,
 }

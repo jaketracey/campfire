@@ -5,6 +5,14 @@
     "generate_image": "image_generation",
     "selfie": "image_generation",
     "photo": "image_generation",
-    "webcam": "image_generation"
+    "webcam": "image_generation",
+    "search": "web_search",
+    "google": "web_search",
+    "look_up": "web_search",
+    "lookup": "web_search",
+    "browse": "web_search",
+    "relationship_stats": "relationship_analytics",
+    "our_history": "relationship_analytics",
+    "relationship_summary": "relationship_analytics"
   }
 }

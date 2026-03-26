@@ -36,6 +36,10 @@ from orchestrator.tools.group_handlers import (
     DismissFriendHandler,
     InviteFriendHandler,
 )
+from orchestrator.tools.relationship_analytics_handler import (
+    RelationshipAnalyticsHandler,
+)
+from orchestrator.tools.web_search_handler import WebSearchHandler
 
 logger = structlog.get_logger()
 
@@ -109,6 +113,14 @@ class ToolRouter:
                 self.settings, self.event_emitter, self.http_client
             ),
             DismissFriendHandler(
+                self.settings, self.event_emitter, self.http_client
+            ),
+            # Search handler
+            WebSearchHandler(
+                self.settings, self.event_emitter, self.http_client
+            ),
+            # Relationship analytics handler
+            RelationshipAnalyticsHandler(
                 self.settings, self.event_emitter, self.http_client
             ),
         ]
