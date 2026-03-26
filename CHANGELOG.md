@@ -5,6 +5,23 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [v0.5.0] - 2026-03-26
+
+## What's Changed
+
+### Features
+- feat: add persistent emotional state engine for companions (99c27e9)
+- feat(messaging): add Telegram bot integration framework for AI companions (7ed41ca)
+- feat(proactive): add proactive outreach system for companion-initiated conversations (c7acb1d)
+- feat: add temporal context awareness for companions (589f241)
+
+### Bug Fixes
+- fix(gateway): resolve TypeScript errors in emotional-state, outreach, and telegram routes (21d5086)
+
+### Contributors
+- @Jake Tracey
+
+
 ## [v0.4.0] - 2026-03-26
 
 ## What's Changed
