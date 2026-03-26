@@ -5,6 +5,21 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [v0.3.0] - 2026-03-26
+
+## What's Changed
+
+### Features
+- feat(tools): add web_search and relationship_analytics companion tools (3d4c634)
+- feat(memory): add L2 summaries, semantic conflict detection, and proactive injection (4d2c41c)
+- feat(memory): add scheduled memory decay and expiration workers (749259e)
+- feat(gateway): implement memory API CRUD endpoints (6f06e4c)
+- feat(tools): add memory_update and memory_delete tools for companion self-correction (8139236)
+
+### Contributors
+- @Jake Tracey
+
+
 ## [v0.2.8] - 2026-03-23
 
 ## What's Changed
