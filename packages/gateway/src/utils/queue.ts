@@ -447,6 +447,124 @@ export async function enqueueInfluencerSampleGenerationJob(
   }
 }
 
+// Memory decay queue
+let memoryDecayQueue: Queue<MemoryDecayJobData> | null = null;
+
+// Memory expiration queue
+let memoryExpirationQueue: Queue<MemoryExpirationJobData> | null = null;
+
+/**
+ * Memory decay job data
+ */
+export interface MemoryDecayJobData {
+  userId?: string;
+  companionId?: string;
+  decayRate?: number;
+}
+
+/**
+ * Memory expiration job data
+ */
+export interface MemoryExpirationJobData {
+  // No data needed
+}
+
+/**
+ * Get or create the memory decay queue
+ */
+function getMemoryDecayQueue(): Queue<MemoryDecayJobData> | null {
+  if (memoryDecayQueue) {
+    return memoryDecayQueue;
+  }
+
+  try {
+    const redisConfig = parseRedisUrl(REDIS_URL);
+    memoryDecayQueue = new Queue<MemoryDecayJobData>('memory-decay', {
+      connection: redisConfig,
+    });
+    logger.info('Memory decay queue initialized');
+    return memoryDecayQueue;
+  } catch (error) {
+    logger.warn({ error }, 'Failed to initialize memory decay queue - Redis may not be available');
+    return null;
+  }
+}
+
+/**
+ * Get or create the memory expiration queue
+ */
+function getMemoryExpirationQueue(): Queue<MemoryExpirationJobData> | null {
+  if (memoryExpirationQueue) {
+    return memoryExpirationQueue;
+  }
+
+  try {
+    const redisConfig = parseRedisUrl(REDIS_URL);
+    memoryExpirationQueue = new Queue<MemoryExpirationJobData>('memory-expiration', {
+      connection: redisConfig,
+    });
+    logger.info('Memory expiration queue initialized');
+    return memoryExpirationQueue;
+  } catch (error) {
+    logger.warn({ error }, 'Failed to initialize memory expiration queue - Redis may not be available');
+    return null;
+  }
+}
+
+/**
+ * Enqueue a memory decay job (manual trigger)
+ */
+export async function enqueueMemoryDecayJob(
+  jobData: MemoryDecayJobData = {}
+): Promise<boolean> {
+  const queue = getMemoryDecayQueue();
+  if (!queue) {
+    logger.debug('Memory decay queue not available, skipping job');
+    return false;
+  }
+
+  try {
+    await queue.add('manual-memory-decay', jobData, {
+      attempts: 3,
+      backoff: {
+        type: 'exponential',
+        delay: 5000,
+      },
+    });
+    logger.info({ userId: jobData.userId, companionId: jobData.companionId }, 'Memory decay job enqueued');
+    return true;
+  } catch (error) {
+    logger.error({ error }, 'Failed to enqueue memory decay job');
+    return false;
+  }
+}
+
+/**
+ * Enqueue a memory expiration job (manual trigger)
+ */
+export async function enqueueMemoryExpirationJob(): Promise<boolean> {
+  const queue = getMemoryExpirationQueue();
+  if (!queue) {
+    logger.debug('Memory expiration queue not available, skipping job');
+    return false;
+  }
+
+  try {
+    await queue.add('manual-memory-expiration', {}, {
+      attempts: 3,
+      backoff: {
+        type: 'exponential',
+        delay: 5000,
+      },
+    });
+    logger.info('Memory expiration job enqueued');
+    return true;
+  } catch (error) {
+    logger.error({ error }, 'Failed to enqueue memory expiration job');
+    return false;
+  }
+}
+
 // Reusable probe queue for Redis health checks (lazy-initialized, long-lived)
 let healthProbeQueue: Queue | null = null;
 
@@ -490,6 +608,8 @@ export async function getQueueStats(): Promise<Record<string, { waiting: number;
     ['email', emailQueue],
     ['gift-generation', giftGenerationQueue],
     ['influencer-sample-generation', influencerSampleGenerationQueue],
+    ['memory-decay', memoryDecayQueue],
+    ['memory-expiration', memoryExpirationQueue],
   ];
 
   for (const [name, queue] of queues) {
@@ -538,6 +658,14 @@ export async function closeQueues(): Promise<void> {
   if (influencerSampleGenerationQueue) {
     await influencerSampleGenerationQueue.close();
     influencerSampleGenerationQueue = null;
+  }
+  if (memoryDecayQueue) {
+    await memoryDecayQueue.close();
+    memoryDecayQueue = null;
+  }
+  if (memoryExpirationQueue) {
+    await memoryExpirationQueue.close();
+    memoryExpirationQueue = null;
   }
   if (healthProbeQueue) {
     await healthProbeQueue.close();

@@ -18,6 +18,7 @@ async function bootstrap() {
   const { GiftGenerationWorker } = await import('./gift/worker.js');
   const { InfluencerSampleGenerationWorker } = await import('./influencer/worker.js');
   const { AdSpendSyncWorker, LtvCalculationWorker, createAdSpendSyncQueue, createLtvCalculationQueue } = await import('./ads/index.js');
+  const { MemoryDecayWorker, MemoryExpirationWorker, createMemoryDecayQueue, createMemoryExpirationQueue } = await import('./memory/index.js');
   const { createDbClient } = await import('./db/client.js');
   const { createS3Client } = await import('./storage/s3.js');
   const { createHealthServer } = await import('./health.js');
@@ -146,6 +147,22 @@ async function bootstrap() {
     batchSize: 100,
   });
 
+  // Memory decay worker - reduces importance of stale memories
+  const memoryDecayWorker = new MemoryDecayWorker({
+    connection,
+    db,
+    logger: logger.child({ worker: 'memory-decay' }),
+    concurrency: 1,
+  });
+
+  // Memory expiration worker - soft-deletes expired memories
+  const memoryExpirationWorker = new MemoryExpirationWorker({
+    connection,
+    db,
+    logger: logger.child({ worker: 'memory-expiration' }),
+    concurrency: 1,
+  });
+
   // Start all workers
   await Promise.all([
     vaultWorker.start(),
@@ -160,6 +177,8 @@ async function bootstrap() {
     influencerSampleGenerationWorker.start(),
     adSpendSyncWorker.start(),
     ltvCalculationWorker.start(),
+    memoryDecayWorker.start(),
+    memoryExpirationWorker.start(),
   ].filter(Boolean));
 
   logger.info('All projection workers started successfully');
@@ -169,6 +188,7 @@ async function bootstrap() {
     'vault', 'knowledge-graph', 'summary', 'personality-profile',
     'email', 'image-rendition', 'video-generation', 'gift-generation',
     'influencer-sample-generation', 'ad-spend-sync', 'ltv-calculation',
+    'memory-decay', 'memory-expiration',
     ...(embeddingWorker ? ['embedding'] : []),
   ];
   const healthServer = createHealthServer({
@@ -199,6 +219,8 @@ async function bootstrap() {
       influencerSampleGenerationWorker.stop(),
       adSpendSyncWorker.stop(),
       ltvCalculationWorker.stop(),
+      memoryDecayWorker.stop(),
+      memoryExpirationWorker.stop(),
     ].filter(Boolean));
     await connection.quit();
     process.exit(0);
@@ -212,6 +234,8 @@ async function bootstrap() {
   async function setupScheduledJobs(redisConnection: typeof connection, log: typeof logger) {
     const adSpendQueue = createAdSpendSyncQueue(redisConnection);
     const ltvQueue = createLtvCalculationQueue(redisConnection);
+    const memoryDecayQueue = createMemoryDecayQueue(redisConnection);
+    const memoryExpirationQueue = createMemoryExpirationQueue(redisConnection);
 
     // Schedule daily ad spend sync at 6 AM UTC
     // Syncs yesterday's data from all active ad accounts
@@ -250,6 +274,44 @@ async function bootstrap() {
       }
     );
     log.info('Scheduled daily LTV calculation at 7 AM UTC');
+
+    // Schedule daily memory decay at 3 AM UTC
+    // Reduces importance of memories not accessed in 7+ days
+    await memoryDecayQueue.upsertJobScheduler(
+      'daily-memory-decay',
+      {
+        pattern: '0 3 * * *', // 3:00 AM UTC daily
+        tz: 'UTC',
+      },
+      {
+        name: 'daily-memory-decay',
+        data: {}, // Empty data = decay all active user-companion pairs
+        opts: {
+          attempts: 3,
+          backoff: { type: 'exponential', delay: 30000 },
+        },
+      }
+    );
+    log.info('Scheduled daily memory decay at 3 AM UTC');
+
+    // Schedule hourly memory expiration
+    // Soft-deletes memories past their expires_at date
+    await memoryExpirationQueue.upsertJobScheduler(
+      'hourly-memory-expiration',
+      {
+        pattern: '0 * * * *', // Every hour at :00
+        tz: 'UTC',
+      },
+      {
+        name: 'hourly-memory-expiration',
+        data: {},
+        opts: {
+          attempts: 3,
+          backoff: { type: 'exponential', delay: 15000 },
+        },
+      }
+    );
+    log.info('Scheduled hourly memory expiration');
   }
 
   process.on('SIGTERM', shutdown);
