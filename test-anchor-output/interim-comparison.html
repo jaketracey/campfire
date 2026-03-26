@@ -1,0 +1,27 @@
+<!DOCTYPE html>
+<html>
+<head>
+<title>Model Comparison - Complete</title>
+<style>
+body { font-family: -apple-system, sans-serif; background: #1a1a1a; color: #eee; padding: 20px; }
+h1 { text-align: center; }
+.subtitle { text-align: center; color: #888; margin-bottom: 20px; }
+.spec-section { margin-bottom: 40px; }
+.spec-title { font-size: 18px; font-weight: bold; margin-bottom: 10px; color: #adf; }
+.model-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 8px; }
+.cell { text-align: center; }
+.cell img { width: 100%; border-radius: 4px; cursor: pointer; }
+.cell img:hover { transform: scale(1.02); transition: 0.2s; }
+.cell .label { font-size: 11px; color: #999; margin-top: 4px; }
+.overlay { display: none; position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.95); z-index: 100; cursor: pointer; align-items: center; justify-content: center; }
+.overlay.active { display: flex; }
+.overlay img { max-height: 90vh; max-width: 90vw; border-radius: 8px; }
+</style>
+</head>
+<body>
+<h1>Candid iPhone Prompt - Model + Guidance Scale Comparison</h1>
+<p class="subtitle">105 images: 7 specs x 5 models x 3 guidance scales (2, 3.5, 5)</p>
+<div class="overlay" id="ol" onclick="this.classList.remove('active')">
+<img id="oi" src="" />
+</div>
+</body></html>

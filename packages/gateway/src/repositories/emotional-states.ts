@@ -66,7 +66,7 @@ export class EmotionalStatesRepository {
       `;
       return (rows.length > 0 ? rows[0] : null) as EmotionalStateRow | null;
     } catch (err) {
-      throw wrapDatabaseError(err);
+      throw wrapDatabaseError(err, 'emotionalStates.findByCompanionAndUser');
     }
   }
 
@@ -106,7 +106,7 @@ export class EmotionalStatesRepository {
           updated_at = NOW()
       `;
     } catch (err) {
-      throw wrapDatabaseError(err);
+      throw wrapDatabaseError(err, 'emotionalStates.upsert');
     }
   }
 }

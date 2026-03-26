@@ -91,11 +91,8 @@ export async function outreachRoutes(app: FastifyInstance): Promise<void> {
   app.post(
     '/:id/delivered',
     { preHandler: [requireAuth] },
-    async (
-      request: FastifyRequest<{ Params: { id: string } }>,
-      reply: FastifyReply
-    ) => {
-      const { id } = request.params;
+    async (request: FastifyRequest, reply: FastifyReply) => {
+      const { id } = request.params as { id: string };
 
       try {
         const record = await outreachRepo.markDelivered(id, 'websocket');
@@ -116,11 +113,8 @@ export async function outreachRoutes(app: FastifyInstance): Promise<void> {
   app.post(
     '/:id/opened',
     { preHandler: [requireAuth] },
-    async (
-      request: FastifyRequest<{ Params: { id: string } }>,
-      reply: FastifyReply
-    ) => {
-      const { id } = request.params;
+    async (request: FastifyRequest, reply: FastifyReply) => {
+      const { id } = request.params as { id: string };
 
       try {
         const record = await outreachRepo.markOpened(id);
@@ -143,18 +137,13 @@ export async function outreachRoutes(app: FastifyInstance): Promise<void> {
   app.get(
     '/eligibility',
     { preHandler: [requireInternalService] },
-    async (
-      request: FastifyRequest<{
-        Querystring: {
-          userId: string;
-          companionId: string;
-          minIntervalHours?: string;
-          maxDaily?: string;
-        };
-      }>,
-      reply: FastifyReply
-    ) => {
-      const { userId, companionId, minIntervalHours, maxDaily } = request.query;
+    async (request: FastifyRequest, reply: FastifyReply) => {
+      const { userId, companionId, minIntervalHours, maxDaily } = request.query as {
+        userId: string;
+        companionId: string;
+        minIntervalHours?: string;
+        maxDaily?: string;
+      };
 
       try {
         const result = await outreachRepo.checkEligibility(
@@ -177,11 +166,8 @@ export async function outreachRoutes(app: FastifyInstance): Promise<void> {
   app.get(
     '/config/:companionId',
     { preHandler: [requireInternalService] },
-    async (
-      request: FastifyRequest<{ Params: { companionId: string } }>,
-      reply: FastifyReply
-    ) => {
-      const { companionId } = request.params;
+    async (request: FastifyRequest, reply: FastifyReply) => {
+      const { companionId } = request.params as { companionId: string };
 
       try {
         const config = await outreachRepo.getConfig(companionId);
@@ -252,11 +238,8 @@ export async function outreachConfigRoutes(app: FastifyInstance): Promise<void> 
   app.put(
     '/:id/outreach-config',
     { preHandler: [requireAuth] },
-    async (
-      request: FastifyRequest<{ Params: { id: string } }>,
-      reply: FastifyReply
-    ) => {
-      const { id: companionId } = request.params;
+    async (request: FastifyRequest, reply: FastifyReply) => {
+      const { id: companionId } = request.params as { id: string };
       const parsed = OutreachConfigUpdateSchema.safeParse(request.body);
 
       if (!parsed.success) {

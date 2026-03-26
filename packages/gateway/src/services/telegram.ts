@@ -114,7 +114,7 @@ export class TelegramBotManager {
     });
 
     // Set up error handler
-    bot.catch((err) => {
+    bot.catch((err: { message: string }) => {
       logger.error(
         { companionId, botId, error: err.message },
         'Telegram bot error'

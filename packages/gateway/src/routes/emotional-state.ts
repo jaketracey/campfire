@@ -46,14 +46,8 @@ export async function emotionalStateRoutes(app: FastifyInstance): Promise<void> 
   app.get(
     '/:id/emotional-state',
     { preHandler: [requireAuth] },
-    async (
-      request: FastifyRequest<{
-        Params: { id: string };
-        Querystring: { userId: string };
-      }>,
-      reply: FastifyReply,
-    ) => {
-      const companionId = request.params.id;
+    async (request: FastifyRequest, reply: FastifyReply) => {
+      const { id: companionId } = request.params as { id: string };
       const parsed = GetEmotionalStateQuerySchema.safeParse(request.query);
       if (!parsed.success) {
         return reply.status(400).send({ error: 'userId query parameter required' });
@@ -96,14 +90,8 @@ export async function emotionalStateRoutes(app: FastifyInstance): Promise<void> 
   app.post(
     '/:id/emotional-state/internal',
     { preHandler: [requireInternalService] },
-    async (
-      request: FastifyRequest<{
-        Params: { id: string };
-        Body: z.infer<typeof UpdateEmotionalStateBodySchema>;
-      }>,
-      reply: FastifyReply,
-    ) => {
-      const companionId = request.params.id;
+    async (request: FastifyRequest, reply: FastifyReply) => {
+      const { id: companionId } = request.params as { id: string };
       const parsed = UpdateEmotionalStateBodySchema.safeParse(request.body);
       if (!parsed.success) {
         return reply
