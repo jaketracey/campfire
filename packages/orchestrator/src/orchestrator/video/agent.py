@@ -24,6 +24,7 @@ from uuid import UUID
 import structlog
 
 from orchestrator.video.config import VideoSettings
+from orchestrator.video.fal_avatar import FalAvatarClient
 from orchestrator.video.models import (
     VideoCallConfig,
     VideoCallSession,
@@ -100,7 +101,7 @@ class VideoAgent:
 
         # Runtime state
         self._running = False
-        self._simli: SimliClient | None = None
+        self._avatar_client: FalAvatarClient | SimliClient | None = None
         self._lk_room: Any | None = None  # livekit.rtc.Room
         self._pipeline_task: asyncio.Task[None] | None = None
         self._max_duration_task: asyncio.Task[None] | None = None
@@ -168,9 +169,19 @@ class VideoAgent:
             identity=f"companion-{self._config.companion_id}",
         )
 
-        # 2. Connect to Simli for avatar rendering
-        self._simli = SimliClient(self._settings)
-        await self._simli.connect(face_id=self._config.simli_face_id)
+        # 2. Connect to avatar rendering provider
+        if self._settings.avatar_provider == "fal":
+            fal_client = FalAvatarClient(self._settings)
+            await fal_client.connect(
+                reference_image_url=self._config.avatar_url,
+            )
+            self._avatar_client = fal_client
+            logger.info("video_agent_avatar_provider", provider="fal")
+        else:
+            simli_client = SimliClient(self._settings)
+            await simli_client.connect(face_id=self._config.simli_face_id)
+            self._avatar_client = simli_client
+            logger.info("video_agent_avatar_provider", provider="simli")
 
         # 3. Start the pipeline loop
         self._pipeline_task = asyncio.create_task(
@@ -199,10 +210,10 @@ class VideoAgent:
                 except asyncio.CancelledError:
                     pass
 
-        # Disconnect Simli
-        if self._simli is not None:
-            await self._simli.close()
-            self._simli = None
+        # Disconnect avatar client
+        if self._avatar_client is not None:
+            await self._avatar_client.close()
+            self._avatar_client = None
 
         # Disconnect LiveKit
         if self._lk_room is not None:
@@ -497,15 +508,15 @@ class VideoAgent:
         audio_source: Any,
         video_source: Any,
     ) -> None:
-        """Stream TTS audio through Simli and publish avatar video + audio."""
+        """Stream TTS audio through avatar client and publish video + audio."""
         from livekit import rtc
 
-        if self._simli is None or not self._simli.connected:
+        if self._avatar_client is None or not self._avatar_client.connected:
             # Fallback: publish audio only (no avatar video)
             await self._publish_audio_only(tts_audio, audio_source)
             return
 
-        # Send audio to Simli in chunks and collect video frames
+        # Send audio to avatar client in chunks and collect video frames
         chunk_size = self._settings.tts_sample_rate * 2 // 25  # ~40ms chunks
         offset = 0
 
@@ -513,7 +524,7 @@ class VideoAgent:
             chunk = tts_audio[offset : offset + chunk_size]
             offset += chunk_size
 
-            await self._simli.send_audio(chunk)
+            await self._avatar_client.send_audio(chunk)
 
             # Publish the audio chunk to LiveKit
             audio_frame = rtc.AudioFrame(
@@ -524,8 +535,8 @@ class VideoAgent:
             )
             await audio_source.capture_frame(audio_frame)
 
-            # Drain any available video frames from Simli
-            video_frames = await self._simli.drain_video(timeout=0.02)
+            # Drain any available video frames from avatar client
+            video_frames = await self._avatar_client.drain_video(timeout=0.02)
             for vf in video_frames:
                 lk_frame = rtc.VideoFrame(
                     width=512,
@@ -537,6 +548,10 @@ class VideoAgent:
 
             # Pace output to roughly real-time
             await asyncio.sleep(chunk_size / (self._settings.tts_sample_rate * 2))
+
+        # Flush remaining audio (important for FalAvatarClient which buffers)
+        if hasattr(self._avatar_client, "flush"):
+            await self._avatar_client.flush()
 
     async def _publish_audio_only(
         self, tts_audio: bytes, audio_source: Any

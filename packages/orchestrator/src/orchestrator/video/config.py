@@ -35,7 +35,31 @@ class VideoSettings(BaseSettings):
         description="LiveKit API secret for token signing",
     )
 
-    # --- Simli avatar rendering ---
+    # --- Avatar provider selection ---
+    avatar_provider: str = Field(
+        default="fal",
+        description="Avatar rendering backend: 'fal' (FAL live-avatar) or 'simli'",
+    )
+
+    # --- FAL avatar rendering ---
+    fal_api_key: str = Field(
+        default="",
+        description="FAL API key for avatar and image generation",
+    )
+    fal_avatar_model: str = Field(
+        default="fal-ai/live-avatar",
+        description="FAL model endpoint for lip-synced avatar generation",
+    )
+    fal_avatar_acceleration: str = Field(
+        default="high",
+        description="FAL live-avatar acceleration mode (high, medium, low)",
+    )
+    avatar_chunk_duration_seconds: float = Field(
+        default=3.0,
+        description="Duration of audio chunks (seconds) sent to FAL for video generation",
+    )
+
+    # --- Simli avatar rendering (legacy) ---
     simli_api_key: str = Field(
         default="",
         description="Simli API key for avatar video generation",
@@ -115,9 +139,21 @@ class VideoSettings(BaseSettings):
         return bool(self.livekit_api_key and self.livekit_api_secret)
 
     @property
+    def fal_configured(self) -> bool:
+        """Return True if FAL API key is present."""
+        return bool(self.fal_api_key)
+
+    @property
     def simli_configured(self) -> bool:
         """Return True if Simli API key is present."""
         return bool(self.simli_api_key)
+
+    @property
+    def avatar_configured(self) -> bool:
+        """Return True if the selected avatar provider is configured."""
+        if self.avatar_provider == "fal":
+            return self.fal_configured
+        return self.simli_configured
 
     @property
     def deepgram_configured(self) -> bool:
@@ -134,7 +170,7 @@ class VideoSettings(BaseSettings):
         """Return True if all required services are configured."""
         return (
             self.livekit_configured
-            and self.simli_configured
+            and self.avatar_configured
             and self.deepgram_configured
             and self.elevenlabs_configured
         )

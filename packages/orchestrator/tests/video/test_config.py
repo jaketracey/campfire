@@ -35,8 +35,21 @@ class TestVideoSettings:
         )
         assert settings.livekit_configured is True
 
-    def test_fully_configured(self):
+    def test_fully_configured_fal(self):
         settings = VideoSettings(
+            avatar_provider="fal",
+            livekit_api_key="k",
+            livekit_api_secret="s",
+            fal_api_key="fal",
+            deepgram_api_key="dg",
+            elevenlabs_api_key="el",
+            _env_file=None,  # type: ignore[call-arg]
+        )
+        assert settings.fully_configured is True
+
+    def test_fully_configured_simli(self):
+        settings = VideoSettings(
+            avatar_provider="simli",
             livekit_api_key="k",
             livekit_api_secret="s",
             simli_api_key="simli",
@@ -46,11 +59,12 @@ class TestVideoSettings:
         )
         assert settings.fully_configured is True
 
-    def test_not_fully_configured_missing_simli(self):
+    def test_not_fully_configured_missing_avatar(self):
         settings = VideoSettings(
+            avatar_provider="fal",
             livekit_api_key="k",
             livekit_api_secret="s",
-            simli_api_key="",
+            fal_api_key="",
             deepgram_api_key="dg",
             elevenlabs_api_key="el",
             _env_file=None,  # type: ignore[call-arg]
