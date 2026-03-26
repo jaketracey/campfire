@@ -85,7 +85,8 @@ async function notifyOrchestratorStart(
   companionId: string,
   userId: string,
   avatarProvider: string,
-  avatarFaceId: string | null
+  avatarFaceId: string | null,
+  avatarUrl: string | null = null
 ): Promise<boolean> {
   try {
     const response = await fetch(`${ORCHESTRATOR_URL}/video/join`, {
@@ -97,6 +98,7 @@ async function notifyOrchestratorStart(
         userId,
         avatarProvider,
         avatarFaceId,
+        avatarUrl,
       }),
     });
     return response.ok;
@@ -213,13 +215,21 @@ export async function videoCallsRoutes(app: FastifyInstance): Promise<void> {
       metadata: videoQuality ? { videoQuality } : null,
     });
 
+    // Look up companion's anchor avatar for the video agent
+    let companionAvatarUrl: string | null = null;
+    try {
+      const companion = await companionsRepo.findById(companionId);
+      companionAvatarUrl = (companion as any)?.active_avatar_url ?? (companion as any)?.avatar_url ?? null;
+    } catch { /* non-fatal */ }
+
     // Notify orchestrator to spin up AI agent (non-blocking)
     notifyOrchestratorStart(
       roomName,
       companionId,
       user.userId,
       DEFAULT_AVATAR_PROVIDER,
-      avatarFaceId ?? null
+      avatarFaceId ?? null,
+      companionAvatarUrl
     ).then((ok) => {
       if (!ok) {
         logger.warn({ videoCallId: videoCall.id, roomName }, 'Orchestrator failed to start video agent');

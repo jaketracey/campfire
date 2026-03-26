@@ -210,6 +210,7 @@ async def join_room(body: JoinRoomRequest) -> dict[str, str]:
         companion_name="Companion",
         voice_id=settings.elevenlabs_default_voice_id,
         simli_face_id=body.avatarFaceId or settings.simli_face_id,
+        avatar_url=body.avatarUrl,
     )
 
     task = asyncio.create_task(

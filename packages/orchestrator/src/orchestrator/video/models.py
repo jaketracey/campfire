@@ -89,6 +89,7 @@ class JoinRoomRequest(BaseModel):
     userId: str
     avatarProvider: str | None = None
     avatarFaceId: str | None = None
+    avatarUrl: str | None = None
 
 
 class CreateRoomResponse(BaseModel):
