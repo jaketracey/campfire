@@ -5,6 +5,22 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [v0.6.0] - 2026-03-26
+
+## What's Changed
+
+### Features
+- feat: add rich archetype preset system with magic first messages (1863b5f)
+- feat(web): add companion gallery page for browsing pre-made companions (9d99d32)
+- feat(onboarding): add conversational quick-meet onboarding flow (55225df)
+
+### Bug Fixes
+- fix(web): cast customize link href for Next.js typesafe routes (7b8a316)
+
+### Contributors
+- @Jake Tracey
+
+
 ## [v0.5.0] - 2026-03-26
 
 ## What's Changed
