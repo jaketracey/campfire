@@ -46,6 +46,13 @@ dependencies = [
     "aioboto3>=13.0.0",
     "boto3>=1.34.0",
     "botocore>=1.34.0",
+    # LiveKit real-time video/audio (WebRTC)
+    "livekit>=0.17.0",
+    "livekit-agents>=0.12.0",
+    # Simli avatar rendering (uses aiohttp WebSocket)
+    "aiohttp>=3.9.0",
+    # Deepgram STT (SDK used for streaming; REST via httpx already included)
+    "deepgram-sdk>=3.0.0",
 ]
 
 [project.optional-dependencies]
