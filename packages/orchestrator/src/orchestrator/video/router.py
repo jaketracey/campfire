@@ -22,6 +22,7 @@ from orchestrator.video.models import (
     CreateRoomRequest,
     CreateRoomResponse,
     EndCallResponse,
+    JoinRoomRequest,
     RoomStatusResponse,
     VideoCallConfig,
     VideoCallSession,
@@ -175,6 +176,56 @@ async def create_room(body: CreateRoomRequest) -> CreateRoomResponse:
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to create room: {exc}",
         ) from exc
+
+
+@router.post("/join")
+async def join_room(body: JoinRoomRequest) -> dict[str, str]:
+    """Join an existing LiveKit room created by the gateway.
+
+    The gateway creates the LiveKit room and user token, then calls this
+    endpoint to ask the orchestrator to spawn the AI agent into the room.
+    """
+    settings = get_video_settings()
+
+    if not settings.livekit_configured:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="LiveKit is not configured.",
+        )
+
+    room_name = body.roomName
+    companion_id = UUID(body.companionId)
+    user_id = UUID(body.userId)
+
+    session = VideoCallSession(
+        room_name=room_name,
+        companion_id=companion_id,
+        user_id=user_id,
+        status=VideoCallStatus.WAITING,
+    )
+    _sessions[room_name] = session
+
+    call_config = VideoCallConfig(
+        companion_id=companion_id,
+        companion_name="Companion",
+        voice_id=settings.elevenlabs_default_voice_id,
+        simli_face_id=body.avatarFaceId or settings.simli_face_id,
+    )
+
+    task = asyncio.create_task(
+        _run_agent(settings, session, call_config),
+        name=f"agent-{room_name}",
+    )
+    _agent_tasks[room_name] = task
+
+    logger.info(
+        "video_agent_joining",
+        room=room_name,
+        companion_id=body.companionId,
+        user_id=body.userId,
+    )
+
+    return {"status": "agent_started", "room_name": room_name}
 
 
 @router.post("/rooms/{room_name}/end", response_model=EndCallResponse)

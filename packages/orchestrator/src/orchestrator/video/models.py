@@ -81,6 +81,16 @@ class CreateRoomRequest(BaseModel):
     simli_face_id: str | None = None
 
 
+class JoinRoomRequest(BaseModel):
+    """Request body for POST /video/join — gateway asks orchestrator to join an existing room."""
+
+    roomName: str
+    companionId: str
+    userId: str
+    avatarProvider: str | None = None
+    avatarFaceId: str | None = None
+
+
 class CreateRoomResponse(BaseModel):
     """Response from POST /video/rooms."""
 

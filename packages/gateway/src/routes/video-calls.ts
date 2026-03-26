@@ -88,7 +88,7 @@ async function notifyOrchestratorStart(
   avatarFaceId: string | null
 ): Promise<boolean> {
   try {
-    const response = await fetch(`${ORCHESTRATOR_URL}/api/v1/video-agent/start`, {
+    const response = await fetch(`${ORCHESTRATOR_URL}/video/join`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -109,10 +109,9 @@ async function notifyOrchestratorStart(
 /** Notify the orchestrator to tear down the AI video agent */
 async function notifyOrchestratorEnd(roomName: string): Promise<void> {
   try {
-    await fetch(`${ORCHESTRATOR_URL}/api/v1/video-agent/stop`, {
+    await fetch(`${ORCHESTRATOR_URL}/video/rooms/${roomName}/end`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ roomName }),
     });
   } catch (error) {
     logger.error({ error, roomName }, 'Failed to notify orchestrator to stop video agent');
