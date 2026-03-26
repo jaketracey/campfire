@@ -10,6 +10,7 @@ from enum import Enum
 from typing import Any
 from uuid import UUID
 
+import numpy as np
 import structlog
 
 logger = structlog.get_logger()
@@ -92,6 +93,9 @@ class MemoryWithValidity:
     importance: float = 0.5
     """Importance score (0-1)."""
 
+    embedding: list[float] | None = None
+    """Optional embedding vector for semantic comparison."""
+
     @property
     def is_currently_valid(self) -> bool:
         """Check if memory is currently valid."""
@@ -128,6 +132,9 @@ class MemoryConflict:
 
     new_importance: float = 0.5
     """Importance of the new memory."""
+
+    detection_method: str = "heuristic"
+    """How the conflict was detected: 'heuristic' or 'semantic'."""
 
 
 @dataclass
@@ -215,6 +222,138 @@ class MemoryConflictService:
             existing_count=len(existing_memories),
             conflict_count=len(conflicts),
         )
+
+        return conflicts
+
+    def detect_conflicts_with_embeddings(
+        self,
+        new_content: str,
+        new_embedding: "list[float] | np.ndarray[Any, Any]",
+        existing_memories: list[MemoryWithValidity],
+        topic: str | None = None,
+    ) -> list[MemoryConflict]:
+        """Detect conflicts using both heuristic and embedding-based similarity.
+
+        First runs the fast heuristic pass, then applies a semantic similarity
+        check as a second pass to catch contradictions the heuristics miss
+        (e.g., "I live in NYC" vs "I moved to SF last month").
+
+        Args:
+            new_content: The new memory content to check.
+            new_embedding: Embedding vector for the new content.
+            existing_memories: List of existing memories (with embeddings).
+            topic: Optional topic hint for conflict detection.
+
+        Returns:
+            List of detected conflicts (heuristic + semantic, deduplicated).
+        """
+        # Pass 1: fast heuristic detection
+        heuristic_conflicts = self.detect_conflicts(new_content, existing_memories, topic)
+        heuristic_conflict_ids = {c.existing_memory.id for c in heuristic_conflicts}
+
+        # Pass 2: semantic similarity detection
+        semantic_conflicts = self._detect_semantic_conflicts(
+            new_content=new_content,
+            new_embedding=new_embedding,
+            existing_memories=existing_memories,
+            already_flagged_ids=heuristic_conflict_ids,
+        )
+
+        all_conflicts = heuristic_conflicts + semantic_conflicts
+
+        logger.debug(
+            "conflicts_detected_with_embeddings",
+            new_content_preview=new_content[:50],
+            heuristic_count=len(heuristic_conflicts),
+            semantic_count=len(semantic_conflicts),
+            total_count=len(all_conflicts),
+        )
+
+        return all_conflicts
+
+    def _detect_semantic_conflicts(
+        self,
+        new_content: str,
+        new_embedding: "list[float] | np.ndarray[Any, Any]",
+        existing_memories: list[MemoryWithValidity],
+        already_flagged_ids: set[UUID],
+    ) -> list[MemoryConflict]:
+        """Detect conflicts using embedding cosine similarity.
+
+        Memories with high semantic similarity (> threshold) but different
+        content are flagged as potential conflicts, since they likely address
+        the same topic with different information.
+
+        Args:
+            new_content: The new memory content.
+            new_embedding: Embedding vector for new content.
+            existing_memories: Existing memories to check against.
+            already_flagged_ids: Memory IDs already flagged by heuristics.
+
+        Returns:
+            List of semantically detected conflicts.
+        """
+        conflicts: list[MemoryConflict] = []
+
+        try:
+            new_emb = np.array(new_embedding, dtype=np.float64)
+            new_norm = np.linalg.norm(new_emb)
+            if new_norm == 0:
+                return conflicts
+            new_emb = new_emb / new_norm
+        except (ValueError, TypeError):
+            logger.warning("semantic_conflict_invalid_new_embedding")
+            return conflicts
+
+        # Filter to valid, recent memories not already flagged
+        cutoff_date = datetime.utcnow() - timedelta(days=self.config.max_age_for_conflict_days)
+
+        for memory in existing_memories:
+            # Skip already flagged, invalid, old, or embedding-less memories
+            if memory.id in already_flagged_ids:
+                continue
+            if not memory.is_currently_valid:
+                continue
+            if memory.created_at <= cutoff_date:
+                continue
+            if not memory.embedding:
+                continue
+
+            # Skip exact duplicates
+            if self._is_duplicate(new_content, memory.content):
+                continue
+
+            try:
+                existing_emb = np.array(memory.embedding, dtype=np.float64)
+                existing_norm = np.linalg.norm(existing_emb)
+                if existing_norm == 0:
+                    continue
+                existing_emb = existing_emb / existing_norm
+
+                similarity = float(np.dot(new_emb, existing_emb))
+            except (ValueError, TypeError):
+                continue
+
+            if similarity >= self.config.similarity_threshold:
+                # High similarity + different content = potential conflict
+                # Scale confidence based on how far above threshold
+                confidence = min(
+                    0.5 + (similarity - self.config.similarity_threshold) * 2.0,
+                    0.95,
+                )
+
+                conflicts.append(MemoryConflict(
+                    existing_memory=memory,
+                    new_content=new_content,
+                    conflict_type=ConflictType.UPDATE,
+                    confidence=confidence,
+                    explanation=(
+                        f"High semantic similarity ({similarity:.2f}) between "
+                        f"new memory and existing memory suggests they address "
+                        f"the same topic with different information."
+                    ),
+                    detection_method="semantic",
+                ))
 
         return conflicts
 

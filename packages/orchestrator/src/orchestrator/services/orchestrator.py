@@ -433,6 +433,56 @@ class ConversationOrchestrator:
                         companion_id=str(companion_spec.id),
                     )
 
+            # Proactive memory injection: automatically retrieve relevant
+            # memories based on the user message so the character "naturally
+            # remembers" things without the LLM needing to call memory_read.
+            if (
+                self.settings.proactive_memory_enabled
+                and self._hybrid_search_service
+            ):
+                try:
+                    proactive_query = SearchQuery(
+                        user_id=user_id,
+                        companion_id=companion_spec.id,
+                        query_text=user_message,
+                        limit=self.settings.proactive_memory_top_k,
+                        min_similarity=self.settings.memory_relevance_threshold,
+                        include_kg_context=False,
+                    )
+                    proactive_result = await self._hybrid_search_service.search(
+                        proactive_query
+                    )
+
+                    if proactive_result.memories:
+                        # Deduplicate against already-provided long_term_memories
+                        existing_ids = {
+                            m.id for m in (long_term_memories or [])
+                        }
+                        new_memories = [
+                            m
+                            for m in proactive_result.memories
+                            if m.id not in existing_ids
+                        ]
+
+                        if new_memories:
+                            long_term_memories = list(
+                                long_term_memories or []
+                            ) + new_memories
+                            logger.debug(
+                                "proactive_memories_injected",
+                                user_id=str(user_id),
+                                companion_id=str(companion_spec.id),
+                                injected_count=len(new_memories),
+                                total_memories=len(long_term_memories),
+                            )
+                except Exception as e:
+                    logger.warning(
+                        "proactive_memory_injection_failed",
+                        error=str(e),
+                        user_id=str(user_id),
+                        companion_id=str(companion_spec.id),
+                    )
+
             # Build context with situational tenets
             context = self.context_builder.build_context(
                 session_id=session_id,

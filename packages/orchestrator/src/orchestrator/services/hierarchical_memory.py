@@ -5,14 +5,19 @@ for faster retrieval and broader context. L1 contains individual memory
 facts while L2 contains cluster summaries for broader topical context.
 """
 
+from __future__ import annotations
+
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
-from typing import Any
+from typing import Any, TYPE_CHECKING
 from uuid import UUID, uuid4
 
 import numpy as np
 import structlog
+
+if TYPE_CHECKING:
+    from orchestrator.providers.base import LLMProvider
 
 logger = structlog.get_logger()
 
@@ -120,13 +125,20 @@ class HierarchicalMemoryService:
     understanding without loading all individual memories.
     """
 
-    def __init__(self, config: ClusterConfig | None = None):
+    def __init__(
+        self,
+        config: ClusterConfig | None = None,
+        llm_provider: LLMProvider | None = None,
+    ):
         """Initialize the hierarchical memory service.
 
         Args:
             config: Optional clustering configuration.
+            llm_provider: Optional LLM provider for generating cluster summaries.
+                If not provided, summaries fall back to concatenated snippets.
         """
         self.config = config or ClusterConfig()
+        self._llm_provider = llm_provider
 
     def cluster_memories(
         self,
@@ -325,7 +337,9 @@ class HierarchicalMemoryService:
     async def _call_llm_for_summary(self, contents: list[str]) -> str:
         """Call LLM to generate cluster summary.
 
-        This is a placeholder that should be implemented with actual LLM call.
+        Uses the configured LLM provider to produce a concise summary of
+        clustered memory contents. Falls back to concatenated snippets if
+        no provider is configured or the LLM call fails.
 
         Args:
             contents: List of memory contents to summarize.
@@ -333,8 +347,89 @@ class HierarchicalMemoryService:
         Returns:
             Generated summary.
         """
-        # Placeholder - in production this would call an LLM
-        return f"Summary of {len(contents)} related memories."
+        if not self._llm_provider:
+            logger.debug("l2_summary_no_provider", reason="No LLM provider configured")
+            return self._fallback_summary(contents)
+
+        # Build the summarization prompt
+        numbered_memories = "\n".join(
+            f"{i + 1}. {content}" for i, content in enumerate(contents)
+        )
+
+        messages = [
+            {
+                "role": "system",
+                "content": (
+                    "You are a memory summarizer. Given a list of related memories "
+                    "about a user, produce a single concise summary paragraph that "
+                    "captures the key themes and facts. Be factual and specific. "
+                    "Do not add information not present in the memories."
+                ),
+            },
+            {
+                "role": "user",
+                "content": (
+                    f"Summarize these related memories into one concise paragraph:\n\n"
+                    f"{numbered_memories}"
+                ),
+            },
+        ]
+
+        try:
+            response = await self._llm_provider.generate(
+                messages=messages,
+                max_tokens=self.config.l2_summary_max_tokens,
+                temperature=0.3,
+            )
+
+            summary = response.content.strip()
+            if not summary:
+                logger.warning("l2_summary_empty_response")
+                return self._fallback_summary(contents)
+
+            logger.debug(
+                "l2_summary_generated",
+                memory_count=len(contents),
+                summary_length=len(summary),
+            )
+            return summary
+
+        except Exception as e:
+            logger.warning(
+                "l2_summary_llm_failed",
+                error=str(e),
+                memory_count=len(contents),
+            )
+            return self._fallback_summary(contents)
+
+    @staticmethod
+    def _fallback_summary(contents: list[str]) -> str:
+        """Generate a fallback summary by concatenating memory snippets.
+
+        Used when the LLM provider is unavailable or fails.
+
+        Args:
+            contents: List of memory contents.
+
+        Returns:
+            Concatenated snippet summary.
+        """
+        if not contents:
+            return "Empty cluster."
+
+        # Take first ~200 chars from each memory, up to 5 memories
+        snippets = []
+        total_chars = 0
+        for content in contents[:5]:
+            snippet = content[:100].rstrip()
+            if len(content) > 100:
+                snippet += "..."
+            snippets.append(snippet)
+            total_chars += len(snippet)
+            if total_chars > 400:
+                break
+
+        return "; ".join(snippets)
 
     async def hierarchical_retrieve(
         self,
@@ -497,16 +592,18 @@ _hierarchical_memory_service: HierarchicalMemoryService | None = None
 
 def get_hierarchical_memory_service(
     config: ClusterConfig | None = None,
+    llm_provider: LLMProvider | None = None,
 ) -> HierarchicalMemoryService:
     """Get the singleton hierarchical memory service.
 
     Args:
         config: Optional configuration for the service.
+        llm_provider: Optional LLM provider for generating cluster summaries.
 
     Returns:
         The HierarchicalMemoryService instance.
     """
     global _hierarchical_memory_service
     if _hierarchical_memory_service is None:
-        _hierarchical_memory_service = HierarchicalMemoryService(config)
+        _hierarchical_memory_service = HierarchicalMemoryService(config, llm_provider)
     return _hierarchical_memory_service

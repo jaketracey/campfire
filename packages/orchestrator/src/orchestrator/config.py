@@ -193,6 +193,8 @@ class Settings(BaseSettings):
     # Memory
     memory_search_top_k: int = 10
     memory_relevance_threshold: float = 0.5
+    proactive_memory_enabled: bool = True
+    proactive_memory_top_k: int = 5
 
     # Content Routing
     content_routing_enabled: bool = True
