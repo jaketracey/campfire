@@ -25,6 +25,8 @@ class EventType(str, Enum):
     # Memory events
     MEMORY_READ = "memory.read"
     MEMORY_WRITE = "memory.write"
+    MEMORY_UPDATE = "memory.update"
+    MEMORY_DELETE = "memory.delete"
     KG_PROPOSE = "kg.propose"
     KG_ADD = "kg.add"
     KG_REMOVE = "kg.remove"

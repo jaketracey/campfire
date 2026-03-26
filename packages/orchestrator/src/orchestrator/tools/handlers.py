@@ -293,6 +293,189 @@ class MemoryWriteHandler(ToolHandler):
             return memory.id
 
 
+class MemoryUpdateHandler(ToolHandler):
+    """Handler for updating existing long-term memories."""
+
+    def __init__(
+        self,
+        settings: Settings,
+        event_emitter: EventEmitter,
+        http_client: httpx.AsyncClient,
+    ):
+        self.settings = settings
+        self.event_emitter = event_emitter
+        self.http_client = http_client
+
+    @property
+    def name(self) -> str:
+        return "memory_update"
+
+    def validate_arguments(self, arguments: dict[str, Any]) -> tuple[bool, str | None]:
+        """Validate that memory_id is provided and at least one update field is set."""
+        if not arguments.get("memory_id"):
+            return False, "memory_id is required"
+        has_update = any(
+            arguments.get(field) is not None
+            for field in ("updated_content", "updated_importance", "updated_tags")
+        )
+        if not has_update:
+            return False, "At least one of updated_content, updated_importance, or updated_tags must be provided"
+        return True, None
+
+    async def execute(self, tool_call: ToolCall) -> ToolResult:
+        """Execute memory update operation."""
+        start_time = time.time()
+
+        try:
+            memory_id = tool_call.arguments["memory_id"]
+            updated_content = tool_call.arguments.get("updated_content")
+            updated_importance = tool_call.arguments.get("updated_importance")
+            updated_tags = tool_call.arguments.get("updated_tags")
+
+            # Build the update payload — only include fields that were provided
+            payload: dict[str, Any] = {
+                "userId": str(tool_call.user_id),
+                "companionId": str(tool_call.companion_id),
+            }
+            if updated_content is not None:
+                payload["content"] = updated_content
+            if updated_importance is not None:
+                payload["importance"] = updated_importance
+            if updated_tags is not None:
+                payload["tags"] = updated_tags
+
+            response = await self.http_client.patch(
+                f"{self.settings.gateway_internal_url}/api/v1/memories/internal/{memory_id}",
+                json=payload,
+                headers={
+                    "X-Internal-Service-Key": self.settings.internal_service_key,
+                    "Content-Type": "application/json",
+                },
+            )
+            response.raise_for_status()
+
+            duration_ms = (time.time() - start_time) * 1000
+
+            # Emit event
+            await self.event_emitter.emit(
+                ToolEvent(
+                    type=EventType.MEMORY_UPDATE,
+                    session_id=tool_call.session_id,
+                    user_id=tool_call.user_id,
+                    companion_id=tool_call.companion_id,
+                    tool_name=self.name,
+                    tool_call_id=tool_call.id,
+                    input_params=tool_call.arguments,
+                    output={"memory_id": memory_id},
+                    duration_ms=duration_ms,
+                )
+            )
+
+            return ToolResult(
+                tool_call_id=tool_call.id,
+                name=self.name,
+                success=True,
+                output=f"Memory {memory_id} updated successfully.",
+                duration_ms=duration_ms,
+                metadata={"memory_id": memory_id},
+            )
+
+        except Exception as e:
+            logger.exception("memory_update_failed", error=str(e))
+            duration_ms = (time.time() - start_time) * 1000
+
+            return ToolResult(
+                tool_call_id=tool_call.id,
+                name=self.name,
+                success=False,
+                error=str(e),
+                duration_ms=duration_ms,
+            )
+
+
+class MemoryDeleteHandler(ToolHandler):
+    """Handler for soft-deleting long-term memories."""
+
+    def __init__(
+        self,
+        settings: Settings,
+        event_emitter: EventEmitter,
+        http_client: httpx.AsyncClient,
+    ):
+        self.settings = settings
+        self.event_emitter = event_emitter
+        self.http_client = http_client
+
+    @property
+    def name(self) -> str:
+        return "memory_delete"
+
+    def validate_arguments(self, arguments: dict[str, Any]) -> tuple[bool, str | None]:
+        """Validate that memory_id is provided."""
+        if not arguments.get("memory_id"):
+            return False, "memory_id is required"
+        return True, None
+
+    async def execute(self, tool_call: ToolCall) -> ToolResult:
+        """Execute memory delete (soft-delete) operation."""
+        start_time = time.time()
+
+        try:
+            memory_id = tool_call.arguments["memory_id"]
+            reason = tool_call.arguments.get("reason", "")
+
+            response = await self.http_client.delete(
+                f"{self.settings.gateway_internal_url}/api/v1/memories/internal/{memory_id}",
+                headers={
+                    "X-Internal-Service-Key": self.settings.internal_service_key,
+                    "Content-Type": "application/json",
+                },
+                params={
+                    "userId": str(tool_call.user_id),
+                    "companionId": str(tool_call.companion_id),
+                },
+            )
+            response.raise_for_status()
+
+            duration_ms = (time.time() - start_time) * 1000
+
+            # Emit event
+            await self.event_emitter.emit(
+                ToolEvent(
+                    type=EventType.MEMORY_DELETE,
+                    session_id=tool_call.session_id,
+                    user_id=tool_call.user_id,
+                    companion_id=tool_call.companion_id,
+                    tool_name=self.name,
+                    tool_call_id=tool_call.id,
+                    input_params=tool_call.arguments,
+                    output={"memory_id": memory_id, "reason": reason},
+                    duration_ms=duration_ms,
+                )
+            )
+
+            return ToolResult(
+                tool_call_id=tool_call.id,
+                name=self.name,
+                success=True,
+                output=f"Memory {memory_id} deleted successfully.",
+                duration_ms=duration_ms,
+                metadata={"memory_id": memory_id, "reason": reason},
+            )
+
+        except Exception as e:
+            logger.exception("memory_delete_failed", error=str(e))
+            duration_ms = (time.time() - start_time) * 1000
+
+            return ToolResult(
+                tool_call_id=tool_call.id,
+                name=self.name,
+                success=False,
+                error=str(e),
+                duration_ms=duration_ms,
+            )
+
+
 class KGProposeHandler(ToolHandler):
     """Handler for proposing knowledge graph updates."""
 

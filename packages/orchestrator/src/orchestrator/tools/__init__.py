@@ -7,7 +7,9 @@ from orchestrator.tools.handlers import (
     ImageAnalysisHandler,
     ImageGenerationHandler,
     KGProposeHandler,
+    MemoryDeleteHandler,
     MemoryReadHandler,
+    MemoryUpdateHandler,
     MemoryWriteHandler,
     VaultProjectionHandler,
 )
@@ -19,7 +21,9 @@ __all__ = [
     "ImageAnalysisHandler",
     "ImageGenerationHandler",
     "KGProposeHandler",
+    "MemoryDeleteHandler",
     "MemoryReadHandler",
+    "MemoryUpdateHandler",
     "MemoryWriteHandler",
     "VaultProjectionHandler",
 ]

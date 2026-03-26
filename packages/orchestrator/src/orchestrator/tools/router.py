@@ -19,7 +19,9 @@ from orchestrator.tools.handlers import (
     ImageAnalysisHandler,
     ImageGenerationHandler,
     KGProposeHandler,
+    MemoryDeleteHandler,
     MemoryReadHandler,
+    MemoryUpdateHandler,
     MemoryWriteHandler,
     VaultProjectionHandler,
     VideoGenerationHandler,
@@ -60,6 +62,12 @@ class ToolRouter:
                 self.settings, self.event_emitter, self.http_client
             ),
             MemoryWriteHandler(
+                self.settings, self.event_emitter, self.http_client
+            ),
+            MemoryUpdateHandler(
+                self.settings, self.event_emitter, self.http_client
+            ),
+            MemoryDeleteHandler(
                 self.settings, self.event_emitter, self.http_client
             ),
             KGProposeHandler(

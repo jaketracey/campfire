@@ -13,6 +13,8 @@ class ToolType(str, Enum):
 
     MEMORY_READ = "memory_read"
     MEMORY_WRITE = "memory_write"
+    MEMORY_UPDATE = "memory_update"
+    MEMORY_DELETE = "memory_delete"
     KG_PROPOSE = "kg_propose"
     KG_ADD = "kg_add"
     KG_REMOVE = "kg_remove"
@@ -465,10 +467,55 @@ DISMISS_FRIEND_TOOL = ToolDefinition(
     required_params=["friend_companion_id"],
 )
 
+MEMORY_UPDATE_TOOL = ToolDefinition(
+    name="memory_update",
+    tool_type=ToolType.MEMORY_UPDATE,
+    description="Update an existing long-term memory about the user when information has changed or needs correction",
+    parameters={
+        "memory_id": {
+            "type": "string",
+            "description": "The ID of the memory to update (from a previous memory_read result)",
+        },
+        "updated_content": {
+            "type": "string",
+            "description": "The new content for the memory (replaces existing content)",
+        },
+        "updated_importance": {
+            "type": "number",
+            "description": "Updated importance score from 0 to 1",
+        },
+        "updated_tags": {
+            "type": "array",
+            "items": {"type": "string"},
+            "description": "Updated tags for the memory",
+        },
+    },
+    required_params=["memory_id"],
+)
+
+MEMORY_DELETE_TOOL = ToolDefinition(
+    name="memory_delete",
+    tool_type=ToolType.MEMORY_DELETE,
+    description="Delete a long-term memory that is no longer accurate or relevant. Use when the user corrects previously stored information or asks to forget something.",
+    parameters={
+        "memory_id": {
+            "type": "string",
+            "description": "The ID of the memory to delete (from a previous memory_read result)",
+        },
+        "reason": {
+            "type": "string",
+            "description": "Brief explanation of why the memory is being deleted",
+        },
+    },
+    required_params=["memory_id"],
+)
+
 # Registry of all available tools
 TOOL_REGISTRY: dict[str, ToolDefinition] = {
     "memory_read": MEMORY_READ_TOOL,
     "memory_write": MEMORY_WRITE_TOOL,
+    "memory_update": MEMORY_UPDATE_TOOL,
+    "memory_delete": MEMORY_DELETE_TOOL,
     "kg_propose": KG_PROPOSE_TOOL,
     "image_analysis": IMAGE_ANALYSIS_TOOL,
     "image_generation": IMAGE_GENERATION_TOOL,

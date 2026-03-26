@@ -705,6 +705,15 @@ export async function memoriesRoutes(app: FastifyInstance): Promise<void> {
     contentTypes: z.array(z.enum(['fact', 'preference', 'event', 'summary', 'reflection'])).optional(),
     limit: z.number().int().min(1).max(100).optional(),
     minImportance: z.number().min(0).max(1).optional(),
+    minSimilarity: z.number().min(0).max(1).optional(),
+  });
+
+  const InternalUpdateMemorySchema = z.object({
+    userId: z.string().uuid(),
+    companionId: z.string().uuid(),
+    content: z.string().min(1).max(10000).optional(),
+    importance: z.number().min(0).max(1).optional(),
+    tags: z.array(z.string()).optional(),
   });
 
   /**
@@ -812,7 +821,7 @@ export async function memoriesRoutes(app: FastifyInstance): Promise<void> {
         });
       }
 
-      const { userId, companionId, query, contentTypes, limit, minImportance } = parseResult.data;
+      const { userId, companionId, query, contentTypes, limit, minImportance, minSimilarity } = parseResult.data;
       const repo = getMemoriesRepository();
 
       try {
@@ -828,7 +837,7 @@ export async function memoriesRoutes(app: FastifyInstance): Promise<void> {
             companionId,
             embedding: queryEmbedding,
             limit: limit ?? 10,
-            minSimilarity: 0.5,
+            minSimilarity: minSimilarity ?? 0.5,
             contentTypes: contentTypes as Array<'fact' | 'preference' | 'event' | 'summary' | 'reflection'>,
             minImportance,
           });
@@ -873,6 +882,179 @@ export async function memoriesRoutes(app: FastifyInstance): Promise<void> {
         });
       } catch (error) {
         logger.error({ error, userId, companionId }, 'Failed to search memories');
+        throw error;
+      }
+    });
+  });
+
+  /**
+   * PATCH /memories/internal/:memoryId - Update memory (internal use by orchestrator)
+   */
+  app.patch('/internal/:memoryId', { preHandler: requireInternalService }, async (request: FastifyRequest, reply: FastifyReply) => {
+    return withSpan('memories.update.internal', async (span) => {
+      const { memoryId } = request.params as { memoryId: string };
+      span.setAttributes({ 'memory.id': memoryId });
+
+      const parseResult = InternalUpdateMemorySchema.safeParse(request.body);
+      if (!parseResult.success) {
+        return reply.status(400).send({
+          success: false,
+          error: {
+            code: 'VALIDATION_ERROR',
+            message: 'Invalid request body',
+            details: parseResult.error.flatten(),
+          },
+        });
+      }
+
+      const { userId, companionId, content, importance, tags } = parseResult.data;
+      const repo = getMemoriesRepository();
+
+      try {
+        // Verify the memory exists and belongs to this user/companion
+        const existing = await repo.findById(memoryId);
+        if (!existing || existing.user_id !== userId || existing.companion_id !== companionId) {
+          return reply.status(404).send({
+            success: false,
+            error: {
+              code: 'NOT_FOUND',
+              message: 'Memory not found',
+            },
+          });
+        }
+
+        // Build update payload
+        const updateData: Parameters<typeof repo.update>[1] = {};
+        if (content !== undefined) updateData.content = content;
+        if (importance !== undefined) updateData.importance = importance;
+
+        const memory = await repo.update(memoryId, updateData);
+
+        // Re-generate embedding if content changed
+        if (content !== undefined) {
+          try {
+            const embeddingService = getEmbeddingService();
+            const newEmbedding = await embeddingService.generateEmbedding(content);
+            await repo.updateEmbedding(memoryId, newEmbedding);
+          } catch (embError) {
+            logger.warn({ error: embError, memoryId }, 'Failed to regenerate embedding after memory update');
+          }
+        }
+
+        logger.info(
+          { memoryId, userId, companionId, updatedFields: Object.keys(updateData) },
+          'Memory updated via internal API'
+        );
+
+        // Emit event
+        const eventStore = getEventStore();
+        await eventStore.append({
+          eventId: nanoid(),
+          timestamp: new Date().toISOString(),
+          userId,
+          sessionId: 'system',
+          turnId: null,
+          traceId: request.id,
+          type: 'memory.updated',
+          payload: {
+            memoryId,
+            companionId,
+            updatedFields: Object.keys(updateData),
+          },
+          version: '1.0',
+          causationId: null,
+          correlationId: request.id,
+        });
+
+        return reply.send({
+          success: true,
+          data: {
+            id: memory.id,
+            userId: memory.user_id,
+            companionId: memory.companion_id,
+            content: memory.content,
+            contentType: memory.content_type,
+            importance: memory.importance,
+            updatedAt: memory.updated_at.toISOString(),
+          },
+        });
+      } catch (error) {
+        logger.error({ error, memoryId, userId, companionId }, 'Failed to update memory via internal API');
+        throw error;
+      }
+    });
+  });
+
+  /**
+   * DELETE /memories/internal/:memoryId - Soft-delete memory (internal use by orchestrator)
+   */
+  app.delete('/internal/:memoryId', { preHandler: requireInternalService }, async (request: FastifyRequest, reply: FastifyReply) => {
+    return withSpan('memories.delete.internal', async (span) => {
+      const { memoryId } = request.params as { memoryId: string };
+      const { userId, companionId } = request.query as { userId?: string; companionId?: string };
+      span.setAttributes({ 'memory.id': memoryId });
+
+      if (!userId || !companionId) {
+        return reply.status(400).send({
+          success: false,
+          error: {
+            code: 'VALIDATION_ERROR',
+            message: 'userId and companionId query parameters are required',
+          },
+        });
+      }
+
+      const repo = getMemoriesRepository();
+
+      try {
+        // Verify the memory exists and belongs to this user/companion
+        const existing = await repo.findById(memoryId);
+        if (!existing || existing.user_id !== userId || existing.companion_id !== companionId) {
+          return reply.status(404).send({
+            success: false,
+            error: {
+              code: 'NOT_FOUND',
+              message: 'Memory not found',
+            },
+          });
+        }
+
+        // Soft-delete (sets status='deleted')
+        await repo.delete(memoryId);
+
+        logger.info(
+          { memoryId, userId, companionId },
+          'Memory soft-deleted via internal API'
+        );
+
+        // Emit event
+        const eventStore = getEventStore();
+        await eventStore.append({
+          eventId: nanoid(),
+          timestamp: new Date().toISOString(),
+          userId,
+          sessionId: 'system',
+          turnId: null,
+          traceId: request.id,
+          type: 'memory.deleted',
+          payload: {
+            memoryId,
+            companionId,
+          },
+          version: '1.0',
+          causationId: null,
+          correlationId: request.id,
+        });
+
+        return reply.send({
+          success: true,
+          data: {
+            id: memoryId,
+            deleted: true,
+          },
+        });
+      } catch (error) {
+        logger.error({ error, memoryId, userId, companionId }, 'Failed to delete memory via internal API');
         throw error;
       }
     });
