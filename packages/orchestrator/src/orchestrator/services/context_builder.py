@@ -22,6 +22,7 @@ from orchestrator.services.hybrid_search import KGContextItem
 from orchestrator.services.lorebook import LorebookMatch
 from orchestrator.services.hierarchical_memory import HierarchicalRetrievalResult
 from orchestrator.services.memory_conflict import MemoryWithValidity
+from orchestrator.services.temporal_context import TemporalContext, format_temporal_prompt_section
 from orchestrator.prompts.manager import PromptManager
 from orchestrator.utils import normalize_tool_names
 
@@ -95,6 +96,8 @@ class ContextBuilder:
         lorebook_matches: list[LorebookMatch] | None = None,
         hierarchical_memory: HierarchicalRetrievalResult | None = None,
         historical_memories: list[MemoryWithValidity] | None = None,
+        temporal_context: TemporalContext | None = None,
+        user_display_name: str | None = None,
         prompt_version: str = "1.0.0",
     ) -> str:
         """Build the system prompt from companion spec and context."""
@@ -158,6 +161,14 @@ class ContextBuilder:
         if situational_tenets:
             situational_section = self._format_situational_tenets(situational_tenets)
             full_prompt += f"\n\n{situational_section}"
+
+        # Add temporal context (time awareness) early so it colors the whole response
+        if temporal_context:
+            temporal_section = format_temporal_prompt_section(
+                temporal_context,
+                user_name=user_display_name,
+            )
+            full_prompt += f"\n\n{temporal_section}"
 
         # Add session context if available
         if session_summary:
@@ -236,6 +247,8 @@ class ContextBuilder:
         lorebook_matches: list[LorebookMatch] | None = None,
         hierarchical_memory: HierarchicalRetrievalResult | None = None,
         historical_memories: list[MemoryWithValidity] | None = None,
+        temporal_context: TemporalContext | None = None,
+        user_display_name: str | None = None,
     ) -> list[dict[str, Any]]:
         """Build the message list for the model API call."""
         messages: list[dict[str, Any]] = []
@@ -257,6 +270,8 @@ class ContextBuilder:
             lorebook_matches=lorebook_matches,
             hierarchical_memory=hierarchical_memory,
             historical_memories=historical_memories,
+            temporal_context=temporal_context,
+            user_display_name=user_display_name,
             prompt_version=context.prompt_version,
         )
         messages.append({"role": "system", "content": system_prompt})

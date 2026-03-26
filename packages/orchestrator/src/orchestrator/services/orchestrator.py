@@ -62,6 +62,7 @@ from orchestrator.services.session_summarization import (
     SessionSummarizationService,
 )
 from orchestrator.services.tenet_retriever import TenetRetriever
+from orchestrator.services.temporal_context import TemporalContext, TemporalContextService
 from orchestrator.services.turn_manager import TurnManager
 from orchestrator.utils import (
     build_tool_context_metadata,
@@ -129,6 +130,7 @@ class ConversationOrchestrator:
         self.turn_manager = TurnManager(event_emitter)
         self.tenet_retriever = tenet_retriever or TenetRetriever(settings)
         self.gift_recall_service = gift_recall_service or GiftRecallService(settings)
+        self.temporal_context_service = TemporalContextService()
 
         # Store routing config service for database-driven routing
         self.routing_config_service = routing_config_service
@@ -209,6 +211,8 @@ class ConversationOrchestrator:
         active_game: dict | None = None,
         liked_content: list[dict] | None = None,
         engagement_level: str | None = None,
+        user_timezone: str | None = None,
+        user_display_name: str | None = None,
         stream: bool = False,
     ) -> ConversationTurn | AsyncGenerator[str, None]:
         """Process a user message and generate a response."""
@@ -483,6 +487,29 @@ class ConversationOrchestrator:
                         companion_id=str(companion_spec.id),
                     )
 
+            # Build temporal context for time awareness
+            temporal_ctx: TemporalContext | None = None
+            try:
+                temporal_ctx = await self.temporal_context_service.build_temporal_context(
+                    user_id=user_id,
+                    companion_id=companion_spec.id,
+                    user_timezone=user_timezone,
+                )
+                logger.debug(
+                    "temporal_context_built",
+                    user_id=str(user_id),
+                    companion_id=str(companion_spec.id),
+                    time_of_day=temporal_ctx.time_of_day.value,
+                    total_sessions=temporal_ctx.total_sessions,
+                )
+            except Exception as e:
+                logger.warning(
+                    "temporal_context_build_failed",
+                    error=str(e),
+                    user_id=str(user_id),
+                    companion_id=str(companion_spec.id),
+                )
+
             # Build context with situational tenets
             context = self.context_builder.build_context(
                 session_id=session_id,
@@ -498,7 +525,7 @@ class ConversationOrchestrator:
                 policy_version=self.safety_gate.policy_version,
             )
 
-            # Build messages with gift context, companion self-knowledge, and KG context
+            # Build messages with gift context, companion self-knowledge, KG context, and temporal context
             messages = self.context_builder.build_messages(
                 context=context,
                 current_user_message=user_message,
@@ -510,6 +537,8 @@ class ConversationOrchestrator:
                 liked_content=liked_content,
                 engagement_level=engagement_level,
                 kg_context=kg_context,
+                temporal_context=temporal_ctx,
+                user_display_name=user_display_name,
             )
 
             # Get available tools

@@ -13,6 +13,7 @@ import { logger } from '../observability/logger.js';
 const UpdateProfileSchema = z.object({
   displayName: z.string().min(1).max(100).optional(),
   preferences: z.record(z.unknown()).optional(),
+  timezone: z.string().min(1).max(50).optional(),
 });
 
 const UpdatePreferencesSchema = z.object({
@@ -81,6 +82,7 @@ export async function usersRoutes(app: FastifyInstance): Promise<void> {
       role: user.role,
       createdAt: user.created_at,
       preferences: profile?.preferences ?? {},
+      timezone: profile?.timezone ?? null,
     });
   });
 
@@ -120,6 +122,7 @@ export async function usersRoutes(app: FastifyInstance): Promise<void> {
     const profile = await userRepo.updateProfile(userId, {
       display_name: result.data.displayName,
       preferences: result.data.preferences,
+      timezone: result.data.timezone,
     });
 
     logger.info({ userId }, 'User profile updated');
@@ -130,6 +133,7 @@ export async function usersRoutes(app: FastifyInstance): Promise<void> {
       displayName: profile.display_name,
       role: user.role,
       preferences: profile.preferences,
+      timezone: profile.timezone,
     });
   });
 

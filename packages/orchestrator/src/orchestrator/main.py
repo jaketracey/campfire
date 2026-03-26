@@ -45,6 +45,7 @@ from orchestrator.api.test_runner import router as test_router
 from orchestrator.api.health import router as health_router
 from orchestrator.api.providers import router as providers_router
 from orchestrator.api.config import router as config_router
+from orchestrator.api.temporal import router as temporal_router
 from orchestrator.video.router import router as video_router
 from orchestrator.utils import build_tool_context_metadata, normalize_tool_name
 
@@ -227,6 +228,8 @@ class ProcessMessageRequest(BaseModel):
     session_summary: SessionSummary | None = None
     long_term_memories: list[LongTermMemory] | None = None
     companion_self_knowledge: list[CompanionSelfKnowledge] | None = None
+    user_timezone: str | None = None
+    user_display_name: str | None = None
 
 
 class ProcessMessageResponse(BaseModel):
@@ -252,6 +255,8 @@ class StreamMessageRequest(BaseModel):
     active_game: dict | None = None  # Active game state for game context injection
     liked_content: list[dict] | None = None  # User's liked messages for companion awareness
     engagement_level: str | None = None  # Engagement level for anonymous user guidance (low/medium/high)
+    user_timezone: str | None = None
+    user_display_name: str | None = None
 
 
 class HealthResponse(BaseModel):
@@ -872,6 +877,7 @@ app.include_router(test_router)
 app.include_router(health_router)
 app.include_router(providers_router)
 app.include_router(config_router)
+app.include_router(temporal_router)
 app.include_router(video_router)
 
 
@@ -1075,6 +1081,8 @@ async def process_message(request: ProcessMessageRequest) -> ProcessMessageRespo
             session_summary=request.session_summary,
             long_term_memories=request.long_term_memories,
             companion_self_knowledge=request.companion_self_knowledge,
+            user_timezone=request.user_timezone,
+            user_display_name=request.user_display_name,
             stream=False,
         )
 
@@ -1146,6 +1154,8 @@ async def stream_message(request: StreamMessageRequest) -> StreamingResponse:
                 active_game=request.active_game,
                 liked_content=request.liked_content,
                 engagement_level=request.engagement_level,
+                user_timezone=request.user_timezone,
+                user_display_name=request.user_display_name,
                 stream=True,
             )
             stream_tool_calls: list[dict[str, Any]] = []

@@ -72,6 +72,7 @@ const SessionStartPayloadSchema = z.object({
 
 const UserMessagePayloadSchema = z.object({
   content: z.string().min(1).max(32000), // Max 32KB message
+  timezone: z.string().min(1).max(50).optional(), // IANA timezone, e.g. "America/New_York"
 });
 
 const AudioChunkPayloadSchema = z.object({
@@ -1321,7 +1322,7 @@ async function handleSessionEnd(client: ConnectedClient): Promise<void> {
  */
 async function handleUserMessage(
   client: ConnectedClient,
-  payload: { content: string }
+  payload: { content: string; timezone?: string }
 ): Promise<void> {
   if (!client.authenticated || !client.user) {
     sendError(client, 'Authentication required');
@@ -1641,6 +1642,8 @@ async function handleUserMessage(
       group_chat: groupChatContext,
       // Engagement level for anonymous user guidance
       engagement_level: engagementLevel ?? null,
+      // Temporal context
+      user_timezone: payload.timezone ?? null,
     };
 
     logger.debug(
