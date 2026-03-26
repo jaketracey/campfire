@@ -5,6 +5,20 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [v0.4.0] - 2026-03-26
+
+## What's Changed
+
+### Features
+- feat(mobile): add video call UI for live companion video chat (7045688)
+- feat(web): add LiveKit video call UI for companion video chat (09eed08)
+- feat(gateway): add video call API, shared types, and WebSocket billing (0e0b352)
+- feat(video): add LiveKit AI agent service for live video chat with companions (dc4e4db)
+
+### Contributors
+- @Jake Tracey
+
+
 ## [v0.3.0] - 2026-03-26
 
 ## What's Changed
