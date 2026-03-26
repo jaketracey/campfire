@@ -60,6 +60,7 @@ import { adminInfluencerModelsRoutes } from './admin-influencer-models.js';
 import { adminCompanionsRoutes } from './admin-companions.js';
 import { adminMemoriesRoutes } from './admin-memories.js';
 import { analyticsInternalRoutes } from './analytics-internal.js';
+import { videoCallsRoutes } from './video-calls.js';
 import { logger } from '../observability/logger.js';
 
 /**
@@ -203,6 +204,9 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
 
       // Analytics internal routes (service-to-service)
       await api.register(analyticsInternalRoutes, { prefix: '/analytics' });
+
+      // Video call routes (LiveKit-based video chat)
+      await api.register(videoCallsRoutes, { prefix: '/video-calls' });
 
       // Public SEO routes (for SSR/sitemap)
       await api.register(seoPublicRoutes, { prefix: '/public' });

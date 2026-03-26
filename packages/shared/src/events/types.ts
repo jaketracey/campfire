@@ -112,6 +112,11 @@ export const EventTypes = {
   COMPANION_MESSAGE_CHUNK: 'companion.message.chunk',
   COMPANION_MESSAGE_END: 'companion.message.end',
   GROUP_CHAT_STATE_UPDATE: 'group.chat.state.update',
+
+  // Video Call events
+  VIDEO_CALL_STARTED: 'video_call.started',
+  VIDEO_CALL_ENDED: 'video_call.ended',
+  VIDEO_CALL_FAILED: 'video_call.failed',
 } as const;
 
 export type EventType = typeof EventTypes[keyof typeof EventTypes];
@@ -158,6 +163,11 @@ export const EventCategories = {
     'companion.message.chunk',
     'companion.message.end',
     'group.chat.state.update',
+  ],
+  VIDEO_CALL: [
+    'video_call.started',
+    'video_call.ended',
+    'video_call.failed',
   ],
 } as const;
 

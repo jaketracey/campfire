@@ -48,3 +48,6 @@ export * from './email.js';
 
 // Gift events
 export * from './gift.js';
+
+// Video Call events
+export * from './video-call.js';

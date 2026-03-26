@@ -19,7 +19,7 @@ import {
   getLLMUsageService,
   type EventContext,
 } from '../services/index.js';
-import { getKnowledgeGraphRepository, getSessionsRepository, getGiftsRepository } from '../repositories/index.js';
+import { getKnowledgeGraphRepository, getSessionsRepository, getGiftsRepository, getVideoCallsRepository } from '../repositories/index.js';
 import { getAnonymousUsageRepository } from '../repositories/anonymous-usage.js';
 import { getUsersRepository } from '../repositories/users.js';
 import { getAdminSettingsRepository } from '../repositories/admin-settings.js';
@@ -117,6 +117,10 @@ const InviteCompanionPayloadSchema = z.object({
 
 const DismissCompanionPayloadSchema = z.object({
   companionId: z.string().uuid(),
+});
+
+const VideoCallStartPayloadSchema = z.object({
+  videoCallId: z.string().uuid(),
 });
 
 /**
@@ -533,6 +537,13 @@ export type WSMessageType =
   | 'voice_call_interrupt'
   | 'voice_call_insufficient_tokens'
   | 'voice_call_balance_update'
+  // Video call message types
+  | 'video_call_start'
+  | 'video_call_started'
+  | 'video_call_end'
+  | 'video_call_ended'
+  | 'video_call_error'
+  | 'video_call_token_update'
   | 'engagement_update'
   | 'error';
 
@@ -592,6 +603,12 @@ interface ConnectedClient {
   // Voice call billing state
   voiceCallBillingInterval?: ReturnType<typeof setInterval>;
   voiceCallTokensDeducted: number;
+  // Video call state
+  videoCallActive: boolean;
+  videoCallId: string | null;
+  videoCallStartedAt: Date | null;
+  videoCallBillingInterval: ReturnType<typeof setInterval> | null;
+  videoCallTokensDeducted: number;
   // Engagement tracking state (for anonymous users)
   lastMessageTimestamp?: Date;
   previousMessages: string[];
@@ -646,6 +663,11 @@ export async function registerWebSocketHandler(app: FastifyInstance): Promise<vo
       fingerprint: null,
       voiceCallActive: false,
       voiceCallTokensDeducted: 0,
+      videoCallActive: false,
+      videoCallId: null,
+      videoCallStartedAt: null,
+      videoCallBillingInterval: null,
+      videoCallTokensDeducted: 0,
       previousMessages: [],
       rateLimitMessages: 0,
       rateLimitWindowStart: Date.now(),
@@ -680,6 +702,26 @@ export async function registerWebSocketHandler(app: FastifyInstance): Promise<vo
       if (client.voiceCallBillingInterval) {
         clearInterval(client.voiceCallBillingInterval);
         client.voiceCallBillingInterval = undefined;
+      }
+
+      // Clean up video call billing interval and end call on disconnect
+      if (client.videoCallBillingInterval) {
+        clearInterval(client.videoCallBillingInterval);
+        client.videoCallBillingInterval = null;
+      }
+      if (client.videoCallActive && client.videoCallId) {
+        const videoCallsRepo = getVideoCallsRepository();
+        const duration = client.videoCallStartedAt
+          ? Math.round((Date.now() - client.videoCallStartedAt.getTime()) / 1000)
+          : 0;
+        videoCallsRepo.endCall(
+          client.videoCallId,
+          new Date(),
+          duration,
+          client.videoCallTokensDeducted
+        ).catch((err) => {
+          logger.error({ err, videoCallId: client.videoCallId }, 'Failed to end video call on disconnect');
+        });
       }
 
       clients.delete(clientId);
@@ -867,6 +909,16 @@ async function handleMessage(client: ConnectedClient, message: WSMessage): Promi
 
     case 'voice_call_interrupt':
       await handleVoiceCallInterrupt(client);
+      break;
+
+    case 'video_call_start': {
+      const payload = validatePayload(VideoCallStartPayloadSchema, message.payload, 'video_call_start', client);
+      if (payload) await handleVideoCallStart(client, payload);
+      break;
+    }
+
+    case 'video_call_end':
+      await handleVideoCallEnd(client);
       break;
 
     default:
@@ -2591,6 +2643,239 @@ async function handleVoiceCallInterrupt(client: ConnectedClient): Promise<void> 
   }
 
   logger.debug({ clientId: client.id }, 'Voice call interrupted by user');
+}
+
+// ===========================================================================
+// Video Call Handlers (WebSocket billing, 2 tokens/sec)
+// ===========================================================================
+
+/**
+ * Handle video call start via WebSocket.
+ * The client must have already created a call via POST /video-calls,
+ * and now informs the gateway via WS to begin per-second billing.
+ */
+async function handleVideoCallStart(
+  client: ConnectedClient,
+  payload: { videoCallId: string }
+): Promise<void> {
+  if (!client.authenticated || !client.user) {
+    sendError(client, 'Authentication required');
+    return;
+  }
+
+  const userId = client.user.userId;
+  const videoCallsRepo = getVideoCallsRepository();
+  const giftsRepo = getGiftsRepository();
+
+  // Verify the video call exists and belongs to this user
+  const videoCall = await videoCallsRepo.findById(payload.videoCallId);
+  if (!videoCall || videoCall.user_id !== userId) {
+    sendError(client, 'Video call not found');
+    return;
+  }
+
+  if (videoCall.status !== 'connecting' && videoCall.status !== 'active') {
+    sendError(client, `Video call is ${videoCall.status}`);
+    return;
+  }
+
+  // Check token balance
+  const balance = await giftsRepo.getTokenBalance(userId);
+  if (!balance || balance.balance < 2) {
+    send(client, {
+      type: 'video_call_error',
+      payload: {
+        videoCallId: payload.videoCallId,
+        error: 'insufficient_tokens',
+        balance: balance?.balance ?? 0,
+      },
+    });
+    return;
+  }
+
+  // Mark call as active in DB
+  await videoCallsRepo.updateStatus(payload.videoCallId, 'active');
+
+  // Set client state
+  client.videoCallActive = true;
+  client.videoCallId = payload.videoCallId;
+  client.videoCallStartedAt = new Date();
+  client.videoCallTokensDeducted = 0;
+
+  // Start billing interval - deduct 2 tokens per second (double voice rate)
+  client.videoCallBillingInterval = setInterval(async () => {
+    try {
+      await deductVideoCallTokens(client);
+    } catch (error) {
+      logger.error(
+        { clientId: client.id, videoCallId: client.videoCallId, error },
+        'Error deducting video call tokens'
+      );
+      await handleVideoCallEnd(client).catch((endError) => {
+        logger.error({ clientId: client.id, error: endError }, 'Failed to end video call after billing error');
+      });
+    }
+  }, 1000);
+
+  send(client, {
+    type: 'video_call_started',
+    payload: {
+      videoCallId: payload.videoCallId,
+      startedAt: client.videoCallStartedAt.toISOString(),
+      currentBalance: balance.balance,
+      tokensPerSecond: 2,
+    },
+  });
+
+  logger.info(
+    { clientId: client.id, videoCallId: payload.videoCallId, balance: balance.balance },
+    'Video call billing started'
+  );
+}
+
+/**
+ * Deduct tokens for video call billing (2 per second).
+ */
+async function deductVideoCallTokens(client: ConnectedClient): Promise<void> {
+  if (!client.videoCallActive || !client.user || !client.videoCallId) {
+    return;
+  }
+
+  const userId = client.user.userId;
+  const giftsRepo = getGiftsRepository();
+  const creatorEarnings = getCreatorEarningsService();
+
+  // Deduct 2 tokens (video rate)
+  const result1 = await giftsRepo.deductVoiceCallToken(
+    userId,
+    client.sessionId ?? 'video-call',
+    'Video call usage - 1 of 2 tokens/sec'
+  );
+  const result2 = await giftsRepo.deductVoiceCallToken(
+    userId,
+    client.sessionId ?? 'video-call',
+    'Video call usage - 2 of 2 tokens/sec'
+  );
+
+  // Use the second result for the final balance check
+  const result = result2;
+
+  if (result.success && result1.success) {
+    client.videoCallTokensDeducted += 2;
+
+    // Track earnings for creator
+    if (result.transactionId && client.companionId && client.companionOwnerUserId) {
+      await creatorEarnings.recordTokenSpend({
+        tokenTransactionId: result.transactionId,
+        spenderUserId: userId,
+        creatorUserId: client.companionOwnerUserId,
+        companionId: client.companionId,
+        sessionId: client.sessionId ?? 'video-call',
+        feature: 'video',
+        tokensSpent: 2,
+        metadata: { seconds: Math.floor(client.videoCallTokensDeducted / 2) },
+      });
+    }
+
+    // Increment tokens in the DB record
+    const videoCallsRepo = getVideoCallsRepository();
+    await videoCallsRepo.incrementTokens(client.videoCallId, 2);
+
+    send(client, {
+      type: 'video_call_token_update',
+      payload: {
+        balance: result.newBalance,
+        tokensUsed: client.videoCallTokensDeducted,
+        videoCallId: client.videoCallId,
+      },
+    });
+  } else {
+    // Tokens depleted - end the call
+    logger.info(
+      { clientId: client.id, videoCallId: client.videoCallId, tokensUsed: client.videoCallTokensDeducted },
+      'Video call ended - tokens depleted'
+    );
+
+    if (client.videoCallBillingInterval) {
+      clearInterval(client.videoCallBillingInterval);
+      client.videoCallBillingInterval = null;
+    }
+
+    const duration = client.videoCallStartedAt
+      ? Math.round((Date.now() - client.videoCallStartedAt.getTime()) / 1000)
+      : 0;
+
+    const tokensUsed = client.videoCallTokensDeducted;
+    const videoCallId = client.videoCallId;
+
+    // End the DB record
+    const videoCallsRepo = getVideoCallsRepository();
+    await videoCallsRepo.endCall(videoCallId, new Date(), duration, tokensUsed);
+
+    // Reset state
+    client.videoCallActive = false;
+    client.videoCallId = null;
+    client.videoCallStartedAt = null;
+    client.videoCallTokensDeducted = 0;
+
+    send(client, {
+      type: 'video_call_ended',
+      payload: {
+        videoCallId,
+        duration,
+        reason: 'tokens_depleted',
+        tokensUsed,
+      },
+    });
+  }
+}
+
+/**
+ * Handle video call end (user-initiated via WebSocket)
+ */
+async function handleVideoCallEnd(client: ConnectedClient): Promise<void> {
+  if (!client.videoCallActive) {
+    return;
+  }
+
+  if (client.videoCallBillingInterval) {
+    clearInterval(client.videoCallBillingInterval);
+    client.videoCallBillingInterval = null;
+  }
+
+  const duration = client.videoCallStartedAt
+    ? Math.round((Date.now() - client.videoCallStartedAt.getTime()) / 1000)
+    : 0;
+
+  const tokensUsed = client.videoCallTokensDeducted;
+  const videoCallId = client.videoCallId;
+
+  // End DB record
+  if (videoCallId) {
+    const videoCallsRepo = getVideoCallsRepository();
+    await videoCallsRepo.endCall(videoCallId, new Date(), duration, tokensUsed);
+  }
+
+  // Reset state
+  client.videoCallActive = false;
+  client.videoCallId = null;
+  client.videoCallStartedAt = null;
+  client.videoCallTokensDeducted = 0;
+
+  send(client, {
+    type: 'video_call_ended',
+    payload: {
+      videoCallId,
+      duration,
+      reason: 'user_ended',
+      tokensUsed,
+    },
+  });
+
+  logger.info(
+    { clientId: client.id, videoCallId, duration, tokensUsed },
+    'Video call ended by user'
+  );
 }
 
 /**

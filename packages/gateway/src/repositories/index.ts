@@ -398,6 +398,19 @@ export type {
   SessionSearchResponse,
 } from './session-search.js';
 
+// Video Calls repository
+import { getVideoCallsRepository as _getVideoCallsRepository } from './video-calls.js';
+export {
+  VideoCallsRepository,
+  getVideoCallsRepository,
+} from './video-calls.js';
+export type {
+  VideoCallRow,
+  VideoCallInsert,
+  VideoCallUpdate,
+  VideoCallListFilters,
+} from './video-calls.js';
+
 // Ads repository
 import { getAdsRepository as _getAdsRepository } from './ads.js';
 export {
@@ -442,6 +455,7 @@ export function initializeRepositories(): void {
   _getEngagementRepository();
   _getSessionSearchRepository();
   _getAdsRepository();
+  _getVideoCallsRepository();
 }
 
 /**
@@ -476,5 +490,6 @@ export function getRepositories() {
     engagement: _getEngagementRepository(),
     sessionSearch: _getSessionSearchRepository(),
     ads: _getAdsRepository(),
+    videoCalls: _getVideoCallsRepository(),
   };
 }
