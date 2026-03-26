@@ -199,7 +199,7 @@ export function useVideoCall({
         sessionId,
       });
 
-      const { videoCallId: newCallId, token, roomUrl: livekitUrl } = response.data as any;
+      const { videoCallId: newCallId, token, roomUrl: livekitUrl } = response as any;
       setCallId(newCallId);
       callIdRef.current = newCallId;
 
@@ -277,7 +277,8 @@ export function useVideoCall({
     if (currentCallId) {
       try {
         const response = await post<any>(`/video-calls/${currentCallId}/end`);
-        const summary = { duration: response.data.durationSeconds ?? 0, tokensUsed: response.data.tokensDeducted ?? 0 };
+        const data = response as any;
+        const summary = { duration: data.durationSeconds ?? 0, tokensUsed: data.tokensDeducted ?? 0 };
         setCallSummary(summary);
         onCallEnded?.(summary.duration, summary.tokensUsed);
       } catch {
