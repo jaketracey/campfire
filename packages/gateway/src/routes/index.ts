@@ -62,6 +62,7 @@ import { adminMemoriesRoutes } from './admin-memories.js';
 import { analyticsInternalRoutes } from './analytics-internal.js';
 import { videoCallsRoutes } from './video-calls.js';
 import { outreachRoutes, outreachConfigRoutes } from './outreach.js';
+import { telegramWebhookRoutes, messagingRoutes, companionTelegramRoutes } from './telegram.js';
 import { logger } from '../observability/logger.js';
 
 /**
@@ -215,6 +216,12 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
       // Outreach config routes (nested under /companions)
       await api.register(outreachConfigRoutes, { prefix: '/companions' });
 
+      // Messaging channel routes (Telegram, Discord, WhatsApp, SMS)
+      await api.register(messagingRoutes, { prefix: '/messaging' });
+
+      // Companion Telegram configuration routes
+      await api.register(companionTelegramRoutes, { prefix: '/companions' });
+
       // Public SEO routes (for SSR/sitemap)
       await api.register(seoPublicRoutes, { prefix: '/public' });
       await api.register(brandPublicRoutes, { prefix: '/public' });
@@ -228,6 +235,9 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
 
   // Webhook routes (at root level for external services)
   await app.register(emailWebhookRoutes, { prefix: '/webhooks/email' });
+
+  // Telegram webhook routes (at root level for Telegram API callbacks)
+  await app.register(telegramWebhookRoutes, { prefix: '/webhooks/telegram' });
 
   logger.info('All API routes registered');
 }

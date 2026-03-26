@@ -20,6 +20,7 @@ async function bootstrap() {
   const { AdSpendSyncWorker, LtvCalculationWorker, createAdSpendSyncQueue, createLtvCalculationQueue } = await import('./ads/index.js');
   const { MemoryDecayWorker, MemoryExpirationWorker, createMemoryDecayQueue, createMemoryExpirationQueue } = await import('./memory/index.js');
   const { ProactiveOutreachWorker, createProactiveOutreachQueue } = await import('./proactive/index.js');
+  const { MessagingInboundWorker } = await import('./messaging/index.js');
   const { createDbClient } = await import('./db/client.js');
   const { createS3Client } = await import('./storage/s3.js');
   const { createHealthServer } = await import('./health.js');
@@ -156,6 +157,14 @@ async function bootstrap() {
     concurrency: 1,
   });
 
+  // Messaging inbound worker - processes messages from external platforms
+  const messagingInboundWorker = new MessagingInboundWorker({
+    connection,
+    db,
+    logger: logger.child({ worker: 'messaging-inbound' }),
+    concurrency: 5, // Multiple messages can process in parallel
+  });
+
   // Memory expiration worker - soft-deletes expired memories
   const memoryExpirationWorker = new MemoryExpirationWorker({
     connection,
@@ -192,6 +201,7 @@ async function bootstrap() {
     memoryDecayWorker.start(),
     memoryExpirationWorker.start(),
     proactiveOutreachWorker.start(),
+    messagingInboundWorker.start(),
   ].filter(Boolean));
 
   logger.info('All projection workers started successfully');
@@ -201,7 +211,7 @@ async function bootstrap() {
     'vault', 'knowledge-graph', 'summary', 'personality-profile',
     'email', 'image-rendition', 'video-generation', 'gift-generation',
     'influencer-sample-generation', 'ad-spend-sync', 'ltv-calculation',
-    'memory-decay', 'memory-expiration', 'proactive-outreach',
+    'memory-decay', 'memory-expiration', 'proactive-outreach', 'messaging-inbound',
     ...(embeddingWorker ? ['embedding'] : []),
   ];
   const healthServer = createHealthServer({
@@ -235,6 +245,7 @@ async function bootstrap() {
       memoryDecayWorker.stop(),
       memoryExpirationWorker.stop(),
       proactiveOutreachWorker.stop(),
+      messagingInboundWorker.stop(),
     ].filter(Boolean));
     await connection.quit();
     process.exit(0);

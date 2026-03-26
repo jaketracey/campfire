@@ -61,6 +61,7 @@
     "bullmq": "^5.30.0",
     "dockerode": "^4.0.9",
     "fastify": "^5.1.0",
+    "grammy": "^1.41.1",
     "ioredis": "^5.4.2",
     "jose": "^5.9.6",
     "livekit-server-sdk": "^2.15.0",

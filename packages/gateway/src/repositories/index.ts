@@ -411,6 +411,21 @@ export type {
   VideoCallListFilters,
 } from './video-calls.js';
 
+// Messaging Channels repository
+import { getMessagingChannelsRepository as _getMessagingChannelsRepository } from './messaging-channels.js';
+export {
+  MessagingChannelsRepository,
+  getMessagingChannelsRepository,
+} from './messaging-channels.js';
+export type {
+  MessagingChannelRow,
+  MessagingChannelInsert,
+  MessagingChannelUpdate,
+  MessagingChannelListFilters,
+  MessagingLinkCodeRow,
+  TelegramBotConfigRow,
+} from './messaging-channels.js';
+
 // Ads repository
 import { getAdsRepository as _getAdsRepository } from './ads.js';
 export {
@@ -456,6 +471,7 @@ export function initializeRepositories(): void {
   _getSessionSearchRepository();
   _getAdsRepository();
   _getVideoCallsRepository();
+  _getMessagingChannelsRepository();
 }
 
 /**
@@ -491,5 +507,6 @@ export function getRepositories() {
     sessionSearch: _getSessionSearchRepository(),
     ads: _getAdsRepository(),
     videoCalls: _getVideoCallsRepository(),
+    messagingChannels: _getMessagingChannelsRepository(),
   };
 }
