@@ -59,38 +59,108 @@ export async function memoriesRoutes(app: FastifyInstance): Promise<void> {
       const {
         companionId,
         contentType,
+        status,
+        tags,
+        minImportance,
         limit = '50',
         offset = '0',
       } = request.query as {
         companionId?: string;
         contentType?: string;
+        status?: string;
+        tags?: string;
+        minImportance?: string;
         limit?: string;
         offset?: string;
       };
 
-      // TODO: Implement via memory repository
-      // - Query memories table
-      // - Filter by companionId, contentType
-      // - Paginate results
+      // Validate query params
+      const parsedLimit = Math.min(Math.max(parseInt(limit, 10) || 50, 1), 100);
+      const parsedOffset = Math.max(parseInt(offset, 10) || 0, 0);
 
-      logger.debug(
-        { userId: user.userId, companionId, contentType, limit, offset },
-        'Listing memories'
-      );
-
-      // Stub response
-      return reply.send({
-        success: true,
-        data: {
-          items: [],
-          pagination: {
-            limit: parseInt(limit, 10),
-            offset: parseInt(offset, 10),
-            total: 0,
-            hasMore: false,
+      const validContentTypes = ['fact', 'preference', 'event', 'summary', 'reflection'];
+      if (contentType && !validContentTypes.includes(contentType)) {
+        return reply.status(400).send({
+          success: false,
+          error: {
+            code: 'VALIDATION_ERROR',
+            message: `Invalid contentType. Must be one of: ${validContentTypes.join(', ')}`,
+            timestamp: new Date().toISOString(),
           },
-        },
-      });
+        });
+      }
+
+      const validStatuses = ['active', 'archived'];
+      if (status && !validStatuses.includes(status)) {
+        return reply.status(400).send({
+          success: false,
+          error: {
+            code: 'VALIDATION_ERROR',
+            message: `Invalid status. Must be one of: ${validStatuses.join(', ')}`,
+            timestamp: new Date().toISOString(),
+          },
+        });
+      }
+
+      const parsedMinImportance = minImportance !== undefined ? parseFloat(minImportance) : undefined;
+      if (parsedMinImportance !== undefined && (isNaN(parsedMinImportance) || parsedMinImportance < 0 || parsedMinImportance > 1)) {
+        return reply.status(400).send({
+          success: false,
+          error: {
+            code: 'VALIDATION_ERROR',
+            message: 'minImportance must be a number between 0 and 1',
+            timestamp: new Date().toISOString(),
+          },
+        });
+      }
+
+      const parsedTags = tags ? tags.split(',').map(t => t.trim()).filter(Boolean) : undefined;
+
+      const repo = getMemoriesRepository();
+
+      try {
+        const result = await repo.listByUser({
+          userId: user.userId,
+          companionId,
+          contentType: contentType as 'fact' | 'preference' | 'event' | 'summary' | 'reflection' | undefined,
+          status: status as 'active' | 'archived' | undefined,
+          minImportance: parsedMinImportance,
+          tags: parsedTags,
+          limit: parsedLimit,
+          offset: parsedOffset,
+        });
+
+        logger.debug(
+          { userId: user.userId, companionId, contentType, count: result.data.length },
+          'Listing memories'
+        );
+
+        return reply.send({
+          success: true,
+          data: {
+            items: result.data.map(m => ({
+              id: m.id,
+              companionId: m.companion_id,
+              content: m.content,
+              contentType: m.content_type,
+              importance: m.importance,
+              metadata: m.metadata,
+              expiresAt: m.expires_at?.toISOString() ?? null,
+              createdAt: m.created_at.toISOString(),
+              updatedAt: m.updated_at.toISOString(),
+            })),
+            pagination: {
+              limit: parsedLimit,
+              offset: parsedOffset,
+              total: result.total ?? 0,
+              hasMore: result.hasMore,
+            },
+          },
+        });
+      } catch (error) {
+        logger.error({ error, userId: user.userId }, 'Failed to list memories');
+        throw error;
+      }
     });
   });
 
@@ -118,52 +188,76 @@ export async function memoriesRoutes(app: FastifyInstance): Promise<void> {
 
       const { companionId, content, contentType, importance, metadata, expiresAt } = parseResult.data;
 
-      // TODO: Verify user has access to companion
-      // TODO: Generate embedding for semantic search
-      // TODO: Create memory via repository
+      const repo = getMemoriesRepository();
 
-      const memoryId = nanoid();
-      logger.info(
-        { memoryId, userId: user.userId, companionId, contentType },
-        'Memory created'
-      );
+      try {
+        // Generate embedding for the memory content
+        let embedding: number[] | undefined;
+        try {
+          const embeddingService = getEmbeddingService();
+          embedding = await embeddingService.generateEmbedding(content);
+        } catch (embError) {
+          logger.warn({ error: embError }, 'Failed to generate embedding for memory');
+        }
 
-      // Emit memory.created event
-      const eventStore = getEventStore();
-      await eventStore.append({
-        eventId: nanoid(),
-        timestamp: new Date().toISOString(),
-        userId: user.userId,
-        sessionId: 'memory',
-        turnId: null,
-        traceId: request.id,
-        type: 'memory.created',
-        payload: {
-          memoryId,
-          companionId,
-          contentType,
-          contentLength: content.length,
-        },
-        version: '1.0',
-        causationId: null,
-        correlationId: request.id,
-      });
-
-      return reply.status(201).send({
-        success: true,
-        data: {
-          id: memoryId,
-          userId: user.userId,
-          companionId,
+        // Create the memory
+        const memory = await repo.create({
+          user_id: user.userId,
+          companion_id: companionId,
           content,
-          contentType,
+          content_type: contentType,
           importance: importance ?? 0.5,
-          metadata: metadata ?? {},
-          expiresAt: expiresAt ?? null,
-          createdAt: new Date().toISOString(),
-          updatedAt: new Date().toISOString(),
-        },
-      });
+          metadata: metadata as Record<string, unknown>,
+          embedding,
+          expires_at: expiresAt ? new Date(expiresAt) : undefined,
+        });
+
+        logger.info(
+          { memoryId: memory.id, userId: user.userId, companionId, contentType },
+          'Memory created'
+        );
+
+        // Emit memory.created event
+        const eventStore = getEventStore();
+        await eventStore.append({
+          eventId: nanoid(),
+          timestamp: new Date().toISOString(),
+          userId: user.userId,
+          sessionId: 'memory',
+          turnId: null,
+          traceId: request.id,
+          type: 'memory.created',
+          payload: {
+            memoryId: memory.id,
+            companionId,
+            contentType,
+            contentLength: content.length,
+            hasEmbedding: !!embedding,
+          },
+          version: '1.0',
+          causationId: null,
+          correlationId: request.id,
+        });
+
+        return reply.status(201).send({
+          success: true,
+          data: {
+            id: memory.id,
+            userId: user.userId,
+            companionId,
+            content: memory.content,
+            contentType: memory.content_type,
+            importance: memory.importance,
+            metadata: memory.metadata,
+            expiresAt: memory.expires_at?.toISOString() ?? null,
+            createdAt: memory.created_at.toISOString(),
+            updatedAt: memory.updated_at.toISOString(),
+          },
+        });
+      } catch (error) {
+        logger.error({ error, userId: user.userId, companionId }, 'Failed to create memory');
+        throw error;
+      }
     });
   });
 
@@ -191,24 +285,80 @@ export async function memoriesRoutes(app: FastifyInstance): Promise<void> {
 
       const { query, companionId, contentType, limit, minImportance } = parseResult.data;
 
-      // TODO: Implement semantic search via memory repository
-      // - Generate embedding for query
-      // - Perform vector similarity search
-      // - Apply filters and ranking
+      if (!companionId) {
+        return reply.status(400).send({
+          success: false,
+          error: {
+            code: 'VALIDATION_ERROR',
+            message: 'companionId is required for search',
+            timestamp: new Date().toISOString(),
+          },
+        });
+      }
 
-      logger.debug(
-        { userId: user.userId, query: query.substring(0, 50), companionId },
-        'Searching memories'
-      );
+      const repo = getMemoriesRepository();
 
-      // Stub response
-      return reply.send({
-        success: true,
-        data: {
-          items: [],
-          query,
-        },
-      });
+      try {
+        // Try vector search first if embedding service is available
+        let memories: Awaited<ReturnType<typeof repo.searchByVector>> = [];
+
+        try {
+          const embeddingService = getEmbeddingService();
+          const queryEmbedding = await embeddingService.generateEmbedding(query);
+
+          memories = await repo.searchByVector({
+            userId: user.userId,
+            companionId,
+            embedding: queryEmbedding,
+            limit: limit ?? 10,
+            minSimilarity: 0.5,
+            contentTypes: contentType ? [contentType] : undefined,
+            minImportance,
+          });
+        } catch (embError) {
+          logger.warn({ error: embError }, 'Vector search failed, falling back to text search');
+
+          // Fall back to text search
+          const textResults = await repo.searchByText({
+            userId: user.userId,
+            companionId,
+            query,
+            limit: limit ?? 10,
+            contentTypes: contentType ? [contentType] : undefined,
+          });
+
+          memories = textResults.map(m => ({ ...m, similarity: 0.5 }));
+        }
+
+        // Record access for retrieved memories
+        if (memories.length > 0) {
+          await repo.recordAccessBatch(memories.map(m => m.id));
+        }
+
+        logger.debug(
+          { userId: user.userId, query: query.substring(0, 50), companionId, count: memories.length },
+          'Searching memories'
+        );
+
+        return reply.send({
+          success: true,
+          data: {
+            items: memories.map(m => ({
+              id: m.id,
+              companionId: m.companion_id,
+              content: m.content,
+              contentType: m.content_type,
+              importance: m.importance,
+              similarity: m.similarity,
+              createdAt: m.created_at.toISOString(),
+            })),
+            query,
+          },
+        });
+      } catch (error) {
+        logger.error({ error, userId: user.userId, companionId }, 'Failed to search memories');
+        throw error;
+      }
     });
   });
 
@@ -221,18 +371,47 @@ export async function memoriesRoutes(app: FastifyInstance): Promise<void> {
       const { memoryId } = request.params;
       span.setAttributes({ 'user.id': user.userId, 'memory.id': memoryId });
 
-      // TODO: Fetch memory from repository
-      // TODO: Verify user ownership
+      const repo = getMemoriesRepository();
 
-      // Stub: Return not found for now
-      return reply.status(404).send({
-        success: false,
-        error: {
-          code: 'NOT_FOUND',
-          message: 'Memory not found',
-          timestamp: new Date().toISOString(),
-        },
-      });
+      try {
+        const memory = await repo.findById(memoryId);
+
+        if (!memory || memory.user_id !== user.userId) {
+          return reply.status(404).send({
+            success: false,
+            error: {
+              code: 'NOT_FOUND',
+              message: 'Memory not found',
+              timestamp: new Date().toISOString(),
+            },
+          });
+        }
+
+        logger.debug(
+          { memoryId, userId: user.userId },
+          'Retrieved memory'
+        );
+
+        return reply.send({
+          success: true,
+          data: {
+            id: memory.id,
+            companionId: memory.companion_id,
+            content: memory.content,
+            contentType: memory.content_type,
+            importance: memory.importance,
+            metadata: memory.metadata,
+            sourceEventId: memory.source_event_id,
+            sourceTurnId: memory.source_turn_id,
+            expiresAt: memory.expires_at?.toISOString() ?? null,
+            createdAt: memory.created_at.toISOString(),
+            updatedAt: memory.updated_at.toISOString(),
+          },
+        });
+      } catch (error) {
+        logger.error({ error, memoryId, userId: user.userId }, 'Failed to get memory');
+        throw error;
+      }
     });
   });
 
@@ -261,44 +440,105 @@ export async function memoriesRoutes(app: FastifyInstance): Promise<void> {
 
       const updates = parseResult.data;
 
-      // TODO: Fetch memory from repository
-      // TODO: Verify user ownership
-      // TODO: Update memory
-      // TODO: Re-generate embedding if content changed
+      if (Object.keys(updates).length === 0) {
+        return reply.status(400).send({
+          success: false,
+          error: {
+            code: 'VALIDATION_ERROR',
+            message: 'At least one field must be provided for update',
+            timestamp: new Date().toISOString(),
+          },
+        });
+      }
 
-      logger.info(
-        { memoryId, userId: user.userId, updates: Object.keys(updates) },
-        'Memory updated'
-      );
+      const repo = getMemoriesRepository();
 
-      // Emit memory.updated event
-      const eventStore = getEventStore();
-      await eventStore.append({
-        eventId: nanoid(),
-        timestamp: new Date().toISOString(),
-        userId: user.userId,
-        sessionId: 'memory',
-        turnId: null,
-        traceId: request.id,
-        type: 'memory.updated',
-        payload: {
-          memoryId,
-          fields: Object.keys(updates),
-        },
-        version: '1.0',
-        causationId: null,
-        correlationId: request.id,
-      });
+      try {
+        // Verify ownership first
+        const existing = await repo.findById(memoryId);
+        if (!existing || existing.user_id !== user.userId) {
+          return reply.status(404).send({
+            success: false,
+            error: {
+              code: 'NOT_FOUND',
+              message: 'Memory not found',
+              timestamp: new Date().toISOString(),
+            },
+          });
+        }
 
-      // Stub: Return not found for now
-      return reply.status(404).send({
-        success: false,
-        error: {
-          code: 'NOT_FOUND',
-          message: 'Memory not found',
+        // Build the update data
+        const updateData: Partial<{
+          content: string;
+          content_type: 'fact' | 'preference' | 'event' | 'summary' | 'reflection';
+          importance: number;
+          metadata: Record<string, unknown>;
+          expires_at: Date | null;
+        }> = {};
+
+        if (updates.content !== undefined) updateData.content = updates.content;
+        if (updates.contentType !== undefined) updateData.content_type = updates.contentType;
+        if (updates.importance !== undefined) updateData.importance = updates.importance;
+        if (updates.metadata !== undefined) updateData.metadata = updates.metadata as Record<string, unknown>;
+        if (updates.expiresAt !== undefined) {
+          updateData.expires_at = updates.expiresAt ? new Date(updates.expiresAt) : null;
+        }
+
+        const memory = await repo.update(memoryId, updateData);
+
+        // Re-generate embedding if content changed
+        if (updates.content !== undefined) {
+          try {
+            const embeddingService = getEmbeddingService();
+            const embedding = await embeddingService.generateEmbedding(updates.content);
+            await repo.updateEmbedding(memoryId, embedding);
+          } catch (embError) {
+            logger.warn({ error: embError, memoryId }, 'Failed to regenerate embedding after update');
+          }
+        }
+
+        logger.info(
+          { memoryId, userId: user.userId, updates: Object.keys(updates) },
+          'Memory updated'
+        );
+
+        // Emit memory.updated event
+        const eventStore = getEventStore();
+        await eventStore.append({
+          eventId: nanoid(),
           timestamp: new Date().toISOString(),
-        },
-      });
+          userId: user.userId,
+          sessionId: 'memory',
+          turnId: null,
+          traceId: request.id,
+          type: 'memory.updated',
+          payload: {
+            memoryId,
+            fields: Object.keys(updates),
+          },
+          version: '1.0',
+          causationId: null,
+          correlationId: request.id,
+        });
+
+        return reply.send({
+          success: true,
+          data: {
+            id: memory.id,
+            companionId: memory.companion_id,
+            content: memory.content,
+            contentType: memory.content_type,
+            importance: memory.importance,
+            metadata: memory.metadata,
+            expiresAt: memory.expires_at?.toISOString() ?? null,
+            createdAt: memory.created_at.toISOString(),
+            updatedAt: memory.updated_at.toISOString(),
+          },
+        });
+      } catch (error) {
+        logger.error({ error, memoryId, userId: user.userId }, 'Failed to update memory');
+        throw error;
+      }
     });
   });
 
@@ -311,39 +551,54 @@ export async function memoriesRoutes(app: FastifyInstance): Promise<void> {
       const { memoryId } = request.params;
       span.setAttributes({ 'user.id': user.userId, 'memory.id': memoryId });
 
-      // TODO: Fetch memory from repository
-      // TODO: Verify user ownership
-      // TODO: Delete memory
+      const repo = getMemoriesRepository();
 
-      logger.info({ memoryId, userId: user.userId }, 'Memory deleted');
+      try {
+        const deleted = await repo.softDelete(memoryId, user.userId);
 
-      // Emit memory.deleted event
-      const eventStore = getEventStore();
-      await eventStore.append({
-        eventId: nanoid(),
-        timestamp: new Date().toISOString(),
-        userId: user.userId,
-        sessionId: 'memory',
-        turnId: null,
-        traceId: request.id,
-        type: 'memory.deleted',
-        payload: {
-          memoryId,
-        },
-        version: '1.0',
-        causationId: null,
-        correlationId: request.id,
-      });
+        if (!deleted) {
+          return reply.status(404).send({
+            success: false,
+            error: {
+              code: 'NOT_FOUND',
+              message: 'Memory not found',
+              timestamp: new Date().toISOString(),
+            },
+          });
+        }
 
-      // Stub: Return not found for now
-      return reply.status(404).send({
-        success: false,
-        error: {
-          code: 'NOT_FOUND',
-          message: 'Memory not found',
+        logger.info({ memoryId, userId: user.userId }, 'Memory deleted');
+
+        // Emit memory.deleted event
+        const eventStore = getEventStore();
+        await eventStore.append({
+          eventId: nanoid(),
           timestamp: new Date().toISOString(),
-        },
-      });
+          userId: user.userId,
+          sessionId: 'memory',
+          turnId: null,
+          traceId: request.id,
+          type: 'memory.deleted',
+          payload: {
+            memoryId,
+          },
+          version: '1.0',
+          causationId: null,
+          correlationId: request.id,
+        });
+
+        return reply.status(200).send({
+          success: true,
+          data: {
+            id: deleted.id,
+            status: 'deleted',
+            deletedAt: deleted.updated_at.toISOString(),
+          },
+        });
+      } catch (error) {
+        logger.error({ error, memoryId, userId: user.userId }, 'Failed to delete memory');
+        throw error;
+      }
     });
   });
 

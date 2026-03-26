@@ -50,6 +50,18 @@ export interface MemoryListFilters extends PaginationOptions {
 }
 
 /**
+ * User-scoped memory list filters (companionId optional)
+ */
+export interface UserMemoryListFilters extends PaginationOptions {
+  userId: string;
+  companionId?: string;
+  contentType?: MemoryContentType;
+  status?: MemoryStatus;
+  minImportance?: number;
+  tags?: string[];
+}
+
+/**
  * Composite scoring weights for vector search
  */
 export interface CompositeWeights {
@@ -558,6 +570,90 @@ export class MemoriesRepository {
     const data = result.slice(0, limit).map(row => this.mapMemory(row));
 
     return { data, hasMore };
+  }
+
+  /**
+   * List memories for a user with optional filters (companionId is optional).
+   * Returns paginated results with total count.
+   */
+  async listByUser(
+    filters: UserMemoryListFilters,
+    tx?: TransactionContext
+  ): Promise<PaginatedResult<Memory>> {
+    const db = this.getSql(tx);
+    const limit = filters.limit ?? 50;
+    const offset = filters.offset ?? 0;
+
+    const conditions: ReturnType<typeof db>[] = [
+      db`user_id = ${filters.userId}`,
+    ];
+
+    if (filters.companionId) {
+      conditions.push(db`companion_id = ${filters.companionId}`);
+    }
+    if (filters.contentType) {
+      conditions.push(db`content_type = ${filters.contentType}`);
+    }
+    if (filters.status) {
+      conditions.push(db`status = ${filters.status}`);
+    } else {
+      conditions.push(db`status = 'active'`);
+    }
+    if (filters.minImportance !== undefined) {
+      conditions.push(db`importance >= ${filters.minImportance}`);
+    }
+    if (filters.tags && filters.tags.length > 0) {
+      conditions.push(db`tags && ${filters.tags}`);
+    }
+
+    const whereClause = db`WHERE ${conditions.reduce((acc, cond, i) => (i === 0 ? cond : db`${acc} AND ${cond}`))}`;
+
+    // Get total count and data in parallel
+    const [countResult, result] = await Promise.all([
+      db`SELECT COUNT(*)::int as count FROM memories ${whereClause}`,
+      db`
+        SELECT
+          id, user_id, companion_id, content, content_type, status,
+          importance, access_count, last_accessed_at,
+          source_event_id, source_turn_id, metadata, tags,
+          valid_from, valid_until, expires_at, created_at, updated_at
+        FROM memories
+        ${whereClause}
+        ORDER BY importance DESC, created_at DESC
+        LIMIT ${limit}
+        OFFSET ${offset}
+      `,
+    ]);
+
+    const total = countResult[0]?.['count'] as number ?? 0;
+    const data = result.map(row => this.mapMemory(row));
+
+    return { data, total, hasMore: offset + data.length < total, limit, offset };
+  }
+
+  /**
+   * Soft-delete a memory by setting status to 'deleted'.
+   * Returns the updated memory or null if not found / not owned by user.
+   */
+  async softDelete(
+    id: string,
+    userId: string,
+    tx?: TransactionContext
+  ): Promise<Memory | null> {
+    const db = this.getSql(tx);
+
+    const result = await db`
+      UPDATE memories
+      SET status = 'deleted', updated_at = NOW()
+      WHERE id = ${id} AND user_id = ${userId} AND status != 'deleted'
+      RETURNING
+        id, user_id, companion_id, content, content_type, status,
+        importance, access_count, last_accessed_at,
+        source_event_id, source_turn_id, metadata, tags,
+        valid_from, valid_until, expires_at, created_at, updated_at
+    `;
+
+    return result[0] ? this.mapMemory(result[0]) : null;
   }
 
   async getRecentMemories(
