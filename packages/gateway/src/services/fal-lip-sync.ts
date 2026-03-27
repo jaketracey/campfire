@@ -130,6 +130,7 @@ export class FalLipSyncService {
       Key: key,
       Body: mp3Buffer,
       ContentType: 'audio/mpeg',
+      ACL: 'public-read',
     }));
 
     const url = `https://${bucket}.s3.amazonaws.com/${key}`;
@@ -145,17 +146,15 @@ export class FalLipSyncService {
     audioUrl: string
   ): Promise<LiveAvatarResult> {
     // Submit to queue
-    const submitResponse = await fetch('https://queue.fal.run/fal-ai/live-avatar', {
+    const submitResponse = await fetch('https://queue.fal.run/fal-ai/sadtalker', {
       method: 'POST',
       headers: {
         Authorization: `Key ${this.falApiKey}`,
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        image_url: imageUrl,
-        audio_url: audioUrl,
-        num_clips: 1,
-        acceleration: 'high',
+        source_image_url: imageUrl,
+        driven_audio_url: audioUrl,
       }),
     });
 
@@ -175,7 +174,7 @@ export class FalLipSyncService {
       await this.sleep(2000);
 
       const statusResponse = await fetch(
-        `https://queue.fal.run/fal-ai/live-avatar/requests/${requestId}/status`,
+        `https://queue.fal.run/fal-ai/sadtalker/requests/${requestId}/status`,
         {
           method: 'GET',
           headers: {
@@ -197,7 +196,7 @@ export class FalLipSyncService {
       if (statusData.status === 'COMPLETED') {
         // Fetch the result
         const resultResponse = await fetch(
-          `https://queue.fal.run/fal-ai/live-avatar/requests/${requestId}`,
+          `https://queue.fal.run/fal-ai/sadtalker/requests/${requestId}`,
           {
             method: 'GET',
             headers: {
