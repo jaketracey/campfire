@@ -64,6 +64,8 @@ jobs:
           context: .
           file: ${{ matrix.dockerfile }}
           target: production
+          # Explicit ARM64 platform — EC2 is t4g (Graviton ARM)
+          platforms: linux/arm64
           push: true
           tags: |
             ${{ env.ECR_REGISTRY }}/campfire-${{ matrix.service }}:latest
