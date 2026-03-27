@@ -222,6 +222,98 @@ export class FalLipSyncService {
     throw new Error(`FAL live-avatar job timed out after ${maxAttempts * 2}s`);
   }
 
+  /**
+   * Generate a lip-synced video from pre-recorded PCM audio chunks (base64)
+   * and a companion image. Skips TTS entirely — uses the exact audio the
+   * ConvAI agent already played to the user.
+   */
+  async generateFromAudio(
+    pcmBase64Chunks: string[],
+    sampleRate: number,
+    companionImageUrl: string,
+  ): Promise<{ videoUrl: string; durationSeconds: number }> {
+    const startTime = Date.now();
+
+    // 1. Decode and concatenate PCM chunks
+    const pcmBuffers = pcmBase64Chunks.map(chunk => Buffer.from(chunk, 'base64'));
+    const pcmData = Buffer.concat(pcmBuffers);
+    logger.info(
+      { chunks: pcmBase64Chunks.length, pcmBytes: pcmData.length, sampleRate },
+      'Assembling PCM audio for lip-sync'
+    );
+
+    // 2. Convert to WAV
+    const wavBuffer = this.pcmToWav(pcmData, sampleRate, 1);
+
+    // 3. Upload to S3
+    const uploadStart = Date.now();
+    const audioUrl = await this.uploadWavToS3(wavBuffer);
+    const uploadMs = Date.now() - uploadStart;
+    logger.info({ audioUrl, uploadMs }, 'WAV audio uploaded to S3');
+
+    // 4. Submit to live-avatar and poll for result
+    const avatarStart = Date.now();
+    const result = await this.submitLiveAvatar(companionImageUrl, audioUrl);
+    const avatarMs = Date.now() - avatarStart;
+
+    const totalMs = Date.now() - startTime;
+    logger.info(
+      { videoUrl: result.video.url, duration: result.duration, uploadMs, avatarMs, totalMs },
+      'Lip-sync video generated from audio chunks'
+    );
+
+    return {
+      videoUrl: result.video.url,
+      durationSeconds: result.duration ?? 0,
+    };
+  }
+
+  /**
+   * Convert raw PCM 16-bit data to a WAV file buffer by prepending the
+   * standard 44-byte RIFF/WAVE header.
+   */
+  pcmToWav(pcmData: Buffer, sampleRate: number, channels: number): Buffer {
+    const byteRate = sampleRate * channels * 2; // 16-bit = 2 bytes per sample
+    const blockAlign = channels * 2;
+    const header = Buffer.alloc(44);
+    header.write('RIFF', 0);
+    header.writeUInt32LE(36 + pcmData.length, 4);
+    header.write('WAVE', 8);
+    header.write('fmt ', 12);
+    header.writeUInt32LE(16, 16);           // subchunk1 size (PCM)
+    header.writeUInt16LE(1, 20);            // audio format: PCM
+    header.writeUInt16LE(channels, 22);
+    header.writeUInt32LE(sampleRate, 24);
+    header.writeUInt32LE(byteRate, 28);
+    header.writeUInt16LE(blockAlign, 32);
+    header.writeUInt16LE(16, 34);           // bits per sample
+    header.write('data', 36);
+    header.writeUInt32LE(pcmData.length, 40);
+    return Buffer.concat([header, pcmData]);
+  }
+
+  /**
+   * Upload a WAV buffer to S3 and return the public URL.
+   */
+  private async uploadWavToS3(wavBuffer: Buffer): Promise<string> {
+    const { S3Client, PutObjectCommand } = await import('@aws-sdk/client-s3');
+    const s3 = new S3Client({ region: process.env.AWS_REGION || 'us-east-1' });
+    const key = `companions/lip-sync-audio/${Date.now()}-${Math.random().toString(36).slice(2)}.wav`;
+    const bucket = process.env.S3_MEDIA_BUCKET;
+    if (!bucket) throw new Error('No S3_MEDIA_BUCKET configured');
+
+    await s3.send(new PutObjectCommand({
+      Bucket: bucket,
+      Key: key,
+      Body: wavBuffer,
+      ContentType: 'audio/wav',
+    }));
+
+    const url = `https://${bucket}.s3.amazonaws.com/${key}`;
+    logger.info({ url, sizeBytes: wavBuffer.length }, 'WAV uploaded to S3');
+    return url;
+  }
+
   private sleep(ms: number): Promise<void> {
     return new Promise((resolve) => setTimeout(resolve, ms));
   }

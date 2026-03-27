@@ -25,6 +25,13 @@ const GenerateLipSyncSchema = z.object({
     .optional(),
 });
 
+// Validation schema for generating lip-sync from raw PCM audio chunks
+const GenerateFromAudioSchema = z.object({
+  companionId: z.string().uuid(),
+  audioChunks: z.array(z.string().min(1)).min(1).max(5000),
+  sampleRate: z.number().int().min(8000).max(48000).default(16000),
+});
+
 /**
  * Register lip-sync routes (authentication required)
  */
@@ -116,6 +123,88 @@ export async function lipSyncRoutes(app: FastifyInstance): Promise<void> {
         error: {
           code: 'LIP_SYNC_GENERATION_FAILED',
           message: 'Failed to generate lip-sync video',
+          timestamp: new Date().toISOString(),
+        },
+      });
+    }
+  });
+
+  /**
+   * POST /lip-sync/generate-from-audio
+   * Generate a lip-synced video from pre-recorded PCM audio chunks.
+   * Used with ElevenLabs ConvAI onAudio callback for perfect lip-sync.
+   *
+   * Body: { companionId, audioChunks: string[], sampleRate?: number }
+   * Returns: { success, data: { videoUrl, duration } }
+   */
+  app.post('/generate-from-audio', { preHandler: requireAuth }, async (request: FastifyRequest, reply: FastifyReply) => {
+    const parseResult = GenerateFromAudioSchema.safeParse(request.body);
+    if (!parseResult.success) {
+      return reply.status(400).send({
+        success: false,
+        error: {
+          code: 'VALIDATION_ERROR',
+          message: 'Invalid request body',
+          details: parseResult.error.flatten(),
+          timestamp: new Date().toISOString(),
+        },
+      });
+    }
+
+    const { companionId, audioChunks, sampleRate } = parseResult.data;
+
+    // Check required API key
+    if (!env.FAL_API_KEY) {
+      return reply.status(503).send({
+        success: false,
+        error: {
+          code: 'SERVICE_UNAVAILABLE',
+          message: 'Lip-sync service not configured (missing FAL_API_KEY)',
+          timestamp: new Date().toISOString(),
+        },
+      });
+    }
+
+    try {
+      // Look up companion's identity anchor avatar URL
+      const companionImageUrl = await getCompanionIdentityAnchorUrl(companionId);
+      if (!companionImageUrl) {
+        return reply.status(404).send({
+          success: false,
+          error: {
+            code: 'COMPANION_AVATAR_NOT_FOUND',
+            message: 'No identity anchor avatar found for this companion',
+            timestamp: new Date().toISOString(),
+          },
+        });
+      }
+
+      logger.info(
+        { companionId, chunks: audioChunks.length, sampleRate },
+        'Generating lip-sync video from audio chunks'
+      );
+
+      const service = getFalLipSyncService(env.FAL_API_KEY, env.ELEVENLABS_API_KEY || '');
+      const result = await service.generateFromAudio(
+        audioChunks,
+        sampleRate,
+        companionImageUrl,
+      );
+
+      return reply.send({
+        success: true,
+        data: {
+          videoUrl: result.videoUrl,
+          duration: result.durationSeconds,
+        },
+      });
+    } catch (error) {
+      logger.error({ err: error, companionId }, 'Lip-sync from audio generation failed');
+      return reply.status(500).send({
+        success: false,
+        error: {
+          code: 'LIP_SYNC_GENERATION_FAILED',
+          message: 'Failed to generate lip-sync video from audio',
           timestamp: new Date().toISOString(),
         },
       });

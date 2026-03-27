@@ -80,6 +80,9 @@ export function useVoiceChat({
   const messageTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   // Track the latest lip-sync request to ignore stale responses
   const lipSyncRequestIdRef = useRef(0);
+  // Buffer base64 PCM chunks from ElevenLabs onAudio callback
+  const audioChunksRef = useRef<string[]>([]);
+  const isCollectingAudioRef = useRef(false);
 
   // Stable refs for tool dependencies so clientTools object doesn't change
   const companionIdRef = useRef(companionId);
@@ -128,6 +131,44 @@ export function useVoiceChat({
         // Don't clear currentVideoUrl on new request — let the player keep looping the last clip
       } catch (err) {
         console.error('[VoiceChat] Lip-sync generation failed:', err);
+        // Non-fatal: video just won't play, audio continues fine
+      } finally {
+        if (requestId === lipSyncRequestIdRef.current) {
+          setIsVideoLoading(false);
+        }
+      }
+    },
+    []
+  );
+
+  /**
+   * Request lip-sync video from buffered PCM audio chunks (from onAudio callback).
+   * This uses the exact audio the ConvAI agent played, giving perfect lip-sync.
+   */
+  const requestLipSyncFromAudio = useCallback(
+    async (base64Chunks: string[]) => {
+      const cId = companionIdRef.current;
+      if (!cId || base64Chunks.length === 0) return;
+
+      const requestId = ++lipSyncRequestIdRef.current;
+      setIsVideoLoading(true);
+
+      try {
+        const result = await apiClient<LipSyncResponse>('/lip-sync/generate-from-audio', {
+          method: 'POST',
+          body: JSON.stringify({
+            companionId: cId,
+            audioChunks: base64Chunks,
+            sampleRate: 16000, // ElevenLabs ConvAI default PCM format
+          }),
+        });
+
+        // Only apply if this is still the latest request
+        if (requestId === lipSyncRequestIdRef.current && result.success) {
+          setCurrentVideoUrl(result.data.videoUrl);
+        }
+      } catch (err) {
+        console.error('[VoiceChat] Lip-sync from audio failed:', err);
         // Non-fatal: video just won't play, audio continues fine
       } finally {
         if (requestId === lipSyncRequestIdRef.current) {
@@ -191,6 +232,11 @@ export function useVoiceChat({
     onUnhandledClientToolCall: (params) => {
       console.warn('[VoiceChat] Unhandled client tool call:', params);
     },
+    onAudio: (base64Audio: string) => {
+      if (videoEnabledRef.current && isCollectingAudioRef.current) {
+        audioChunksRef.current.push(base64Audio);
+      }
+    },
     onConnect: ({ conversationId: connId }) => {
       setVoiceState('listening');
       setConversationId(connId);
@@ -205,6 +251,8 @@ export function useVoiceChat({
       setConversationId(null);
       setCurrentVideoUrl(null);
       setIsVideoLoading(false);
+      audioChunksRef.current = [];
+      isCollectingAudioRef.current = false;
     },
     onMessage: (payload) => {
       if (payload.source === 'ai') {
@@ -213,8 +261,9 @@ export function useVoiceChat({
           setAgentMessage(cleaned);
           onMessage?.(cleaned, 'assistant');
 
-          // Trigger lip-sync video generation if enabled
-          if (videoEnabledRef.current) {
+          // Trigger text-based lip-sync as fallback only when onAudio
+          // is not collecting chunks (i.e. no audio-based path available)
+          if (videoEnabledRef.current && !isCollectingAudioRef.current) {
             requestLipSyncVideo(cleaned);
           }
 
@@ -230,12 +279,25 @@ export function useVoiceChat({
     },
     onModeChange: (mode) => {
       if (mode.mode === 'speaking') {
+        // Start collecting audio chunks for this utterance
+        isCollectingAudioRef.current = true;
+        audioChunksRef.current = [];
         setVoiceState('speaking');
         setUserTranscript('');
       } else if (mode.mode === 'listening') {
         setVoiceState('listening');
-        // Clear video when agent stops speaking
-        setCurrentVideoUrl(null);
+
+        // Utterance ended — send collected audio for lip-sync if we have chunks
+        if (videoEnabledRef.current && audioChunksRef.current.length > 0) {
+          const chunks = [...audioChunksRef.current];
+          audioChunksRef.current = [];
+          isCollectingAudioRef.current = false;
+          requestLipSyncFromAudio(chunks);
+        } else {
+          // No audio chunks collected — clear video
+          isCollectingAudioRef.current = false;
+          setCurrentVideoUrl(null);
+        }
       }
     },
     onError: (message) => {
@@ -294,6 +356,8 @@ export function useVoiceChat({
     setUserTranscript('');
     setCurrentVideoUrl(null);
     setIsVideoLoading(false);
+    audioChunksRef.current = [];
+    isCollectingAudioRef.current = false;
 
     try {
       await conversation.endSession();

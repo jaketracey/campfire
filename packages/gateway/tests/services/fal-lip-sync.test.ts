@@ -194,6 +194,65 @@ describe('FalLipSyncService', () => {
     });
   });
 
+  describe('pcmToWav', () => {
+    it('produces a valid 44-byte RIFF/WAVE header', () => {
+      const pcmData = Buffer.alloc(100); // 100 bytes of silence
+      const wav = service.pcmToWav(pcmData, 16000, 1);
+
+      // Total size = 44 header + 100 data
+      expect(wav.length).toBe(144);
+
+      // RIFF header
+      expect(wav.toString('ascii', 0, 4)).toBe('RIFF');
+      expect(wav.readUInt32LE(4)).toBe(36 + 100); // file size - 8
+      expect(wav.toString('ascii', 8, 12)).toBe('WAVE');
+
+      // fmt subchunk
+      expect(wav.toString('ascii', 12, 16)).toBe('fmt ');
+      expect(wav.readUInt32LE(16)).toBe(16);  // subchunk1 size
+      expect(wav.readUInt16LE(20)).toBe(1);   // PCM format
+      expect(wav.readUInt16LE(22)).toBe(1);   // mono
+      expect(wav.readUInt32LE(24)).toBe(16000); // sample rate
+      expect(wav.readUInt32LE(28)).toBe(32000); // byte rate = 16000 * 1 * 2
+      expect(wav.readUInt16LE(32)).toBe(2);   // block align = 1 * 2
+      expect(wav.readUInt16LE(34)).toBe(16);  // bits per sample
+
+      // data subchunk
+      expect(wav.toString('ascii', 36, 40)).toBe('data');
+      expect(wav.readUInt32LE(40)).toBe(100); // data size
+    });
+
+    it('handles stereo audio correctly', () => {
+      const pcmData = Buffer.alloc(200);
+      const wav = service.pcmToWav(pcmData, 44100, 2);
+
+      expect(wav.readUInt16LE(22)).toBe(2);     // stereo
+      expect(wav.readUInt32LE(24)).toBe(44100);  // sample rate
+      expect(wav.readUInt32LE(28)).toBe(176400); // byte rate = 44100 * 2 * 2
+      expect(wav.readUInt16LE(32)).toBe(4);      // block align = 2 * 2
+    });
+
+    it('appends PCM data after header', () => {
+      const pcmData = Buffer.from([0x01, 0x02, 0x03, 0x04]);
+      const wav = service.pcmToWav(pcmData, 8000, 1);
+
+      // Data starts at byte 44
+      expect(wav[44]).toBe(0x01);
+      expect(wav[45]).toBe(0x02);
+      expect(wav[46]).toBe(0x03);
+      expect(wav[47]).toBe(0x04);
+    });
+
+    it('handles empty PCM data', () => {
+      const pcmData = Buffer.alloc(0);
+      const wav = service.pcmToWav(pcmData, 16000, 1);
+
+      expect(wav.length).toBe(44); // header only
+      expect(wav.readUInt32LE(4)).toBe(36);  // file size - 8
+      expect(wav.readUInt32LE(40)).toBe(0);  // data size
+    });
+  });
+
   describe('generateLipSyncVideo (full flow)', () => {
     it('chains TTS, upload, and live-avatar correctly', async () => {
       // TTS
