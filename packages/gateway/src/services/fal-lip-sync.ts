@@ -121,7 +121,7 @@ export class FalLipSyncService {
     // Upload directly to S3 — FAL can read public S3 URLs
     const { S3Client, PutObjectCommand } = await import('@aws-sdk/client-s3');
     const s3 = new S3Client({ region: process.env.AWS_REGION || 'us-east-1' });
-    const key = `lip-sync-audio/${Date.now()}-${Math.random().toString(36).slice(2)}.mp3`;
+    const key = `companions/lip-sync-audio/${Date.now()}-${Math.random().toString(36).slice(2)}.mp3`;
     const bucket = process.env.S3_MEDIA_BUCKET;
     if (!bucket) throw new Error('No S3_MEDIA_BUCKET configured');
 
@@ -130,7 +130,6 @@ export class FalLipSyncService {
       Key: key,
       Body: mp3Buffer,
       ContentType: 'audio/mpeg',
-      ACL: 'public-read',
     }));
 
     const url = `https://${bucket}.s3.amazonaws.com/${key}`;
