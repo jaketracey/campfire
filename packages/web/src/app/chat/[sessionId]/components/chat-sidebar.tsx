@@ -325,7 +325,7 @@ export function ChatSidebar({
             {/* Call, Video Call & Video Request Buttons - Side by side circles */}
             <div className="flex items-center justify-center gap-4 mt-3">
               <CallButton onClick={onCallClick} disabled={isCallActive || isVideoCallActive} />
-              <VideoCallButton onClick={onVideoCallClick} disabled={isCallActive || isVideoCallActive} />
+              {/* VideoCallButton hidden - LiveKit video agent not ready yet */}
               <VideoRequestButton
                 onClick={() => handleDemoGuard('video', onShowVideoRequest)}
                 disabled={isCallActive || isVideoCallActive}

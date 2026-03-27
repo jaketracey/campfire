@@ -101,6 +101,8 @@ services:
       LIVEKIT_WS_URL: ${LIVEKIT_URL:-}
       # Deepgram (STT)
       DEEPGRAM_API_KEY: ${DEEPGRAM_API_KEY:-}
+      # FAL.ai (lip-sync video, image gen)
+      FAL_API_KEY: ${FAL_API_KEY:-}
       CORS_ORIGINS: https://ignite.cam,https://www.ignite.cam,http://localhost:3000
       # Public-facing URL for email links
       WEB_URL: https://ignite.cam
