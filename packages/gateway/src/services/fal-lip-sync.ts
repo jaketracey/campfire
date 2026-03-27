@@ -118,46 +118,12 @@ export class FalLipSyncService {
    * Upload an MP3 buffer to FAL storage and return the public URL.
    */
   async uploadToFalStorage(mp3Buffer: Buffer): Promise<string> {
-    // Use FAL's REST storage upload endpoint
-    const response = await fetch('https://rest.alpha.fal.ai/storage/upload', {
-      method: 'PUT',
-      headers: {
-        Authorization: `Key ${this.falApiKey}`,
-        'Content-Type': 'audio/mpeg',
-      },
-      body: mp3Buffer,
-    });
-
-    if (response.ok) {
-      const data = (await response.json()) as { url?: string; file_url?: string };
-      return data.url || data.file_url || '';
-    }
-
-    // Fallback: try the fal.ai CDN upload endpoint
-    const response2 = await fetch('https://fal.ai/api/storage/upload', {
-      method: 'PUT',
-      headers: {
-        Authorization: `Key ${this.falApiKey}`,
-        'Content-Type': 'audio/mpeg',
-      },
-      body: mp3Buffer,
-    });
-
-    if (response2.ok) {
-      const data = (await response2.json()) as { url?: string; file_url?: string };
-      return data.url || data.file_url || '';
-    }
-
-    // Last resort: upload to S3 and return public URL
-    const errorText = await response2.text();
-    logger.error({ status: response2.status, error: errorText }, 'FAL storage upload failed, trying S3');
-
-    // Upload to S3 as fallback
+    // Upload directly to S3 — FAL can read public S3 URLs
     const { S3Client, PutObjectCommand } = await import('@aws-sdk/client-s3');
     const s3 = new S3Client({ region: process.env.AWS_REGION || 'us-east-1' });
     const key = `lip-sync-audio/${Date.now()}-${Math.random().toString(36).slice(2)}.mp3`;
     const bucket = process.env.S3_MEDIA_BUCKET;
-    if (!bucket) throw new Error('No S3_MEDIA_BUCKET configured for fallback upload');
+    if (!bucket) throw new Error('No S3_MEDIA_BUCKET configured');
 
     await s3.send(new PutObjectCommand({
       Bucket: bucket,
@@ -166,7 +132,9 @@ export class FalLipSyncService {
       ContentType: 'audio/mpeg',
     }));
 
-    return `https://${bucket}.s3.amazonaws.com/${key}`;
+    const url = `https://${bucket}.s3.amazonaws.com/${key}`;
+    logger.info({ url, sizeBytes: mp3Buffer.length }, 'Audio uploaded to S3');
+    return url;
   }
 
   /**
