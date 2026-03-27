@@ -309,13 +309,16 @@ class VideoAgent:
             except (asyncio.TimeoutError, StopAsyncIteration):
                 continue
 
+            # Extract PCM data from AudioFrameEvent
+            pcm_data = frame.frame.data if hasattr(frame, 'frame') else frame.data
+
             # Simple energy-based VAD
             is_speech = _frame_has_speech(
-                frame.data, threshold=self._settings.vad_threshold
+                pcm_data, threshold=self._settings.vad_threshold
             )
 
             if is_speech:
-                speech_buffer.extend(frame.data)
+                speech_buffer.extend(pcm_data)
                 silence_frames = 0
             elif len(speech_buffer) > 0:
                 silence_frames += 1
