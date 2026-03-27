@@ -178,6 +178,21 @@ async def extract_frames_from_video(
     return frames
 
 
+def _pack_plane(plane: Any, width: int, height: int) -> bytes:
+    """Extract tightly-packed bytes from a PyAV VideoPlane, stripping stride padding.
+
+    PyAV planes may have ``line_size`` (stride) > ``width`` due to memory
+    alignment.  ``bytes(plane)`` returns the full padded buffer which breaks
+    I420 layout expectations in downstream consumers like LiveKit.
+    """
+    if plane.line_size == width:
+        return bytes(plane)
+    # Stride padding present — copy only the valid pixels per row
+    buf = memoryview(plane)
+    stride = plane.line_size
+    return b"".join(bytes(buf[row * stride : row * stride + width]) for row in range(height))
+
+
 def _decode_video_frames(
     video_bytes: bytes,
     target_fps: float,
@@ -205,8 +220,14 @@ def _decode_video_frames(
 
         # Resize and convert to YUV420P (I420)
         frame = frame.reformat(width=width, height=height, format="yuv420p")
-        # Concatenate Y, U, V planes into a single buffer
-        i420_data = bytes(frame.planes[0]) + bytes(frame.planes[1]) + bytes(frame.planes[2])
+        # Concatenate Y, U, V planes into a tightly-packed buffer.
+        # PyAV planes may include stride padding (line_size > width),
+        # so we must strip padding to produce valid I420 for LiveKit.
+        i420_data = (
+            _pack_plane(frame.planes[0], width, height)
+            + _pack_plane(frame.planes[1], width // 2, height // 2)
+            + _pack_plane(frame.planes[2], width // 2, height // 2)
+        )
 
         timestamp_ms = len(frames) * (1000.0 / target_fps)
         frames.append(
