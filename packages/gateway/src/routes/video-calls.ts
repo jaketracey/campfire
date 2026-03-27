@@ -218,8 +218,10 @@ export async function videoCallsRoutes(app: FastifyInstance): Promise<void> {
     // Look up companion's anchor avatar for the video agent
     let companionAvatarUrl: string | null = null;
     try {
-      const companion = await companionsRepo.findById(companionId);
-      companionAvatarUrl = (companion as any)?.active_avatar_url ?? (companion as any)?.avatar_url ?? null;
+      const { sql: getSql } = await import('../db/pool.js');
+      const db = getSql();
+      const rows = await db`SELECT asset_url FROM companion_avatars WHERE companion_id = ${companionId} AND is_identity_anchor = true AND is_active = true LIMIT 1`;
+      companionAvatarUrl = rows[0]?.asset_url ?? null;
     } catch { /* non-fatal */ }
 
     // Notify orchestrator to spin up AI agent (non-blocking)
