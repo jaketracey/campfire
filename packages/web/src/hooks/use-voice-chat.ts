@@ -109,7 +109,7 @@ export function useVoiceChat({
 
       const requestId = ++lipSyncRequestIdRef.current;
       setIsVideoLoading(true);
-      setCurrentVideoUrl(null);
+      // Don't clear currentVideoUrl — let the player keep looping the previous clip
 
       try {
         const result = await apiClient<LipSyncResponse>('/lip-sync/generate', {
@@ -125,6 +125,7 @@ export function useVoiceChat({
         if (requestId === lipSyncRequestIdRef.current && result.success) {
           setCurrentVideoUrl(result.data.videoUrl);
         }
+        // Don't clear currentVideoUrl on new request — let the player keep looping the last clip
       } catch (err) {
         console.error('[VoiceChat] Lip-sync generation failed:', err);
         // Non-fatal: video just won't play, audio continues fine

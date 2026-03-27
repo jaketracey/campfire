@@ -1,7 +1,6 @@
 'use client';
 
 import { useRef, useEffect, useState, useCallback } from 'react';
-import { Loader2 } from 'lucide-react';
 
 interface LipSyncPlayerProps {
   /** Static companion avatar image URL (shown when no video) */
@@ -12,23 +11,25 @@ interface LipSyncPlayerProps {
   isLoading: boolean;
   /** Whether the agent is currently speaking */
   isSpeaking: boolean;
+  /** Called when video is ready to play (for audio sync) */
+  onVideoReady?: () => void;
 }
 
 /**
  * Displays a companion's static avatar image by default.
  * When a lip-sync video URL is provided, crossfades to the video.
- * Returns to the static image when the video ends.
+ * Loops the last video clip while waiting for the next one.
  */
 export function LipSyncPlayer({
   companionAvatarUrl,
   videoUrl,
   isLoading,
   isSpeaking,
+  onVideoReady,
 }: LipSyncPlayerProps) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const [isVideoPlaying, setIsVideoPlaying] = useState(false);
   const [videoReady, setVideoReady] = useState(false);
-  // Keep track of the last successfully played video so we can loop it
   const [activeVideoUrl, setActiveVideoUrl] = useState<string | null>(null);
 
   // When a NEW videoUrl arrives, switch to it
@@ -45,11 +46,12 @@ export function LipSyncPlayer({
     if (videoRef.current) {
       videoRef.current.play().then(() => {
         setIsVideoPlaying(true);
+        onVideoReady?.();
       }).catch((err) => {
         console.warn('[LipSyncPlayer] Video autoplay failed:', err);
       });
     }
-  }, []);
+  }, [onVideoReady]);
 
   const handleVideoEnded = useCallback(() => {
     // Loop the video — keep replaying the last clip
@@ -65,7 +67,6 @@ export function LipSyncPlayer({
     setVideoReady(false);
   }, []);
 
-  // Show video if we have ANY active video (current or last)
   const showVideo = activeVideoUrl && videoReady && isVideoPlaying;
 
   return (
@@ -95,18 +96,23 @@ export function LipSyncPlayer({
         />
       )}
 
-      {/* Loading spinner overlay */}
+      {/* Subtle loading indicator — animated border glow that doesn't obscure the video */}
       {isLoading && (
-        <div className="absolute inset-0 flex items-center justify-center bg-black/20 backdrop-blur-[1px]">
-          <div className="bg-black/50 rounded-full p-3">
-            <Loader2 className="h-6 w-6 text-white animate-spin" />
+        <div className="absolute inset-0 rounded-2xl pointer-events-none">
+          <div className="absolute inset-0 rounded-2xl animate-pulse ring-2 ring-violet-500/40 ring-offset-0" />
+          <div className="absolute bottom-3 left-1/2 -translate-x-1/2">
+            <div className="flex items-center gap-1.5 bg-black/40 backdrop-blur-sm rounded-full px-3 py-1">
+              <div className="h-1.5 w-1.5 rounded-full bg-violet-400 animate-bounce [animation-delay:0ms]" />
+              <div className="h-1.5 w-1.5 rounded-full bg-violet-400 animate-bounce [animation-delay:150ms]" />
+              <div className="h-1.5 w-1.5 rounded-full bg-violet-400 animate-bounce [animation-delay:300ms]" />
+            </div>
           </div>
         </div>
       )}
 
-      {/* Speaking indicator ring */}
-      {isSpeaking && !showVideo && (
-        <div className="absolute inset-0 rounded-2xl ring-2 ring-emerald-500/60 ring-offset-0 animate-pulse pointer-events-none" />
+      {/* Speaking indicator — subtle glow when speaking without video */}
+      {isSpeaking && !showVideo && !isLoading && (
+        <div className="absolute inset-0 rounded-2xl ring-2 ring-emerald-500/40 ring-offset-0 animate-pulse pointer-events-none" />
       )}
     </div>
   );
