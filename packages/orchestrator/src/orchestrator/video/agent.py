@@ -310,7 +310,15 @@ class VideoAgent:
                 continue
 
             # Extract PCM data from AudioFrameEvent
-            pcm_data = frame.frame.data if hasattr(frame, 'frame') else frame.data
+            # LiveKit's AudioFrameEvent has .frame (AudioFrame) which has .data (memoryview)
+            try:
+                if hasattr(frame, 'frame'):
+                    af = frame.frame
+                    pcm_data = bytes(af.data) if hasattr(af, 'data') else bytes(af)
+                else:
+                    pcm_data = bytes(frame.data) if hasattr(frame, 'data') else bytes(frame)
+            except Exception:
+                continue
 
             # Simple energy-based VAD
             is_speech = _frame_has_speech(
@@ -626,13 +634,17 @@ def _frame_has_speech(pcm_data: bytes, threshold: float = 0.5) -> bool:
     Returns True if the RMS energy of the frame exceeds a fraction of the
     maximum possible amplitude, scaled by ``threshold``.
     """
-    if len(pcm_data) < 2:
+    if not pcm_data or len(pcm_data) < 2:
         return False
 
     import struct
 
+    # Ensure we only unpack complete 16-bit samples
     num_samples = len(pcm_data) // 2
-    samples = struct.unpack(f"<{num_samples}h", pcm_data[: num_samples * 2])
+    if num_samples == 0:
+        return False
+    usable_bytes = num_samples * 2
+    samples = struct.unpack(f"<{num_samples}h", pcm_data[:usable_bytes])
 
     # RMS energy
     sum_sq = sum(s * s for s in samples)
