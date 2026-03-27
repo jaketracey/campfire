@@ -28,16 +28,20 @@ export function LipSyncPlayer({
   const videoRef = useRef<HTMLVideoElement>(null);
   const [isVideoPlaying, setIsVideoPlaying] = useState(false);
   const [videoReady, setVideoReady] = useState(false);
+  // Keep track of the last successfully played video so we can loop it
+  const [activeVideoUrl, setActiveVideoUrl] = useState<string | null>(null);
 
-  // When videoUrl changes, reset state
+  // When a NEW videoUrl arrives, switch to it
   useEffect(() => {
-    setVideoReady(false);
-    setIsVideoPlaying(false);
-  }, [videoUrl]);
+    if (videoUrl && videoUrl !== activeVideoUrl) {
+      setVideoReady(false);
+      setIsVideoPlaying(false);
+      setActiveVideoUrl(videoUrl);
+    }
+  }, [videoUrl, activeVideoUrl]);
 
   const handleCanPlay = useCallback(() => {
     setVideoReady(true);
-    // Auto-play when ready
     if (videoRef.current) {
       videoRef.current.play().then(() => {
         setIsVideoPlaying(true);
@@ -48,8 +52,11 @@ export function LipSyncPlayer({
   }, []);
 
   const handleVideoEnded = useCallback(() => {
-    setIsVideoPlaying(false);
-    setVideoReady(false);
+    // Loop the video — keep replaying the last clip
+    if (videoRef.current) {
+      videoRef.current.currentTime = 0;
+      videoRef.current.play().catch(() => {});
+    }
   }, []);
 
   const handleVideoError = useCallback(() => {
@@ -58,7 +65,8 @@ export function LipSyncPlayer({
     setVideoReady(false);
   }, []);
 
-  const showVideo = videoUrl && videoReady && isVideoPlaying;
+  // Show video if we have ANY active video (current or last)
+  const showVideo = activeVideoUrl && videoReady && isVideoPlaying;
 
   return (
     <div className="relative w-full max-w-[280px] mx-auto aspect-[3/4] rounded-2xl overflow-hidden bg-muted">
@@ -72,10 +80,10 @@ export function LipSyncPlayer({
       />
 
       {/* Lip-sync video overlay */}
-      {videoUrl && (
+      {activeVideoUrl && (
         <video
           ref={videoRef}
-          src={videoUrl}
+          src={activeVideoUrl}
           className={`absolute inset-0 w-full h-full object-cover transition-opacity duration-500 ${
             showVideo ? 'opacity-100' : 'opacity-0'
           }`}
