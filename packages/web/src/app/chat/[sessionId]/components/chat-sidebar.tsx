@@ -54,6 +54,12 @@ interface ChatSidebarProps {
   getInputFrequencyData?: () => Uint8Array | undefined;
   getOutputFrequencyData?: () => Uint8Array | undefined;
 
+  // Lip-sync video
+  currentVideoUrl?: string | null;
+  isVideoLoading?: boolean;
+  videoEnabled?: boolean;
+  onToggleVideo?: () => void;
+
   // Webcam
   isWebcamEnabled: boolean;
   isCapturing: boolean;
@@ -118,6 +124,10 @@ export function ChatSidebar({
   onCallClick,
   getInputFrequencyData,
   getOutputFrequencyData,
+  currentVideoUrl,
+  isVideoLoading,
+  videoEnabled,
+  onToggleVideo,
   isWebcamEnabled,
   isCapturing,
   latestFrame,
@@ -189,6 +199,10 @@ export function ChatSidebar({
           onToggleMute={onToggleMute}
           getInputFrequencyData={getInputFrequencyData}
           getOutputFrequencyData={getOutputFrequencyData}
+          currentVideoUrl={currentVideoUrl}
+          isVideoLoading={isVideoLoading}
+          videoEnabled={videoEnabled}
+          onToggleVideo={onToggleVideo}
         />
       ) : (
         <>

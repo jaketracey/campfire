@@ -1,8 +1,9 @@
 'use client';
 
-import { Phone, PhoneOff, Mic, MicOff } from 'lucide-react';
+import { Phone, PhoneOff, Mic, MicOff, Video, VideoOff } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { VoiceOrb } from './voice-orb';
+import { LipSyncPlayer } from './lip-sync-player';
 import type { VoiceChatState } from '@/hooks/use-voice-chat';
 
 interface CallSidebarProps {
@@ -16,11 +17,20 @@ interface CallSidebarProps {
   onToggleMute: () => void;
   getInputFrequencyData?: () => Uint8Array | undefined;
   getOutputFrequencyData?: () => Uint8Array | undefined;
+  /** Lip-sync video URL (null when no video ready) */
+  currentVideoUrl?: string | null;
+  /** Whether a lip-sync video is currently being generated */
+  isVideoLoading?: boolean;
+  /** Whether video (lip-sync) mode is enabled */
+  videoEnabled?: boolean;
+  /** Toggle video mode on/off */
+  onToggleVideo?: () => void;
 }
 
 /**
  * Inline sidebar UI displayed during an active voice call.
  * Uses the VoiceOrb for real-time audio visualization.
+ * Optionally shows lip-synced video when video mode is enabled.
  */
 export function CallSidebar({
   companionName,
@@ -33,6 +43,10 @@ export function CallSidebar({
   onToggleMute,
   getInputFrequencyData,
   getOutputFrequencyData,
+  currentVideoUrl,
+  isVideoLoading,
+  videoEnabled,
+  onToggleVideo,
 }: CallSidebarProps) {
   const getStatusText = (): string => {
     switch (voiceState) {
@@ -64,41 +78,61 @@ export function CallSidebar({
 
   return (
     <div className="flex flex-col items-center h-full w-full p-4">
-      {/* Companion Avatar */}
-      <div className="relative mb-2">
-        <div className="w-20 h-20 rounded-full overflow-hidden bg-muted ring-2 ring-emerald-500/50 ring-offset-2 ring-offset-background">
-          {companionAvatarUrl ? (
-            <img
-              src={companionAvatarUrl}
-              alt={companionName}
-              className="w-full h-full object-cover"
-            />
-          ) : (
-            <div className="w-full h-full flex items-center justify-center text-2xl font-bold text-muted-foreground">
-              {companionName.charAt(0)}
+      {/* Lip-sync video player (shown when video is enabled and avatar available) */}
+      {videoEnabled && companionAvatarUrl ? (
+        <>
+          <LipSyncPlayer
+            companionAvatarUrl={companionAvatarUrl}
+            videoUrl={currentVideoUrl ?? null}
+            isLoading={isVideoLoading ?? false}
+            isSpeaking={voiceState === 'speaking'}
+          />
+
+          {/* Name + Status */}
+          <h3 className="text-lg font-semibold text-center mt-3 mb-1">{companionName}</h3>
+          <p className={`text-sm font-medium ${getStatusColor()} mb-3`} role="status" aria-live="polite">
+            {getStatusText()}
+          </p>
+        </>
+      ) : (
+        <>
+          {/* Companion Avatar (static circle) */}
+          <div className="relative mb-2">
+            <div className="w-20 h-20 rounded-full overflow-hidden bg-muted ring-2 ring-emerald-500/50 ring-offset-2 ring-offset-background">
+              {companionAvatarUrl ? (
+                <img
+                  src={companionAvatarUrl}
+                  alt={companionName}
+                  className="w-full h-full object-cover"
+                />
+              ) : (
+                <div className="w-full h-full flex items-center justify-center text-2xl font-bold text-muted-foreground">
+                  {companionName.charAt(0)}
+                </div>
+              )}
             </div>
-          )}
-        </div>
-        <div className="absolute -bottom-1 -right-1 w-5 h-5 bg-emerald-500 rounded-full flex items-center justify-center animate-pulse">
-          <Phone className="w-3 h-3 text-white" />
-        </div>
-      </div>
+            <div className="absolute -bottom-1 -right-1 w-5 h-5 bg-emerald-500 rounded-full flex items-center justify-center animate-pulse">
+              <Phone className="w-3 h-3 text-white" />
+            </div>
+          </div>
 
-      {/* Name + Status */}
-      <h3 className="text-lg font-semibold text-center mb-1">{companionName}</h3>
-      <p className={`text-sm font-medium ${getStatusColor()} mb-3`} role="status" aria-live="polite">
-        {getStatusText()}
-      </p>
+          {/* Name + Status */}
+          <h3 className="text-lg font-semibold text-center mb-1">{companionName}</h3>
+          <p className={`text-sm font-medium ${getStatusColor()} mb-3`} role="status" aria-live="polite">
+            {getStatusText()}
+          </p>
 
-      {/* Voice Orb */}
-      <div className="mb-4">
-        <VoiceOrb
-          state={voiceState}
-          getInputFrequencyData={getInputFrequencyData}
-          getOutputFrequencyData={getOutputFrequencyData}
-          size={140}
-        />
-      </div>
+          {/* Voice Orb */}
+          <div className="mb-4">
+            <VoiceOrb
+              state={voiceState}
+              getInputFrequencyData={getInputFrequencyData}
+              getOutputFrequencyData={getOutputFrequencyData}
+              size={140}
+            />
+          </div>
+        </>
+      )}
 
       {/* Transcript / Agent Message */}
       <div className="flex-1 w-full overflow-hidden mb-4 space-y-2">
@@ -128,6 +162,23 @@ export function CallSidebar({
           </Button>
         ) : (
           <>
+            {/* Video toggle */}
+            {onToggleVideo && (
+              <Button
+                variant="outline"
+                size="lg"
+                className={`rounded-full w-14 h-14 p-0 ${
+                  videoEnabled
+                    ? 'bg-violet-500/20 border-violet-500/50 text-violet-400 hover:bg-violet-500/30'
+                    : 'hover:bg-muted'
+                }`}
+                onClick={onToggleVideo}
+                aria-label={videoEnabled ? 'Disable video' : 'Enable video'}
+              >
+                {videoEnabled ? <Video className="h-6 w-6" /> : <VideoOff className="h-6 w-6" />}
+              </Button>
+            )}
+
             <Button
               variant="outline"
               size="lg"

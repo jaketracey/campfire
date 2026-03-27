@@ -93,6 +93,10 @@ export function ChatSessionContent({
         onCallClick={chat.handleCallClick}
         getInputFrequencyData={chat.getInputFrequencyData}
         getOutputFrequencyData={chat.getOutputFrequencyData}
+        currentVideoUrl={chat.currentVideoUrl}
+        isVideoLoading={chat.isVideoLoading}
+        videoEnabled={chat.videoEnabled}
+        onToggleVideo={() => chat.setVideoEnabled(!chat.videoEnabled)}
         isWebcamEnabled={chat.isWebcamEnabled}
         isCapturing={chat.isCapturing}
         latestFrame={chat.latestFrame}

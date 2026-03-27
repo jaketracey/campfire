@@ -17,6 +17,10 @@ interface UseVoiceChatOptions {
   sessionId?: string | null;
   /** User ID for tool calls */
   userId?: string | null;
+  /** Enable lip-sync video generation when agent speaks */
+  videoEnabled?: boolean;
+  /** Companion anchor avatar URL for lip-sync reference image */
+  companionAvatarUrl?: string | null;
   onMessage?: (message: string, role: 'user' | 'assistant') => void;
   onImageGenerated?: (imageUrl: string) => void;
   onError?: (error: string) => void;
@@ -35,6 +39,18 @@ interface UseVoiceChatReturn {
   conversationId: string | null;
   getInputFrequencyData: () => Uint8Array | undefined;
   getOutputFrequencyData: () => Uint8Array | undefined;
+  /** Current lip-sync video URL (null when no video ready) */
+  currentVideoUrl: string | null;
+  /** Whether a lip-sync video is currently being generated */
+  isVideoLoading: boolean;
+}
+
+interface LipSyncResponse {
+  success: boolean;
+  data: {
+    videoUrl: string;
+    duration: number;
+  };
 }
 
 export function useVoiceChat({
@@ -45,6 +61,8 @@ export function useVoiceChat({
   companionId,
   sessionId,
   userId,
+  videoEnabled,
+  companionAvatarUrl,
   onMessage,
   onImageGenerated,
   onError,
@@ -55,19 +73,69 @@ export function useVoiceChat({
   const [userTranscript, setUserTranscript] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [conversationId, setConversationId] = useState<string | null>(null);
+  const [currentVideoUrl, setCurrentVideoUrl] = useState<string | null>(null);
+  const [isVideoLoading, setIsVideoLoading] = useState(false);
 
   const intentionalStopRef = useRef(false);
   const messageTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Track the latest lip-sync request to ignore stale responses
+  const lipSyncRequestIdRef = useRef(0);
 
   // Stable refs for tool dependencies so clientTools object doesn't change
   const companionIdRef = useRef(companionId);
   const sessionIdRef = useRef(sessionId);
   const userIdRef = useRef(userId);
   const onImageGeneratedRef = useRef(onImageGenerated);
+  const videoEnabledRef = useRef(videoEnabled);
+  const companionAvatarUrlRef = useRef(companionAvatarUrl);
+  const voiceIdRef = useRef(voiceId);
   companionIdRef.current = companionId;
   sessionIdRef.current = sessionId;
   userIdRef.current = userId;
   onImageGeneratedRef.current = onImageGenerated;
+  videoEnabledRef.current = videoEnabled;
+  companionAvatarUrlRef.current = companionAvatarUrl;
+  voiceIdRef.current = voiceId;
+
+  /**
+   * Request lip-sync video generation for an agent message.
+   * Runs async and does not block audio playback.
+   */
+  const requestLipSyncVideo = useCallback(
+    async (text: string) => {
+      const cId = companionIdRef.current;
+      const vId = voiceIdRef.current;
+      if (!cId || !vId) return;
+
+      const requestId = ++lipSyncRequestIdRef.current;
+      setIsVideoLoading(true);
+      setCurrentVideoUrl(null);
+
+      try {
+        const result = await apiClient<LipSyncResponse>('/lip-sync/generate', {
+          method: 'POST',
+          body: JSON.stringify({
+            text,
+            companionId: cId,
+            voiceId: vId,
+          }),
+        });
+
+        // Only apply if this is still the latest request
+        if (requestId === lipSyncRequestIdRef.current && result.success) {
+          setCurrentVideoUrl(result.data.videoUrl);
+        }
+      } catch (err) {
+        console.error('[VoiceChat] Lip-sync generation failed:', err);
+        // Non-fatal: video just won't play, audio continues fine
+      } finally {
+        if (requestId === lipSyncRequestIdRef.current) {
+          setIsVideoLoading(false);
+        }
+      }
+    },
+    []
+  );
 
   const conversation = useConversation({
     micMuted: isMuted,
@@ -134,6 +202,8 @@ export function useVoiceChat({
       }
       setVoiceState('idle');
       setConversationId(null);
+      setCurrentVideoUrl(null);
+      setIsVideoLoading(false);
     },
     onMessage: (payload) => {
       if (payload.source === 'ai') {
@@ -141,6 +211,11 @@ export function useVoiceChat({
         if (cleaned) {
           setAgentMessage(cleaned);
           onMessage?.(cleaned, 'assistant');
+
+          // Trigger lip-sync video generation if enabled
+          if (videoEnabledRef.current) {
+            requestLipSyncVideo(cleaned);
+          }
 
           if (messageTimerRef.current) clearTimeout(messageTimerRef.current);
           messageTimerRef.current = setTimeout(() => {
@@ -158,6 +233,8 @@ export function useVoiceChat({
         setUserTranscript('');
       } else if (mode.mode === 'listening') {
         setVoiceState('listening');
+        // Clear video when agent stops speaking
+        setCurrentVideoUrl(null);
       }
     },
     onError: (message) => {
@@ -214,6 +291,8 @@ export function useVoiceChat({
     if (messageTimerRef.current) clearTimeout(messageTimerRef.current);
     setAgentMessage('');
     setUserTranscript('');
+    setCurrentVideoUrl(null);
+    setIsVideoLoading(false);
 
     try {
       await conversation.endSession();
@@ -246,6 +325,8 @@ export function useVoiceChat({
     conversationId,
     getInputFrequencyData,
     getOutputFrequencyData,
+    currentVideoUrl,
+    isVideoLoading,
   };
 }
 

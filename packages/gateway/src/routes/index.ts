@@ -65,6 +65,7 @@ import { videoCallsRoutes } from './video-calls.js';
 import { outreachRoutes, outreachConfigRoutes } from './outreach.js';
 import { telegramWebhookRoutes, messagingRoutes, companionTelegramRoutes } from './telegram.js';
 import { emotionalStateRoutes } from './emotional-state.js';
+import { lipSyncRoutes } from './lip-sync.js';
 import { logger } from '../observability/logger.js';
 
 /**
@@ -229,6 +230,9 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
 
       // Emotional state routes (companion emotion per user pair)
       await api.register(emotionalStateRoutes, { prefix: '/companions' });
+
+      // Lip-sync video generation routes (ElevenLabs TTS + FAL live-avatar)
+      await api.register(lipSyncRoutes, { prefix: '/lip-sync' });
 
       // Public SEO routes (for SSR/sitemap)
       await api.register(seoPublicRoutes, { prefix: '/public' });

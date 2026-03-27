@@ -265,6 +265,9 @@ TOOLS:
   const companionVoiceId = companion?.spec?.voice?.voice_id ?? null;
 
   // Voice chat hook (ElevenLabs Conversational AI)
+  // Lip-sync video toggle state
+  const [videoEnabled, setVideoEnabled] = useState(false);
+
   const {
     voiceState,
     isActive: isCallActive,
@@ -277,6 +280,8 @@ TOOLS:
     error: voiceCallError,
     getInputFrequencyData,
     getOutputFrequencyData,
+    currentVideoUrl,
+    isVideoLoading,
   } = useVoiceChat({
     companionName: companion?.name ?? '',
     systemPrompt: voiceSystemPrompt,
@@ -284,6 +289,8 @@ TOOLS:
     companionId: companion?.id ?? null,
     sessionId,
     userId: user?.id ?? null,
+    videoEnabled,
+    companionAvatarUrl: companion?.avatarUrl ?? null,
     firstMessage: companion ? `Hey, it's ${companion.name}. What's on your mind?` : undefined,
     onImageGenerated: (imageUrl) => {
       const imgMessage: Message = {
@@ -1435,6 +1442,10 @@ TOOLS:
     getInputFrequencyData,
     getOutputFrequencyData,
     handleCallClick,
+    currentVideoUrl,
+    isVideoLoading,
+    videoEnabled,
+    setVideoEnabled,
 
     // Video call
     videoCallStatus,
