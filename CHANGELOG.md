@@ -5,6 +5,17 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [v0.9.2] - 2026-04-01
+
+## What's Changed
+
+### Bug Fixes
+- fix(chat): poll for companion avatar when images aren't ready yet (9d68815)
+
+### Contributors
+- @Jake Tracey
+
+
 ## [v0.9.1] - 2026-04-01
 
 ## What's Changed
