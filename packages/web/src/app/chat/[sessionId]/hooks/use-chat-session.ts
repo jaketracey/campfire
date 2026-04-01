@@ -633,6 +633,36 @@ TOOLS:
     }
   }, [companion?.avatarUrl, companion?.avatarRenditions, currentAvatarUrl]);
 
+  // Poll for companion avatar if it's missing (e.g. anchor images still generating after onboarding)
+  useEffect(() => {
+    if (isDemo || !companion?.id || companion.avatarUrl) return;
+
+    let cancelled = false;
+    let attempts = 0;
+    const maxAttempts = 20; // ~60s at 3s intervals
+
+    const poll = async () => {
+      while (!cancelled && attempts < maxAttempts) {
+        await new Promise((r) => setTimeout(r, 3000));
+        if (cancelled) break;
+        attempts++;
+        try {
+          const updated = await getCompanion(companion.id);
+          if (updated.avatarUrl) {
+            console.log('[ChatSession] Avatar now available after polling', { attempts });
+            setCompanion(updated);
+            break;
+          }
+        } catch {
+          // ignore fetch errors, keep polling
+        }
+      }
+    };
+
+    void poll();
+    return () => { cancelled = true; };
+  }, [isDemo, companion?.id, companion?.avatarUrl]);
+
   // Mobile avatar pop animation
   useEffect(() => {
     if (prevAvatarUrlRef.current && currentAvatarUrl && prevAvatarUrlRef.current !== currentAvatarUrl) {
