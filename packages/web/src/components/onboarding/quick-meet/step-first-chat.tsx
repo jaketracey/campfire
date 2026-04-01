@@ -9,6 +9,8 @@ import {
   createCompanion,
   activateCompanion,
   createSession,
+  streamAnchorImages,
+  generateBackstory,
 } from '@/lib/api';
 import type { CompanionSpec } from '@/lib/api/companions';
 import { useOnboardingStore } from '@/stores/onboarding-store';
@@ -128,6 +130,73 @@ export function StepFirstChat({ preset, companionName, pronouns }: StepFirstChat
         // Activate it
         setStatus('Bringing them to life...');
         await activateCompanion(companion.id);
+
+        // Generate backstory and anchor images in parallel before redirecting.
+        // The user should not land on the chat page with a blank companion.
+        setStatus('Generating your companion...');
+
+        const backstoryPromise = generateBackstory(companion.id, {
+          archetype: preset.archetype,
+          secondaryArchetype: preset.secondaryArchetype || undefined,
+          archetypeDescription: preset.description,
+          personality: {
+            warmth: preset.personalityTraits.warmth,
+            energy: preset.personalityTraits.energy,
+            playfulness: preset.personalityTraits.playfulness,
+            formality: preset.personalityTraits.formality,
+            assertiveness: preset.personalityTraits.assertiveness,
+            curiosity: preset.personalityTraits.curiosity,
+            empathy: preset.personalityTraits.empathy,
+            spontaneity: preset.personalityTraits.spontaneity,
+            optimism: preset.personalityTraits.optimism,
+            directness: preset.personalityTraits.directness,
+          },
+        }).catch((err) => {
+          console.warn('Backstory generation failed (non-blocking):', err);
+          return null;
+        });
+
+        const firstAnchorPromise = new Promise<void>((resolve) => {
+          let resolved = false;
+          streamAnchorImages(
+            {
+              companionId: companion.id,
+              appearance,
+              personality: {
+                warmth: preset.personalityTraits.warmth,
+                playfulness: preset.personalityTraits.playfulness,
+                directness: preset.personalityTraits.directness,
+                curiosity: preset.personalityTraits.curiosity,
+                empathy: preset.personalityTraits.empathy,
+                assertiveness: preset.personalityTraits.assertiveness,
+              },
+            },
+            {
+              onAnchor: () => {
+                if (!resolved) {
+                  resolved = true;
+                  resolve();
+                }
+              },
+              onComplete: () => {
+                if (!resolved) {
+                  resolved = true;
+                  resolve();
+                }
+              },
+              onError: () => {
+                if (!resolved) {
+                  resolved = true;
+                  resolve();
+                }
+              },
+            }
+          );
+        });
+
+        // Wait for at least the first anchor image and backstory before proceeding
+        setStatus('Almost ready...');
+        await Promise.all([firstAnchorPromise, backstoryPromise]);
 
         // Create a session
         setStatus('Starting your first conversation...');
