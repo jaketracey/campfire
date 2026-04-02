@@ -981,31 +981,46 @@ export async function imagegenRoutes(app: FastifyInstance): Promise<void> {
 
       // Define diverse anchor scenes - casual iPhone-style photography
       // These feel like dating profile photos or candid shots from friends
+      // Varied outfits per scene — each emotional state gets its own wardrobe
+      const outfits = isMale ? {
+        neutral: clothingClause || 'Wearing a casual henley and jeans',
+        happy: 'Wearing a light linen shirt, sleeves rolled up',
+        thoughtful: 'Wearing a cozy crewneck sweater',
+        confident: 'Wearing a fitted leather jacket and dark jeans',
+        playful: 'Wearing a vintage graphic tee and shorts',
+      } : {
+        neutral: clothingClause || 'Wearing a casual t-shirt and jeans',
+        happy: 'Wearing a flowy sundress',
+        thoughtful: 'Wearing a cozy oversized sweater',
+        confident: 'Wearing a fitted leather jacket and dark jeans',
+        playful: 'Wearing a colorful crop top and high-waisted shorts',
+      };
+
       const sceneOptions = {
         neutral: [
-          `Casual iPhone photo of SUBJECT. ${clothingClause}${settingClause ? `, ${settingClause}` : ', at a restaurant table'}. ${visualHints.expressionHint || 'Relaxed, natural expression'}. Natural lighting, everything in focus, taken by a friend. Authentic, not retouched.`,
-          `Smartphone selfie of SUBJECT. ${clothingClause}${settingClause ? `, ${settingClause}` : ', leaning against a doorway at home'}. ${visualHints.expressionHint || 'Slight smile, looking at camera'}. Casual, everyday moment. Not posed, not filtered.`,
-          `Candid photo of SUBJECT. ${clothingClause}${settingClause ? `, standing ${settingClause}` : ', standing on a rooftop bar'}. ${visualHints.expressionHint || 'Confident, easy smile'}. Shot on phone by a friend, natural lighting, no retouching.`,
+          `Candid photo of SUBJECT. ${outfits.neutral}${settingClause ? `, ${settingClause}` : ', at a restaurant table'}. ${visualHints.expressionHint || 'Relaxed, natural expression'}. Natural lighting, everything in focus. Authentic, not retouched.`,
+          `SUBJECT looking at the camera with a slight smile. ${outfits.neutral}${settingClause ? `, ${settingClause}` : ', leaning against a doorway at home'}. ${visualHints.expressionHint || 'Casual, everyday moment'}. Not posed, natural light.`,
+          `Candid photo of SUBJECT. ${outfits.neutral}${settingClause ? `, standing ${settingClause}` : ', standing on a rooftop bar'}. ${visualHints.expressionHint || 'Confident, easy smile'}. Natural lighting, no retouching.`,
         ],
         happy: [
-          `Candid iPhone photo of SUBJECT caught mid-laugh. ${clothingClause}${settingClause ? `, ${settingClause}` : ', at an outdoor brunch with friends'}. Genuine, unposed moment of joy. Natural daylight, everything in focus, taken by a friend. Feels real.`,
-          `Phone photo of SUBJECT laughing during ${settingClause || 'a weekend hike'}. ${clothingClause}. Sunlight on face, eyes crinkled, totally natural. Looks like a photo you\'d post on Instagram. Not studio, not retouched.`,
-          `Casual snapshot of SUBJECT grinning at the camera. ${clothingClause}${settingClause ? `, ${settingClause}` : ', at a friend\'s backyard party'}. Golden hour lighting, relaxed and happy. Taken on a phone, authentic moment.`,
+          `SUBJECT caught mid-laugh. ${outfits.happy}${settingClause ? `, ${settingClause}` : ', at an outdoor brunch with friends'}. Genuine, unposed moment of joy. Natural daylight, everything in focus. Feels real.`,
+          `SUBJECT laughing during ${settingClause || 'a weekend hike'}. ${outfits.happy}. Sunlight on face, eyes crinkled, totally natural. Not studio, not retouched.`,
+          `SUBJECT grinning at the camera. ${outfits.happy}${settingClause ? `, ${settingClause}` : ', at a friend\'s backyard party'}. Golden hour lighting, relaxed and happy. Authentic moment.`,
         ],
         thoughtful: [
-          `Candid phone photo of SUBJECT, lost in thought. ${clothingClause}${settingClause ? `, ${settingClause}` : ', sitting by a window at a coffee shop'}. ${visualHints.expressionHint || 'Pensive, looking slightly away from camera'}. Natural light, not posed, intimate moment captured by a friend.`,
-          `iPhone photo of SUBJECT reading ${settingClause ? settingClause : 'at a cozy cafe'}. ${clothingClause}. Absorbed and peaceful, candid moment. Warm ambient light, no flash, everything in focus. Authentic.`,
-          `Casual photo of SUBJECT working ${settingClause ? settingClause : 'at a laptop in a bright apartment'}. ${clothingClause}. ${visualHints.expressionHint || 'Focused, slight concentration'}. Natural window light, taken without them noticing. Real, unfiltered.`,
+          `SUBJECT lost in thought. ${outfits.thoughtful}${settingClause ? `, ${settingClause}` : ', sitting by a window at a coffee shop'}. ${visualHints.expressionHint || 'Pensive, looking slightly away from camera'}. Natural light, not posed, intimate moment.`,
+          `SUBJECT reading ${settingClause ? settingClause : 'at a cozy cafe'}. ${outfits.thoughtful}. Absorbed and peaceful, candid moment. Warm ambient light, everything in focus. Authentic.`,
+          `SUBJECT resting chin on hand. ${outfits.thoughtful}${settingClause ? `, ${settingClause}` : ', at a bright apartment window'}. ${visualHints.expressionHint || 'Focused, slight concentration'}. Natural window light, real, unfiltered.`,
         ],
         confident: [
-          `iPhone photo of SUBJECT standing tall. ${clothingClause}${settingClause ? `, ${settingClause}` : ', on a city street'}. Direct eye contact with camera, self-assured smirk. Golden hour side lighting, shot by a friend. Natural, no filter.`,
-          `Casual photo of SUBJECT leaning against a wall. ${clothingClause}${settingClause ? `, ${settingClause}` : ', outside a trendy bar'}. Arms crossed, knowing smile. Evening light, taken on a phone. Effortlessly cool, not posed.`,
-          `Smartphone photo of SUBJECT looking over their shoulder. ${clothingClause}${settingClause ? `, ${settingClause}` : ', walking through a park'}. Confident glance back at camera. Warm afternoon light, candid moment. Authentic, not retouched.`,
+          `SUBJECT standing tall. ${outfits.confident}${settingClause ? `, ${settingClause}` : ', on a city street'}. Direct eye contact with camera, self-assured smirk. Golden hour side lighting. Natural, no filter.`,
+          `SUBJECT leaning against a wall. ${outfits.confident}${settingClause ? `, ${settingClause}` : ', outside a trendy bar'}. Arms crossed, knowing smile. Evening light. Effortlessly cool, not posed.`,
+          `SUBJECT looking over their shoulder. ${outfits.confident}${settingClause ? `, ${settingClause}` : ', walking through a park'}. Confident glance back at camera. Warm afternoon light, candid moment. Authentic.`,
         ],
         playful: [
-          `Candid iPhone photo of SUBJECT making a silly face. ${clothingClause}${settingClause ? `, ${settingClause}` : ', at a beach boardwalk'}. Tongue out or winking, totally goofing off. Bright daylight, shot by a friend mid-joke. Fun, real moment.`,
-          `Phone photo of SUBJECT mid-dance. ${clothingClause}${settingClause ? `, ${settingClause}` : ', in a living room with fairy lights'}. Eyes bright, playful energy. Slightly blurred motion, candid and spontaneous. Not staged.`,
-          `Casual snapshot of SUBJECT throwing a peace sign. ${clothingClause}${settingClause ? `, ${settingClause}` : ', at a food truck festival'}. Cheeky grin, having the best time. Natural lighting, taken on a phone. Genuine fun.`,
+          `SUBJECT making a silly face. ${outfits.playful}${settingClause ? `, ${settingClause}` : ', at a beach boardwalk'}. Tongue out or winking, totally goofing off. Bright daylight. Fun, real moment.`,
+          `SUBJECT mid-dance. ${outfits.playful}${settingClause ? `, ${settingClause}` : ', in a living room with fairy lights'}. Eyes bright, playful energy. Slightly blurred motion, candid and spontaneous. Not staged.`,
+          `SUBJECT throwing a peace sign. ${outfits.playful}${settingClause ? `, ${settingClause}` : ', at a food truck festival'}. Cheeky grin, having the best time. Natural lighting. Genuine fun.`,
         ],
       };
 
