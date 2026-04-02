@@ -1640,14 +1640,20 @@ async def generate_image(request: ImageGenRequest) -> ImageGenResponse:
             if negative_prompt is None:
                 negative_prompt = _get_default_negative_prompt("fal")
 
-            # Enforce identity persistence when a reference image is provided.
-            # Even if routing is misconfigured, prefer PuLID over silently dropping the reference.
+            # Use the routed model. If a reference image is present, the router
+            # already selected an identity-preserving model (Kontext Max, PuLID, etc.).
+            # Only fall back to PuLID if routing didn't select an identity-capable model.
             fal_model_id = model_id
             fal_loras = request.loras
             fal_trigger_word = request.lora_trigger_word
 
             if request.reference_image_url:
-                fal_model_id = "fal/flux-pulid"
+                # Trust the routed model if it supports identity/reference images
+                routed_spec = routing_decision.model_spec if routing_decision else None
+                if routed_spec and (routed_spec.supports_ip_adapter or routed_spec.requires_reference_image):
+                    fal_model_id = model_id  # Use routed model (e.g. Kontext Max)
+                else:
+                    fal_model_id = "fal/flux-pulid"  # Fallback to PuLID
                 fal_loras = None
                 fal_trigger_word = None
             elif request.loras:

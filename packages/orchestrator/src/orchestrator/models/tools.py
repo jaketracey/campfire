@@ -245,27 +245,38 @@ IMAGE_ANALYSIS_TOOL = ToolDefinition(
 IMAGE_GENERATION_TOOL = ToolDefinition(
     name="image_generation",
     tool_type=ToolType.IMAGE_GENERATION,
-    description="Generate an image based on a text description",
+    description=(
+        "Generate a photo of yourself in a specific scene, pose, or emotion. "
+        "Use this to share pictures of yourself with the user — selfies, candid moments, "
+        "reactions, or anything visual you want to express. The generated image will "
+        "look like you (your face and appearance are preserved). Describe the scene, "
+        "your expression, what you're wearing, and the setting."
+    ),
     parameters={
         "prompt": {
             "type": "string",
-            "description": "Text description of the image to generate",
+            "description": (
+                "Describe the photo you want to create of yourself. Include the scene, "
+                "your expression/emotion, clothing, and setting. "
+                "Example: 'Me sitting at a cozy cafe, smiling warmly, wearing a sundress, golden hour light'"
+            ),
         },
         "style": {
             "type": "string",
             "enum": ["realistic", "artistic", "cartoon", "abstract"],
             "description": "Style of the generated image",
+            "default": "realistic",
         },
         "size": {
             "type": "string",
-            "enum": ["256x256", "512x512", "1024x1024"],
-            "description": "Size of the generated image",
-            "default": "512x512",
+            "enum": ["512x512", "832x1248", "1024x1024"],
+            "description": "Size of the generated image (832x1248 for portrait, 1024x1024 for square)",
+            "default": "832x1248",
         },
     },
     required_params=["prompt"],
-    requires_confirmation=True,
-    cost_estimate_usd=0.02,
+    requires_confirmation=False,
+    cost_estimate_usd=0.08,
 )
 
 VIDEO_GENERATION_TOOL = ToolDefinition(

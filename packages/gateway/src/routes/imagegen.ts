@@ -997,6 +997,16 @@ export async function imagegenRoutes(app: FastifyInstance): Promise<void> {
           `iPhone photo of SUBJECT reading ${settingClause ? settingClause : 'at a cozy cafe'}. ${clothingClause}. Absorbed and peaceful, candid moment. Warm ambient light, no flash, everything in focus. Authentic.`,
           `Casual photo of SUBJECT working ${settingClause ? settingClause : 'at a laptop in a bright apartment'}. ${clothingClause}. ${visualHints.expressionHint || 'Focused, slight concentration'}. Natural window light, taken without them noticing. Real, unfiltered.`,
         ],
+        confident: [
+          `iPhone photo of SUBJECT standing tall. ${clothingClause}${settingClause ? `, ${settingClause}` : ', on a city street'}. Direct eye contact with camera, self-assured smirk. Golden hour side lighting, shot by a friend. Natural, no filter.`,
+          `Casual photo of SUBJECT leaning against a wall. ${clothingClause}${settingClause ? `, ${settingClause}` : ', outside a trendy bar'}. Arms crossed, knowing smile. Evening light, taken on a phone. Effortlessly cool, not posed.`,
+          `Smartphone photo of SUBJECT looking over their shoulder. ${clothingClause}${settingClause ? `, ${settingClause}` : ', walking through a park'}. Confident glance back at camera. Warm afternoon light, candid moment. Authentic, not retouched.`,
+        ],
+        playful: [
+          `Candid iPhone photo of SUBJECT making a silly face. ${clothingClause}${settingClause ? `, ${settingClause}` : ', at a beach boardwalk'}. Tongue out or winking, totally goofing off. Bright daylight, shot by a friend mid-joke. Fun, real moment.`,
+          `Phone photo of SUBJECT mid-dance. ${clothingClause}${settingClause ? `, ${settingClause}` : ', in a living room with fairy lights'}. Eyes bright, playful energy. Slightly blurred motion, candid and spontaneous. Not staged.`,
+          `Casual snapshot of SUBJECT throwing a peace sign. ${clothingClause}${settingClause ? `, ${settingClause}` : ', at a food truck festival'}. Cheeky grin, having the best time. Natural lighting, taken on a phone. Genuine fun.`,
+        ],
       };
 
       // Pick a random scene for each emotional state to add variety
@@ -1006,6 +1016,8 @@ export async function imagegenRoutes(app: FastifyInstance): Promise<void> {
         { state: 'neutral' as const, scene: pickRandomScene(sceneOptions.neutral) },
         { state: 'happy' as const, scene: pickRandomScene(sceneOptions.happy) },
         { state: 'thoughtful' as const, scene: pickRandomScene(sceneOptions.thoughtful) },
+        { state: 'confident' as const, scene: pickRandomScene(sceneOptions.confident) },
+        { state: 'playful' as const, scene: pickRandomScene(sceneOptions.playful) },
       ];
 
       const anchorStates = anchorScenes.map(s => s.state);

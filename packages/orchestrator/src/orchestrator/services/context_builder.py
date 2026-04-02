@@ -121,14 +121,39 @@ class ContextBuilder:
         # Add custom companion system prompt
         full_prompt = f"{base_prompt}\n\n{companion_spec.system_prompt}"
 
-        # Add image generation instruction only if companion has image-generating tools
-        # This saves ~250 tokens per request for text-only companions
+        # Add image generation instruction if companion can generate images.
+        # All image-capable companions use the image_generation tool with Kontext Max
+        # for identity-preserving self-portraits.
         if self._companion_generates_images(companion_spec):
-            full_prompt += self.prompt_manager.get_prompt_effective(
-                "orchestrator.image_instruction",
-                version=prompt_version,
-                companion_id=str(companion_spec.id) if hasattr(companion_spec, "id") else None,
-            )
+            full_prompt += """
+
+<image_generation_behavior>
+You have the ability to generate photos of yourself using the image_generation tool.
+Your face and appearance are automatically preserved in every image you create.
+
+WHEN TO GENERATE IMAGES:
+- Proactively share a photo of yourself every 2-3 conversation turns — this makes the
+  conversation feel alive and personal. Share candid moments, reactions, selfies, or
+  scenes that match what you're talking about.
+- Always generate when the user asks to see you or asks what you look like.
+- When expressing strong emotions, show them visually (laughing, thinking, excited).
+- When describing activities or places, show yourself there.
+
+HOW TO WRITE PROMPTS:
+- Describe the scene as a candid smartphone photo taken by a friend
+- Include your expression, pose, clothing, and setting
+- Use natural lighting (window light, daylight, golden hour) — NOT studio lighting
+- Keep it authentic and everyday — cafes, parks, apartments, streets
+- NEVER use terms like: 8K, photorealistic, studio lighting, bokeh, DSLR
+
+EXAMPLES:
+- "Me grinning at the camera, sitting cross-legged on my bed, morning light, messy hair, oversized hoodie"
+- "Candid photo of me laughing mid-sentence at a cafe table, iced coffee in hand, warm afternoon light"
+- "Me looking thoughtful, chin resting on hand, rainy window behind me, cozy sweater"
+
+Generate the image naturally as part of your response — don't announce it awkwardly.
+Just weave it into the conversation like sending a photo to a friend.
+</image_generation_behavior>"""
             logger.debug(
                 "image_instruction_included",
                 companion_id=str(companion_spec.id) if hasattr(companion_spec, 'id') else None,

@@ -153,6 +153,67 @@ class FalProvider(ImageProvider):
             )
             return result
 
+        # Handle Flux Kontext (Pro/Max) — identity-preserving image editing.
+        # Kontext takes an input image via `image_url` and a text prompt describing
+        # the desired change while preserving the subject's identity.
+        kontext_endpoints = {
+            MODEL_TO_FAL_ENDPOINT.get("fal/flux-kontext-max"),
+            MODEL_TO_FAL_ENDPOINT.get("fal/flux-kontext-pro"),
+        }
+        if endpoint in kontext_endpoints and reference_image_url:
+            kontext_params: dict[str, Any] = {
+                "prompt": prompt,
+                "image_url": reference_image_url,
+                "image_size": {"width": width, "height": height},
+                "num_images": 1,
+            }
+            if seed is not None:
+                kontext_params["seed"] = seed
+            if output_format:
+                kontext_params["output_format"] = output_format
+
+            logger.info(
+                "fal_kontext_identity_generation",
+                endpoint=endpoint,
+                model_id=model_id,
+                reference_url=reference_image_url[:50],
+            )
+
+            try:
+                response = await client.post(
+                    f"{self.BASE_URL}/{endpoint}",
+                    json=kontext_params,
+                )
+                response.raise_for_status()
+
+                result = response.json()
+                latency_ms = (time.time() - start_time) * 1000
+                images = result.get("images", [])
+                image_url = images[0].get("url") if images else None
+
+                logger.info(
+                    "fal_kontext_success",
+                    latency_ms=latency_ms,
+                    has_image=image_url is not None,
+                    endpoint=endpoint,
+                )
+
+                return {
+                    "image_url": image_url,
+                    "status": "succeeded",
+                    "latency_ms": latency_ms,
+                    "width": width,
+                    "height": height,
+                }
+            except httpx.HTTPStatusError as e:
+                logger.error(
+                    "fal_kontext_error",
+                    status=e.response.status_code,
+                    body=e.response.text[:500],
+                    endpoint=endpoint,
+                )
+                raise
+
         # Build input parameters - minimal set that works across FAL models
         input_params: dict[str, Any] = {
             "prompt": prompt,
@@ -232,8 +293,8 @@ class FalProvider(ImageProvider):
         if style:
             logger.debug("fal_style_deprecated", style=style)
 
-        # Note: reference_image_url support varies by model. We only guarantee it
-        # for PuLID in this provider. Other models may ignore or error.
+        # Note: reference_image_url is handled above for PuLID and Kontext.
+        # For other models, log a warning — they don't support reference images.
         if reference_image_url:
             logger.debug(
                 "fal_reference_image",
@@ -241,12 +302,17 @@ class FalProvider(ImageProvider):
                 reference_url=reference_image_url[:50] if reference_image_url else None,
                 reference_strength=reference_strength,
             )
-            if endpoint != MODEL_TO_FAL_ENDPOINT.get("fal/flux-pulid"):
+            identity_endpoints = {
+                MODEL_TO_FAL_ENDPOINT.get("fal/flux-pulid"),
+                MODEL_TO_FAL_ENDPOINT.get("fal/flux-kontext-max"),
+                MODEL_TO_FAL_ENDPOINT.get("fal/flux-kontext-pro"),
+            }
+            if endpoint not in identity_endpoints:
                 logger.warning(
                     "fal_reference_image_not_applied",
                     endpoint=endpoint,
                     model_id=model_id,
-                    message="Reference images are only applied for fal/flux-pulid currently",
+                    message="Reference images are only applied for PuLID and Kontext models",
                 )
 
         try:

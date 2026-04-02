@@ -197,7 +197,6 @@ export const EMOTION_TO_ANCHOR_MAP: Record<string, string> = {
   // Happy anchors
   happy: 'happy',
   excited: 'happy',
-  playful: 'happy',
   joyful: 'happy',
   flirty: 'happy',
   amused: 'happy',
@@ -210,6 +209,18 @@ export const EMOTION_TO_ANCHOR_MAP: Record<string, string> = {
   concerned: 'thoughtful',
   worried: 'thoughtful',
   introspective: 'thoughtful',
+  // Confident anchors
+  confident: 'confident',
+  assertive: 'confident',
+  determined: 'confident',
+  proud: 'confident',
+  bold: 'confident',
+  // Playful anchors
+  playful: 'playful',
+  mischievous: 'playful',
+  cheeky: 'playful',
+  teasing: 'playful',
+  silly: 'playful',
   // Neutral anchors (default)
   neutral: 'neutral',
   calm: 'neutral',
@@ -655,7 +666,7 @@ export async function generateSeededAnchorsWithOrchestrator(
         build: appearance.build,
       },
       personality: personality || null,
-      variation_count: 3,
+      variation_count: 4,
       width: 768,
       height: 1024,
     }),

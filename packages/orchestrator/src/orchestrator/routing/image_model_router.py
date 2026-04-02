@@ -218,8 +218,10 @@ class ImageModelRouter:
                     )
                     continue
 
-                # Exclude models that require reference images for text-to-image use cases
-                if model.requires_reference_image and use_case != ImageUseCase.IMAGE_VARIATION:
+                # Exclude models that require reference images when no reference is available.
+                # requires_ip_adapter=True means the request HAS a reference image, so
+                # models that require one (e.g. PuLID) are a valid match.
+                if model.requires_reference_image and not requires_ip_adapter:
                     logger.debug(
                         "model_requires_reference_image_skipped",
                         model_id=model.model_id,
@@ -297,10 +299,9 @@ class ImageModelRouter:
             if requires_nsfw and not model.nsfw_capable:
                 continue
 
-            # Exclude models that require reference images for text-to-image use cases
-            # (e.g., PuLID requires a reference image - it cannot do pure text-to-image)
-            # Only allow requires_reference_image models for IMAGE_VARIATION use case
-            if model.requires_reference_image and use_case != ImageUseCase.IMAGE_VARIATION:
+            # Exclude models that require reference images when no reference is available.
+            # requires_ip_adapter=True means the request HAS a reference image.
+            if model.requires_reference_image and not requires_ip_adapter:
                 logger.debug(
                     "model_requires_reference_image_skipped",
                     model_id=model.model_id,

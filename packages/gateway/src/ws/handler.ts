@@ -1405,8 +1405,8 @@ async function handleUserMessage(
     const sessionsService = getSessionsService();
     const eventsService = getEventsService();
 
-    // 1. Get companion details for building the spec
-    const companion = await companionsService.getById(userId, companionId);
+    // 1. Get companion details (with avatar for identity-preserving image gen)
+    const companion = await companionsService.getWithAvatar(userId, companionId);
     if (!companion) {
       sendError(client, 'Companion not found');
       return;
@@ -1487,7 +1487,7 @@ async function handleUserMessage(
         : ['friendly', 'helpful'],
       communication_style: spec?.personality?.archetype || 'friendly and supportive',
       voice_id: spec?.voice?.voice_id || null,
-      avatar_url: null,
+      avatar_url: companion.activeAvatar?.asset_url || null,
       system_prompt: await buildSystemPrompt(
         companionId,
         companion as unknown as { name: string; spec: Record<string, unknown> | null }

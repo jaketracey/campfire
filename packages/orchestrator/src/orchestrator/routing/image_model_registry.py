@@ -333,13 +333,14 @@ IMAGE_MODEL_REGISTRY: dict[str, ImageModelSpec] = {
     "fal/flux-kontext-max": ImageModelSpec(
         model_id="fal/flux-kontext-max",
         provider="fal",
-        display_name="Flux Kontext Max (Premium Edit)",
+        display_name="Flux Kontext Max (Premium Identity-Preserving)",
         tier=ImageModelTier.QUALITY,
         max_resolution=(1536, 2048),
         supports_ip_adapter=True,
         supports_inpainting=True,
         supports_controlnet=False,
         supports_img2img=True,
+        requires_reference_image=True,  # Image-to-image only — preserves subject identity
         nsfw_capable=False,
         avg_generation_time=12.0,
         cost_per_image=0.08,
@@ -347,7 +348,7 @@ IMAGE_MODEL_REGISTRY: dict[str, ImageModelSpec] = {
         default_cfg_scale=3.5,
         fal_endpoint="fal-ai/flux-pro/kontext/max",
         is_local=False,
-        tags=["editing", "premium", "cloud", "kontext"],
+        tags=["identity-aware", "face-consistency", "premium", "cloud", "kontext"],
     ),
     # Recraft V3
     "fal/recraft-v3": ImageModelSpec(

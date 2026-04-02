@@ -770,13 +770,22 @@ class ImageGenerationHandler(ToolHandler):
         return self._replicate_provider
 
     async def execute(self, tool_call: ToolCall) -> ToolResult:
-        """Execute image generation."""
+        """Execute image generation.
+
+        When the companion has an anchor image (identity reference), uses Kontext Max
+        for identity-preserving generation so the output looks like the companion.
+        """
         start_time = time.time()
 
         try:
             prompt = tool_call.arguments.get("prompt", "")
             style = tool_call.arguments.get("style", "realistic")
-            size = tool_call.arguments.get("size", "512x512")
+            size = tool_call.arguments.get("size", "832x1248")
+
+            # Extract companion's anchor image URL for identity preservation
+            anchor_url: str | None = None
+            if tool_call.context and tool_call.context.companion_spec:
+                anchor_url = tool_call.context.companion_spec.get("avatar_url")
 
             # Augment prompt with character visual details if context is available
             augmented_prompt = prompt
@@ -795,11 +804,13 @@ class ImageGenerationHandler(ToolHandler):
                     "prompt_augmented_for_image_generation",
                     original_length=len(prompt),
                     augmented_length=len(augmented_prompt),
+                    has_anchor=bool(anchor_url),
                 )
 
-            # Generate image using FAL (preferred) or Replicate (fallback)
+            # Generate image — use Kontext Max with anchor for identity preservation
             result = await self._generate_image(
-                augmented_prompt, style, size, negative_prompt
+                augmented_prompt, style, size, negative_prompt,
+                reference_image_url=anchor_url,
             )
             image_url = result.get("image_url", "")
 
@@ -858,6 +869,7 @@ class ImageGenerationHandler(ToolHandler):
         style: str,
         size: str,
         negative_prompt: str | None = None,
+        reference_image_url: str | None = None,
     ) -> dict[str, Any]:
         """Generate image using FAL (preferred) or Replicate (fallback).
 
@@ -866,22 +878,36 @@ class ImageGenerationHandler(ToolHandler):
             style: Image style (realistic, artistic, etc.)
             size: Image dimensions
             negative_prompt: Optional negative prompt for exclusions
+            reference_image_url: Optional anchor/reference image for identity preservation.
+                When provided, uses Kontext Max for identity-preserving generation.
         """
         # Try FAL first (preferred provider)
         fal = self._get_fal_provider()
         if fal:
             try:
+                # Use Kontext Max when we have an anchor image for identity preservation
+                model_id = None
+                if reference_image_url:
+                    model_id = "fal/flux-kontext-max"
+                    logger.info(
+                        "using_kontext_max_for_identity",
+                        reference_url=reference_image_url[:50],
+                    )
+
                 result = await fal.generate(
                     prompt=prompt,
                     size=size,
                     style=style,
                     negative_prompt=negative_prompt,
+                    model_id=model_id,
+                    reference_image_url=reference_image_url,
+                    reference_strength=0.9,
                 )
                 return {**result, "provider": "fal"}
             except Exception as e:
                 logger.warning("fal_generation_failed_trying_fallback", error=str(e))
 
-        # Fallback to Replicate
+        # Fallback to Replicate (no identity preservation)
         replicate = self._get_replicate_provider()
         if replicate:
             result = await replicate.generate(
