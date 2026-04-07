@@ -5,6 +5,20 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [v0.10.2] - 2026-04-07
+
+## What's Changed
+
+### Bug Fixes
+- fix(orchestrator): fix count_tokens API + staticmethod bug, bump Anthropic SDK (#33) (84c0476)
+
+### Documentation
+- docs: add continuous improvement pipeline guide (ab8e939)
+
+### Contributors
+- @Jake Tracey
+
+
 ## [v0.10.1] - 2026-04-02
 
 ## What's Changed
