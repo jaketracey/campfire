@@ -7,7 +7,6 @@ from typing import Any, AsyncGenerator
 
 import anthropic
 import structlog
-# Removed tenacity retry - was causing async issues
 
 from orchestrator.config import Settings
 from orchestrator.providers.base import LLMProvider, LLMResponse
@@ -207,10 +206,17 @@ class AnthropicProvider(LLMProvider):
             raise
 
     async def count_tokens(self, text: str) -> int:
-        """Count tokens using Anthropic's tokenizer."""
+        """Count tokens using Anthropic's token counting API.
+
+        Uses the messages.count_tokens endpoint for accurate counts.
+        Falls back to approximate count on error.
+        """
         try:
-            result = await self.client.count_tokens(text)
-            return result
+            result = await self.client.messages.count_tokens(
+                messages=[{"role": "user", "content": text}],
+                model=self.current_model,
+            )
+            return result.input_tokens
         except Exception:
             # Fallback to approximate count
             return len(text) // 4
