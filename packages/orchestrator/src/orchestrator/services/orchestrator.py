@@ -774,6 +774,7 @@ class ConversationOrchestrator:
         return None
 
 
+    @staticmethod
     def _to_string_or_none(value: Any) -> str | None:
         if isinstance(value, str):
             stripped = value.strip()
