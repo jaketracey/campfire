@@ -51,6 +51,8 @@ dependencies = [
     "livekit-agents>=0.12.0",
     # Simli avatar rendering (uses aiohttp WebSocket)
     "aiohttp>=3.9.0",
+    # ElevenLabs TTS (official SDK)
+    "elevenlabs>=2.36.0",
     # Deepgram STT (SDK used for streaming; REST via httpx already included)
     "deepgram-sdk>=3.0.0",
 ]

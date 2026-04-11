@@ -99,6 +99,11 @@ class VideoAgent:
         self._orchestrator_factory = orchestrator_factory
         self._callbacks = callbacks or VideoAgentCallbacks()
 
+        # ElevenLabs TTS provider (reuses SDK client across calls)
+        from orchestrator.providers.elevenlabs import ElevenLabsProvider
+
+        self._tts_provider = ElevenLabsProvider(settings)  # type: ignore[arg-type]
+
         # Runtime state
         self._running = False
         self._avatar_client: FalAvatarClient | SimliClient | None = None
@@ -214,6 +219,10 @@ class VideoAgent:
         if self._avatar_client is not None:
             await self._avatar_client.close()
             self._avatar_client = None
+
+        # Close TTS provider
+        if self._tts_provider is not None:
+            await self._tts_provider.close()
 
         # Disconnect LiveKit
         if self._lk_room is not None:
@@ -486,29 +495,17 @@ class VideoAgent:
 
     async def _synthesize(self, text: str) -> bytes:
         """Convert text to PCM audio via ElevenLabs."""
-        import httpx
-
         voice_id = self._config.voice_id
-        url = f"https://api.elevenlabs.io/v1/text-to-speech/{voice_id}"
-        headers = {
-            "xi-api-key": self._settings.elevenlabs_api_key,
-            "Content-Type": "application/json",
-            "Accept": "audio/pcm",
-        }
-        payload = {
-            "text": text,
-            "model_id": self._config.tts_model,
-            "output_format": f"pcm_{self._settings.tts_sample_rate}",
-        }
-
         try:
-            async with httpx.AsyncClient(timeout=30.0) as client:
-                resp = await client.post(url, headers=headers, json=payload)
-                resp.raise_for_status()
-                audio_bytes = resp.content
-                duration = len(audio_bytes) / (self._settings.tts_sample_rate * 2)
-                self._session.total_tts_seconds += duration
-                return audio_bytes
+            result = await self._tts_provider.synthesize(
+                text=text,
+                voice_id=voice_id,
+                model=self._config.tts_model,
+                output_format=f"pcm_{self._settings.tts_sample_rate}",
+            )
+            duration = len(result.audio_data) / (self._settings.tts_sample_rate * 2)
+            self._session.total_tts_seconds += duration
+            return result.audio_data
         except Exception as exc:
             logger.error("elevenlabs_tts_error", error=str(exc))
             return b""
