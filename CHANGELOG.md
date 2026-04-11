@@ -5,6 +5,23 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [v0.11.0] - 2026-04-11
+
+## What's Changed
+
+### Features
+- feat: replace raw HTTP with ElevenLabs SDK + add WebSocket TTS streaming (f10a4a2)
+- feat: add Anthropic prompt caching for system prompts (09872ae)
+- feat: use Anthropic structured outputs for KG extraction and session summarization (9b4888f)
+- feat: upgrade model references + add Anthropic Batch API support (5cb3306)
+
+### Bug Fixes
+- fix: migration ON CONFLICT constraint mismatch + SSE streaming word merge bug (894bc5a)
+
+### Contributors
+- @Jake Tracey
+
+
 ## [v0.10.2] - 2026-04-07
 
 ## What's Changed
