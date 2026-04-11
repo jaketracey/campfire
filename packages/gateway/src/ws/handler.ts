@@ -1759,7 +1759,11 @@ async function handleUserMessage(
 
         for (const line of lines) {
           if (line.startsWith('data: ')) {
-            const data = line.slice(6).trim();
+            // Strip only trailing \r for CRLF compatibility — do NOT .trim()
+            // because whitespace-only chunks (e.g. a single space token from the
+            // LLM) are valid content.  Trimming them drops inter-word spaces and
+            // produces merged words like "meas" instead of "me as".
+            const data = line.slice(6).replace(/\r$/, '');
 
             if (data === '[DONE]') {
               // Stream complete
@@ -1995,8 +1999,8 @@ async function handleUserMessage(
       }
 
       // Process any remaining content in the buffer after stream ends
-      if (lineBuffer.trim() && lineBuffer.startsWith('data: ')) {
-        const data = lineBuffer.slice(6).trim();
+      if (lineBuffer.replace(/\r$/, '') && lineBuffer.startsWith('data: ')) {
+        const data = lineBuffer.slice(6).replace(/\r$/, '');
         if (data && data !== '[DONE]' && !data.startsWith('[')) {
           // Unescape newlines that were escaped for SSE transport
           const unescapedData = data.replace(/\\n/g, '\n');

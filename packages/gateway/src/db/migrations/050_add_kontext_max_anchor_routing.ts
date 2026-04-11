@@ -49,7 +49,7 @@ export async function up(sql: postgres.Sql): Promise<void> {
         tags: ['identity-aware', 'face-consistency', 'premium', 'kontext'],
       })}::jsonb
     )
-    ON CONFLICT (model_id) DO UPDATE SET
+    ON CONFLICT (provider_config_id, model_id) DO UPDATE SET
       display_name = EXCLUDED.display_name,
       is_enabled = EXCLUDED.is_enabled,
       metadata = EXCLUDED.metadata
