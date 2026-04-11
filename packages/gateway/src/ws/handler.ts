@@ -168,12 +168,15 @@ const EXPLICIT_IMAGE_INTENT_PATTERNS: RegExp[] = [
   /\bpicture\s+of\s+you\b/i,
   /\bphoto\s+of\s+you\b/i,
   /\bselfie\b/i,
+  /\b(create|generate|make)\s+(a|an|me|the)?\s*(image|pic|picture|photo)\b/i,
+  /\bimage\s+of\b/i,
 ];
 
 const WEAK_IMAGE_INTENT_PATTERNS: RegExp[] = [
   /\bpose\b/i,
   /\boutfit\b/i,
   /\blook\b.*\blike\b/i,
+  /\b(create|generate|make)\b.*\b(it|that|this|one)\b/i,
 ];
 
 function asStringArray(value: unknown): string[] {

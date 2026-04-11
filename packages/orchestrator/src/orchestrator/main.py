@@ -151,6 +151,8 @@ def detect_visual_intent(text: str) -> tuple[bool, float]:
         r"\bpicture\b",
         r"\bwhat do you look like\b",
         r"\bwhat are you wearing\b",
+        r"\b(create|generate|make)\s+(a|an|me|the)?\s*(image|pic|picture|photo)\b",
+        r"\bimage\s+of\b",
     ]
     if any(re.search(pattern, normalized) for pattern in explicit_patterns):
         return True, 0.95
@@ -159,6 +161,7 @@ def detect_visual_intent(text: str) -> tuple[bool, float]:
         r"\boutfit\b",
         r"\bpose\b",
         r"\blook\b.*\blike\b",
+        r"\b(create|generate|make)\b.*\b(it|that|this|one)\b",
     ]
     if any(re.search(pattern, normalized) for pattern in weak_patterns):
         return True, 0.65
@@ -1225,6 +1228,12 @@ async def stream_message(request: StreamMessageRequest) -> StreamingResponse:
                 # Parse multi-messages after stream completes
                 messages, image_prompt = app_state.orchestrator._parse_multi_messages(full_content)
 
+                # If the LLM included an <image_prompt>, it decided to generate
+                # an image — override intent detection so the frontend triggers.
+                if image_prompt:
+                    requested_image = True
+                    intent_confidence = max(intent_confidence, 0.95)
+
                 # Log extraction result for debugging
                 logger.info(
                     "stream_image_prompt_result",
@@ -1324,6 +1333,11 @@ async def stream_message(request: StreamMessageRequest) -> StreamingResponse:
                     tool_image_prompt, generated_image_url = extract_image_tool_metadata(result)
                     if not image_prompt and tool_image_prompt:
                         image_prompt = tool_image_prompt
+
+                    # LLM decided to generate an image — override intent detection
+                    if image_prompt:
+                        requested_image = True
+                        intent_confidence = max(intent_confidence, 0.95)
 
                     tool_calls = list(result.tool_calls)
                     tool_results = list(result.tool_results)
