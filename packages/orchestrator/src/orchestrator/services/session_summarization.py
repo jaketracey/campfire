@@ -31,15 +31,7 @@ Create a concise summary that captures:
 3. Important decisions or conclusions reached
 4. The emotional tone of the conversation
 
-Output JSON in this exact format:
-{{
-  "summary": "A 2-3 paragraph summary of the conversation",
-  "key_facts": ["List of important facts about the user"],
-  "emotional_tone": "Brief description of the conversation's emotional tone"
-}}
-
-Focus on information that would be useful for future conversations to maintain continuity.
-Output ONLY valid JSON, no markdown or explanation."""
+Focus on information that would be useful for future conversations to maintain continuity."""
 
 
 class SessionSummaryResult:
@@ -186,11 +178,14 @@ class SessionSummarizationService:
                 companion_context=companion_context,
             )
 
-            # Call LLM
-            response = await self._call_summarization_llm(prompt)
+            # Call LLM (returns structured dict)
+            data = await self._call_summarization_llm(prompt)
 
-            # Parse response
-            result = self._parse_summarization_response(response)
+            result = SessionSummaryResult(
+                summary=data.get("summary"),
+                key_facts=data.get("key_facts", []),
+                emotional_tone=data.get("emotional_tone"),
+            )
 
             logger.info(
                 "session_summarization_completed",
@@ -301,24 +296,73 @@ class SessionSummarizationService:
 
         return result
 
-    async def _call_summarization_llm(self, prompt: str) -> str:
-        """Call the LLM for summarization.
+    # Schema for structured output from the summarization LLM
+    _SUMMARIZATION_SCHEMA = {
+        "type": "object",
+        "properties": {
+            "summary": {"type": "string"},
+            "key_facts": {
+                "type": "array",
+                "items": {"type": "string"},
+            },
+            "emotional_tone": {"type": "string"},
+        },
+        "required": ["summary", "key_facts", "emotional_tone"],
+    }
 
-        Uses a cheap/fast model for cost efficiency.
+    async def _call_summarization_llm(self, prompt: str) -> dict:
+        """Call the LLM for summarization with structured output.
+
+        Uses Anthropic's structured output to guarantee valid JSON.
+        Falls back to the legacy text-parsing approach if structured
+        output is not supported by the configured model.
         """
-        # Import here to avoid circular dependency
+        import anthropic
+
+        client = anthropic.AsyncAnthropic(
+            api_key=self.settings.anthropic_api_key,
+            timeout=self.settings.anthropic_timeout,
+        )
+
+        try:
+            response = await client.messages.create(
+                model=self.summarization_model,
+                max_tokens=1500,
+                temperature=0.3,
+                messages=[{"role": "user", "content": prompt}],
+                output_config={
+                    "format": {
+                        "type": "json",
+                        "schema": self._SUMMARIZATION_SCHEMA,
+                    }
+                },
+            )
+            return json.loads(response.content[0].text)
+        except (anthropic.BadRequestError, anthropic.APIError) as e:
+            logger.warning(
+                "session_summarization_structured_output_fallback",
+                error=str(e),
+                model=self.summarization_model,
+            )
+            return await self._call_summarization_llm_legacy(prompt)
+
+    async def _call_summarization_llm_legacy(self, prompt: str) -> dict:
+        """Legacy LLM call that parses free-form text (fallback)."""
         from orchestrator.providers.anthropic import AnthropicProvider
 
         provider = AnthropicProvider(self.settings)
-
         response = await provider.generate(
             messages=[{"role": "user", "content": prompt}],
             model=self.summarization_model,
             max_tokens=1500,
-            temperature=0.3,  # Moderate temperature for summaries
+            temperature=0.3,
         )
-
-        return response.content
+        result = self._parse_summarization_response(response.content)
+        return {
+            "summary": result.summary,
+            "key_facts": result.key_facts,
+            "emotional_tone": result.emotional_tone,
+        }
 
     def _parse_summarization_response(self, response: str) -> SessionSummaryResult:
         """Parse the LLM summarization response."""

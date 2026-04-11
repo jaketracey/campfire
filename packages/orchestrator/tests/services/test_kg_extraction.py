@@ -46,8 +46,8 @@ def service(settings, http_client):
 
 @pytest.fixture
 def sample_extraction_response():
-    """Sample successful LLM extraction response."""
-    return json.dumps({
+    """Sample successful LLM extraction response (structured dict)."""
+    return {
         "entities": [
             {"name": "hiking", "type": "activity", "properties": {}},
             {"name": "mountains", "type": "place", "properties": {}},
@@ -67,7 +67,7 @@ def sample_extraction_response():
             },
         ],
         "reasoning": "User expressed preference for hiking in mountains",
-    })
+    }
 
 
 class TestKGExtractionResult:
@@ -187,7 +187,7 @@ class TestExtractFromTurn:
     @pytest.mark.asyncio
     async def test_normalizes_user_references(self, service):
         """Should normalize 'I' and 'me' to 'User-{id}'."""
-        response = json.dumps({
+        response = {
             "entities": [
                 {"name": "I", "type": "person"},
                 {"name": "cooking", "type": "activity"},
@@ -195,7 +195,7 @@ class TestExtractFromTurn:
             "relations": [
                 {"source": "me", "target": "cooking", "type": "likes", "confidence": 0.9}
             ],
-        })
+        }
 
         user_id = uuid4()
         with patch.object(service, "_call_extraction_llm", return_value=response):
@@ -227,9 +227,12 @@ class TestExtractFromTurn:
         assert "LLM error" in result.error
 
     @pytest.mark.asyncio
-    async def test_handles_invalid_json_response(self, service):
-        """Should handle invalid JSON from LLM."""
-        with patch.object(service, "_call_extraction_llm", return_value="not valid json"):
+    async def test_handles_invalid_llm_response(self, service):
+        """Should handle errors from LLM gracefully."""
+        with patch.object(
+            service, "_call_extraction_llm",
+            side_effect=Exception("Failed to parse LLM response"),
+        ):
             result = await service.extract_from_turn(
                 "I love hiking in the mountains",
                 user_id=uuid4(),
@@ -283,10 +286,10 @@ class TestExtractFromConversation:
     @pytest.mark.asyncio
     async def test_deduplicates_entities(self, service):
         """Should deduplicate entities across turns."""
-        response = json.dumps({
+        response = {
             "entities": [{"name": "hiking", "type": "activity"}],
             "relations": [],
-        })
+        }
 
         turns = [
             {"user_message": "I love hiking"},

@@ -35,41 +35,15 @@ IMPORTANT RULES:
 - Only extract information that was explicitly stated or strongly implied
 - Confidence should be 0.9+ for explicit statements, 0.6-0.8 for strong implications
 
-Output JSON in this exact format:
-{{
-  "entities": [
-    {{
-      "name": "entity name",
-      "type": "person|place|thing|event|concept|emotion|activity|time",
-      "properties": {{}}
-    }}
-  ],
-  "relations": [
-    {{
-      "source": "source entity name",
-      "target": "target entity name",
-      "type": "knows|likes|dislikes|located_at|works_at|related_to|part_of|causes|experienced|wants|has|is_a",
-      "confidence": 0.0 to 1.0
-    }}
-  ],
-  "reasoning": "Brief explanation of what was extracted and why"
-}}
-
-If no meaningful entities or relations can be extracted, return empty arrays.
-Output ONLY valid JSON, no markdown or explanation."""
+If no meaningful entities or relations can be extracted, return empty arrays."""
 
 # Minimal prompt for quick extraction of obvious facts
-KG_QUICK_EXTRACTION_PROMPT = """Extract key facts from this message. Output JSON only.
+KG_QUICK_EXTRACTION_PROMPT = """Extract key facts from this message.
 
 User: {user_message}
 
-Format:
-{{"entities": [{{"name": "...", "type": "..."}}], "relations": [{{"source": "...", "target": "...", "type": "...", "confidence": 0.9}}]}}
-
-Types: person, place, thing, event, concept, emotion, activity, time
-Relations: knows, likes, dislikes, located_at, works_at, related_to, part_of, causes, experienced, wants, has, is_a
-
-Return empty arrays if nothing to extract. JSON only:"""
+Extract entities (people, places, things, events, concepts, emotions, activities, times) and relationships between them.
+Return empty arrays if nothing to extract."""
 
 
 class KGExtractionResult:
@@ -170,11 +144,14 @@ class KGExtractionService:
                     assistant_message_section=assistant_section,
                 )
 
-            # Call the LLM for extraction
-            response = await self._call_extraction_llm(prompt)
+            # Call the LLM for extraction (returns structured dict)
+            data = await self._call_extraction_llm(prompt)
 
-            # Parse the response
-            result = self._parse_extraction_response(response)
+            result = KGExtractionResult(
+                entities=data.get("entities", []),
+                relations=data.get("relations", []),
+                reasoning=data.get("reasoning"),
+            )
 
             # Normalize user references
             result = self._normalize_user_references(result, str(user_id) if user_id else None)
@@ -334,24 +311,109 @@ class KGExtractionService:
             logger.error("kg_extraction_submit_error", error=str(e))
             return False
 
-    async def _call_extraction_llm(self, prompt: str) -> str:
-        """Call the LLM for extraction.
+    # Schema for structured output from the extraction LLM
+    _EXTRACTION_SCHEMA = {
+        "type": "object",
+        "properties": {
+            "entities": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "name": {"type": "string"},
+                        "type": {
+                            "type": "string",
+                            "enum": [
+                                "person", "place", "thing", "event",
+                                "concept", "emotion", "activity", "time",
+                            ],
+                        },
+                        "properties": {"type": "object"},
+                    },
+                    "required": ["name", "type"],
+                },
+            },
+            "relations": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "source": {"type": "string"},
+                        "target": {"type": "string"},
+                        "type": {
+                            "type": "string",
+                            "enum": [
+                                "knows", "likes", "dislikes", "located_at",
+                                "works_at", "related_to", "part_of", "causes",
+                                "experienced", "wants", "has", "is_a",
+                            ],
+                        },
+                        "confidence": {"type": "number"},
+                    },
+                    "required": ["source", "target", "type", "confidence"],
+                },
+            },
+            "reasoning": {"type": "string"},
+        },
+        "required": ["entities", "relations"],
+    }
 
-        Uses a cheap/fast model (Haiku) for cost efficiency.
+    async def _call_extraction_llm(self, prompt: str) -> dict:
+        """Call the LLM for extraction with structured output.
+
+        Uses Anthropic's structured output to guarantee valid JSON.
+        Falls back to the legacy text-parsing approach if structured
+        output is not supported by the configured model.
         """
-        # Import here to avoid circular dependency
+        import anthropic
+
+        client = anthropic.AsyncAnthropic(
+            api_key=self.settings.anthropic_api_key,
+            timeout=self.settings.anthropic_timeout,
+        )
+
+        try:
+            response = await client.messages.create(
+                model=self.extraction_model,
+                max_tokens=1000,
+                temperature=0.1,
+                messages=[{"role": "user", "content": prompt}],
+                output_config={
+                    "format": {
+                        "type": "json",
+                        "schema": self._EXTRACTION_SCHEMA,
+                    }
+                },
+            )
+            # Structured output guarantees valid JSON
+            return json.loads(response.content[0].text)
+        except (anthropic.BadRequestError, anthropic.APIError) as e:
+            # Fall back to legacy text approach if structured output
+            # is unsupported for this model
+            logger.warning(
+                "kg_extraction_structured_output_fallback",
+                error=str(e),
+                model=self.extraction_model,
+            )
+            return await self._call_extraction_llm_legacy(prompt)
+
+    async def _call_extraction_llm_legacy(self, prompt: str) -> dict:
+        """Legacy LLM call that parses free-form text (fallback)."""
         from orchestrator.providers.anthropic import AnthropicProvider
 
         provider = AnthropicProvider(self.settings)
-
         response = await provider.generate(
             messages=[{"role": "user", "content": prompt}],
             model=self.extraction_model,
             max_tokens=1000,
-            temperature=0.1,  # Low temperature for consistent extraction
+            temperature=0.1,
         )
-
-        return response.content
+        result = self._parse_extraction_response(response.content)
+        return {
+            "entities": result.entities,
+            "relations": result.relations,
+            "reasoning": result.reasoning,
+        }
 
     def _parse_extraction_response(self, response: str) -> KGExtractionResult:
         """Parse the LLM extraction response."""

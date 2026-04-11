@@ -44,8 +44,8 @@ def service(settings, http_client):
 
 @pytest.fixture
 def sample_summarization_response():
-    """Sample successful LLM summarization response."""
-    return json.dumps({
+    """Sample successful LLM summarization response (structured dict)."""
+    return {
         "summary": "User discussed their love of hiking and mentioned they live in Colorado. They expressed interest in trying rock climbing.",
         "key_facts": [
             "User loves hiking",
@@ -53,7 +53,7 @@ def sample_summarization_response():
             "User is interested in rock climbing",
         ],
         "emotional_tone": "positive and engaged",
-    })
+    }
 
 
 @pytest.fixture
@@ -210,10 +210,11 @@ class TestGenerateSummary:
         assert "LLM error" in result.error
 
     @pytest.mark.asyncio
-    async def test_handles_invalid_json_response(self, service, sample_turns):
-        """Should handle invalid JSON from LLM."""
+    async def test_handles_invalid_llm_response(self, service, sample_turns):
+        """Should handle errors from LLM gracefully."""
         with patch.object(
-            service, "_call_summarization_llm", return_value="not valid json"
+            service, "_call_summarization_llm",
+            side_effect=Exception("Failed to parse LLM response"),
         ):
             result = await service.generate_summary(
                 turns=sample_turns,
@@ -419,10 +420,10 @@ class TestSummarizationPrompt:
         """Prompt should include conversation placeholder."""
         assert "{conversation}" in SUMMARIZATION_PROMPT
 
-    def test_prompt_includes_output_format(self):
-        """Prompt should specify JSON output format."""
-        assert "json" in SUMMARIZATION_PROMPT.lower()
+    def test_prompt_includes_summary_instructions(self):
+        """Prompt should include summarization instructions."""
         assert "summary" in SUMMARIZATION_PROMPT.lower()
+        assert "key facts" in SUMMARIZATION_PROMPT.lower()
 
 
 class TestSingletonInstance:
@@ -465,11 +466,11 @@ class TestIntegrationScenarios:
         user_id = uuid4()
 
         # Mock LLM response
-        llm_response = json.dumps({
+        llm_response = {
             "summary": "Extensive conversation covering multiple topics",
             "key_facts": ["Many messages exchanged"],
             "emotional_tone": "engaged",
-        })
+        }
 
         with patch.object(service, "_call_summarization_llm", return_value=llm_response):
             # Check if should summarize
@@ -524,11 +525,11 @@ class TestIntegrationScenarios:
             return_value=MagicMock(status_code=200, text="OK")
         )
 
-        llm_response = json.dumps({
+        llm_response = {
             "summary": "Test summary",
             "key_facts": ["Fact 1"],
             "emotional_tone": "positive",
-        })
+        }
 
         with patch.object(service, "_call_summarization_llm", return_value=llm_response):
             result = await service.summarize_and_store(
