@@ -85,6 +85,31 @@ export async function buildApp(opts: BuildAppOptions = {}): Promise<FastifyInsta
     });
   });
 
+  // Log response bodies for 4xx/5xx so we can debug without needing the caller
+  // to report the response payload (e.g. Zod validation details on 400s).
+  app.addHook('onSend', async (request, reply, payload) => {
+    if (reply.statusCode >= 400) {
+      let body: unknown;
+      try {
+        body = typeof payload === 'string' ? JSON.parse(payload) : payload;
+      } catch {
+        body = payload;
+      }
+      const level = reply.statusCode >= 500 ? 'error' : 'warn';
+      logger[level](
+        {
+          method: request.method,
+          url: request.url,
+          statusCode: reply.statusCode,
+          responseBody: body,
+          requestContentType: request.headers['content-type'],
+        },
+        `Response ${reply.statusCode}`,
+      );
+    }
+    return payload;
+  });
+
   app.addHook('onResponse', async (request, reply) => {
     logger.info(
       {
