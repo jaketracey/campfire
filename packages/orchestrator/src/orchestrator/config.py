@@ -39,7 +39,7 @@ class Settings(BaseSettings):
 
     # Knowledge Graph Extraction
     kg_extraction_enabled: bool = True
-    kg_extraction_model: str = "claude-3-haiku-20240307"  # Cheap/fast model
+    kg_extraction_model: str = "claude-haiku-4-5-20251001"  # Cheap/fast model
     kg_extraction_interval: int = 3  # Extract every N turns
     kg_extraction_auto_approve: bool = True  # Auto-approve extractions
 
