@@ -264,6 +264,200 @@ Just weave it into the conversation like sending a photo to a friend.
 
         return full_prompt
 
+    def build_system_prompt_blocks(
+        self,
+        companion_spec: CompanionSpec,
+        session_summary: SessionSummary | None = None,
+        long_term_memories: list[LongTermMemory] | None = None,
+        safety_constraints: list[str] | None = None,
+        situational_tenets: list[SituationalTenetMatch] | None = None,
+        gift_memories: list[GiftMemory] | None = None,
+        pending_gift_recall: GiftRecallContext | None = None,
+        companion_self_knowledge: list[CompanionSelfKnowledge] | None = None,
+        active_game: dict | None = None,
+        liked_content: list[dict] | None = None,
+        engagement_level: str | None = None,
+        kg_context: list[KGContextItem] | None = None,
+        lorebook_matches: list[LorebookMatch] | None = None,
+        hierarchical_memory: HierarchicalRetrievalResult | None = None,
+        historical_memories: list[MemoryWithValidity] | None = None,
+        temporal_context: TemporalContext | None = None,
+        user_display_name: str | None = None,
+        emotional_state: EmotionalState | None = None,
+        prompt_version: str = "1.0.0",
+    ) -> list[dict[str, Any]]:
+        """Build system prompt as content blocks with cache control markers.
+
+        Returns a list of content blocks suitable for Anthropic's system parameter.
+        Stable content (personality, tenets, identity, safety) is marked for caching.
+        Dynamic content (memories, session summary, temporal) is not cached.
+        """
+        # --- Build the STABLE block (cacheable) ---
+        # Base prompt template
+        is_adult = companion_spec.safety_level == "adult"
+        template_name = "orchestrator.system_base_adult" if is_adult else "orchestrator.system_base"
+
+        base_prompt = self.prompt_manager.get_prompt_effective(
+            template_name,
+            version=prompt_version,
+            companion_id=str(companion_spec.id) if hasattr(companion_spec, "id") else None,
+            companion_name=companion_spec.name,
+            personality_traits=", ".join(companion_spec.personality_traits),
+            communication_style=companion_spec.communication_style,
+            description=companion_spec.description,
+        )
+
+        stable_parts = [base_prompt, "\n\n", companion_spec.system_prompt]
+
+        # Image generation behavior (static per companion)
+        if self._companion_generates_images(companion_spec):
+            stable_parts.append("""
+
+<image_generation_behavior>
+You have the ability to generate photos of yourself using the image_generation tool.
+Your face and appearance are automatically preserved in every image you create.
+
+WHEN TO GENERATE IMAGES:
+- Proactively share a photo of yourself every 2-3 conversation turns — this makes the
+  conversation feel alive and personal. Share candid moments, reactions, selfies, or
+  scenes that match what you're talking about.
+- Always generate when the user asks to see you or asks what you look like.
+- When expressing strong emotions, show them visually (laughing, thinking, excited).
+- When describing activities or places, show yourself there.
+
+HOW TO WRITE PROMPTS:
+- Describe the scene as a candid smartphone photo taken by a friend
+- Include your expression, pose, clothing, and setting
+- Use natural lighting (window light, daylight, golden hour) — NOT studio lighting
+- Keep it authentic and everyday — cafes, parks, apartments, streets
+- NEVER use terms like: 8K, photorealistic, studio lighting, bokeh, DSLR
+
+EXAMPLES:
+- "Me grinning at the camera, sitting cross-legged on my bed, morning light, messy hair, oversized hoodie"
+- "Candid photo of me laughing mid-sentence at a cafe table, iced coffee in hand, warm afternoon light"
+- "Me looking thoughtful, chin resting on hand, rainy window behind me, cozy sweater"
+
+Generate the image naturally as part of your response — don't announce it awkwardly.
+Just weave it into the conversation like sending a photo to a friend.
+</image_generation_behavior>""")
+
+        # Multi-message instruction (static)
+        stable_parts.append(self.prompt_manager.get_prompt_effective(
+            "orchestrator.multi_message_instruction",
+            version=prompt_version,
+            companion_id=str(companion_spec.id) if hasattr(companion_spec, "id") else None,
+        ))
+
+        # Core behavioral tenets (static per companion)
+        if companion_spec.core_tenets:
+            core_tenets_section = self._format_core_tenets(companion_spec.core_tenets)
+            stable_parts.append(f"\n\n{core_tenets_section}")
+
+        # Companion self-knowledge / identity (static within session)
+        if companion_self_knowledge:
+            self_knowledge_section = self._format_companion_self_knowledge(companion_self_knowledge)
+            stable_parts.append(f"\n\n{self_knowledge_section}")
+
+        # Safety constraints (static)
+        if safety_constraints:
+            safety_section = self._format_safety_constraints(safety_constraints)
+            stable_parts.append(f"\n\n{safety_section}")
+
+        stable_text = "".join(stable_parts)
+
+        # --- Build the DYNAMIC block (not cached) ---
+        dynamic_parts: list[str] = []
+
+        # Situational tenets (change per message)
+        if situational_tenets:
+            situational_section = self._format_situational_tenets(situational_tenets)
+            dynamic_parts.append(situational_section)
+
+        # Temporal context (changes every turn)
+        if temporal_context:
+            temporal_section = format_temporal_prompt_section(
+                temporal_context,
+                user_name=user_display_name,
+            )
+            dynamic_parts.append(temporal_section)
+
+        # Emotional state (changes per turn)
+        if emotional_state:
+            emotional_section = self._format_emotional_state(emotional_state, prompt_version)
+            dynamic_parts.append(emotional_section)
+
+        # Session summary
+        if session_summary:
+            session_context = self._format_session_summary(session_summary)
+            dynamic_parts.append(session_context)
+
+        # Long-term memories (change as new memories are retrieved)
+        if long_term_memories:
+            memory_context = self._format_memories(long_term_memories)
+            dynamic_parts.append(memory_context)
+
+        # KG context (changes per query)
+        if kg_context:
+            kg_context_section = self._format_kg_context(kg_context)
+            dynamic_parts.append(kg_context_section)
+
+        # Lorebook matches
+        if lorebook_matches:
+            lorebook_section = self._format_lorebook_context(lorebook_matches)
+            dynamic_parts.append(lorebook_section)
+
+        # Hierarchical memory
+        if hierarchical_memory:
+            hierarchical_section = self._format_hierarchical_memory(hierarchical_memory)
+            dynamic_parts.append(hierarchical_section)
+
+        # Historical memories
+        if historical_memories:
+            historical_section = self._format_historical_memories(historical_memories)
+            dynamic_parts.append(historical_section)
+
+        # Gift memories
+        if gift_memories:
+            gift_context = self._format_gift_context(gift_memories)
+            dynamic_parts.append(gift_context)
+
+        # Pending gift recall
+        if pending_gift_recall:
+            recall_context = self._format_pending_gift_recall(pending_gift_recall)
+            dynamic_parts.append(recall_context)
+
+        # Liked content
+        if liked_content:
+            liked_context = self._format_liked_content(liked_content)
+            dynamic_parts.append(liked_context)
+
+        # Engagement guidance
+        if engagement_level:
+            engagement_guidance = self._format_engagement_guidance(engagement_level)
+            dynamic_parts.append(engagement_guidance)
+
+        # Active game
+        if active_game:
+            game_section = self._format_active_game(active_game)
+            dynamic_parts.append(game_section)
+
+        # Assemble blocks
+        blocks: list[dict[str, Any]] = [
+            {
+                "type": "text",
+                "text": stable_text,
+                "cache_control": {"type": "ephemeral"},
+            },
+        ]
+
+        if dynamic_parts:
+            blocks.append({
+                "type": "text",
+                "text": "\n\n".join(dynamic_parts),
+            })
+
+        return blocks
+
     def build_messages(
         self,
         context: ConversationContext,
@@ -282,12 +476,18 @@ Just weave it into the conversation like sending a photo to a friend.
         temporal_context: TemporalContext | None = None,
         user_display_name: str | None = None,
         emotional_state: EmotionalState | None = None,
+        use_cache_blocks: bool = False,
     ) -> list[dict[str, Any]]:
-        """Build the message list for the model API call."""
+        """Build the message list for the model API call.
+
+        Args:
+            use_cache_blocks: When True, build system prompt as Anthropic cache-enabled
+                content blocks instead of a plain string.
+        """
         messages: list[dict[str, Any]] = []
 
-        # Add system prompt
-        system_prompt = self.build_system_prompt(
+        # Shared keyword args for both prompt builders
+        prompt_kwargs: dict[str, Any] = dict(
             companion_spec=context.companion_spec,
             session_summary=context.session_summary,
             long_term_memories=context.long_term_memories,
@@ -308,7 +508,17 @@ Just weave it into the conversation like sending a photo to a friend.
             emotional_state=emotional_state,
             prompt_version=context.prompt_version,
         )
-        messages.append({"role": "system", "content": system_prompt})
+
+        if use_cache_blocks:
+            system_blocks = self.build_system_prompt_blocks(**prompt_kwargs)
+            messages.append({
+                "role": "system",
+                "content": system_blocks,
+                "_cache_enabled": True,
+            })
+        else:
+            system_prompt = self.build_system_prompt(**prompt_kwargs)
+            messages.append({"role": "system", "content": system_prompt})
 
         # Add recent turn history within token budget
         history_messages = self._build_history_messages(context)

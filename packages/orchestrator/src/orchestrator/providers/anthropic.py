@@ -86,11 +86,16 @@ class AnthropicProvider(LLMProvider):
             raise ValueError("Anthropic API key not configured")
 
         # Extract system message
-        system_content = ""
+        system_content: str | list[dict] = ""
         chat_messages = []
         for msg in messages:
             if msg.get("role") == "system":
-                system_content = msg.get("content", "")
+                content = msg.get("content", "")
+                if isinstance(content, list):
+                    # Cache-enabled system blocks - pass directly
+                    system_content = content
+                else:
+                    system_content = content
             else:
                 chat_messages.append(self._convert_message(msg))
 
@@ -130,11 +135,15 @@ class AnthropicProvider(LLMProvider):
                         "arguments": block.input,
                     })
 
+            cache_creation = getattr(response.usage, 'cache_creation_input_tokens', 0)
+            cache_read = getattr(response.usage, 'cache_read_input_tokens', 0)
             logger.info(
                 "anthropic_response",
                 model=response.model,
                 prompt_tokens=response.usage.input_tokens,
                 completion_tokens=response.usage.output_tokens,
+                cache_creation_tokens=cache_creation,
+                cache_read_tokens=cache_read,
                 latency_ms=latency_ms,
                 tool_calls_count=len(tool_calls),
             )
@@ -168,11 +177,16 @@ class AnthropicProvider(LLMProvider):
     ) -> AsyncGenerator[str, None]:
         """Generate a streaming response from Claude."""
         # Extract system message
-        system_content = ""
+        system_content: str | list[dict] = ""
         chat_messages = []
         for msg in messages:
             if msg.get("role") == "system":
-                system_content = msg.get("content", "")
+                content = msg.get("content", "")
+                if isinstance(content, list):
+                    # Cache-enabled system blocks - pass directly
+                    system_content = content
+                else:
+                    system_content = content
             else:
                 chat_messages.append(self._convert_message(msg))
 
