@@ -101,6 +101,16 @@ export const UpdateProviderSchema = z.object({
   priority: z.number().int().min(0).optional(),
 });
 
+export const InferenceDefaultsSchema = z.object({
+  temperature: z.number().min(0).max(2).optional(),
+  topP: z.number().min(0).max(1).optional(),
+  topK: z.number().int().min(0).optional(),
+  frequencyPenalty: z.number().min(-2).max(2).optional(),
+  presencePenalty: z.number().min(-2).max(2).optional(),
+  maxOutputTokens: z.number().int().positive().optional(),
+  stopSequences: z.array(z.string()).max(4).optional(),
+}).optional();
+
 export const CreateModelSchema = z.object({
   providerConfigId: z.string().uuid(),
   modelId: z.string().min(1).max(255),
@@ -112,6 +122,7 @@ export const CreateModelSchema = z.object({
   outputCostPerMillion: z.number().min(0).optional().nullable(),
   capabilities: z.array(z.enum(['chat', 'vision', 'function_calling', 'streaming', 'json_mode'])).default([]),
   metadata: z.record(z.unknown()).optional(),
+  inferenceDefaults: InferenceDefaultsSchema,
 });
 
 export const UpdateModelSchema = z.object({
@@ -122,6 +133,7 @@ export const UpdateModelSchema = z.object({
   inputCostPerMillion: z.number().min(0).optional().nullable(),
   outputCostPerMillion: z.number().min(0).optional().nullable(),
   capabilities: z.array(z.enum(['chat', 'vision', 'function_calling', 'streaming', 'json_mode'])).optional(),
+  inferenceDefaults: InferenceDefaultsSchema,
 });
 
 export const CreateRoutingRuleSchema = z.object({
@@ -188,6 +200,7 @@ export const RoutingRuleListQuerySchema = z.object({
 
 export type CreateProviderInput = z.infer<typeof CreateProviderSchema>;
 export type UpdateProviderInput = z.infer<typeof UpdateProviderSchema>;
+export type InferenceDefaultsInput = z.infer<typeof InferenceDefaultsSchema>;
 export type CreateModelInput = z.infer<typeof CreateModelSchema>;
 export type UpdateModelInput = z.infer<typeof UpdateModelSchema>;
 export type CreateRoutingRuleInput = z.infer<typeof CreateRoutingRuleSchema>;
@@ -381,6 +394,11 @@ export class ProviderSettingsService {
   async createModel(input: CreateModelInput, tx?: TransactionContext): Promise<ModelConfig> {
     const validated = CreateModelSchema.parse(input);
 
+    const metadata: Record<string, unknown> = { ...validated.metadata };
+    if (validated.inferenceDefaults) {
+      metadata.inference_defaults = validated.inferenceDefaults;
+    }
+
     const insert: ModelConfigInsert = {
       provider_config_id: validated.providerConfigId,
       model_id: validated.modelId,
@@ -391,7 +409,7 @@ export class ProviderSettingsService {
       input_cost_per_million: validated.inputCostPerMillion,
       output_cost_per_million: validated.outputCostPerMillion,
       capabilities: validated.capabilities,
-      metadata: validated.metadata,
+      metadata,
     };
 
     return this.repo.createModel(insert, tx);
@@ -418,6 +436,10 @@ export class ProviderSettingsService {
     if (validated.inputCostPerMillion !== undefined) update.input_cost_per_million = validated.inputCostPerMillion;
     if (validated.outputCostPerMillion !== undefined) update.output_cost_per_million = validated.outputCostPerMillion;
     if (validated.capabilities !== undefined) update.capabilities = validated.capabilities;
+    if (validated.inferenceDefaults !== undefined) {
+      const existing = await this.repo.getModelWithProvider(id, tx);
+      update.metadata = { ...existing?.metadata, inference_defaults: validated.inferenceDefaults };
+    }
 
     return this.repo.updateModel(id, update, tx);
   }
@@ -737,6 +759,7 @@ export class ProviderSettingsService {
         output_cost_per_million: m.output_cost_per_million,
         capabilities: m.capabilities,
         metadata: m.metadata,
+        inference_defaults: (m.metadata?.inference_defaults as Record<string, unknown>) || {},
         created_at: m.created_at,
         updated_at: m.updated_at,
       })),

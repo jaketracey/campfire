@@ -46,6 +46,36 @@ INTENT_TO_MIN_CAPABILITY: dict[ContentIntent, ContentCapability] = {
 
 
 @dataclass
+class InferenceDefaults:
+    """Inference parameter defaults from routing rule metadata."""
+
+    temperature: float | None = None
+
+    @classmethod
+    def from_metadata(cls, metadata: dict) -> "InferenceDefaults":
+        """Extract inference defaults from routing rule metadata.
+
+        Reads keys like 'default_temperature' from the routing rule's
+        metadata JSONB field.
+        """
+        temperature = metadata.get("default_temperature")
+        if temperature is not None:
+            try:
+                temperature = float(temperature)
+            except (TypeError, ValueError):
+                temperature = None
+        return cls(temperature=temperature)
+
+
+@dataclass
+class UseCaseRoutingResult:
+    """Result of use-case-based model routing."""
+
+    model_spec: ModelSpec
+    inference_defaults: InferenceDefaults
+
+
+@dataclass
 class RoutingDecision:
     """Result of model routing decision."""
 
@@ -221,7 +251,7 @@ class ModelRouter:
         companion_id: Optional[UUID] = None,
         require_abliterated: bool = False,
         require_sfw: bool = False,
-    ) -> ModelSpec | None:
+    ) -> UseCaseRoutingResult | None:
         """Route by use case using database configuration.
 
         Uses the routing_config_service to get database-configured routing
@@ -235,7 +265,8 @@ class ModelRouter:
             require_sfw: If True, only return SFW-capable models.
 
         Returns:
-            ModelSpec for the best matching model, or None if not found.
+            UseCaseRoutingResult with the model and inference defaults,
+            or None if not found.
         """
         if self._routing_config_service is None:
             logger.debug(
@@ -278,6 +309,8 @@ class ModelRouter:
                 if require_sfw and model.is_abliterated:
                     continue
 
+                inference_defaults = InferenceDefaults.from_metadata(entry.metadata)
+
                 logger.info(
                     "model_selected_by_use_case",
                     model_id=model.model_id,
@@ -286,8 +319,12 @@ class ModelRouter:
                     tier=entry.tier,
                     weight=entry.weight,
                     companion_id=str(companion_id) if companion_id else None,
+                    inference_defaults_temperature=inference_defaults.temperature,
                 )
-                return model
+                return UseCaseRoutingResult(
+                    model_spec=model,
+                    inference_defaults=inference_defaults,
+                )
 
             logger.debug(
                 "no_suitable_model_for_use_case",

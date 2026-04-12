@@ -653,6 +653,7 @@ export class CompanionsRepository {
       spec_version: row['spec_version'] as number,
       status: row['status'] as CompanionStatus,
       is_public: row['is_public'] as boolean,
+      temperature: row['temperature'] != null ? Number(row['temperature']) : null,
       created_at: row['created_at'] as Date,
       updated_at: row['updated_at'] as Date,
     };

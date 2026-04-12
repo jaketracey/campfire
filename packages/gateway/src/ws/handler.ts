@@ -1499,7 +1499,7 @@ async function handleUserMessage(
       allowed_tools: allowedToolsList,
       can_generate_image_prompts: canGenerateImagePrompts,
       max_context_turns: 20,
-      temperature: 0.7,
+      temperature: companion.temperature ?? 0.7,
       version: companion.spec_version,
       core_tenets: mappedTenets,
     };
@@ -1636,7 +1636,7 @@ async function handleUserMessage(
                 : ['friendly', 'helpful'],
               communication_style: pSpec?.personality?.archetype || 'friendly and supportive',
               archetype: pSpec?.personality?.archetype || null,
-              temperature: 0.7,
+              temperature: pCompanion.temperature ?? 0.7,
               core_tenets: pTenets.map(tenet => ({
                 id: tenet.id,
                 category: tenet.category,

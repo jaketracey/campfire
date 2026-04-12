@@ -199,6 +199,7 @@ export interface Companion {
   spec_version: number;
   status: CompanionStatus;
   is_public: boolean;
+  temperature: number | null;
   created_at: Timestamp;
   updated_at: Timestamp;
 }
@@ -323,6 +324,7 @@ export interface CompanionInsert {
   spec_version?: number;
   status?: CompanionStatus;
   is_public?: boolean;
+  temperature?: number | null;
 }
 
 export interface CompanionAvatar {
@@ -1160,6 +1162,16 @@ export interface ProviderConfigUpdate {
 }
 
 export type ModelCapability = 'chat' | 'vision' | 'function_calling' | 'streaming' | 'json_mode';
+
+export interface InferenceDefaults {
+  temperature?: number;
+  topP?: number;
+  topK?: number;
+  frequencyPenalty?: number;
+  presencePenalty?: number;
+  maxOutputTokens?: number;
+  stopSequences?: string[];
+}
 
 export interface ModelConfig {
   id: UUID;

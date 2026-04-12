@@ -20,6 +20,7 @@ from orchestrator.routing.model_registry import (
     ModelTier,
     register_model,
 )
+from orchestrator.routing.model_router import InferenceDefaults, UseCaseRoutingResult
 
 logger = structlog.get_logger()
 
@@ -224,8 +225,8 @@ class RoutingConfigService:
         companion_id: Optional[UUID] = None,
         require_abliterated: bool = False,
         require_sfw: bool = False,
-    ) -> Optional[ModelSpec]:
-        """Get the best model for a use case.
+    ) -> Optional[UseCaseRoutingResult]:
+        """Get the best model for a use case with inference defaults.
 
         Args:
             use_case: The use case type.
@@ -234,7 +235,8 @@ class RoutingConfigService:
             require_sfw: If True, only return SFW-capable models.
 
         Returns:
-            Optional[ModelSpec]: The best matching model, or None if not found.
+            Optional[UseCaseRoutingResult]: The best matching model with
+            inference defaults from routing rule metadata, or None if not found.
         """
         entries = await self.get_routing_for_use_case(use_case, companion_id)
 
@@ -251,7 +253,11 @@ class RoutingConfigService:
             if require_sfw and model.content_capability > ContentCapability.SUGGESTIVE:
                 continue
 
-            return model
+            inference_defaults = InferenceDefaults.from_metadata(entry.metadata)
+            return UseCaseRoutingResult(
+                model_spec=model,
+                inference_defaults=inference_defaults,
+            )
 
         return None
 

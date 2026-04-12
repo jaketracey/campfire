@@ -27,6 +27,8 @@ from orchestrator.routing.intent_detector import (
 )
 
 from orchestrator.routing.model_router import (
+    InferenceDefaults,
+    UseCaseRoutingResult,
     RoutingDecision,
     ModelRouter,
     SAFETY_LEVEL_TO_CAPABILITY,
@@ -50,6 +52,8 @@ __all__ = [
     "IntentResult",
     "IntentDetector",
     # Model Router
+    "InferenceDefaults",
+    "UseCaseRoutingResult",
     "RoutingDecision",
     "ModelRouter",
     "SAFETY_LEVEL_TO_CAPABILITY",

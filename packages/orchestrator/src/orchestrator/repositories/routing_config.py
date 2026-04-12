@@ -40,6 +40,7 @@ class DBRoutingEntry:
     max_retries: int
     timeout_ms: int
     is_override: bool
+    metadata: dict = field(default_factory=dict)
 
 
 class RoutingConfigRepository:
@@ -100,8 +101,8 @@ class RoutingConfigRepository:
     ) -> list[DBRoutingEntry]:
         """Get effective routing for a companion and use case.
 
-        Uses the database function get_effective_routing which handles
-        companion overrides vs platform defaults.
+        Resolves companion overrides vs platform defaults, including
+        routing rule metadata for inference parameters.
 
         Args:
             companion_id: Optional companion ID for overrides.
@@ -110,11 +111,75 @@ class RoutingConfigRepository:
         Returns:
             list[DBRoutingEntry]: Ordered list of routing entries by tier and weight.
         """
-        rows = await DatabasePool.fetch(
-            "SELECT * FROM get_effective_routing($1, $2::use_case_type)",
-            companion_id,
-            use_case,
-        )
+        # Check if companion has overrides
+        has_overrides = False
+        if companion_id:
+            override_check = await DatabasePool.fetch(
+                """
+                SELECT 1 FROM companion_routing_overrides cro
+                WHERE cro.companion_id = $1
+                  AND cro.use_case = $2::use_case_type
+                  AND cro.is_enabled = TRUE
+                LIMIT 1
+                """,
+                companion_id,
+                use_case,
+            )
+            has_overrides = len(override_check) > 0
+
+        if has_overrides:
+            rows = await DatabasePool.fetch(
+                """
+                SELECT
+                    cro.tier,
+                    cro.model_config_id,
+                    mc.model_id,
+                    pc.provider,
+                    cro.weight,
+                    COALESCE(cro.max_retries, rr.max_retries, 3) AS max_retries,
+                    COALESCE(cro.timeout_ms, rr.timeout_ms, 30000) AS timeout_ms,
+                    TRUE AS is_override,
+                    COALESCE(rr.metadata, '{}'::jsonb) AS metadata
+                FROM companion_routing_overrides cro
+                JOIN model_configs mc ON mc.id = cro.model_config_id
+                JOIN provider_configs pc ON pc.id = mc.provider_config_id
+                LEFT JOIN routing_rules rr ON rr.use_case = cro.use_case
+                    AND rr.model_config_id = cro.model_config_id
+                    AND rr.is_enabled = TRUE
+                WHERE cro.companion_id = $1
+                  AND cro.use_case = $2::use_case_type
+                  AND cro.is_enabled = TRUE
+                  AND mc.is_enabled = TRUE
+                  AND pc.is_enabled = TRUE
+                ORDER BY cro.tier ASC, cro.weight DESC
+                """,
+                companion_id,
+                use_case,
+            )
+        else:
+            rows = await DatabasePool.fetch(
+                """
+                SELECT
+                    rr.tier,
+                    rr.model_config_id,
+                    mc.model_id,
+                    pc.provider,
+                    rr.weight,
+                    rr.max_retries,
+                    rr.timeout_ms,
+                    FALSE AS is_override,
+                    COALESCE(rr.metadata, '{}'::jsonb) AS metadata
+                FROM routing_rules rr
+                JOIN model_configs mc ON mc.id = rr.model_config_id
+                JOIN provider_configs pc ON pc.id = mc.provider_config_id
+                WHERE rr.use_case = $1::use_case_type
+                  AND rr.is_enabled = TRUE
+                  AND mc.is_enabled = TRUE
+                  AND pc.is_enabled = TRUE
+                ORDER BY rr.tier ASC, rr.weight DESC
+                """,
+                use_case,
+            )
 
         entries = []
         for row in rows:
@@ -128,6 +193,7 @@ class RoutingConfigRepository:
                     max_retries=row["max_retries"],
                     timeout_ms=row["timeout_ms"],
                     is_override=row["is_override"],
+                    metadata=row["metadata"] or {},
                 )
             )
 
@@ -155,7 +221,8 @@ class RoutingConfigRepository:
                 pc.provider,
                 rr.weight,
                 rr.max_retries,
-                rr.timeout_ms
+                rr.timeout_ms,
+                COALESCE(rr.metadata, '{}'::jsonb) AS metadata
             FROM routing_rules rr
             JOIN model_configs mc ON mc.id = rr.model_config_id
             JOIN provider_configs pc ON pc.id = mc.provider_config_id
@@ -182,6 +249,7 @@ class RoutingConfigRepository:
                     max_retries=row["max_retries"],
                     timeout_ms=row["timeout_ms"],
                     is_override=False,
+                    metadata=row["metadata"] or {},
                 )
             )
 

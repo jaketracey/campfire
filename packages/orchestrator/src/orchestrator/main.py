@@ -941,18 +941,26 @@ async def complete(request: CompleteRequest) -> CompleteResponse:
     provider_name = "unknown"
     model_id = None
 
+    # Temperature from routing rule metadata (if available)
+    routed_temperature = None
+
     # If use_case is provided, try routing first
     if request.use_case and app_state.routing_config_service:
         try:
             companion_uuid = UUID(request.companion_id) if request.companion_id else None
-            model = await app_state.routing_config_service.get_model_for_use_case(
+            routing_result = await app_state.routing_config_service.get_model_for_use_case(
                 request.use_case,
                 companion_id=companion_uuid,
             )
 
-            if model:
+            if routing_result:
+                model = routing_result.model_spec
                 encryption_key = app_state.settings.provider_key_encryption_secret
                 model_id = model.model_id
+
+                # Extract inference defaults from routing rule metadata
+                if routing_result.inference_defaults.temperature is not None:
+                    routed_temperature = routing_result.inference_defaults.temperature
 
                 if model.provider == "openai":
                     api_key = await app_state.routing_config_service.get_provider_api_key(
@@ -970,6 +978,7 @@ async def complete(request: CompleteRequest) -> CompleteResponse:
                             use_case=request.use_case,
                             provider="openai",
                             model=model.model_id,
+                            routed_temperature=routed_temperature,
                         )
 
                 elif model.provider == "anthropic":
@@ -989,6 +998,7 @@ async def complete(request: CompleteRequest) -> CompleteResponse:
                             use_case=request.use_case,
                             provider="anthropic",
                             model=model.model_id,
+                            routed_temperature=routed_temperature,
                         )
 
                 elif model.provider == "ollama" and app_state.ollama_provider:
@@ -999,6 +1009,7 @@ async def complete(request: CompleteRequest) -> CompleteResponse:
                         use_case=request.use_case,
                         provider="ollama",
                         model=model.model_id,
+                        routed_temperature=routed_temperature,
                     )
 
         except Exception as routing_error:
@@ -1025,10 +1036,13 @@ async def complete(request: CompleteRequest) -> CompleteResponse:
             messages.append({"role": "system", "content": request.system_prompt})
         messages.append({"role": "user", "content": request.user_prompt})
 
+        # Use routing rule temperature if available, otherwise fall back to request temperature
+        effective_temperature = routed_temperature if routed_temperature is not None else request.temperature
+
         response = await llm_provider.generate(
             messages=messages,
             max_tokens=request.max_tokens,
-            temperature=request.temperature,
+            temperature=effective_temperature,
         )
 
         latency_ms = (time.time() - start_time) * 1000
@@ -1040,6 +1054,7 @@ async def complete(request: CompleteRequest) -> CompleteResponse:
             model=model_id,
             latency_ms=latency_ms,
             content_length=len(response.content),
+            effective_temperature=effective_temperature,
         )
 
         return CompleteResponse(
@@ -2285,8 +2300,9 @@ async def generate_backstory(request: GenerateBackstoryRequest) -> GenerateBacks
         encryption_key = app_state.settings.provider_key_encryption_secret
         if app_state.routing_config_service:
             try:
-                model = await app_state.routing_config_service.get_model_for_use_case("chat_simple")
-                if model:
+                routing_result = await app_state.routing_config_service.get_model_for_use_case("chat_simple")
+                if routing_result:
+                    model = routing_result.model_spec
                     if model.provider == "openai":
                         openai_api_key = await app_state.routing_config_service.get_provider_api_key("openai", encryption_key)
                         if openai_api_key:
@@ -2494,8 +2510,9 @@ IMPORTANT - NAME PROVIDED: The user has already chosen the name "{request.name}"
         # Try to get provider from routing config
         if app_state.routing_config_service:
             try:
-                model = await app_state.routing_config_service.get_model_for_use_case("chat_simple")
-                if model:
+                routing_result = await app_state.routing_config_service.get_model_for_use_case("chat_simple")
+                if routing_result:
+                    model = routing_result.model_spec
                     if model.provider == "openai":
                         openai_api_key = await app_state.routing_config_service.get_provider_api_key("openai", encryption_key)
                         if openai_api_key:
