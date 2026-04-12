@@ -58,6 +58,7 @@ from orchestrator.services.hybrid_search import (
 )
 from orchestrator.services.kg_extraction import get_kg_extraction_service, KGExtractionService
 from orchestrator.services.routing_config_service import RoutingConfigService
+from orchestrator.services.memory_compilation import MemoryCompilationService
 from orchestrator.services.session_summarization import (
     get_session_summarization_service,
     SessionSummarizationService,
@@ -188,6 +189,19 @@ class ConversationOrchestrator:
         # Track last summarization turn per session
         self._last_summarization_turns: dict[UUID, int] = {}
 
+        # Initialize memory compilation service (Karpathy-style)
+        self._memory_compilation_service: MemoryCompilationService | None = None
+        if settings.memory_compilation_enabled:
+            self._memory_compilation_service = MemoryCompilationService()
+            logger.info(
+                "memory_compilation_enabled",
+                model=settings.memory_compilation_model,
+                interval=settings.memory_compilation_interval,
+            )
+
+        # Track last compilation turn per session for rate limiting
+        self._last_compilation_turns: dict[str, int] = {}
+
         # Initialize hybrid search service for enhanced memory + KG retrieval
         self._hybrid_search_service: HybridSearchService | None = None
         if settings.kg_extraction_enabled:  # Hybrid search depends on KG being available
@@ -211,6 +225,7 @@ class ConversationOrchestrator:
         session_summary: SessionSummary | None = None,
         long_term_memories: list[LongTermMemory] | None = None,
         companion_self_knowledge: list[CompanionSelfKnowledge] | None = None,
+        companion_memory_document: str | None = None,
         user_image_url: str | None = None,
         active_game: dict | None = None,
         liked_content: list[dict] | None = None,
@@ -550,7 +565,7 @@ class ConversationOrchestrator:
                 policy_version=self.safety_gate.policy_version,
             )
 
-            # Build messages with gift context, companion self-knowledge, KG context, temporal context, and emotional state
+            # Build messages with gift context, companion self-knowledge, KG context, temporal context, emotional state, and memory document
             messages = self.context_builder.build_messages(
                 context=context,
                 current_user_message=user_message,
@@ -565,6 +580,7 @@ class ConversationOrchestrator:
                 temporal_context=temporal_ctx,
                 user_display_name=user_display_name,
                 emotional_state=emotional_state,
+                companion_memory_document=companion_memory_document,
             )
 
             # Get available tools
@@ -686,6 +702,21 @@ class ConversationOrchestrator:
                     companion_spec=companion_spec,
                 )
             )
+
+            # Fire-and-forget memory compilation (Karpathy-style)
+            if self._memory_compilation_service and companion_memory_document is not None:
+                asyncio.create_task(
+                    self._compile_memory_if_needed(
+                        session_id=session_id,
+                        user_id=user_id,
+                        companion_spec=companion_spec,
+                        turn_count=current_turn_count,
+                        recent_turns=recent_turns,
+                        user_message=user_message,
+                        assistant_response=cleaned_content,
+                        current_memory_document=companion_memory_document,
+                    )
+                )
 
             # Record gift recall if one was triggered
             if pending_gift_recall:
@@ -1873,3 +1904,99 @@ class ConversationOrchestrator:
                 session_id=str(session_id),
                 turn_count=turn_count,
             )
+
+    async def _compile_memory_if_needed(
+        self,
+        session_id: UUID,
+        user_id: UUID,
+        companion_spec: CompanionSpec,
+        turn_count: int,
+        recent_turns: list[ConversationTurn] | None,
+        user_message: str,
+        assistant_response: str,
+        current_memory_document: str,
+    ) -> None:
+        """Compile memory document if enough turns have elapsed.
+
+        This runs asynchronously after the turn completes to avoid
+        adding latency to the user experience.
+        """
+        if not self._memory_compilation_service:
+            return
+
+        try:
+            session_key = str(session_id)
+            last_turn = self._last_compilation_turns.get(session_key, 0)
+            interval = self.settings.memory_compilation_interval
+
+            if turn_count - last_turn < interval:
+                logger.debug(
+                    "memory_compilation_skipped",
+                    session_id=session_key,
+                    turn_count=turn_count,
+                    last_compilation_turn=last_turn,
+                )
+                return
+
+            # Format turns for the compilation service
+            formatted: list[dict] = []
+            if recent_turns:
+                for t in recent_turns[-5:]:
+                    formatted.append({
+                        "user_message": {"content": t.user_message.content} if t.user_message else None,
+                        "assistant_message": {"content": t.assistant_message.content} if t.assistant_message else None,
+                    })
+
+            result = await self._memory_compilation_service.compile(
+                current_document=current_memory_document,
+                recent_turns=formatted,
+                user_message=user_message,
+                assistant_response=assistant_response,
+                companion_name=companion_spec.name,
+            )
+
+            if not result.success:
+                logger.warning(
+                    "memory_compilation_failed",
+                    session_id=session_key,
+                    error=result.error,
+                )
+                return
+
+            self._last_compilation_turns[session_key] = turn_count
+
+            # POST back to gateway
+            import httpx
+
+            gateway_url = self.settings.gateway_internal_url
+            async with httpx.AsyncClient() as client:
+                resp = await client.put(
+                    f"{gateway_url}/api/v1/memory-documents/internal/compile",
+                    json={
+                        "userId": str(user_id),
+                        "companionId": str(companion_spec.id),
+                        "content": result.content,
+                        "estimatedTokens": result.estimated_tokens,
+                    },
+                    headers={
+                        "x-internal-service-key": self.settings.internal_service_key or "",
+                    },
+                    timeout=10.0,
+                )
+
+                if resp.status_code == 409:
+                    logger.info("memory_compilation_version_conflict", session_id=session_key)
+                elif resp.status_code != 200:
+                    logger.warning(
+                        "memory_compilation_store_failed",
+                        status=resp.status_code,
+                        body=resp.text[:200],
+                    )
+                else:
+                    logger.info(
+                        "memory_compilation_stored",
+                        session_id=session_key,
+                        estimated_tokens=result.estimated_tokens,
+                    )
+        except Exception as e:
+            logger.error("memory_compilation_error", error=str(e), session_id=str(session_id))

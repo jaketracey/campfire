@@ -232,6 +232,7 @@ class ProcessMessageRequest(BaseModel):
     session_summary: SessionSummary | None = None
     long_term_memories: list[LongTermMemory] | None = None
     companion_self_knowledge: list[CompanionSelfKnowledge] | None = None
+    companion_memory_document: str | None = None
     user_timezone: str | None = None
     user_display_name: str | None = None
 
@@ -255,6 +256,7 @@ class StreamMessageRequest(BaseModel):
     session_summary: SessionSummary | None = None
     long_term_memories: list[LongTermMemory] | None = None
     companion_self_knowledge: list[CompanionSelfKnowledge] | None = None
+    companion_memory_document: str | None = None  # Karpathy-style compiled memory document
     user_image_url: str | None = None  # Webcam frame URL for multimodal context
     active_game: dict | None = None  # Active game state for game context injection
     liked_content: list[dict] | None = None  # User's liked messages for companion awareness
@@ -1112,6 +1114,7 @@ async def process_message(request: ProcessMessageRequest) -> ProcessMessageRespo
             session_summary=request.session_summary,
             long_term_memories=request.long_term_memories,
             companion_self_knowledge=request.companion_self_knowledge,
+            companion_memory_document=request.companion_memory_document,
             user_timezone=request.user_timezone,
             user_display_name=request.user_display_name,
             stream=False,
@@ -1181,6 +1184,7 @@ async def stream_message(request: StreamMessageRequest) -> StreamingResponse:
                 session_summary=request.session_summary,
                 long_term_memories=request.long_term_memories,
                 companion_self_knowledge=request.companion_self_knowledge,
+                companion_memory_document=request.companion_memory_document,
                 user_image_url=request.user_image_url,
                 active_game=request.active_game,
                 liked_content=request.liked_content,

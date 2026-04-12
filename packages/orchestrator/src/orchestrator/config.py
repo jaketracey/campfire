@@ -48,6 +48,13 @@ class Settings(BaseSettings):
     session_summarization_threshold: int = 20  # Summarize after N turns
     session_summarization_interval: int = 20  # Re-summarize every N turns after threshold
 
+    # Memory Compilation (Karpathy-style)
+    memory_compilation_enabled: bool = True
+    memory_compilation_model: str = "claude-haiku-4-5"
+    memory_compilation_interval: int = 3  # Compile every N turns
+    memory_compilation_max_tokens: int = 2500
+    memory_compilation_token_budget: int = 2000
+
     # Provider API Key Encryption (for decrypting keys stored in database)
     # NOTE: Must match gateway's default in provider-settings.ts
     provider_key_encryption_secret: str = Field(

@@ -426,6 +426,16 @@ export type {
   TelegramBotConfigRow,
 } from './messaging-channels.js';
 
+// Memory Documents repository (Karpathy-style LLM memory)
+import { getMemoryDocumentsRepository as _getMemoryDocumentsRepository } from './memory-documents.js';
+export {
+  MemoryDocumentsRepository,
+  getMemoryDocumentsRepository,
+} from './memory-documents.js';
+export type {
+  MemoryDocument,
+} from './memory-documents.js';
+
 // Ads repository
 import { getAdsRepository as _getAdsRepository } from './ads.js';
 export {
@@ -472,6 +482,7 @@ export function initializeRepositories(): void {
   _getAdsRepository();
   _getVideoCallsRepository();
   _getMessagingChannelsRepository();
+  _getMemoryDocumentsRepository();
 }
 
 /**
@@ -508,5 +519,6 @@ export function getRepositories() {
     ads: _getAdsRepository(),
     videoCalls: _getVideoCallsRepository(),
     messagingChannels: _getMessagingChannelsRepository(),
+    memoryDocuments: _getMemoryDocumentsRepository(),
   };
 }

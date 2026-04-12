@@ -100,6 +100,7 @@ class ContextBuilder:
         temporal_context: TemporalContext | None = None,
         user_display_name: str | None = None,
         emotional_state: EmotionalState | None = None,
+        companion_memory_document: str | None = None,
         prompt_version: str = "1.0.0",
     ) -> str:
         """Build the system prompt from companion spec and context."""
@@ -207,6 +208,10 @@ Just weave it into the conversation like sending a photo to a friend.
             session_context = self._format_session_summary(session_summary)
             full_prompt += f"\n\n{session_context}"
 
+        # Add compiled memory document (Karpathy-style knowledge base)
+        if companion_memory_document:
+            full_prompt += f"\n\n<companion_memory>\nThis is your memory document about the user. It contains everything you've learned about them across conversations. Reference this naturally - don't announce that you're reading from memory.\n\n{companion_memory_document}\n</companion_memory>"
+
         # Add long-term memories if available
         if long_term_memories:
             memory_context = self._format_memories(long_term_memories)
@@ -284,6 +289,7 @@ Just weave it into the conversation like sending a photo to a friend.
         temporal_context: TemporalContext | None = None,
         user_display_name: str | None = None,
         emotional_state: EmotionalState | None = None,
+        companion_memory_document: str | None = None,
         prompt_version: str = "1.0.0",
     ) -> list[dict[str, Any]]:
         """Build system prompt as content blocks with cache control markers.
@@ -391,6 +397,12 @@ Just weave it into the conversation like sending a photo to a friend.
             session_context = self._format_session_summary(session_summary)
             dynamic_parts.append(session_context)
 
+        # Compiled memory document (Karpathy-style knowledge base)
+        if companion_memory_document:
+            dynamic_parts.append(
+                f"<companion_memory>\nThis is your memory document about the user. It contains everything you've learned about them across conversations. Reference this naturally - don't announce that you're reading from memory.\n\n{companion_memory_document}\n</companion_memory>"
+            )
+
         # Long-term memories (change as new memories are retrieved)
         if long_term_memories:
             memory_context = self._format_memories(long_term_memories)
@@ -476,6 +488,7 @@ Just weave it into the conversation like sending a photo to a friend.
         temporal_context: TemporalContext | None = None,
         user_display_name: str | None = None,
         emotional_state: EmotionalState | None = None,
+        companion_memory_document: str | None = None,
         use_cache_blocks: bool = False,
     ) -> list[dict[str, Any]]:
         """Build the message list for the model API call.
@@ -506,6 +519,7 @@ Just weave it into the conversation like sending a photo to a friend.
             temporal_context=temporal_context,
             user_display_name=user_display_name,
             emotional_state=emotional_state,
+            companion_memory_document=companion_memory_document,
             prompt_version=context.prompt_version,
         )
 

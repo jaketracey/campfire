@@ -1504,8 +1504,12 @@ async function handleUserMessage(
       core_tenets: mappedTenets,
     };
 
-    // 8. Fetch companion self-knowledge from KG
-    const selfKnowledge = await fetchCompanionSelfKnowledge(userId, companionId, companion.name);
+    // 8. Fetch companion self-knowledge from KG and memory document in parallel
+    const memoryDocRepo = (await import('../repositories/memory-documents.js')).getMemoryDocumentsRepository();
+    const [selfKnowledge, memoryDoc] = await Promise.all([
+      fetchCompanionSelfKnowledge(userId, companionId, companion.name),
+      memoryDocRepo.getContent(userId, companionId),
+    ]);
 
     // 9. Get recent turns for context (match max_context_turns in companion spec)
     const recentTurns = await sessionsService.getRecentTurns(userId, sessionId, 20);
@@ -1683,6 +1687,7 @@ async function handleUserMessage(
       recent_turns: formattedTurns,
       session_summary: sessionSummary,
       long_term_memories: null,
+      companion_memory_document: memoryDoc?.content || null,
       companion_self_knowledge: selfKnowledge.length > 0 ? selfKnowledge : null,
       user_image_url: userImageUrl,
       active_game: activeGame || null,
