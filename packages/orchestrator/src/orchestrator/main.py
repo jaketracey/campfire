@@ -1216,6 +1216,88 @@ async def process_message(request: ProcessMessageRequest) -> ProcessMessageRespo
         )
 
 
+class CompanionTurnRequest(BaseModel):
+    """Request model for triggering a companion's turn in an active game.
+
+    Called by the gateway after a user move arrives over WebSocket. The
+    orchestrator runs `process_message` with a synthetic nudge ("it's your
+    turn"), which in turn lets the LLM call the `game_move` tool — applied
+    server-authoritatively via the gateway's games API. The returned
+    commentary is broadcast to the chat as a companion message.
+    """
+
+    session_id: UUID
+    user_id: UUID
+    companion_spec: CompanionSpec
+    active_game: dict  # Full ActiveGame DTO from gateway (including boardText)
+    recent_turns: list[ConversationTurn] | None = None
+    session_summary: SessionSummary | None = None
+    long_term_memories: list[LongTermMemory] | None = None
+    companion_self_knowledge: list[CompanionSelfKnowledge] | None = None
+    user_timezone: str | None = None
+    user_display_name: str | None = None
+
+
+class CompanionTurnResponse(BaseModel):
+    """The companion's chat-facing commentary; the move itself is already
+    persisted via the game_move tool's HTTP call to the gateway."""
+
+    commentary: str
+    tool_calls_count: int = 0
+
+
+@app.post(
+    "/internal/companion-turn",
+    response_model=CompanionTurnResponse,
+    responses={500: {"model": ErrorResponse}},
+)
+async def companion_turn(request: CompanionTurnRequest) -> CompanionTurnResponse:
+    """Drive the companion's next move + commentary.
+
+    Reuses `process_message` with a synthetic system-style nudge so the full
+    tool-calling / safety / context pipeline runs without modification. The
+    gateway is responsible for persisting any returned commentary as a chat
+    turn and broadcasting it over WebSocket.
+    """
+    # The nudge is not shown to the user — it only exists to steer the LLM.
+    nudge = (
+        "(SYSTEM: it's your turn in the game. Make one legal move via the "
+        "game_move tool and add a short in-character comment alongside it.)"
+    )
+    try:
+        result = await app_state.orchestrator.process_message(
+            session_id=request.session_id,
+            user_id=request.user_id,
+            companion_spec=request.companion_spec,
+            user_message=nudge,
+            recent_turns=request.recent_turns,
+            session_summary=request.session_summary,
+            long_term_memories=request.long_term_memories,
+            companion_self_knowledge=request.companion_self_knowledge,
+            active_game=request.active_game,
+            user_timezone=request.user_timezone,
+            user_display_name=request.user_display_name,
+            stream=False,
+        )
+        if not isinstance(result, ConversationTurn):
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Unexpected response type from orchestrator",
+            )
+        commentary = result.agent_message.content if result.agent_message else ""
+        tool_count = len(result.tool_calls) if getattr(result, "tool_calls", None) else 0
+        return CompanionTurnResponse(
+            commentary=commentary,
+            tool_calls_count=tool_count,
+        )
+    except Exception as e:
+        logger.exception("companion_turn_error", error=str(e))
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to process companion turn: {str(e)}",
+        )
+
+
 @app.post("/stream")
 async def stream_message(request: StreamMessageRequest) -> StreamingResponse:
     """Process a user message with streaming response.

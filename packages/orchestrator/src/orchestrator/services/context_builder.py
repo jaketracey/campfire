@@ -1200,12 +1200,10 @@ Just weave it into the conversation like sending a photo to a friend.
     def _format_active_game(self, game: dict) -> str:
         """Format active game context for the system prompt.
 
-        When a game is active, this section tells the companion:
-        - What game is being played
-        - Current game state
-        - Whose turn it is
-        - Available moves (if it's companion's turn)
-        - How to make moves using the game_move tool
+        `game` is the ActiveGame DTO returned by the gateway, optionally enriched
+        with a `boardText` field (ASCII rendering) when the gateway has one to
+        share. Showing the board inline massively reduces hallucinated moves
+        vs. just listing the raw JSON board.
         """
         lines = ["<active_game>"]
         lines.append(f"You are currently playing {game.get('gameType', 'a game')} with the user.")
@@ -1220,7 +1218,6 @@ Just weave it into the conversation like sending a photo to a friend.
             else:
                 lines.append("It is the user's turn. Wait for them to make their move.")
         else:
-            winner = game.get("winner")
             if status == "won":
                 lines.append("The game is over - you won!")
             elif status == "lost":
@@ -1228,7 +1225,20 @@ Just weave it into the conversation like sending a photo to a friend.
             elif status == "draw":
                 lines.append("The game is over - it's a draw!")
             elif status == "resigned":
-                lines.append("The game has ended (resigned).")
+                winner = game.get("winner")
+                if winner == "companion":
+                    lines.append("The game ended because the user resigned. You win!")
+                else:
+                    lines.append("The game ended because you resigned.")
+
+        # Inline ASCII board (when provided by the gateway). This is the single
+        # most important signal for the LLM playing well: move legality +
+        # notation become unambiguous.
+        board_text = game.get("boardText")
+        if board_text:
+            lines.append("")
+            lines.append("Current board:")
+            lines.append(board_text)
 
         # Include recent move history
         move_history = game.get("moveHistory", [])
@@ -1250,13 +1260,14 @@ Just weave it into the conversation like sending a photo to a friend.
                     lines.append(f"Available moves: {moves_preview} ... ({len(available)} total)")
                 else:
                     lines.append(f"Available moves: {moves_preview}")
+                lines.append("You MUST pick a move from the list above — any other notation is invalid.")
 
         lines.append("")
         lines.append("Game instructions:")
-        lines.append("- Use game_move tool to make your move when it's your turn")
-        lines.append("- Use game_state tool to see the current board if needed")
-        lines.append("- Play thoughtfully and share your strategy conversationally")
-        lines.append("- Keep the game fun and engaging!")
+        lines.append("- Use the game_move tool to make your move when it's your turn")
+        lines.append("- Use the game_state tool if you need to re-check the board")
+        lines.append("- Banter briefly in natural language alongside your move — keep it in character")
+        lines.append("- Never narrate the user's move for them; the engine tracks both sides")
         lines.append("</active_game>")
 
         return "\n".join(lines)

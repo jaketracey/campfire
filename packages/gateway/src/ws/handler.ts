@@ -1640,9 +1640,26 @@ async function handleUserMessage(
         };
       });
 
-    // 8. Fetch session with metadata for game state
+    // 8. Fetch session (still needed for other metadata) and the authoritative
+    //    active game from the games framework. The legacy metadata.activeGame
+    //    path is retained only as a fallback for sessions that predate the
+    //    games tables migration; new games are sourced from game_sessions.
     const session = await sessionsService.getById(userId, sessionId);
-    const activeGame = session?.metadata?.activeGame as Record<string, unknown> | undefined;
+    let activeGame: Record<string, unknown> | null = null;
+    try {
+      const active = await gameService.getActiveGame(sessionId);
+      if (active?.game) {
+        activeGame = {
+          ...(active.game as unknown as Record<string, unknown>),
+          boardText: active.boardText,
+        };
+      }
+    } catch (e) {
+      logger.warn({ err: e, sessionId }, 'Failed to fetch active game for orchestrator context');
+    }
+    if (!activeGame && session?.metadata?.activeGame) {
+      activeGame = session.metadata.activeGame as Record<string, unknown>;
+    }
 
     // 8a. Fetch session summary for context retention
     const summaryText = await sessionsService.getContextSummary(userId, sessionId, companionId);
