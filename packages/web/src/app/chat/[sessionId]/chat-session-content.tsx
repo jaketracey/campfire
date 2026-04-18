@@ -190,6 +190,7 @@ export function ChatSessionContent({
           companionName={chat.companion?.name || 'Companion'}
           onUserMove={chat.handleUserMove}
           onResign={chat.handleResign}
+          onStartGame={chat.handleStartGame}
           isDemo={isDemo}
           mobileAvatarUrl={chat.currentAvatarUrl}
           onMobileAvatarClick={() => chat.setShowMobileAvatar(true)}

@@ -1,10 +1,10 @@
 'use client';
 
 import { motion } from 'framer-motion';
-import { Flag, Loader2 } from 'lucide-react';
+import { Flag, Loader2, RotateCcw } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
-import type { ActiveGame } from '@campfire/shared';
+import type { ActiveGame, GameType } from '@campfire/shared';
 import { getGameBoardComponent, getGameTitle } from './registry';
 
 interface GameBoardContainerProps {
@@ -13,6 +13,7 @@ interface GameBoardContainerProps {
   onResign: () => void;
   companionName: string;
   isWaitingForCompanion?: boolean;
+  onRematch?: (gameType: GameType) => void;
 }
 
 export function GameBoardContainer({
@@ -21,6 +22,7 @@ export function GameBoardContainer({
   onResign,
   companionName,
   isWaitingForCompanion = false,
+  onRematch,
 }: GameBoardContainerProps) {
   const isUserTurn = gameState.currentPlayer === 'user';
   const isGameOver = gameState.status !== 'in_progress';
@@ -108,10 +110,21 @@ export function GameBoardContainer({
 
         {/* Game Over Actions */}
         {isGameOver && (
-          <div className="mt-4 flex justify-center">
-            <p className="text-sm text-muted-foreground">
-              Say &quot;let&apos;s play again&quot; to start a new game!
-            </p>
+          <div className="mt-4 flex flex-col items-center gap-2">
+            {onRematch ? (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => onRematch(gameState.gameType)}
+              >
+                <RotateCcw className="h-4 w-4 mr-1" />
+                Play again
+              </Button>
+            ) : (
+              <p className="text-sm text-muted-foreground">
+                Say &quot;let&apos;s play again&quot; to start a new game!
+              </p>
+            )}
           </div>
         )}
       </Card>

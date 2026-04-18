@@ -28,3 +28,5 @@ export { ticTacToeEngine, TicTacToeEngine } from './engines/tic-tac-toe.js';
 export type { TicTacToeState } from './engines/tic-tac-toe.js';
 export { chessEngine, ChessEngine } from './engines/chess.js';
 export type { ChessState } from './engines/chess.js';
+export { connectFourEngine, ConnectFourEngine } from './engines/connect-four.js';
+export type { ConnectFourState } from './engines/connect-four.js';

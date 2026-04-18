@@ -29,6 +29,7 @@ interface ChatMessagesProps {
   companionName: string;
   onUserMove: (move: string) => void;
   onResign: () => void;
+  onStartGame?: (gameType: string, options?: { companionPlaysFirst?: boolean; difficulty?: 'easy' | 'medium' | 'hard' }) => void;
 
   // Demo mode
   isDemo?: boolean;
@@ -56,6 +57,7 @@ export function ChatMessages({
   companionName,
   onUserMove,
   onResign,
+  onStartGame,
   isDemo,
   mobileAvatarUrl,
   onMobileAvatarClick,
@@ -290,6 +292,7 @@ export function ChatMessages({
             onResign={onResign}
             companionName={companionName}
             isWaitingForCompanion={waitingForCompanionMove}
+            onRematch={onStartGame ? (gameType) => onStartGame(gameType) : undefined}
           />
         </div>
       )}
