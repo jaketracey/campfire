@@ -1,9 +1,9 @@
 'use client';
 
 import { motion, AnimatePresence } from 'framer-motion';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Button } from '@/components/ui/button';
-import { Sparkles, Gift, BookOpen, Gamepad2, Users, GripVertical, Heart } from 'lucide-react';
+import { Sparkles, Gift, BookOpen, Gamepad2, Users, GripVertical, Heart, Menu as MenuIcon, X as CloseIcon } from 'lucide-react';
 import { AnimatedFlame } from '@/components/ui/animated-flame';
 import Link from 'next/link';
 import { CompanionAvatar, CompanionAvatarSwitcher } from '@/components/companion';
@@ -156,6 +156,30 @@ export function ChatSidebar({
   const companionAvatarUrl = companion?.avatarUrl ?? null;
   const hasAlternateAvatar = Boolean(companionAvatarUrl && currentAvatarUrl && companionAvatarUrl !== currentAvatarUrl);
   const [showGeneratedAvatar, setShowGeneratedAvatar] = useState(true);
+  const [isMenuOpen, setIsMenuOpen] = useState(false);
+  const menuButtonRef = useRef<HTMLButtonElement | null>(null);
+  const flyoutRef = useRef<HTMLDivElement | null>(null);
+
+  // Close menu on outside click / Escape
+  useEffect(() => {
+    if (!isMenuOpen) return;
+    const handlePointer = (e: MouseEvent) => {
+      const target = e.target as Node | null;
+      if (!target) return;
+      if (menuButtonRef.current?.contains(target)) return;
+      if (flyoutRef.current?.contains(target)) return;
+      setIsMenuOpen(false);
+    };
+    const handleKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setIsMenuOpen(false);
+    };
+    document.addEventListener('mousedown', handlePointer);
+    document.addEventListener('keydown', handleKey);
+    return () => {
+      document.removeEventListener('mousedown', handlePointer);
+      document.removeEventListener('keydown', handleKey);
+    };
+  }, [isMenuOpen]);
   const displayAvatarUrl = hasAlternateAvatar && !showGeneratedAvatar ? companionAvatarUrl : currentAvatarUrl || companionAvatarUrl;
   const thumbnailImageUrl = showGeneratedAvatar ? companionAvatarUrl : currentAvatarUrl || null;
 
@@ -320,9 +344,8 @@ export function ChatSidebar({
             )}
           </div>
 
-          {/* Buttons section - fade out during companion switch */}
+          {/* Call / Video circle buttons - fade out during companion switch */}
           <div className={`w-full transition-opacity duration-300 ${isGeneratingNewCompanion || (isDemo && isSwitchingDemoCompanion) ? 'opacity-0 pointer-events-none' : 'opacity-100'}`}>
-            {/* Call, Video Call & Video Request Buttons - Side by side circles */}
             <div className="flex items-center justify-center gap-4 mt-3">
               <CallButton onClick={onCallClick} disabled={isCallActive || isVideoCallActive} />
               {/* VideoCallButton hidden - LiveKit video agent not ready yet */}
@@ -331,65 +354,68 @@ export function ChatSidebar({
                 disabled={isCallActive || isVideoCallActive}
               />
             </div>
-
-            <div className="flex flex-col gap-2.5 mt-4 w-full px-2">
-              <Button
-                variant="outline"
-                className="w-full justify-start gap-3 px-5 py-4 text-base"
-                onClick={() => handleDemoGuard('personality', onShowPersonality)}
-              >
-                <Sparkles className="h-5 w-5" />
-                Personality
-              </Button>
-
-              {backstoryData?.hasBackstory && (
-                <Button
-                  variant="outline"
-                  className="w-full justify-start gap-3 px-5 py-4 text-base border-amber-700/30 text-amber-500 hover:bg-amber-900/20 hover:text-amber-400"
-                  onClick={() => handleDemoGuard('avatar', onShowBackstory)}
-                >
-                  <BookOpen className="h-5 w-5" />
-                  Backstory
-                </Button>
-              )}
-
-              <Button
-                variant="outline"
-                className="w-full justify-start gap-3 px-5 py-4 text-base border-cyan-700/30 text-cyan-500 hover:bg-cyan-900/20 hover:text-cyan-400"
-                onClick={() => handleDemoGuard('games', onShowGames)}
-              >
-                <Gamepad2 className="h-5 w-5" />
-                Games
-              </Button>
-
-              <Button
-                variant="outline"
-                className="w-full justify-start gap-3 px-5 py-4 text-base border-rose-700/30 text-rose-500 hover:bg-rose-900/20 hover:text-rose-400"
-                onClick={() => handleDemoGuard('gifts', onShowGifts)}
-              >
-                <Gift className="h-5 w-5" />
-                Gifts
-              </Button>
-
-              <Button
-                variant="outline"
-                className="w-full justify-start gap-3 px-5 py-4 text-base border-purple-700/30 text-purple-500 hover:bg-purple-900/20 hover:text-purple-400"
-                onClick={() => handleDemoGuard('friends', onShowFriends)}
-              >
-                <Users className="h-5 w-5" />
-                Friends
-              </Button>
-            </div>
           </div>
 
-          {/* Spacer to push webcam to bottom */}
+          {/* Spacer to push menu + design companion to bottom */}
           <div className="flex-1" />
 
-          {/* Design Companion button at bottom */}
-          <div className="w-full px-2 mb-4">
+          {/* Bottom action stack: Menu flyout + Design Companion */}
+          <div
+            className={`w-full px-2 mb-4 transition-opacity duration-300 ${isGeneratingNewCompanion || (isDemo && isSwitchingDemoCompanion) ? 'opacity-0 pointer-events-none' : 'opacity-100'}`}
+          >
+            <CompanionMenu
+              isOpen={isMenuOpen}
+              onToggle={() => setIsMenuOpen((prev) => !prev)}
+              onClose={() => setIsMenuOpen(false)}
+              menuButtonRef={menuButtonRef}
+              flyoutRef={flyoutRef}
+              items={[
+                {
+                  key: 'personality',
+                  label: 'Personality',
+                  icon: <Sparkles className="h-5 w-5" />,
+                  accent: null,
+                  onClick: () => handleDemoGuard('personality', onShowPersonality),
+                  show: true,
+                },
+                {
+                  key: 'backstory',
+                  label: 'Backstory',
+                  icon: <BookOpen className="h-5 w-5" />,
+                  accent: 'amber',
+                  onClick: () => handleDemoGuard('avatar', onShowBackstory),
+                  show: Boolean(backstoryData?.hasBackstory),
+                },
+                {
+                  key: 'games',
+                  label: 'Games',
+                  icon: <Gamepad2 className="h-5 w-5" />,
+                  accent: 'cyan',
+                  onClick: () => handleDemoGuard('games', onShowGames),
+                  show: true,
+                },
+                {
+                  key: 'gifts',
+                  label: 'Gifts',
+                  icon: <Gift className="h-5 w-5" />,
+                  accent: 'rose',
+                  onClick: () => handleDemoGuard('gifts', onShowGifts),
+                  show: true,
+                },
+                {
+                  key: 'friends',
+                  label: 'Friends',
+                  icon: <Users className="h-5 w-5" />,
+                  accent: 'purple',
+                  onClick: () => handleDemoGuard('friends', onShowFriends),
+                  show: true,
+                },
+              ]}
+            />
+
             <Button
               variant="default"
-              className="w-full justify-center py-5 text-base bg-gradient-to-r from-campfire-500 via-rose-500 to-orange-500 hover:from-campfire-600 hover:via-rose-600 hover:to-orange-600 shadow-[0_0_20px_rgba(249,115,22,0.3)] hover:shadow-[0_0_40px_rgba(249,115,22,0.5)] transition-all duration-300"
+              className="w-full justify-center py-5 mt-2.5 text-base bg-gradient-to-r from-campfire-500 via-rose-500 to-orange-500 hover:from-campfire-600 hover:via-rose-600 hover:to-orange-600 shadow-[0_0_20px_rgba(249,115,22,0.3)] hover:shadow-[0_0_40px_rgba(249,115,22,0.5)] transition-all duration-300"
               onClick={onDesignCompanion}
             >
               Design Companion
@@ -437,6 +463,179 @@ export function ChatSidebar({
           </motion.div>
         )}
       </AnimatePresence>
+    </div>
+  );
+}
+
+// ============================================================================
+// CompanionMenu — collapsible flyout for companion actions
+// ============================================================================
+
+type MenuAccent = 'amber' | 'cyan' | 'rose' | 'purple' | null;
+
+interface CompanionMenuItem {
+  key: string;
+  label: string;
+  icon: React.ReactNode;
+  accent: MenuAccent;
+  onClick: () => void;
+  show: boolean;
+}
+
+interface CompanionMenuProps {
+  isOpen: boolean;
+  onToggle: () => void;
+  onClose: () => void;
+  items: CompanionMenuItem[];
+  menuButtonRef: React.RefObject<HTMLButtonElement | null>;
+  flyoutRef: React.RefObject<HTMLDivElement | null>;
+}
+
+const ACCENT_CLASSES: Record<Exclude<MenuAccent, null>, { border: string; text: string; hover: string; glow: string }> = {
+  amber: {
+    border: 'border-amber-700/30',
+    text: 'text-amber-500',
+    hover: 'hover:bg-amber-900/20 hover:text-amber-400',
+    glow: 'shadow-[0_0_20px_-8px_rgba(245,158,11,0.45)]',
+  },
+  cyan: {
+    border: 'border-cyan-700/30',
+    text: 'text-cyan-500',
+    hover: 'hover:bg-cyan-900/20 hover:text-cyan-400',
+    glow: 'shadow-[0_0_20px_-8px_rgba(6,182,212,0.45)]',
+  },
+  rose: {
+    border: 'border-rose-700/30',
+    text: 'text-rose-500',
+    hover: 'hover:bg-rose-900/20 hover:text-rose-400',
+    glow: 'shadow-[0_0_20px_-8px_rgba(244,63,94,0.45)]',
+  },
+  purple: {
+    border: 'border-purple-700/30',
+    text: 'text-purple-500',
+    hover: 'hover:bg-purple-900/20 hover:text-purple-400',
+    glow: 'shadow-[0_0_20px_-8px_rgba(168,85,247,0.45)]',
+  },
+};
+
+function CompanionMenu({
+  isOpen,
+  onToggle,
+  onClose,
+  items,
+  menuButtonRef,
+  flyoutRef,
+}: CompanionMenuProps) {
+  const visibleItems = items.filter((item) => item.show);
+
+  return (
+    <div className="relative">
+      {/* Flyout — positioned above the menu button, items stack upward (column-reverse) */}
+      <AnimatePresence>
+        {isOpen && (
+          <motion.div
+            ref={flyoutRef}
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.18, ease: 'easeOut' }}
+            className="absolute left-0 right-0 bottom-full mb-2 flex flex-col-reverse gap-2.5 z-20"
+          >
+            {visibleItems.map((item, index) => {
+              const accent = item.accent ? ACCENT_CLASSES[item.accent] : null;
+              return (
+                <motion.div
+                  key={item.key}
+                  initial={{ opacity: 0, y: 18, scale: 0.94, filter: 'blur(4px)' }}
+                  animate={{ opacity: 1, y: 0, scale: 1, filter: 'blur(0px)' }}
+                  exit={{ opacity: 0, y: 14, scale: 0.96, filter: 'blur(3px)' }}
+                  transition={{
+                    type: 'spring',
+                    stiffness: 380,
+                    damping: 28,
+                    mass: 0.6,
+                    delay: isOpen ? index * 0.035 : 0,
+                  }}
+                >
+                  <Button
+                    variant="outline"
+                    className={`w-full justify-start gap-3 px-5 py-4 text-base backdrop-blur-sm bg-background/85 transition-shadow duration-300 ${
+                      accent
+                        ? `${accent.border} ${accent.text} ${accent.hover} ${accent.glow}`
+                        : 'shadow-[0_0_20px_-8px_rgba(255,255,255,0.25)]'
+                    }`}
+                    onClick={() => {
+                      onClose();
+                      item.onClick();
+                    }}
+                  >
+                    {item.icon}
+                    {item.label}
+                  </Button>
+                </motion.div>
+              );
+            })}
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* The Menu button itself — pinned to bottom of the stack */}
+      <motion.button
+        ref={menuButtonRef}
+        type="button"
+        onClick={onToggle}
+        aria-haspopup="menu"
+        aria-expanded={isOpen}
+        whileTap={{ scale: 0.97 }}
+        className={`relative w-full flex items-center justify-center gap-3 px-5 py-4 rounded-md border text-base font-medium
+          transition-all duration-300 overflow-hidden
+          ${isOpen
+            ? 'border-white/20 bg-background text-foreground shadow-[0_0_30px_-10px_rgba(255,255,255,0.35)]'
+            : 'border-white/10 bg-background/70 text-foreground/90 hover:text-foreground hover:bg-background/90 hover:border-white/20'}
+        `}
+      >
+        {/* Soft multi-color aura — hints at the colorful items inside */}
+        <span
+          aria-hidden
+          className={`pointer-events-none absolute inset-0 rounded-md bg-[linear-gradient(90deg,rgba(245,158,11,0.22),rgba(6,182,212,0.22),rgba(244,63,94,0.22),rgba(168,85,247,0.22))] transition-opacity duration-500 ${
+            isOpen ? 'opacity-0' : 'opacity-[0.18]'
+          }`}
+        />
+        <span
+          aria-hidden
+          className={`pointer-events-none absolute inset-x-4 -bottom-px h-px bg-[linear-gradient(to_right,rgba(245,158,11,0.6),rgba(6,182,212,0.6),rgba(244,63,94,0.6),rgba(168,85,247,0.6))] transition-opacity duration-500 ${
+            isOpen ? 'opacity-0' : 'opacity-70'
+          }`}
+        />
+        <span className="relative flex items-center gap-3">
+          <AnimatePresence mode="wait" initial={false}>
+            {isOpen ? (
+              <motion.span
+                key="close"
+                initial={{ opacity: 0, rotate: -45, scale: 0.7 }}
+                animate={{ opacity: 1, rotate: 0, scale: 1 }}
+                exit={{ opacity: 0, rotate: 45, scale: 0.7 }}
+                transition={{ duration: 0.18, ease: 'easeOut' }}
+                className="inline-flex"
+              >
+                <CloseIcon className="h-5 w-5" />
+              </motion.span>
+            ) : (
+              <motion.span
+                key="menu"
+                initial={{ opacity: 0, rotate: 45, scale: 0.7 }}
+                animate={{ opacity: 1, rotate: 0, scale: 1 }}
+                exit={{ opacity: 0, rotate: -45, scale: 0.7 }}
+                transition={{ duration: 0.18, ease: 'easeOut' }}
+                className="inline-flex"
+              >
+                <MenuIcon className="h-5 w-5" />
+              </motion.span>
+            )}
+          </AnimatePresence>
+          <span>{isOpen ? 'Close' : 'Menu'}</span>
+        </span>
+      </motion.button>
     </div>
   );
 }
