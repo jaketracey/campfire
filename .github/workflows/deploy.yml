@@ -75,7 +75,7 @@ jobs:
       deploy_id: ${{ steps.config.outputs.deploy_id }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           fetch-depth: 0
 
@@ -126,7 +126,7 @@ jobs:
     if: ${{ github.event.inputs.skip_tests != 'true' }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -218,7 +218,7 @@ jobs:
 
       - name: Checkout code
         if: steps.should-build.outputs.build == 'true'
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Configure AWS credentials via OIDC
         if: steps.should-build.outputs.build == 'true'
@@ -339,7 +339,7 @@ jobs:
 
       - name: Checkout code
         if: steps.should-deploy.outputs.deploy == 'true'
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Configure AWS credentials via OIDC
         if: steps.should-deploy.outputs.deploy == 'true'
@@ -445,7 +445,7 @@ jobs:
       needs.deploy.result == 'success'
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Configure AWS credentials via OIDC
         uses: aws-actions/configure-aws-credentials@v4
