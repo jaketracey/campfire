@@ -1,11 +1,11 @@
 'use client';
 
 import { motion } from 'framer-motion';
-import { Flag, RotateCcw, Loader2 } from 'lucide-react';
+import { Flag, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
-import { TicTacToeBoard } from './tic-tac-toe-board';
 import type { ActiveGame } from '@campfire/shared';
+import { getGameBoardComponent, getGameTitle } from './registry';
 
 interface GameBoardContainerProps {
   gameState: ActiveGame;
@@ -24,59 +24,19 @@ export function GameBoardContainer({
 }: GameBoardContainerProps) {
   const isUserTurn = gameState.currentPlayer === 'user';
   const isGameOver = gameState.status !== 'in_progress';
+  const BoardComponent = getGameBoardComponent(gameState.gameType);
 
-  const getStatusMessage = () => {
+  const getStatusMessage = (): string => {
     if (isGameOver) {
-      if (gameState.status === 'won') {
-        return `${companionName} wins!`;
-      } else if (gameState.status === 'lost') {
-        return 'You win!';
-      } else if (gameState.status === 'draw') {
-        return "It's a draw!";
-      } else if (gameState.status === 'resigned') {
+      if (gameState.status === 'won') return `${companionName} wins!`;
+      if (gameState.status === 'lost') return 'You win!';
+      if (gameState.status === 'draw') return "It's a draw!";
+      if (gameState.status === 'resigned') {
         return gameState.winner === 'user' ? 'You win!' : `${companionName} wins!`;
       }
     }
-
-    if (isWaitingForCompanion) {
-      return `${companionName} is thinking...`;
-    }
-
+    if (isWaitingForCompanion) return `${companionName} is thinking…`;
     return isUserTurn ? 'Your turn' : `${companionName}'s turn`;
-  };
-
-  const getGameTitle = () => {
-    switch (gameState.gameType) {
-      case 'tic_tac_toe':
-        return 'Tic-Tac-Toe';
-      case 'chess':
-        return 'Chess';
-      case 'connect_four':
-        return 'Connect Four';
-      default:
-        return 'Game';
-    }
-  };
-
-  const renderBoard = () => {
-    switch (gameState.gameType) {
-      case 'tic_tac_toe':
-        return (
-          <TicTacToeBoard
-            board={gameState.board as string[][]}
-            onCellClick={onUserMove}
-            disabled={!isUserTurn || isGameOver || isWaitingForCompanion}
-            userSymbol={gameState.userSymbol || 'X'}
-            companionSymbol={gameState.companionSymbol || 'O'}
-          />
-        );
-      default:
-        return (
-          <div className="text-muted-foreground text-center py-8">
-            Game type not supported yet
-          </div>
-        );
-    }
   };
 
   return (
@@ -89,8 +49,12 @@ export function GameBoardContainer({
         {/* Header */}
         <div className="flex items-center justify-between mb-4">
           <div>
-            <h3 className="font-semibold">{getGameTitle()}</h3>
-            <div className="flex items-center gap-2 text-sm text-muted-foreground" role="status" aria-live="polite">
+            <h3 className="font-semibold">{getGameTitle(gameState.gameType)}</h3>
+            <div
+              className="flex items-center gap-2 text-sm text-muted-foreground"
+              role="status"
+              aria-live="polite"
+            >
               {isWaitingForCompanion && !isGameOver && (
                 <Loader2 className="h-3 w-3 animate-spin" />
               )}
@@ -110,9 +74,19 @@ export function GameBoardContainer({
           )}
         </div>
 
-        {/* Game Board */}
+        {/* Game Board (dispatched via registry) */}
         <div className="flex justify-center py-2">
-          {renderBoard()}
+          {BoardComponent ? (
+            <BoardComponent
+              gameState={gameState}
+              onMove={onUserMove}
+              disabled={!isUserTurn || isGameOver || isWaitingForCompanion}
+            />
+          ) : (
+            <div className="text-muted-foreground text-center py-8">
+              Game type not supported yet
+            </div>
+          )}
         </div>
 
         {/* Move History */}
@@ -121,7 +95,7 @@ export function GameBoardContainer({
             <div className="text-xs text-muted-foreground">
               <span className="font-medium">Moves: </span>
               {gameState.moveHistory.map((m, i) => (
-                <span key={i}>
+                <span key={`${m.timestamp}-${i}`}>
                   {i > 0 && ', '}
                   <span className={m.player === 'user' ? 'text-blue-400' : 'text-red-400'}>
                     {m.notation}
@@ -136,7 +110,7 @@ export function GameBoardContainer({
         {isGameOver && (
           <div className="mt-4 flex justify-center">
             <p className="text-sm text-muted-foreground">
-              Say "let's play again" to start a new game!
+              Say &quot;let&apos;s play again&quot; to start a new game!
             </p>
           </div>
         )}

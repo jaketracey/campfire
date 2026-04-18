@@ -876,11 +876,35 @@ TOOLS:
       if (gameState) {
         const game = gameState as unknown as ActiveGame;
         setActiveGame(game);
-        setWaitingForCompanionMove(game.currentPlayer === 'companion');
+        // Only show "thinking" while the game is live and it's the companion's
+        // turn; the dedicated game_companion_thinking event will refine this.
+        setWaitingForCompanionMove(
+          game.status === 'in_progress' && game.currentPlayer === 'companion',
+        );
       } else {
         setActiveGame(null);
         setWaitingForCompanionMove(false);
       }
+    });
+
+    const unsubGameThinking = ws.onGameCompanionThinking(({ thinking }) => {
+      setWaitingForCompanionMove(thinking);
+    });
+
+    const unsubGameRejected = ws.onGameMoveRejected(({ reason, code }) => {
+      // Rejections are expected (invalid move, stale version). Show a
+      // transient toast; the server's state remains authoritative and any
+      // subsequent game_update resyncs the board.
+      if (code !== 'NO_ACTIVE_GAME') {
+        toast.error(reason || 'Move rejected');
+      }
+      setWaitingForCompanionMove(false);
+    });
+
+    const unsubGameOver = ws.onGameOver(({ activeGame: finalGame, winner }) => {
+      const game = finalGame as unknown as ActiveGame;
+      setActiveGame({ ...game, winner });
+      setWaitingForCompanionMove(false);
     });
 
     const unsubLikeAck = ws.onLikeAcknowledged(({ turnId, turnLikes, sessionLikes }) => {
@@ -1032,6 +1056,9 @@ TOOLS:
       unsubTTSChunk();
       unsubTTSEnd();
       unsubGameUpdate();
+      unsubGameThinking();
+      unsubGameRejected();
+      unsubGameOver();
       unsubLikeAck();
       unsubCompanionJoined();
       unsubCompanionLeft();
@@ -1194,76 +1221,56 @@ TOOLS:
     }
   }, [isGeneratingNewCompanion, isDemo, companion?.id, router]);
 
-  const handleStartGame = useCallback((gameType: string) => {
-    if (!wsRef.current?.isConnected) return;
+  const handleStartGame = useCallback(
+    (gameType: string, options?: { companionPlaysFirst?: boolean; difficulty?: 'easy' | 'medium' | 'hard' }) => {
+      if (!wsRef.current?.isConnected) return;
+      // Game lifecycle is server-authoritative — the gateway will broadcast a
+      // `game_update` once the session exists. We just send the intent.
+      wsRef.current.startGame(gameType, options);
+      setWaitingForCompanionMove(options?.companionPlaysFirst ?? false);
+    },
+    [],
+  );
 
-    const message = `Let's play ${gameType === 'tic_tac_toe' ? 'tic-tac-toe' : gameType}!`;
+  const handleUserMove = useCallback(
+    (move: string) => {
+      if (!wsRef.current?.isConnected || !activeGame) return;
+      if (activeGame.currentPlayer !== 'user' || activeGame.status !== 'in_progress') return;
 
-    const userMessage: Message = {
-      id: crypto.randomUUID(),
-      role: 'user',
-      content: message,
-      timestamp: new Date(),
-    };
-
-    setMessages((prev) => [...prev, userMessage]);
-    setIsLoading(true);
-    setStreamingContent('');
-    setWaitingForCompanionMove(true);
-
-    wsRef.current.sendMessage(message);
-  }, []);
-
-  const handleUserMove = useCallback((move: string) => {
-    if (!wsRef.current?.isConnected || !activeGame) return;
-
-    if (activeGame.currentPlayer === 'user') {
-      const newMoveHistory = [...activeGame.moveHistory, {
-        player: 'user' as const,
-        notation: move,
-        timestamp: new Date().toISOString(),
-      }];
-
-      if (activeGame.gameType === 'tic_tac_toe') {
-        const col = move.charCodeAt(0) - 'A'.charCodeAt(0);
-        const row = parseInt(move[1]) - 1;
-        const newBoard = (activeGame.board as string[][]).map(r => [...r]);
-        newBoard[row][col] = activeGame.userSymbol || 'X';
-
-        setActiveGame({
-          ...activeGame,
-          board: newBoard,
-          currentPlayer: 'companion',
-          moveHistory: newMoveHistory,
-        });
+      // Optimistic rendering for tic-tac-toe: place the symbol locally so the
+      // UI feels instant. The authoritative server broadcast reconciles —
+      // any divergence (rejected move, stale version) triggers a resync via
+      // game_move_rejected + subsequent game_update.
+      if (activeGame.gameType === 'tic_tac_toe' && /^[A-Ca-c][1-3]$/.test(move)) {
+        const col = move.toUpperCase().charCodeAt(0) - 'A'.charCodeAt(0);
+        const row = parseInt(move[1]!, 10) - 1;
+        const newBoard = (activeGame.board as string[][]).map((r) => [...r]);
+        if (!newBoard[row]![col]) {
+          newBoard[row]![col] = activeGame.userSymbol || 'X';
+          setActiveGame({
+            ...activeGame,
+            board: newBoard,
+            currentPlayer: 'companion',
+            moveHistory: [
+              ...activeGame.moveHistory,
+              { player: 'user', notation: move, timestamp: new Date().toISOString() },
+            ],
+          });
+        }
       }
 
+      wsRef.current.sendGameMove(move, {
+        gameId: activeGame.id,
+        clientVersion: activeGame.version,
+      });
       setWaitingForCompanionMove(true);
-    }
-
-    const message = `[Game move: ${move}]`;
-    wsRef.current.sendMessage(message);
-    setIsLoading(true);
-  }, [activeGame]);
+    },
+    [activeGame],
+  );
 
   const handleResign = useCallback(() => {
     if (!wsRef.current?.isConnected || !activeGame) return;
-
-    const message = 'I resign from the game.';
-
-    const userMessage: Message = {
-      id: crypto.randomUUID(),
-      role: 'user',
-      content: message,
-      timestamp: new Date(),
-    };
-
-    setMessages((prev) => [...prev, userMessage]);
-    setIsLoading(true);
-
-    wsRef.current.sendMessage(message);
-
-    setActiveGame(null);
+    wsRef.current.resignGame(activeGame.id);
     setWaitingForCompanionMove(false);
   }, [activeGame]);
 

@@ -668,10 +668,20 @@ function getSocketsForChatSession(chatSessionId: string): WebSocket[] {
 }
 
 /**
- * Notify the orchestrator that it's the companion's turn in a game. Fire-and-
- * forget: the orchestrator will apply its move via the internal games API,
- * which in turn broadcasts a fresh `game_update`. If the orchestrator is
- * unreachable the failure is logged and the user's own move still stands.
+ * Drive the companion's next move in an active game.
+ *
+ * Flow:
+ *   1. Fetch companion + active game state from services.
+ *   2. Build a minimal `companion_spec` + recent-turn context for the LLM.
+ *   3. POST to the orchestrator's `/internal/companion-turn`, which re-uses
+ *      `process_message` with a synthetic nudge. During that call the LLM's
+ *      `game_move` tool applies the move via the gateway's games API, so a
+ *      `game_update` lands at clients before this function even returns.
+ *   4. Broadcast the returned commentary as a companion chat message and
+ *      persist it as an agent-only turn.
+ *
+ * Errors are swallowed (logged only) — the user's own move already stands;
+ * a failed companion turn just means no banter and the game waits.
  */
 async function triggerCompanionTurn(
   sessionId: string,
@@ -679,28 +689,174 @@ async function triggerCompanionTurn(
   userId: string,
   companionId: string,
 ): Promise<void> {
-  const url = `${ORCHESTRATOR_URL}/internal/companion-turn`;
-  const body = JSON.stringify({ sessionId, gameId, userId, companionId });
+  const thinkingSockets = getSocketsForChatSession(sessionId);
   try {
+    const companionsService = getCompanionsService();
+    const sessionsService = getSessionsService();
+    const tenetsService = getTenetsService();
+
+    const companion = await companionsService.getWithAvatar(userId, companionId);
+    if (!companion) {
+      logger.warn({ sessionId, companionId }, 'Companion not found for companion turn');
+      return;
+    }
+
+    const active = await gameService.getActiveGame(sessionId);
+    if (!active?.game) {
+      logger.debug({ sessionId, gameId }, 'No active game; skipping companion turn');
+      return;
+    }
+
+    const spec = companion.spec;
+    const coreTenets = await tenetsService.getCoreTenets(companionId);
+    const mappedTenets = coreTenets.map((t) => ({
+      id: t.id,
+      category: t.category,
+      priority: 'core' as const,
+      rule: t.rule,
+      description: null,
+      is_negation: t.isNegation,
+      trigger_contexts: [],
+    }));
+
+    const systemPrompt = await buildSystemPrompt(
+      companionId,
+      companion as unknown as { name: string; spec: Record<string, unknown> | null },
+    );
+
+    // Trim to the essentials the orchestrator actually needs for a game turn.
+    const companionSpec = {
+      id: companion.id,
+      name: companion.name,
+      description:
+        (spec?.identity as Record<string, unknown> | undefined)?.['selfDescription'] as string | undefined
+        || `An AI companion named ${companion.name}`,
+      personality_traits: spec?.personality?.traits
+        ? Object.entries(spec.personality.traits)
+            .filter(([, v]) => (v as number) > 0.5)
+            .map(([k]) => k)
+        : ['friendly', 'helpful'],
+      communication_style: spec?.personality?.archetype || 'friendly and supportive',
+      voice_id: spec?.voice?.voice_id || null,
+      avatar_url: companion.activeAvatar?.asset_url || null,
+      system_prompt: systemPrompt,
+      safety_level: 'adult',
+      allowed_tools: ['game_start', 'game_move', 'game_state', 'game_resign'],
+      can_generate_image_prompts: false,
+      max_context_turns: 10,
+      temperature: companion.temperature ?? 0.7,
+      version: companion.spec_version,
+      core_tenets: mappedTenets,
+    };
+
+    const recentTurns = await sessionsService.getRecentTurns(userId, sessionId, 10);
+    const formattedTurns = recentTurns
+      .filter((t) => t.user_message && t.agent_message)
+      .map((t) => ({
+        id: t.id,
+        session_id: sessionId,
+        user_message: {
+          id: crypto.randomUUID(),
+          role: 'user' as const,
+          content: t.user_message || '',
+          created_at: t.created_at.toISOString(),
+        },
+        assistant_message: t.agent_message
+          ? {
+              id: crypto.randomUUID(),
+              role: 'assistant' as const,
+              content: t.agent_message,
+              created_at: t.created_at.toISOString(),
+            }
+          : null,
+        tool_calls: [],
+        tool_results: [],
+        metadata: {
+          turn_id: t.id,
+          session_id: sessionId,
+          user_id: userId,
+          companion_id: companionId,
+          model_used: 'claude-3-5-sonnet-20241022',
+          prompt_tokens: 0,
+          completion_tokens: 0,
+          total_tokens: 0,
+          latency_ms: t.latency_ms || 0,
+          cost_usd: 0,
+          tools_invoked: [],
+          safety_flags: [],
+          prompt_version: '1.0.0',
+          policy_version: '1.0.0',
+        },
+        created_at: t.created_at.toISOString(),
+      }));
+
+    const body = {
+      session_id: sessionId,
+      user_id: userId,
+      companion_spec: companionSpec,
+      active_game: {
+        ...(active.game as unknown as Record<string, unknown>),
+        boardText: active.boardText,
+      },
+      recent_turns: formattedTurns,
+    };
+
+    const url = `${ORCHESTRATOR_URL}/internal/companion-turn`;
     const res = await fetch(url, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'X-Internal-Service-Key': env.INTERNAL_SERVICE_KEY ?? '',
-      },
-      body,
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
     });
+
     if (!res.ok) {
+      const errText = await res.text().catch(() => '');
       logger.warn(
-        { sessionId, gameId, status: res.status },
-        'Orchestrator rejected companion-turn trigger',
+        { sessionId, gameId, status: res.status, errText: errText.slice(0, 500) },
+        'Orchestrator rejected companion-turn request',
+      );
+      return;
+    }
+
+    const data = (await res.json()) as { commentary?: string; tool_calls_count?: number };
+    const commentary = (data.commentary ?? '').trim();
+    if (!commentary) {
+      logger.debug({ sessionId, gameId }, 'Companion turn returned empty commentary');
+      return;
+    }
+
+    // Broadcast the commentary as a regular agent message so the UI renders
+    // it alongside the board update. Persist as an agent-only turn so the
+    // commentary is still visible on refresh.
+    const turn = await sessionsService.addTurn(userId, sessionId, {
+      userMessage: '',
+      userMessageType: 'text',
+      agentMessage: commentary,
+      agentMessageType: 'text',
+    });
+
+    for (const socket of thinkingSockets) {
+      if (socket.readyState !== socket.OPEN) continue;
+      socket.send(
+        JSON.stringify({
+          type: 'agent_message_end',
+          id: nanoid(),
+          timestamp: new Date().toISOString(),
+          payload: {
+            content: commentary,
+            turnId: turn.id,
+            kind: 'game_commentary',
+          },
+        }),
       );
     }
   } catch (err) {
-    logger.warn(
-      { sessionId, gameId, err: err instanceof Error ? err.message : String(err) },
-      'Failed to trigger companion turn',
+    logger.error(
+      { err, sessionId, gameId },
+      'Failed to run companion turn',
     );
+  } finally {
+    // Always clear the "thinking" indicator, success or failure.
+    emitCompanionThinking(thinkingSockets, gameId, false);
   }
 }
 

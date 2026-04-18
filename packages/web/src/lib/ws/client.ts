@@ -76,6 +76,9 @@ export type WSMessageType =
   | 'webcam_enabled'
   | 'webcam_frame'
   | 'game_update'
+  | 'game_move_rejected'
+  | 'game_companion_thinking'
+  | 'game_over'
   | 'start_game'
   | 'user_game_move'
   | 'resign_game'
@@ -573,24 +576,41 @@ export class CampfireWebSocket {
   }
 
   /**
-   * Start a game with the companion
+   * Start a game with the companion.
+   *
+   * @param gameType  "tic_tac_toe" | "chess" | "connect_four"
+   * @param options.companionPlaysFirst  when true, the companion makes the
+   *        opening move and the server fires `game_companion_thinking` until
+   *        the move lands.
+   * @param options.difficulty  forwarded to engines that support it (chess).
    */
-  startGame(gameType: string): void {
-    this.send('start_game', { gameType });
+  startGame(
+    gameType: string,
+    options?: { companionPlaysFirst?: boolean; difficulty?: 'easy' | 'medium' | 'hard' },
+  ): void {
+    const payload: Record<string, unknown> = { gameType };
+    if (options?.companionPlaysFirst !== undefined) {
+      payload.companionPlaysFirst = options.companionPlaysFirst;
+    }
+    if (options?.difficulty !== undefined) payload.difficulty = options.difficulty;
+    this.send('start_game', payload);
   }
 
   /**
-   * Send a user game move
+   * Send a user game move. `gameId` and `clientVersion` are optional for
+   * backwards compatibility; omitting them falls back to "apply against latest",
+   * which loses optimistic-concurrency safety but keeps legacy clients working.
    */
-  sendGameMove(move: string): void {
-    this.send('user_game_move', { move });
+  sendGameMove(move: string, options?: { gameId?: string; clientVersion?: number }): void {
+    const payload: Record<string, unknown> = { move };
+    if (options?.gameId) payload.gameId = options.gameId;
+    if (options?.clientVersion !== undefined) payload.clientVersion = options.clientVersion;
+    this.send('user_game_move', payload);
   }
 
-  /**
-   * Resign from the current game
-   */
-  resignGame(): void {
-    this.send('resign_game', {});
+  /** Resign from the current (or specified) game. */
+  resignGame(gameId?: string): void {
+    this.send('resign_game', gameId ? { gameId } : {});
   }
 
   /**
@@ -792,12 +812,56 @@ export class CampfireWebSocket {
   }
 
   /**
-   * Subscribe to game updates
+   * Subscribe to game state updates. Fires on every applied move (user or
+   * companion) and on start/end transitions.
    */
-  onGameUpdate(handler: (activeGame: Record<string, unknown> | null) => void): () => void {
-    return this.on<{ activeGame: Record<string, unknown> | null }>('game_update', (msg) => {
-      handler(msg.payload.activeGame);
+  onGameUpdate(
+    handler: (
+      activeGame: Record<string, unknown> | null,
+      lastMove?: { player: 'user' | 'companion'; notation: string } | null,
+    ) => void,
+  ): () => void {
+    return this.on<{
+      activeGame: Record<string, unknown> | null;
+      lastMove?: { player: 'user' | 'companion'; notation: string } | null;
+    }>('game_update', (msg) => {
+      handler(msg.payload.activeGame, msg.payload.lastMove ?? null);
     });
+  }
+
+  /** Fires when the server rejects a move (invalid notation, stale version, etc.). */
+  onGameMoveRejected(
+    handler: (payload: { gameId: string | null; code: string; reason: string }) => void,
+  ): () => void {
+    return this.on<{ gameId: string | null; code: string; reason: string }>(
+      'game_move_rejected',
+      (msg) => handler(msg.payload),
+    );
+  }
+
+  /** Fires when the companion is (or stops being) computing its next move. */
+  onGameCompanionThinking(
+    handler: (payload: { gameId: string; thinking: boolean }) => void,
+  ): () => void {
+    return this.on<{ gameId: string; thinking: boolean }>(
+      'game_companion_thinking',
+      (msg) => handler(msg.payload),
+    );
+  }
+
+  /** Fires once when a game reaches a terminal state (win/loss/draw/resigned). */
+  onGameOver(
+    handler: (payload: {
+      activeGame: Record<string, unknown>;
+      winner: 'user' | 'companion' | null;
+      reason?: string;
+    }) => void,
+  ): () => void {
+    return this.on<{
+      activeGame: Record<string, unknown>;
+      winner: 'user' | 'companion' | null;
+      reason?: string;
+    }>('game_over', (msg) => handler(msg.payload));
   }
 
   /**
