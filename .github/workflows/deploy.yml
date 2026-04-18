@@ -403,7 +403,7 @@ jobs:
       - name: Deploy to Amazon ECS
         if: steps.should-deploy.outputs.deploy == 'true'
         id: deploy-ecs
-        uses: aws-actions/amazon-ecs-deploy-task-definition@v1
+        uses: aws-actions/amazon-ecs-deploy-task-definition@v2
         with:
           task-definition: ${{ steps.render-task-def.outputs.task-definition }}
           service: ${{ env.PROJECT_NAME }}-${{ needs.prepare.outputs.environment }}-${{ matrix.service }}
