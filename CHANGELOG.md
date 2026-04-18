@@ -5,6 +5,25 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [v0.15.0] - 2026-04-18
+
+## What's Changed
+
+### Features
+- feat(games): phase 6 — Connect Four and rematch polish (09fa77f)
+- feat(games): phase 5 — chess engine and UI (a4709e6)
+- feat(games): phase 4 — frontend registry and closed-loop tic-tac-toe (003e7b3)
+- feat(games): phase 3 — orchestrator becomes a thin consumer (d5ea95e)
+- feat(games): phase 2 — WebSocket protocol and broadcaster (a964446)
+- feat(games): phase 1 — foundation for server-authoritative games framework (6ee6a2d)
+
+### Bug Fixes
+- fix(compose): set GATEWAY_URL on orchestrator service (952c149)
+
+### Contributors
+- @Jake Tracey
+
+
 ## [v0.14.1] - 2026-04-18
 
 ## What's Changed
