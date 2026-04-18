@@ -105,7 +105,40 @@ PROVIDER_HEALTH: dict[ProviderType, ProviderHealth] = {
 
 # Model registry - all available models
 MODEL_REGISTRY: dict[str, ModelSpec] = {
-    # Anthropic models
+    # Anthropic models — latest generation (Claude 4.x / Haiku 4.5)
+    "claude-sonnet-4-6": ModelSpec(
+        model_id="claude-sonnet-4-6",
+        provider="anthropic",
+        display_name="Claude Sonnet 4.6",
+        content_capability=ContentCapability.SUGGESTIVE,
+        tier=ModelTier.STANDARD,
+        supports_tools=True,
+        supports_vision=True,
+        context_window=200000,
+        max_output_tokens=16384,
+        avg_latency_ms=1800.0,
+        tokens_per_second=100.0,
+        cost_per_1m_input=3.0,
+        cost_per_1m_output=15.0,
+        tags=["flagship", "multimodal", "reasoning"],
+    ),
+    "claude-haiku-4-5-20251001": ModelSpec(
+        model_id="claude-haiku-4-5-20251001",
+        provider="anthropic",
+        display_name="Claude Haiku 4.5",
+        content_capability=ContentCapability.SUGGESTIVE,
+        tier=ModelTier.FAST,
+        supports_tools=True,
+        supports_vision=True,
+        context_window=200000,
+        max_output_tokens=8192,
+        avg_latency_ms=400.0,
+        tokens_per_second=200.0,
+        cost_per_1m_input=0.8,
+        cost_per_1m_output=4.0,
+        tags=["fast", "efficient"],
+    ),
+    # Anthropic aliases (older model IDs that map to same capabilities)
     "claude-sonnet-4-20250514": ModelSpec(
         model_id="claude-sonnet-4-20250514",
         provider="anthropic",

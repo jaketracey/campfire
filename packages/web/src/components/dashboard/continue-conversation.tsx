@@ -8,6 +8,7 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Avatar, AvatarImage, AvatarFallback } from '@/components/ui/avatar';
 import { getSessionTurns } from '@/lib/api';
+import { stripMessageTags } from '@/app/chat/[sessionId]/utils';
 
 interface ChatMessage {
   role: 'user' | 'companion';
@@ -71,10 +72,11 @@ function ChatBubbles({ messages, isVisible }: { messages: ChatMessage[]; isVisib
       <AnimatePresence mode="wait">
         {isVisible && displayMessages.map((message, idx) => {
           const isUser = message.role === 'user';
-          // Truncate long messages
-          const truncatedContent = message.content.length > 60
-            ? message.content.slice(0, 57) + '...'
-            : message.content;
+          // Strip <message> tags and truncate long messages
+          const cleaned = stripMessageTags(message.content);
+          const truncatedContent = cleaned.length > 60
+            ? cleaned.slice(0, 57) + '...'
+            : cleaned;
 
           return (
             <motion.div

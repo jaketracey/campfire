@@ -913,6 +913,23 @@ export async function imagegenRoutes(app: FastifyInstance): Promise<void> {
         return reply.status(403).send({ error: 'Not authorized to modify this companion' });
       }
 
+      // Guard: skip if anchors already exist (prevents duplicate generation)
+      const existingAvatarsResult = await companionRepo.listAvatars(companionId);
+      if (existingAvatarsResult.data.length > 0) {
+        logger.info({ companionId, existingCount: existingAvatarsResult.data.length }, 'Anchor images already exist, skipping generation');
+        return reply.status(200).send({
+          companionId,
+          anchors: existingAvatarsResult.data.map((a) => ({
+            id: a.id,
+            url: a.asset_url,
+            emotionalState: (a.metadata as Record<string, unknown>)?.emotionalState || 'neutral',
+            isIdentityAnchor: true,
+          })),
+          primaryAnchorId: existingAvatarsResult.data.find((a) => a.is_active)?.id || existingAvatarsResult.data[0]?.id,
+          skipped: true,
+        });
+      }
+
       // Set up SSE headers
       reply.raw.writeHead(200, {
         'Content-Type': 'text/event-stream',
@@ -948,14 +965,41 @@ export async function imagegenRoutes(app: FastifyInstance): Promise<void> {
       const ethnicityDesc = appearance.ethnicity ? ethnicityMap[appearance.ethnicity] : undefined;
 
       const bodyTypeMap: Record<string, string> = {
-        'slim': 'slim build',
-        'athletic': 'athletic build',
-        'curvy': 'curvy figure',
-        'plus-size': 'full figure',
-        'muscular': 'muscular build',
-        'dad-bod': 'average build',
+        'slim': 'slim, slender build',
+        'athletic': 'toned athletic build',
+        'curvy': 'curvy figure with wide hips',
+        'plus-size': 'plus-size, thick body, soft belly, wide hips',
+        'muscular': 'muscular, broad-shouldered build',
+        'dad-bod': 'stocky dad-bod build, soft midsection',
       };
-      const bodyTypeDesc = appearance.bodyType ? bodyTypeMap[appearance.bodyType] : undefined;
+      // Add breast size to body description for female companions
+      const breastSizeMap: Record<string, string> = {
+        'S': 'small chest',
+        'M': '',  // Don't mention — reads as average/default
+        'L': 'large chest',
+        'XL': 'very large chest',
+      };
+      const breastDesc = !isMale && (appearance as { breastSize?: string }).breastSize
+        ? breastSizeMap[(appearance as { breastSize?: string }).breastSize || 'M'] || ''
+        : '';
+      // Add male build size descriptor
+      const buildSizeMap: Record<string, string> = {
+        'S': 'lean, narrow frame',
+        'M': '',  // Default — don't mention
+        'L': 'broad, large frame',
+        'XL': 'very large, heavy frame',
+      };
+      const buildDesc = isMale && (appearance as { build?: string }).build
+        ? buildSizeMap[(appearance as { build?: string }).build || 'M'] || ''
+        : '';
+      let bodyTypeDesc = appearance.bodyType ? bodyTypeMap[appearance.bodyType] : undefined;
+      if (isMale && buildDesc && bodyTypeDesc) {
+        bodyTypeDesc = `${bodyTypeDesc}, ${buildDesc}`;
+      } else if (!isMale && breastDesc && bodyTypeDesc) {
+        bodyTypeDesc = `${bodyTypeDesc}, ${breastDesc}`;
+      } else if (breastDesc) {
+        bodyTypeDesc = breastDesc;
+      }
 
       const hairColorMap: Record<string, string> = {
         'black': 'black hair',

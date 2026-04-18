@@ -15,12 +15,18 @@ import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { Switch } from '@/components/ui/switch';
 import { Card, CardContent } from '@/components/ui/card';
-import { Plus, X, Star, Sparkles, Check } from 'lucide-react';
+import { Plus, X, Star, Sparkles, Check, Wand2, ArrowRight, Loader2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { updateCompanionPersonality, type Companion } from '@/lib/api/companions';
+import {
+  updateCompanionPersonality,
+  suggestPersonalityTuning,
+  type Companion,
+  type PersonalityTuneDiff,
+} from '@/lib/api/companions';
 import {
   listTenets,
   createTenet,
+  updateTenet,
   updateTenetPriority,
   deleteTenet,
   type Tenet,
@@ -221,6 +227,14 @@ export function PersonalityModal({ companion, isOpen, onClose, onSave }: Persona
     setTimeout(() => setRuleSaveMessage(null), 2000);
   };
 
+  // Conversational tuning state
+  const [tuneInput, setTuneInput] = useState('');
+  const [tuneDiff, setTuneDiff] = useState<PersonalityTuneDiff | null>(null);
+  const [isTuning, setIsTuning] = useState(false);
+  const [isApplyingTune, setIsApplyingTune] = useState(false);
+  const [tuneError, setTuneError] = useState<string | null>(null);
+  const [tuneSuccess, setTuneSuccess] = useState<string | null>(null);
+
   // Initialize traits from companion spec when modal opens
   useEffect(() => {
     if (isOpen && companion?.spec?.personality?.traits) {
@@ -373,6 +387,107 @@ export function PersonalityModal({ companion, isOpen, onClose, onSave }: Persona
     (preset) => !tenets.some((t) => t.rule === preset.rule)
   );
 
+  // ==========================================================================
+  // Conversational Tuning Handlers
+  // ==========================================================================
+
+  const handleSuggestTune = async () => {
+    if (!companion || tuneInput.trim().length < 3) return;
+    setIsTuning(true);
+    setTuneError(null);
+    setTuneSuccess(null);
+    setTuneDiff(null);
+    try {
+      const diff = await suggestPersonalityTuning(companion.id, tuneInput.trim());
+      setTuneDiff(diff);
+    } catch (error) {
+      console.error('Failed to suggest tuning:', error);
+      setTuneError(
+        error instanceof Error ? error.message : 'Could not generate suggestions. Try again.',
+      );
+    } finally {
+      setIsTuning(false);
+    }
+  };
+
+  const handleApplyTune = async () => {
+    if (!companion || !tuneDiff) return;
+    setIsApplyingTune(true);
+    setTuneError(null);
+    try {
+      // 1. Trait updates: merge into current traits and PATCH once.
+      if (tuneDiff.traitUpdates.length > 0) {
+        const nextTraits: Record<string, number> = { ...traits };
+        for (const upd of tuneDiff.traitUpdates) {
+          nextTraits[upd.trait] = upd.toValue;
+        }
+        const normalized: Record<string, number> = {};
+        for (const [key, value] of Object.entries(nextTraits)) {
+          normalized[key] = value / 100;
+        }
+        await updateCompanionPersonality(companion.id, normalized);
+        setTraits(nextTraits as Record<TraitKey, number>);
+      }
+
+      // 2. Tenet removes.
+      for (const rem of tuneDiff.tenetsToRemove) {
+        try {
+          await deleteTenet(companion.id, rem.id);
+        } catch (e) {
+          console.warn('Failed to remove tenet', rem.id, e);
+        }
+      }
+
+      // 3. Tenet modifies.
+      for (const mod of tuneDiff.tenetsToModify) {
+        try {
+          await updateTenet(companion.id, mod.id, {
+            ...(mod.newRule ? { rule: mod.newRule } : {}),
+            ...(mod.newPriority ? { priority: mod.newPriority as TenetPriority } : {}),
+            ...(mod.newCategory ? { category: mod.newCategory as TenetCategory } : {}),
+          });
+        } catch (e) {
+          console.warn('Failed to modify tenet', mod.id, e);
+        }
+      }
+
+      // 4. Tenet adds (best-effort; skip silently if over limits).
+      for (const add of tuneDiff.tenetsToAdd) {
+        try {
+          await createTenet(companion.id, {
+            category: add.category as TenetCategory,
+            priority: add.priority as TenetPriority,
+            rule: add.rule,
+            isNegation: add.isNegation,
+          });
+        } catch (e) {
+          console.warn('Failed to add tenet', add.rule, e);
+        }
+      }
+
+      // 5. Reload tenets from server for fresh IDs + state.
+      const refreshed = await listTenets(companion.id);
+      setTenets(refreshed.tenets);
+
+      setTuneDiff(null);
+      setTuneInput('');
+      setTuneSuccess('Changes applied');
+      setTimeout(() => setTuneSuccess(null), 2500);
+    } catch (error) {
+      console.error('Failed to apply tune:', error);
+      setTuneError(
+        error instanceof Error ? error.message : 'Could not apply changes. Try again.',
+      );
+    } finally {
+      setIsApplyingTune(false);
+    }
+  };
+
+  const handleDiscardTune = () => {
+    setTuneDiff(null);
+    setTuneError(null);
+  };
+
   return (
     <Dialog open={isOpen} onOpenChange={(open) => !open && onClose()}>
       <DialogContent
@@ -400,13 +515,294 @@ export function PersonalityModal({ companion, isOpen, onClose, onSave }: Persona
                 </p>
               </div>
 
-              <Tabs defaultValue="traits" className="flex-1 flex flex-col min-h-0">
+              <Tabs defaultValue="tune" className="flex-1 flex flex-col min-h-0">
                 <div className="px-6 pt-4">
-                  <TabsList className="grid w-full grid-cols-2">
+                  <TabsList className="grid w-full grid-cols-3">
+                    <TabsTrigger value="tune">
+                      <Wand2 className="h-3.5 w-3.5 mr-1.5" />
+                      Tune
+                    </TabsTrigger>
                     <TabsTrigger value="traits">Traits</TabsTrigger>
                     <TabsTrigger value="rules">Rules</TabsTrigger>
                   </TabsList>
                 </div>
+
+                {/* Tune Tab */}
+                <TabsContent value="tune" className="flex-1 overflow-y-auto px-6 py-4 space-y-4">
+                  <div className="space-y-2">
+                    <div className="flex items-center gap-2">
+                      <Wand2 className="h-4 w-4 text-primary" />
+                      <h3 className="text-sm font-medium">Describe how you&apos;d like them to change</h3>
+                    </div>
+                    <p className="text-xs text-muted-foreground">
+                      Write naturally — e.g. &quot;be more playful and less formal, and never lecture me about my choices.&quot; We&apos;ll propose specific trait and rule changes for you to review before applying.
+                    </p>
+                  </div>
+
+                  <div className="space-y-2">
+                    <textarea
+                      value={tuneInput}
+                      onChange={(e) => setTuneInput(e.target.value)}
+                      placeholder="Be more playful, a bit more direct, and never give unsolicited advice."
+                      rows={3}
+                      disabled={isTuning || isApplyingTune}
+                      className="w-full resize-none rounded-md bg-background border border-input px-3 py-2 text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring disabled:opacity-50"
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
+                          e.preventDefault();
+                          handleSuggestTune();
+                        }
+                      }}
+                    />
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="text-xs text-muted-foreground">
+                        {tuneInput.length > 0 ? `${tuneInput.length} / 1000` : 'Tip: ⌘/Ctrl + Enter to submit'}
+                      </span>
+                      <Button
+                        onClick={handleSuggestTune}
+                        disabled={isTuning || isApplyingTune || tuneInput.trim().length < 3}
+                        size="sm"
+                      >
+                        {isTuning ? (
+                          <>
+                            <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" />
+                            Thinking...
+                          </>
+                        ) : (
+                          <>
+                            <Sparkles className="h-3.5 w-3.5 mr-1.5" />
+                            Suggest changes
+                          </>
+                        )}
+                      </Button>
+                    </div>
+                  </div>
+
+                  {tuneError && (
+                    <Card className="bg-red-500/10 border-red-500/30">
+                      <CardContent className="p-3 text-sm text-red-300">{tuneError}</CardContent>
+                    </Card>
+                  )}
+
+                  {tuneSuccess && !tuneDiff && (
+                    <motion.div
+                      initial={{ opacity: 0, y: -4 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      className="flex items-center gap-1.5 text-xs text-emerald-400"
+                    >
+                      <Check className="h-3 w-3" />
+                      <span>{tuneSuccess}</span>
+                    </motion.div>
+                  )}
+
+                  {tuneDiff && (
+                    <motion.div
+                      initial={{ opacity: 0, y: 8 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      transition={{ duration: 0.2 }}
+                      className="space-y-4"
+                    >
+                      {/* Summary */}
+                      <Card className="bg-primary/5 border-primary/20">
+                        <CardContent className="p-4 space-y-1">
+                          <div className="flex items-center gap-1.5 text-xs font-medium text-primary uppercase tracking-wide">
+                            <Sparkles className="h-3 w-3" />
+                            Proposed change
+                          </div>
+                          <p className="text-sm leading-relaxed">{tuneDiff.summary}</p>
+                        </CardContent>
+                      </Card>
+
+                      {/* Trait updates */}
+                      {tuneDiff.traitUpdates.length > 0 && (
+                        <div className="space-y-2">
+                          <h4 className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+                            Trait adjustments ({tuneDiff.traitUpdates.length})
+                          </h4>
+                          <div className="space-y-1.5">
+                            {tuneDiff.traitUpdates.map((upd) => (
+                              <Card key={upd.trait} className="bg-muted/30">
+                                <CardContent className="p-3 space-y-1">
+                                  <div className="flex items-center gap-2 text-sm">
+                                    <span className="font-medium capitalize">{upd.trait}</span>
+                                    <span className="font-mono text-xs text-muted-foreground">
+                                      {upd.fromValue}%
+                                    </span>
+                                    <ArrowRight className="h-3 w-3 text-muted-foreground" />
+                                    <span
+                                      className={cn(
+                                        'font-mono text-xs font-semibold',
+                                        upd.toValue > upd.fromValue
+                                          ? 'text-emerald-400'
+                                          : 'text-amber-400',
+                                      )}
+                                    >
+                                      {upd.toValue}%
+                                    </span>
+                                  </div>
+                                  {upd.reasoning && (
+                                    <p className="text-xs text-muted-foreground">{upd.reasoning}</p>
+                                  )}
+                                </CardContent>
+                              </Card>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Tenets to add */}
+                      {tuneDiff.tenetsToAdd.length > 0 && (
+                        <div className="space-y-2">
+                          <h4 className="text-xs font-medium text-emerald-400 uppercase tracking-wide">
+                            New rules ({tuneDiff.tenetsToAdd.length})
+                          </h4>
+                          {tuneDiff.tenetsToAdd.map((add, i) => (
+                            <Card key={i} className="bg-emerald-500/5 border-emerald-500/20">
+                              <CardContent className="p-3 space-y-1">
+                                <div className="flex items-center gap-2">
+                                  <Badge
+                                    className={cn(
+                                      'text-[10px]',
+                                      getCategoryStyle(add.category as TenetCategory),
+                                    )}
+                                  >
+                                    {TENET_CATEGORY_META[add.category as TenetCategory]?.label ?? add.category}
+                                  </Badge>
+                                  <Badge variant="outline" className="text-[10px]">
+                                    {add.priority}
+                                  </Badge>
+                                  {add.isNegation && (
+                                    <Badge variant="outline" className="text-[10px] border-red-500/30 text-red-400">
+                                      NEVER
+                                    </Badge>
+                                  )}
+                                </div>
+                                <p className="text-sm">{add.rule}</p>
+                                {add.reasoning && (
+                                  <p className="text-xs text-muted-foreground">{add.reasoning}</p>
+                                )}
+                              </CardContent>
+                            </Card>
+                          ))}
+                        </div>
+                      )}
+
+                      {/* Tenets to modify */}
+                      {tuneDiff.tenetsToModify.length > 0 && (
+                        <div className="space-y-2">
+                          <h4 className="text-xs font-medium text-amber-400 uppercase tracking-wide">
+                            Modified rules ({tuneDiff.tenetsToModify.length})
+                          </h4>
+                          {tuneDiff.tenetsToModify.map((mod) => {
+                            const existing = tenets.find((t) => t.id === mod.id);
+                            return (
+                              <Card key={mod.id} className="bg-amber-500/5 border-amber-500/20">
+                                <CardContent className="p-3 space-y-1">
+                                  {existing && (
+                                    <p className="text-xs text-muted-foreground line-through">
+                                      {existing.rule}
+                                    </p>
+                                  )}
+                                  {mod.newRule && <p className="text-sm">{mod.newRule}</p>}
+                                  <div className="flex items-center gap-2">
+                                    {mod.newPriority && (
+                                      <Badge variant="outline" className="text-[10px]">
+                                        → {mod.newPriority}
+                                      </Badge>
+                                    )}
+                                    {mod.newCategory && (
+                                      <Badge variant="outline" className="text-[10px]">
+                                        → {mod.newCategory}
+                                      </Badge>
+                                    )}
+                                  </div>
+                                  {mod.reasoning && (
+                                    <p className="text-xs text-muted-foreground">{mod.reasoning}</p>
+                                  )}
+                                </CardContent>
+                              </Card>
+                            );
+                          })}
+                        </div>
+                      )}
+
+                      {/* Tenets to remove */}
+                      {tuneDiff.tenetsToRemove.length > 0 && (
+                        <div className="space-y-2">
+                          <h4 className="text-xs font-medium text-red-400 uppercase tracking-wide">
+                            Removed rules ({tuneDiff.tenetsToRemove.length})
+                          </h4>
+                          {tuneDiff.tenetsToRemove.map((rem) => {
+                            const existing = tenets.find((t) => t.id === rem.id);
+                            return (
+                              <Card key={rem.id} className="bg-red-500/5 border-red-500/20">
+                                <CardContent className="p-3 space-y-1">
+                                  {existing && (
+                                    <p className="text-sm line-through text-muted-foreground">
+                                      {existing.rule}
+                                    </p>
+                                  )}
+                                  {rem.reasoning && (
+                                    <p className="text-xs text-muted-foreground">{rem.reasoning}</p>
+                                  )}
+                                </CardContent>
+                              </Card>
+                            );
+                          })}
+                        </div>
+                      )}
+
+                      {/* Empty diff (model returned nothing actionable) */}
+                      {tuneDiff.traitUpdates.length === 0 &&
+                        tuneDiff.tenetsToAdd.length === 0 &&
+                        tuneDiff.tenetsToModify.length === 0 &&
+                        tuneDiff.tenetsToRemove.length === 0 && (
+                          <Card className="bg-muted/30">
+                            <CardContent className="p-3 text-sm text-muted-foreground">
+                              No changes suggested — try rephrasing your request with more specifics.
+                            </CardContent>
+                          </Card>
+                        )}
+
+                      {/* Apply / discard */}
+                      <div className="flex gap-2 pt-1">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={handleDiscardTune}
+                          disabled={isApplyingTune}
+                          className="flex-1"
+                        >
+                          Discard
+                        </Button>
+                        <Button
+                          size="sm"
+                          onClick={handleApplyTune}
+                          disabled={
+                            isApplyingTune ||
+                            (tuneDiff.traitUpdates.length === 0 &&
+                              tuneDiff.tenetsToAdd.length === 0 &&
+                              tuneDiff.tenetsToModify.length === 0 &&
+                              tuneDiff.tenetsToRemove.length === 0)
+                          }
+                          className="flex-1"
+                        >
+                          {isApplyingTune ? (
+                            <>
+                              <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" />
+                              Applying...
+                            </>
+                          ) : (
+                            <>
+                              <Check className="h-3.5 w-3.5 mr-1.5" />
+                              Apply changes
+                            </>
+                          )}
+                        </Button>
+                      </div>
+                    </motion.div>
+                  )}
+                </TabsContent>
 
                 {/* Traits Tab */}
                 <TabsContent value="traits" className="flex-1 overflow-y-auto px-6 py-4 space-y-6">

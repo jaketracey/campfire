@@ -32,8 +32,10 @@ export interface GiftData {
 
 // Segment type for parsed message content
 export interface MessageSegment {
-  type: 'action' | 'dialogue';
+  type: 'action' | 'dialogue' | 'image';
   content: string;
+  /** Image URL (only for 'image' segments) */
+  imageUrl?: string;
 }
 
 // Chat event for join/leave notifications

@@ -28,7 +28,9 @@ ssh -i /Users/jake/Projects/campfire/infra/aws-cli/stealth/campfire-stealth-key.
 alias campfire-ssh='ssh -i ~/Projects/campfire/infra/aws-cli/stealth/campfire-stealth-key.pem ec2-user@44.206.75.97'
 ```
 
-**SSH Key Location:** `/Users/jake/Projects/campfire/infra/aws-cli/stealth/campfire-stealth-key.pem`
+**SSH Key Locations:**
+- **Mac:** `/Users/jake/Projects/campfire/infra/aws-cli/stealth/campfire-stealth-key.pem`
+- **Windows PC** (jake@192.168.0.244): `~/.ssh/campfire-stealth-key.pem`
 
 ## Directory Structure on EC2
 

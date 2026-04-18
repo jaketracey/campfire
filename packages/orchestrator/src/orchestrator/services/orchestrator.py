@@ -819,6 +819,7 @@ class ConversationOrchestrator:
         """Generate response with tool calling loop."""
         all_tool_calls: list[ToolCall] = []
         all_tool_results: list[ToolResult] = []
+        all_background_image_tasks: list[tuple[ToolCall, asyncio.Task[ToolResult]]] = []
         current_messages = messages.copy()
 
         for iteration in range(max_tool_iterations):
@@ -830,6 +831,8 @@ class ConversationOrchestrator:
 
             # Check for tool calls
             if not response.tool_calls:
+                # Collect any background image results before returning
+                await self._collect_background_image_results(all_background_image_tasks, all_tool_results)
                 return response, all_tool_calls, all_tool_results
 
             # Process tool calls
@@ -851,27 +854,84 @@ class ConversationOrchestrator:
 
             all_tool_calls.extend(tool_calls)
 
-            # Execute tools
-            tool_results = await self.tool_router.execute_tools(tool_calls)
-            all_tool_results.extend(tool_results)
+            # Image generation runs in background — give LLM a fast placeholder
+            # so it can write its text response immediately (~3s instead of ~15s)
+            sync_tool_calls: list[ToolCall] = []
 
-            # Add tool results to messages
+            for tc in tool_calls:
+                if normalize_tool_name(tc.name) == "image_generation":
+                    # Fire image gen in background
+                    task = asyncio.create_task(self.tool_router.execute_tool(tc))
+                    all_background_image_tasks.append((tc, task))
+                    # Give LLM a fast placeholder result
+                    all_tool_results.append(ToolResult(
+                        tool_call_id=tc.id,
+                        name=tc.name,
+                        success=True,
+                        output="Image generated successfully. It will appear in the chat.",
+                        duration_ms=50,
+                        metadata={"async": True, "image_url": "pending"},
+                    ))
+                else:
+                    sync_tool_calls.append(tc)
+
+            # Execute synchronous tools normally
+            if sync_tool_calls:
+                sync_results = await self.tool_router.execute_tools(sync_tool_calls)
+                all_tool_results.extend(sync_results)
+
+            # Add tool results to messages for next LLM iteration
             current_messages.append({
                 "role": "assistant",
                 "content": response.content,
                 "tool_calls": response.tool_calls,
             })
 
-            for result in tool_results:
+            # Combine sync results + placeholder results for the message context
+            iteration_results = list(sync_results) if sync_tool_calls else []
+            for tc, _ in all_background_image_tasks:
+                # Find the placeholder result for this tool call
+                for r in all_tool_results:
+                    if r.tool_call_id == tc.id:
+                        iteration_results.append(r)
+                        break
+
+            for result in iteration_results:
                 current_messages.append({
                     "role": "tool",
                     "tool_call_id": result.tool_call_id,
                     "content": result.to_message_content(),
                 })
 
+        # Collect any remaining background image results
+        await self._collect_background_image_results(all_background_image_tasks, all_tool_results)
+
         # Max iterations reached
         logger.warning("max_tool_iterations_reached", turn_id=str(turn_id))
         return response, all_tool_calls, all_tool_results
+
+    @staticmethod
+    async def _collect_background_image_results(
+        tasks: list[tuple[ToolCall, asyncio.Task[ToolResult]]],
+        all_results: list[ToolResult],
+    ) -> None:
+        """Collect results from background image generation tasks, replacing placeholders."""
+        for tc, task in tasks:
+            if task.done() or not task.cancelled():
+                try:
+                    real_result = await task
+                    for i, r in enumerate(all_results):
+                        if r.tool_call_id == tc.id and r.metadata and r.metadata.get("async"):
+                            all_results[i] = real_result
+                            break
+                    logger.info(
+                        "background_image_gen_completed",
+                        tool_call_id=tc.id,
+                        success=real_result.success,
+                        has_image=bool(real_result.metadata and real_result.metadata.get("image_url")),
+                    )
+                except Exception as e:
+                    logger.warning("background_image_gen_failed", error=str(e), tool_call_id=tc.id)
 
     async def _call_llm_with_fallback(
         self,
@@ -1089,6 +1149,9 @@ class ConversationOrchestrator:
     ) -> RoutingDecision | None:
         """Route content to appropriate model based on intent and companion settings.
 
+        Uses database routing rules first (chat_simple/chat_complex), falling back
+        to capability-based routing if DB routing returns no match.
+
         Args:
             user_message: The user's message to analyze.
             companion_spec: The companion specification with safety settings.
@@ -1100,6 +1163,31 @@ class ConversationOrchestrator:
         if not self._content_routing_enabled or not self.model_router:
             return None
 
+        # Try DB routing first — respects configured model preferences
+        use_case = "chat_complex" if companion_spec.allowed_tools else "chat_simple"
+        db_model = await self.model_router.route_by_use_case(
+            use_case=use_case,
+            companion_id=companion_spec.id if hasattr(companion_spec, "id") else None,
+        )
+        if db_model:
+            # Still need intent detection for safety gating
+            routing_decision = await self.model_router.route(
+                user_message=user_message,
+                companion_safety_level=companion_spec.safety_level,
+                require_tools=bool(companion_spec.allowed_tools),
+            )
+            if routing_decision and not routing_decision.content_blocked:
+                # Override the capability-selected model with the DB-routed one
+                routing_decision = RoutingDecision(
+                    model_spec=db_model,
+                    intent_result=routing_decision.intent_result,
+                    routing_reason=f"DB routing: {use_case} → {db_model.model_id}",
+                    fallback_used=False,
+                    content_blocked=False,
+                )
+            return routing_decision
+
+        # Fallback to capability-based routing
         return await self.model_router.route(
             user_message=user_message,
             companion_safety_level=companion_spec.safety_level,
@@ -1379,6 +1467,11 @@ class ConversationOrchestrator:
             cost_usd=cost_usd,
         )
 
+    @staticmethod
+    def _strip_xml_wrapper_tags(text: str) -> str:
+        """Strip <message>...</message> wrapper tags the LLM sometimes adds."""
+        return re.sub(r'</?message>', '', text, flags=re.IGNORECASE).strip()
+
     def _parse_image_prompt(self, content: str) -> tuple[str, str | None]:
         """Parse image_prompt from response content.
 
@@ -1392,7 +1485,7 @@ class ConversationOrchestrator:
         if structured is not None:
             messages, image_prompt = structured
             cleaned_content = "\n".join(messages).strip()
-            return cleaned_content, image_prompt
+            return self._strip_xml_wrapper_tags(cleaned_content), image_prompt
 
         # Log incoming content for debugging
         logger.debug(
@@ -1415,7 +1508,7 @@ class ConversationOrchestrator:
                 image_prompt_length=len(image_prompt),
                 image_prompt=image_prompt[:200],
             )
-            return cleaned_content, image_prompt
+            return self._strip_xml_wrapper_tags(cleaned_content), image_prompt
 
         # Log when no image_prompt found
         logger.warning(
@@ -1423,7 +1516,7 @@ class ConversationOrchestrator:
             content_length=len(content),
             content_tail=content[-300:] if len(content) > 300 else content,
         )
-        return content, None
+        return self._strip_xml_wrapper_tags(content), None
 
     def _parse_structured_response(self, content: str) -> tuple[list[str], str | None] | None:
         """Parse optional JSON response envelope.

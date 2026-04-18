@@ -6,7 +6,7 @@ import { LikeButton } from '@/components/likes';
 import { GameBoardContainer } from '@/components/games';
 import type { ActiveGame } from '@campfire/shared';
 import type { Message } from '../types';
-import { parseMessageSegments, shouldShowDateSeparator, dateSeparatorLabel, formatMessageTime } from '../utils';
+import { parseMessageSegments, stripMessageTags, shouldShowDateSeparator, dateSeparatorLabel, formatMessageTime } from '../utils';
 import { AnimatedMessageSegments } from './animated-message-segments';
 import { GiftMessage } from './gift-message';
 
@@ -150,8 +150,10 @@ export function ChatMessages({
         }
 
         const isUser = message.role === 'user';
+        const isImageOnly = !isUser && message.imageUrl && !message.content;
         const segments = isUser ? null : parseMessageSegments(message.content);
         const hasMultipleSegments = segments && segments.length > 1;
+        const displayContent = segments?.length === 1 ? segments[0].content : message.content;
 
         return (
           <div key={message.id} className="relative z-10">
@@ -167,7 +169,26 @@ export function ChatMessages({
               data-testid={isUser ? 'user-message' : 'assistant-message'}
             >
               <div className={`flex flex-col ${isUser ? 'items-end' : 'items-start'} max-w-[80%] lg:max-w-xl`}>
-                {!isUser && hasMultipleSegments ? (
+                {/* Standalone image bubble — no card wrapper */}
+                {isImageOnly ? (
+                  <div className="relative group">
+                    <img
+                      src={message.imageUrl}
+                      alt="Photo from companion"
+                      className="rounded-2xl max-w-[300px] shadow-lg cursor-pointer hover:opacity-95 transition-opacity"
+                      onClick={() => window.open(message.imageUrl, '_blank')}
+                    />
+                    {!isDemo && (
+                      <div className="absolute bottom-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                        <LikeButton
+                          turnId={message.id}
+                          initialCount={messageLikes[message.id] || 0}
+                          onLike={onLikeMessage}
+                        />
+                      </div>
+                    )}
+                  </div>
+                ) : !isUser && hasMultipleSegments ? (
                   <AnimatedMessageSegments
                     segments={segments}
                     isUser={false}
@@ -194,8 +215,8 @@ export function ChatMessages({
                         onClick={() => window.open(message.imageUrl, '_blank')}
                       />
                     )}
-                    {message.content && (
-                      <p className="text-base lg:text-sm whitespace-pre-wrap break-words">{message.content}</p>
+                    {displayContent && (
+                      <p className="text-base lg:text-sm whitespace-pre-wrap break-words">{displayContent}</p>
                     )}
                     {!isUser && !isDemo && (
                       <div className="flex justify-end mt-1 -mb-1 -mr-1">
@@ -222,7 +243,7 @@ export function ChatMessages({
         <div className="flex justify-start relative z-10" data-testid="streaming-message">
           <Card className="bg-muted p-3 max-w-[80%] lg:max-w-xl">
             <p className="text-base lg:text-sm whitespace-pre-wrap break-words">
-              {streamingContent}
+              {stripMessageTags(streamingContent)}
               <span className="inline-block w-0.5 h-4 bg-foreground/70 animate-pulse ml-0.5 align-text-bottom" />
             </p>
           </Card>

@@ -463,6 +463,78 @@ class GenerateRandomIdentityRequest(BaseModel):
     name: str | None = None  # If provided, infer gender from this name
 
 
+class CurrentTenet(BaseModel):
+    """Existing tenet passed to the tune endpoint so the model can reference it by id."""
+
+    id: str
+    category: str
+    priority: str  # core | situational
+    rule: str
+    is_negation: bool = False
+
+
+class TuneTraitUpdate(BaseModel):
+    """A proposed trait adjustment."""
+
+    trait: str  # warmth, energy, humor, formality, ...
+    from_value: int
+    to_value: int
+    reasoning: str
+
+
+class TuneTenetAdd(BaseModel):
+    """A proposed new tenet."""
+
+    category: str  # communication | boundaries | engagement | emotional | knowledge | autonomy
+    priority: str  # core | situational
+    rule: str
+    is_negation: bool = False
+    reasoning: str
+
+
+class TuneTenetModify(BaseModel):
+    """A proposed modification to an existing tenet."""
+
+    id: str
+    new_rule: str | None = None
+    new_priority: str | None = None
+    new_category: str | None = None
+    reasoning: str
+
+
+class TuneTenetRemove(BaseModel):
+    """A proposed removal of an existing tenet."""
+
+    id: str
+    reasoning: str
+
+
+class TunePersonalityRequest(BaseModel):
+    """Request model for conversational personality tuning."""
+
+    companion_name: str
+    pronouns: str = "they/them"
+    archetype: str | None = None
+    # Trait keys match the caller's schema (the modal uses warmth, energy, humor,
+    # formality, assertiveness, openness, empathy, spontaneity, optimism, directness
+    # — but the endpoint adapts to whatever keys are sent). Values are 0-100.
+    current_traits: dict[str, int]
+    current_tenets: list[CurrentTenet] = Field(default_factory=list)
+    user_request: str  # natural language e.g. "be more playful and less formal"
+    core_tenet_slots_remaining: int = 5  # hard cap in DB is 5 core total
+
+
+class TunePersonalityResponse(BaseModel):
+    """Structured diff describing proposed personality changes."""
+
+    summary: str  # one-paragraph plain-english explanation of the overall change
+    trait_updates: list[TuneTraitUpdate] = Field(default_factory=list)
+    tenets_to_add: list[TuneTenetAdd] = Field(default_factory=list)
+    tenets_to_modify: list[TuneTenetModify] = Field(default_factory=list)
+    tenets_to_remove: list[TuneTenetRemove] = Field(default_factory=list)
+    latency_ms: float
+
+
 class ConversationTurnInput(BaseModel):
     """A conversation turn for personality analysis."""
 
@@ -1208,13 +1280,13 @@ async def stream_message(request: StreamMessageRequest) -> StreamingResponse:
                     if chunk.startswith("[METADATA]"):
                         try:
                             metadata = json.loads(chunk[10:])
-                            tool_context = build_tool_context_metadata(metadata)
-                            if tool_context.get("tooling_unavailable_reason"):
-                                stream_tooling_unavailable_reason = tool_context["tooling_unavailable_reason"]
-                            if tool_context["tool_calls"]:
-                                stream_tool_calls = tool_context["tool_calls"]
-                            if tool_context["tool_results"]:
-                                stream_tool_results = tool_context["tool_results"]
+                            # Metadata already contains tool_calls/tool_results from orchestrator
+                            if metadata.get("tooling_unavailable_reason"):
+                                stream_tooling_unavailable_reason = metadata["tooling_unavailable_reason"]
+                            if metadata.get("tool_calls"):
+                                stream_tool_calls = metadata["tool_calls"]
+                            if metadata.get("tool_results"):
+                                stream_tool_results = metadata["tool_results"]
 
                             if isinstance(metadata.get("generated_image_url"), str):
                                 stream_generated_image_url = metadata["generated_image_url"]
@@ -1236,8 +1308,12 @@ async def stream_message(request: StreamMessageRequest) -> StreamingResponse:
                         continue
 
                     full_content += chunk
+                    # Strip <message> wrapper tags the LLM sometimes adds
+                    clean_chunk = re.sub(r'</?message>', '', chunk, flags=re.IGNORECASE)
+                    if not clean_chunk:
+                        continue
                     # Escape newlines to prevent breaking SSE format
-                    escaped_chunk = chunk.replace('\n', '\\n')
+                    escaped_chunk = clean_chunk.replace('\n', '\\n')
                     yield f"data: {escaped_chunk}\n\n"
 
                 # Parse multi-messages after stream completes
@@ -1321,8 +1397,8 @@ async def stream_message(request: StreamMessageRequest) -> StreamingResponse:
                         metadata["should_generate_image"] = False
                         logger.info(
                             "sending_image_prompt_metadata",
-                            image_prompt_length=len(image_prompt),
-                            image_prompt=image_prompt[:200],
+                            image_prompt_length=len(image_prompt) if image_prompt else 0,
+                            image_prompt=image_prompt[:200] if image_prompt else None,
                             should_generate_image=requested_image,
                             intent_confidence=intent_confidence,
                         )
@@ -2796,6 +2872,271 @@ async def analyze_user_profile(request: AnalyzeUserProfileRequest) -> AnalyzeUse
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Personality analysis failed: {str(e)}",
+        )
+
+
+@app.post(
+    "/personality/tune",
+    response_model=TunePersonalityResponse,
+    responses={
+        400: {"model": ErrorResponse},
+        500: {"model": ErrorResponse},
+    },
+)
+async def tune_personality(request: TunePersonalityRequest) -> TunePersonalityResponse:
+    """Translate a natural-language tuning request into a structured diff.
+
+    Takes the companion's current traits + tenets plus a free-form user request
+    ("be more playful and less formal, and never lecture me") and returns a
+    proposed set of trait adjustments and tenet changes. The caller previews
+    the diff and applies via existing update endpoints on confirmation.
+    """
+    import json
+    import time
+
+    start_time = time.time()
+
+    # Trait keys are driven by whatever the caller sends (so we match the modal's
+    # schema rather than the orchestrator's historical PersonalityTraits shape).
+    trait_keys = list(request.current_traits.keys())
+    current_traits_json = json.dumps(request.current_traits, indent=2)
+    tenets_json = json.dumps(
+        [t.model_dump() for t in request.current_tenets], indent=2
+    ) if request.current_tenets else "[]"
+
+    system_prompt = (
+        "You are a personality tuning assistant for an AI companion. The user wants to "
+        "refine their companion's behavior via natural language. Return a precise JSON "
+        "diff describing trait adjustments (0-100 scale) and tenet changes (add / "
+        "modify / remove). Do not restate unchanged state. Be conservative: prefer "
+        "small trait deltas (5-20 points) unless the request clearly implies a large "
+        "shift. Only propose tenet changes when the request implies a durable rule, "
+        "not a one-off preference. Respect these constraints:\n"
+        f"- Valid trait keys: {', '.join(trait_keys)}\n"
+        "- Valid tenet categories: communication, boundaries, engagement, emotional, "
+        "knowledge, autonomy\n"
+        "- Valid tenet priorities: core, situational\n"
+        "- Max 5 core tenets total. Slots remaining: "
+        f"{request.core_tenet_slots_remaining}. If adding a core tenet would exceed "
+        "this, either demote an existing core tenet to situational (via modify) or "
+        "add the new one as situational.\n"
+        "- Tenet rules must be 10-500 chars, written as directives "
+        "(\"Always...\" or \"Never...\").\n"
+        "- When referencing existing tenets to modify/remove, use their exact `id`.\n\n"
+        "Return ONLY valid JSON with this exact shape:\n"
+        "{\n"
+        '  "summary": "one paragraph explaining the overall change",\n'
+        '  "trait_updates": [{"trait": "warmth", "from_value": 50, "to_value": 70, '
+        '"reasoning": "..."}],\n'
+        '  "tenets_to_add": [{"category": "communication", "priority": "core", '
+        '"rule": "Always...", "is_negation": false, "reasoning": "..."}],\n'
+        '  "tenets_to_modify": [{"id": "abc", "new_rule": "...", '
+        '"new_priority": "situational", "reasoning": "..."}],\n'
+        '  "tenets_to_remove": [{"id": "abc", "reasoning": "..."}]\n'
+        "}"
+    )
+
+    archetype_line = f"Archetype: {request.archetype}\n" if request.archetype else ""
+    user_prompt = (
+        f"Companion: {request.companion_name} ({request.pronouns})\n"
+        f"{archetype_line}"
+        f"\nCurrent traits (0-100):\n{current_traits_json}\n"
+        f"\nCurrent tenets:\n{tenets_json}\n"
+        f"\nUser's tuning request:\n{request.user_request}\n"
+        "\nReturn the JSON diff."
+    )
+
+    try:
+        llm_provider = None
+        encryption_key = app_state.settings.provider_key_encryption_secret
+
+        if app_state.routing_config_service:
+            try:
+                model = await app_state.routing_config_service.get_model_for_use_case("chat_simple")
+                if model:
+                    if model.provider == "openai":
+                        openai_api_key = await app_state.routing_config_service.get_provider_api_key("openai", encryption_key)
+                        if openai_api_key:
+                            llm_provider = OpenAIProvider(
+                                app_state.settings,
+                                model_override=model.model_id,
+                                api_key_override=openai_api_key,
+                            )
+                            logger.info("personality_tune_using_openai", model=model.model_id)
+                    elif model.provider == "ollama" and app_state.ollama_provider:
+                        llm_provider = app_state.ollama_provider.with_model(model.model_id)
+                        logger.info("personality_tune_using_ollama", model=model.model_id)
+            except Exception as routing_error:
+                logger.warning("personality_tune_routing_failed", error=str(routing_error))
+
+        if llm_provider is None and app_state.ollama_provider:
+            llm_provider = app_state.ollama_provider
+            logger.info("personality_tune_using_fallback_ollama")
+
+        if llm_provider is None and app_state.routing_config_service:
+            try:
+                openai_api_key = await app_state.routing_config_service.get_provider_api_key("openai", encryption_key)
+                if openai_api_key:
+                    llm_provider = OpenAIProvider(
+                        app_state.settings,
+                        model_override="gpt-4o-mini",
+                        api_key_override=openai_api_key,
+                    )
+                    logger.info("personality_tune_using_fallback_openai")
+            except Exception as e:
+                logger.warning("personality_tune_openai_fallback_failed", error=str(e))
+
+        if llm_provider is None:
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="No LLM provider available for personality tuning",
+            )
+
+        max_retries = 3
+        result: dict[str, Any] | None = None
+        last_response_preview: str | None = None
+
+        for attempt in range(max_retries):
+            try:
+                response = await llm_provider.generate(
+                    messages=[
+                        {"role": "system", "content": system_prompt},
+                        {"role": "user", "content": user_prompt},
+                    ],
+                    max_tokens=1500,
+                    temperature=0.4 - (attempt * 0.1),
+                )
+                last_response_preview = response.content[:200]
+                result = parse_llm_json(response.content)
+                break
+            except (json.JSONDecodeError, ValueError) as e:
+                logger.warning(
+                    "personality_tune_json_parse_retry",
+                    attempt=attempt + 1,
+                    error=str(e),
+                    response_preview=last_response_preview,
+                )
+                if attempt == max_retries - 1:
+                    raise HTTPException(
+                        status_code=status.HTTP_502_BAD_GATEWAY,
+                        detail=f"Personality tune returned invalid JSON after {max_retries} attempts: {str(e)}",
+                    )
+
+        if result is None:
+            raise HTTPException(
+                status_code=status.HTTP_502_BAD_GATEWAY,
+                detail="Personality tune returned no result",
+            )
+
+        # Validate + clamp trait values, drop invalid entries defensively.
+        valid_trait_keys = set(trait_keys)
+        valid_categories = {
+            "communication", "boundaries", "engagement",
+            "emotional", "knowledge", "autonomy",
+        }
+        valid_priorities = {"core", "situational"}
+        existing_ids = {t.id for t in request.current_tenets}
+
+        def clamp(v: int) -> int:
+            return max(0, min(100, int(v)))
+
+        trait_updates: list[TuneTraitUpdate] = []
+        for t in result.get("trait_updates", []) or []:
+            key = t.get("trait")
+            if key not in valid_trait_keys:
+                continue
+            current_value = int(request.current_traits[key])
+            to_value = clamp(t.get("to_value", current_value))
+            if to_value == current_value:
+                continue
+            trait_updates.append(TuneTraitUpdate(
+                trait=key,
+                from_value=current_value,
+                to_value=to_value,
+                reasoning=str(t.get("reasoning", ""))[:300],
+            ))
+
+        tenets_to_add: list[TuneTenetAdd] = []
+        for t in result.get("tenets_to_add", []) or []:
+            cat = t.get("category")
+            pri = t.get("priority")
+            rule = (t.get("rule") or "").strip()
+            if cat not in valid_categories or pri not in valid_priorities:
+                continue
+            if not (10 <= len(rule) <= 500):
+                continue
+            tenets_to_add.append(TuneTenetAdd(
+                category=cat,
+                priority=pri,
+                rule=rule,
+                is_negation=bool(t.get("is_negation", False)),
+                reasoning=str(t.get("reasoning", ""))[:300],
+            ))
+
+        tenets_to_modify: list[TuneTenetModify] = []
+        for t in result.get("tenets_to_modify", []) or []:
+            tenet_id = t.get("id")
+            if tenet_id not in existing_ids:
+                continue
+            new_priority = t.get("new_priority")
+            new_category = t.get("new_category")
+            new_rule = t.get("new_rule")
+            if new_priority is not None and new_priority not in valid_priorities:
+                new_priority = None
+            if new_category is not None and new_category not in valid_categories:
+                new_category = None
+            if new_rule is not None:
+                new_rule = str(new_rule).strip()
+                if not (10 <= len(new_rule) <= 500):
+                    new_rule = None
+            if new_priority is None and new_category is None and new_rule is None:
+                continue
+            tenets_to_modify.append(TuneTenetModify(
+                id=tenet_id,
+                new_rule=new_rule,
+                new_priority=new_priority,
+                new_category=new_category,
+                reasoning=str(t.get("reasoning", ""))[:300],
+            ))
+
+        tenets_to_remove: list[TuneTenetRemove] = []
+        for t in result.get("tenets_to_remove", []) or []:
+            tenet_id = t.get("id")
+            if tenet_id not in existing_ids:
+                continue
+            tenets_to_remove.append(TuneTenetRemove(
+                id=tenet_id,
+                reasoning=str(t.get("reasoning", ""))[:300],
+            ))
+
+        latency_ms = (time.time() - start_time) * 1000
+
+        logger.info(
+            "personality_tune_generated",
+            companion_name=request.companion_name,
+            trait_updates=len(trait_updates),
+            tenets_added=len(tenets_to_add),
+            tenets_modified=len(tenets_to_modify),
+            tenets_removed=len(tenets_to_remove),
+            latency_ms=latency_ms,
+        )
+
+        return TunePersonalityResponse(
+            summary=str(result.get("summary", ""))[:1000],
+            trait_updates=trait_updates,
+            tenets_to_add=tenets_to_add,
+            tenets_to_modify=tenets_to_modify,
+            tenets_to_remove=tenets_to_remove,
+            latency_ms=latency_ms,
+        )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.exception("personality_tune_failed", error=str(e))
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Personality tune failed: {str(e)}",
         )
 
 

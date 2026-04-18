@@ -428,10 +428,11 @@ export class CampfireWebSocket {
   }
 
   /**
-   * Send a user message
+   * Send a user message (includes user's local timezone for temporal awareness)
    */
   sendMessage(content: string): void {
-    this.send('user_message', { content });
+    const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+    this.send('user_message', { content, timezone });
   }
 
   /**

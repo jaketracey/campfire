@@ -64,7 +64,13 @@ export function formatMessageTime(date: Date): string {
     date.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
 }
 
-// Parse message content into action and dialogue segments
+/** Strip `<message>` / `</message>` XML tags the LLM sometimes wraps responses in. */
+export function stripMessageTags(text: string): string {
+  if (!text) return text;
+  return text.replace(/<\/?message>/gi, '').trim();
+}
+
+// Parse message content into action, dialogue, and image segments
 export function parseMessageSegments(content: string): MessageSegment[] {
   const segments: MessageSegment[] = [];
 
@@ -73,28 +79,55 @@ export function parseMessageSegments(content: string): MessageSegment[] {
     return segments;
   }
 
-  const regex = /\*([^*]+)\*/g;
-  let lastIndex = 0;
-  let match;
+  // Strip <message> tags the LLM sometimes wraps responses in
+  content = stripMessageTags(content);
 
-  while ((match = regex.exec(content)) !== null) {
-    // Add dialogue before the action (if any)
-    if (match.index > lastIndex) {
-      const dialogue = content.slice(lastIndex, match.index).trim();
+  // First pass: split out markdown images ![alt](url)
+  // This regex matches ![any alt text](url) patterns
+  const imageRegex = /!\[([^\]]*)\]\((https?:\/\/[^\s)]+)\)/g;
+  const parts: Array<{ type: 'text' | 'image'; content: string; imageUrl?: string }> = [];
+  let imgLastIndex = 0;
+  let imgMatch;
+
+  while ((imgMatch = imageRegex.exec(content)) !== null) {
+    if (imgMatch.index > imgLastIndex) {
+      parts.push({ type: 'text', content: content.slice(imgLastIndex, imgMatch.index) });
+    }
+    parts.push({ type: 'image', content: imgMatch[1], imageUrl: imgMatch[2] });
+    imgLastIndex = imageRegex.lastIndex;
+  }
+  if (imgLastIndex < content.length) {
+    parts.push({ type: 'text', content: content.slice(imgLastIndex) });
+  }
+
+  // Second pass: parse text parts for *action* segments
+  for (const part of parts) {
+    if (part.type === 'image') {
+      segments.push({ type: 'image', content: part.content, imageUrl: part.imageUrl });
+      continue;
+    }
+
+    const text = part.content;
+    const regex = /\*([^*]+)\*/g;
+    let lastIndex = 0;
+    let match;
+
+    while ((match = regex.exec(text)) !== null) {
+      if (match.index > lastIndex) {
+        const dialogue = text.slice(lastIndex, match.index).trim();
+        if (dialogue) {
+          segments.push({ type: 'dialogue', content: dialogue });
+        }
+      }
+      segments.push({ type: 'action', content: match[1].trim() });
+      lastIndex = regex.lastIndex;
+    }
+
+    if (lastIndex < text.length) {
+      const dialogue = text.slice(lastIndex).trim();
       if (dialogue) {
         segments.push({ type: 'dialogue', content: dialogue });
       }
-    }
-    // Add the action
-    segments.push({ type: 'action', content: match[1].trim() });
-    lastIndex = regex.lastIndex;
-  }
-
-  // Add remaining dialogue after the last action
-  if (lastIndex < content.length) {
-    const dialogue = content.slice(lastIndex).trim();
-    if (dialogue) {
-      segments.push({ type: 'dialogue', content: dialogue });
     }
   }
 

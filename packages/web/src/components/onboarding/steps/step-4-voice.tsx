@@ -7,20 +7,7 @@ import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Play, Pause, ArrowRight, Loader2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
-
-// ElevenLabs voices for companion creation
-const voices: VoiceOption[] = [
-  { id: 'EXAVITQu4vr4xnSDxMaL', name: 'Sarah', description: 'Soft, warm, and naturally alluring.', sampleUrl: '', gender: 'feminine' },
-  { id: 'FGY2WhTYpPnrIDTdsKH5', name: 'Laura', description: 'Calm, soothing, with a hint of playfulness.', sampleUrl: '', gender: 'feminine' },
-  { id: 'XB0fDUnXU5powFXDhCwa', name: 'Charlotte', description: 'Elegant, seductive, and confident.', sampleUrl: '', gender: 'feminine' },
-  { id: 'pFZP5JQG7iQjIQuC4Bku', name: 'Lily', description: 'Sweet, youthful, and energetic.', sampleUrl: '', gender: 'feminine' },
-  { id: 'cgSgspJ2msm6clMCkdW9', name: 'Jessica', description: 'Expressive, friendly, and engaging.', sampleUrl: '', gender: 'feminine' },
-  { id: 'onwK4e9ZLuTAKqWW03F9', name: 'Daniel', description: 'Deep, resonant, and authoritative.', sampleUrl: '', gender: 'masculine' },
-  { id: 'cjVigY5qzO86Huf0OWal', name: 'Eric', description: 'Smooth, charming, and sophisticated.', sampleUrl: '', gender: 'masculine' },
-  { id: 'N2lVS1w4EtoT3dr4eOWO', name: 'Callum', description: 'Warm, intimate, and captivating.', sampleUrl: '', gender: 'masculine' },
-  { id: 'IKne3meq5aSn9XLyUdCD', name: 'Charlie', description: 'Friendly, playful, and inviting.', sampleUrl: '', gender: 'neutral' },
-  { id: 'JBFqnCBsd6RMkjVDRZzb', name: 'George', description: 'Rich, thoughtful, and comforting.', sampleUrl: '', gender: 'masculine' },
-];
+import { fetchVoices } from '@/lib/api';
 
 // Build the voice sample URL with customization params
 function getVoiceSampleUrl(voiceId: string): string {
@@ -39,9 +26,19 @@ function getVoiceSampleUrl(voiceId: string): string {
 
 export function Step4Voice() {
   const { voice, setVoice, nextStep } = useOnboardingStore();
+  const [voices, setVoices] = useState<VoiceOption[]>([]);
+  const [isLoadingVoices, setIsLoadingVoices] = useState(true);
   const [playingId, setPlayingId] = useState<string | null>(null);
   const [loadingId, setLoadingId] = useState<string | null>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
+
+  // Fetch voices from API
+  useEffect(() => {
+    fetchVoices()
+      .then(setVoices)
+      .catch((err) => console.error('Failed to fetch voices:', err))
+      .finally(() => setIsLoadingVoices(false));
+  }, []);
 
   // Cleanup audio on unmount
   useEffect(() => {
@@ -111,7 +108,13 @@ export function Step4Voice() {
         <p className="text-gray-400 max-w-md mx-auto">Select the voice that best fits your companion's essence.</p>
       </div>
 
-      <div className="grid grid-cols-1 gap-4">
+      <div className="grid grid-cols-1 gap-4 max-h-[60vh] overflow-y-auto pr-1">
+        {isLoadingVoices ? (
+          <div className="flex items-center justify-center py-12">
+            <Loader2 className="h-8 w-8 animate-spin text-vibes-cyan" />
+            <span className="ml-3 text-gray-400">Loading voices...</span>
+          </div>
+        ) : null}
         {voices.map((v) => (
           <motion.div
             key={v.id}

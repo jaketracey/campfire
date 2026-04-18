@@ -8,6 +8,7 @@
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { cn } from '@/lib/utils';
 import type { GroupParticipant } from '@/lib/ws/client';
+import { stripMessageTags } from '@/app/chat/[sessionId]/utils';
 import { motion } from 'framer-motion';
 
 interface GroupMessageBubbleProps {
@@ -103,7 +104,7 @@ export function GroupMessageBubble({
           }}
         >
           <p className="whitespace-pre-wrap break-words leading-relaxed">
-            {content}
+            {stripMessageTags(content)}
             {isStreaming && (
               <motion.span
                 initial={{ opacity: 0 }}

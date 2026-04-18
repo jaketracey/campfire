@@ -18,70 +18,88 @@ const ELEVENLABS_TTS_MODEL = env.ELEVENLABS_TTS_MODEL || 'eleven_turbo_v2_5';
 // Flirty sample text for voice previews
 const SAMPLE_TEXT = "Hey there... I've been thinking about you. Want to come a little closer and tell me what's on your mind?";
 
-// Curated list of ElevenLabs voices suitable for companions
-// These are pre-selected voices from ElevenLabs library
-const AVAILABLE_VOICES = [
-  {
-    id: 'EXAVITQu4vr4xnSDxMaL',
-    name: 'Sarah',
-    description: 'Soft, warm, and naturally alluring.',
-    gender: 'feminine' as const,
-  },
-  {
-    id: 'FGY2WhTYpPnrIDTdsKH5',
-    name: 'Laura',
-    description: 'Calm, soothing, with a hint of playfulness.',
-    gender: 'feminine' as const,
-  },
-  {
-    id: 'XB0fDUnXU5powFXDhCwa',
-    name: 'Charlotte',
-    description: 'Elegant, seductive, and confident.',
-    gender: 'feminine' as const,
-  },
-  {
-    id: 'pFZP5JQG7iQjIQuC4Bku',
-    name: 'Lily',
-    description: 'Sweet, youthful, and energetic.',
-    gender: 'feminine' as const,
-  },
-  {
-    id: 'cgSgspJ2msm6clMCkdW9',
-    name: 'Jessica',
-    description: 'Expressive, friendly, and engaging.',
-    gender: 'feminine' as const,
-  },
-  {
-    id: 'onwK4e9ZLuTAKqWW03F9',
-    name: 'Daniel',
-    description: 'Deep, resonant, and authoritative.',
-    gender: 'masculine' as const,
-  },
-  {
-    id: 'cjVigY5qzO86Huf0OWal',
-    name: 'Eric',
-    description: 'Smooth, charming, and sophisticated.',
-    gender: 'masculine' as const,
-  },
-  {
-    id: 'N2lVS1w4EtoT3dr4eOWO',
-    name: 'Callum',
-    description: 'Warm, intimate, and captivating.',
-    gender: 'masculine' as const,
-  },
-  {
-    id: 'IKne3meq5aSn9XLyUdCD',
-    name: 'Charlie',
-    description: 'Friendly, playful, and inviting.',
-    gender: 'neutral' as const,
-  },
-  {
-    id: 'JBFqnCBsd6RMkjVDRZzb',
-    name: 'George',
-    description: 'Rich, thoughtful, and comforting.',
-    gender: 'masculine' as const,
-  },
-];
+// Voice type returned by our API
+interface Voice {
+  id: string;
+  name: string;
+  description: string;
+  gender: 'feminine' | 'masculine' | 'neutral';
+  accent: string;
+  age: string;
+  useCase: string;
+  category: string;
+  previewUrl: string | null;
+}
+
+// Cached voices from ElevenLabs API
+let cachedVoices: Voice[] | null = null;
+let cacheExpiry = 0;
+const CACHE_TTL_MS = 60 * 60 * 1000; // 1 hour
+
+/**
+ * Fetch all available voices from ElevenLabs API with caching
+ */
+async function getAvailableVoices(): Promise<Voice[]> {
+  if (cachedVoices && Date.now() < cacheExpiry) {
+    return cachedVoices;
+  }
+
+  if (!ELEVENLABS_API_KEY) {
+    return [];
+  }
+
+  try {
+    const response = await fetch('https://api.elevenlabs.io/v1/voices', {
+      headers: { 'xi-api-key': ELEVENLABS_API_KEY },
+    });
+
+    if (!response.ok) {
+      logger.error({ status: response.status }, 'Failed to fetch ElevenLabs voices');
+      return cachedVoices || [];
+    }
+
+    const data = (await response.json()) as {
+      voices: Array<{
+        voice_id: string;
+        name: string;
+        category: string;
+        labels: Record<string, string>;
+        preview_url: string | null;
+      }>;
+    };
+
+    cachedVoices = data.voices.map((v) => {
+      const labels = v.labels || {};
+      const genderLabel = (labels.gender || '').toLowerCase();
+      const gender: Voice['gender'] =
+        genderLabel === 'female' ? 'feminine' : genderLabel === 'male' ? 'masculine' : 'neutral';
+
+      const descParts = [labels.description, labels.accent ? `${labels.accent} accent` : ''].filter(Boolean);
+      const description = descParts.length > 0
+        ? descParts.map((p) => p.charAt(0).toUpperCase() + p.slice(1)).join(', ')
+        : v.category;
+
+      return {
+        id: v.voice_id,
+        name: v.name,
+        description,
+        gender,
+        accent: labels.accent || '',
+        age: labels.age || '',
+        useCase: labels.use_case || '',
+        category: v.category,
+        previewUrl: v.preview_url || null,
+      };
+    });
+
+    cacheExpiry = Date.now() + CACHE_TTL_MS;
+    logger.info({ count: cachedVoices.length }, 'Fetched ElevenLabs voices');
+    return cachedVoices;
+  } catch (error) {
+    logger.error({ err: error }, 'Error fetching ElevenLabs voices');
+    return cachedVoices || [];
+  }
+}
 
 // Request schemas
 const VoiceSampleParamsSchema = z.object({
@@ -109,12 +127,13 @@ export async function voiceRoutes(app: FastifyInstance): Promise<void> {
    */
   app.get('/list', async (_request: FastifyRequest, reply: FastifyReply) => {
     try {
-      return reply.send({
-        success: true,
-        data: {
-          voices: AVAILABLE_VOICES,
-        },
-      });
+      const voices = await getAvailableVoices();
+      return reply
+        .header('Cache-Control', 'public, max-age=3600')
+        .send({
+          success: true,
+          data: { voices },
+        });
     } catch (error) {
       logger.error({ err: error }, 'Failed to get voice list');
       throw error;
@@ -163,19 +182,6 @@ export async function voiceRoutes(app: FastifyInstance): Promise<void> {
     const { voiceId } = paramsResult.data;
     const { stability, similarityBoost, style, speed, speakerBoost, text } = queryResult.data;
 
-    // Verify the voice is in our curated list
-    const voice = AVAILABLE_VOICES.find((v) => v.id === voiceId);
-    if (!voice) {
-      return reply.status(404).send({
-        success: false,
-        error: {
-          code: 'VOICE_NOT_FOUND',
-          message: 'Voice not found in available voices',
-          timestamp: new Date().toISOString(),
-        },
-      });
-    }
-
     if (!ELEVENLABS_API_KEY) {
       return reply.status(503).send({
         success: false,
@@ -193,7 +199,6 @@ export async function voiceRoutes(app: FastifyInstance): Promise<void> {
       logger.info(
         {
           voiceId,
-          voiceName: voice.name,
           settings: { stability, similarityBoost, style, speed, speakerBoost },
           textLength: sampleText.length,
         },
@@ -238,7 +243,7 @@ export async function voiceRoutes(app: FastifyInstance): Promise<void> {
 
       const audioBuffer = await response.arrayBuffer();
 
-      logger.info({ voiceId, voiceName: voice.name, bytes: audioBuffer.byteLength }, 'Voice sample generated');
+      logger.info({ voiceId, bytes: audioBuffer.byteLength }, 'Voice sample generated');
 
       // Return audio as MP3
       return reply

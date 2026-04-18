@@ -112,6 +112,77 @@ export function CompanionAvatar({
   const inFlightControllerRef = useRef<AbortController | null>(null);
   const transitionTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  // Gallery cycling: fetch anchor images and rotate every 10 seconds
+  const [galleryUrls, setGalleryUrls] = useState<string[]>([]);
+  const [galleryCycleIndex, setGalleryCycleIndex] = useState(0);
+  const galleryCycleRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  // Fetch gallery images for cycling
+  useEffect(() => {
+    if (!sessionId || !companionId) return;
+    let cancelled = false;
+
+    async function fetchGallery() {
+      try {
+        const { getSessionGallery } = await import('@/lib/api/imagegen');
+        const gallery = await getSessionGallery(sessionId!, 20);
+        if (!cancelled && gallery.images && gallery.images.length > 1) {
+          // Use anchor images (those with session_id starting with "anchors-")
+          const anchorImages = gallery.images.filter(
+            (img) => img.session_id?.startsWith('anchors-')
+          );
+          if (anchorImages.length > 1) {
+            setGalleryUrls(anchorImages.map((img) => img.s3_url));
+          }
+        }
+      } catch {
+        // Non-critical — just won't cycle
+      }
+    }
+
+    // Delay fetch slightly to not compete with initial page load
+    const timer = setTimeout(fetchGallery, 3000);
+    return () => { cancelled = true; clearTimeout(timer); };
+  }, [sessionId, companionId]);
+
+  // Auto-cycle through gallery images every 10 seconds
+  useEffect(() => {
+    if (galleryUrls.length < 2) return;
+    // Don't cycle if a new image was just generated
+    if (lastGenerationTriggerRef.current > 0) return;
+
+    galleryCycleRef.current = setInterval(() => {
+      setGalleryCycleIndex((prev) => (prev + 1) % galleryUrls.length);
+    }, 10000);
+
+    return () => {
+      if (galleryCycleRef.current) clearInterval(galleryCycleRef.current);
+    };
+  }, [galleryUrls.length]);
+
+  // Apply gallery cycle — preload next image, then crossfade
+  useEffect(() => {
+    if (galleryUrls.length < 2 || lastGenerationTriggerRef.current > 0) return;
+    const url = galleryUrls[galleryCycleIndex];
+    if (!url || url === currentImageUrl) return;
+
+    // Preload the image first to avoid blank flash
+    const img = new Image();
+    img.onload = () => {
+      // Image is cached by browser now — safe to transition
+      setNextImageUrl(url);
+      setIsTransitioning(true);
+      // After the fade-in completes, swap layers
+      transitionTimeoutRef.current = setTimeout(() => {
+        setCurrentImageUrl(url);
+        setNextImageUrl(null);
+        setIsTransitioning(false);
+        transitionTimeoutRef.current = null;
+      }, 1200); // Match the transition duration below
+    };
+    img.src = url;
+  }, [galleryCycleIndex, galleryUrls, currentImageUrl]);
+
   // Sync anchor image when prop changes (e.g., when companion data loads)
   useEffect(() => {
     if (optimalAnchorUrl) {
@@ -285,6 +356,9 @@ export function CompanionAvatar({
       if (transitionTimeoutRef.current) {
         clearTimeout(transitionTimeoutRef.current);
       }
+      if (galleryCycleRef.current) {
+        clearInterval(galleryCycleRef.current);
+      }
     };
   }, []);
 
@@ -317,33 +391,28 @@ export function CompanionAvatar({
         </div>
       )}
 
-      {/* Current image - always visible, opacity controlled by isTransitioning */}
+      {/* Current image — stays at full opacity as the base layer */}
       {currentImageUrl && (
-        <motion.img
-          key="current-image"
+        <img
+          key={currentImageUrl}
           src={currentImageUrl}
           alt="Companion Avatar"
           className="absolute inset-0 h-full w-full object-cover"
-          animate={{ opacity: isTransitioning ? 0 : 1 }}
-          transition={{ duration: 0.5, ease: 'easeInOut' }}
         />
       )}
 
-      {/* Next image (for crossfade) - fades in on top, then becomes current */}
-      <AnimatePresence>
-        {nextImageUrl && isTransitioning && (
-          <motion.img
-            key={nextImageUrl}
-            src={nextImageUrl}
-            alt="Companion Avatar (transitioning)"
-            className="absolute inset-0 h-full w-full object-cover"
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            transition={{ duration: 0.5, ease: 'easeInOut' }}
-          />
-        )}
-      </AnimatePresence>
+      {/* Next image — fades in smoothly on top of current, then becomes current */}
+      {nextImageUrl && isTransitioning && (
+        <motion.img
+          key={nextImageUrl}
+          src={nextImageUrl}
+          alt="Companion Avatar"
+          className="absolute inset-0 h-full w-full object-cover"
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          transition={{ duration: 1.0, ease: 'easeInOut' }}
+        />
+      )}
 
       {/* Loading overlay for regeneration */}
       <AnimatePresence>

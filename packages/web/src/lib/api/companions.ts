@@ -14,7 +14,7 @@ export type FemaleBodyType = 'slim' | 'athletic' | 'curvy' | 'plus-size';
 export type MaleBodyType = 'slim' | 'athletic' | 'muscular' | 'dad-bod';
 export type AppearanceBodyType = FemaleBodyType | MaleBodyType;
 export type AppearanceHairColor = 'black' | 'brown' | 'blonde' | 'red' | 'fantasy';
-export type SizeCategory = 'S' | 'M' | 'L';
+export type SizeCategory = 'S' | 'M' | 'L' | 'XL';
 
 interface BaseAppearance {
   ethnicity: AppearanceEthnicity;
@@ -262,6 +262,49 @@ export function updateCompanionPersonality(
         traits,
       },
     },
+  });
+}
+
+// Conversational personality tuning
+export interface PersonalityTuneDiff {
+  summary: string;
+  traitUpdates: Array<{
+    trait: string;
+    fromValue: number;
+    toValue: number;
+    reasoning: string;
+  }>;
+  tenetsToAdd: Array<{
+    category: string;
+    priority: string;
+    rule: string;
+    isNegation: boolean;
+    reasoning: string;
+  }>;
+  tenetsToModify: Array<{
+    id: string;
+    newRule: string | null;
+    newPriority: string | null;
+    newCategory: string | null;
+    reasoning: string;
+  }>;
+  tenetsToRemove: Array<{
+    id: string;
+    reasoning: string;
+  }>;
+  latencyMs: number;
+}
+
+/**
+ * Ask the orchestrator to translate a natural-language request into a structured
+ * personality diff. Caller previews the diff and applies via existing APIs.
+ */
+export function suggestPersonalityTuning(
+  companionId: string,
+  request: string,
+): Promise<PersonalityTuneDiff> {
+  return post<PersonalityTuneDiff>(`/companions/${companionId}/personality/tune`, {
+    request,
   });
 }
 

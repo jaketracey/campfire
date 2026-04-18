@@ -1460,7 +1460,17 @@ async function handleUserMessage(
     const configuredAllowedTools = extractConfiguredAllowedTools(
       spec as unknown as Record<string, unknown> | null | undefined
     );
-    const allowedToolsList = normalizeToolNames(configuredAllowedTools);
+    // Default: all companions get all tools when none are explicitly configured
+    const DEFAULT_TOOLS = [
+      'memory_read', 'memory_write', 'memory_update', 'memory_delete',
+      'kg_propose', 'image_analysis', 'image_generation', 'video_generation',
+      'vault_projection', 'gift_generate', 'gift_acknowledge',
+      'game_start', 'game_move', 'game_state', 'game_resign',
+      'invite_friend', 'dismiss_friend', 'web_search', 'relationship_analytics',
+    ];
+    const allowedToolsList = configuredAllowedTools.length > 0
+      ? normalizeToolNames(configuredAllowedTools)
+      : normalizeToolNames(DEFAULT_TOOLS);
     const hasImageGenerationTool = allowedToolsList.includes('image_generation');
     const canGenerateImagePrompts = visualIntent.shouldGenerateImage && !hasImageGenerationTool;
 
@@ -2049,6 +2059,19 @@ async function handleUserMessage(
         costUsd: estimatedCostUsd,
       }
     );
+
+    // Fallback: extract image URLs from response text (e.g. markdown ![...](url))
+    // This catches cases where the LLM embeds the FAL URL directly in its response
+    if (!generatedImageUrl && fullContent) {
+      const markdownImageMatch = fullContent.match(/!\[.*?\]\((https?:\/\/[^\s)]+)\)/);
+      if (markdownImageMatch) {
+        generatedImageUrl = markdownImageMatch[1];
+        logger.info(
+          { sessionId, turnId: turn.id, imageUrl: generatedImageUrl?.slice(0, 80) },
+          'Extracted image URL from response text (markdown)'
+        );
+      }
+    }
 
     void persistImageGenerationToGallery({
       userId,

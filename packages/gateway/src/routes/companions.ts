@@ -10,6 +10,7 @@ import { requireAuth } from '../middleware/auth.js';
 import { getCompanionsRepository } from '../repositories/companions.js';
 import { getSessionsRepository } from '../repositories/sessions.js';
 import { getKnowledgeGraphRepository } from '../repositories/knowledge-graph.js';
+import { getTenetsService } from '../services/tenets.js';
 import { db } from '../db/index.js';
 import { logger } from '../observability/logger.js';
 import type { CompanionSpec } from '../db/types.js';
@@ -1355,6 +1356,143 @@ export async function companionsRoutes(app: FastifyInstance): Promise<void> {
       logger.error({ error }, 'Failed to generate random identity');
       return reply.status(500).send({
         error: 'Failed to generate identity',
+        message: error instanceof Error ? error.message : 'Unknown error',
+      });
+    }
+  });
+
+  /**
+   * POST /:companionId/personality/tune
+   * Conversational personality tuning: takes a natural-language request and
+   * returns a structured diff (trait deltas + tenet add/modify/remove) for the
+   * client to preview and apply. Does NOT mutate state.
+   */
+  app.post<{
+    Params: { companionId: string };
+    Body: { request: string };
+  }>('/:companionId/personality/tune', { preHandler: requireAuth }, async (request, reply) => {
+    const { companionId } = request.params;
+    const userId = request.user!.userId;
+
+    const bodySchema = z.object({
+      request: z.string().min(3).max(1000),
+    });
+    const parseResult = bodySchema.safeParse(request.body);
+    if (!parseResult.success) {
+      return reply.status(400).send({
+        error: 'Validation Error',
+        details: parseResult.error.issues,
+      });
+    }
+
+    const companionRepo = getCompanionsRepository();
+    const companion = await companionRepo.findById(companionId);
+    if (!companion) {
+      return reply.status(404).send({ error: 'Not Found', message: 'Companion not found' });
+    }
+    if (companion.user_id !== userId) {
+      return reply.status(403).send({ error: 'Forbidden', message: 'Not your companion' });
+    }
+
+    // Current traits: stored 0-1 in spec.personality.traits, we send 0-100 to orchestrator.
+    const specTraits = (companion.spec?.personality?.traits ?? {}) as Record<string, number>;
+    const TRAIT_KEYS = [
+      'warmth', 'energy', 'humor', 'formality', 'assertiveness',
+      'openness', 'empathy', 'spontaneity', 'optimism', 'directness',
+    ] as const;
+    const currentTraits: Record<string, number> = {};
+    for (const key of TRAIT_KEYS) {
+      const raw = specTraits[key] ?? (key === 'humor' ? specTraits.playfulness : undefined) ?? 0.5;
+      currentTraits[key] = Math.round(raw * 100);
+    }
+
+    const tenetsService = getTenetsService();
+    const tenets = await tenetsService.list(userId, companionId);
+    const coreCount = tenets.filter((t) => t.priority === 'core').length;
+    const coreSlotsRemaining = Math.max(0, 5 - coreCount);
+
+    try {
+      const orchestratorResponse = await fetch(`${ORCHESTRATOR_URL}/personality/tune`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          companion_name: companion.name,
+          pronouns: companion.spec?.identity?.pronouns || 'they/them',
+          archetype: companion.spec?.personality?.archetype,
+          current_traits: currentTraits,
+          current_tenets: tenets.map((t) => ({
+            id: t.id,
+            category: t.category,
+            priority: t.priority,
+            rule: t.rule,
+            is_negation: t.isNegation,
+          })),
+          user_request: parseResult.data.request,
+          core_tenet_slots_remaining: coreSlotsRemaining,
+        }),
+      });
+
+      if (!orchestratorResponse.ok) {
+        const errorText = await orchestratorResponse.text();
+        logger.error({ status: orchestratorResponse.status, error: errorText }, 'Orchestrator personality tune failed');
+        return reply.status(502).send({
+          error: 'Tuning service unavailable',
+          message: 'Please try again in a moment.',
+        });
+      }
+
+      const diff = await orchestratorResponse.json() as {
+        summary: string;
+        trait_updates: Array<{ trait: string; from_value: number; to_value: number; reasoning: string }>;
+        tenets_to_add: Array<{ category: string; priority: string; rule: string; is_negation: boolean; reasoning: string }>;
+        tenets_to_modify: Array<{ id: string; new_rule: string | null; new_priority: string | null; new_category: string | null; reasoning: string }>;
+        tenets_to_remove: Array<{ id: string; reasoning: string }>;
+        latency_ms: number;
+      };
+
+      logger.info({
+        companionId,
+        userId,
+        traitUpdates: diff.trait_updates.length,
+        tenetsAdded: diff.tenets_to_add.length,
+        tenetsModified: diff.tenets_to_modify.length,
+        tenetsRemoved: diff.tenets_to_remove.length,
+        latencyMs: diff.latency_ms,
+      }, 'Personality tune diff generated');
+
+      // Client-friendly camelCase shape
+      return reply.send({
+        summary: diff.summary,
+        traitUpdates: diff.trait_updates.map((t) => ({
+          trait: t.trait,
+          fromValue: t.from_value,
+          toValue: t.to_value,
+          reasoning: t.reasoning,
+        })),
+        tenetsToAdd: diff.tenets_to_add.map((t) => ({
+          category: t.category,
+          priority: t.priority,
+          rule: t.rule,
+          isNegation: t.is_negation,
+          reasoning: t.reasoning,
+        })),
+        tenetsToModify: diff.tenets_to_modify.map((t) => ({
+          id: t.id,
+          newRule: t.new_rule,
+          newPriority: t.new_priority,
+          newCategory: t.new_category,
+          reasoning: t.reasoning,
+        })),
+        tenetsToRemove: diff.tenets_to_remove.map((t) => ({
+          id: t.id,
+          reasoning: t.reasoning,
+        })),
+        latencyMs: diff.latency_ms,
+      });
+    } catch (error) {
+      logger.error({ error, companionId }, 'Personality tune failed');
+      return reply.status(500).send({
+        error: 'Tune failed',
         message: error instanceof Error ? error.message : 'Unknown error',
       });
     }

@@ -14,6 +14,7 @@ export * from './affiliates';
 export * from './videos';
 export * from './media';
 export * from './prompt-templates';
+export * from './voices';
 export {
   type UseCaseType,
   USE_CASE_TYPES,

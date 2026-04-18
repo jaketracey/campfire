@@ -48,6 +48,10 @@ export interface VoiceOption {
   description: string;
   sampleUrl: string;
   gender: 'masculine' | 'feminine' | 'neutral';
+  previewUrl?: string | null;
+  accent?: string;
+  age?: string;
+  category?: string;
 }
 
 // ============================================================================
@@ -71,7 +75,7 @@ export type AppearanceBodyType = FemaleBodyType | MaleBodyType;
 
 export type AppearanceHairColor = 'black' | 'brown' | 'blonde' | 'red' | 'fantasy';
 
-export type SizeCategory = 'S' | 'M' | 'L';
+export type SizeCategory = 'S' | 'M' | 'L' | 'XL';
 
 /**
  * Base appearance fields shared by both genders

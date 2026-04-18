@@ -815,6 +815,18 @@ TOOLS:
       if (generatedImageUrl) {
         setCurrentAvatarUrl(generatedImageUrl);
         setImageTurnId(turnId);
+        // Add generated image as a separate chat bubble
+        setMessages((prev) => [
+          ...prev,
+          {
+            id: `${messageId}-image`,
+            role: 'assistant',
+            content: '',
+            imageUrl: generatedImageUrl,
+            timestamp: new Date(),
+            isNew: true,
+          },
+        ]);
       } else {
         const shouldTriggerImage = Boolean(shouldGenerateImage)
           && (imageIntentConfidence ?? 0) >= IMAGE_INTENT_THRESHOLD;

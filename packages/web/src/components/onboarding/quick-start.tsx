@@ -72,7 +72,7 @@ const availableVoices: VoiceOption[] = [
 ];
 
 // Type for generated companion data
-type SizeCategory = 'S' | 'M' | 'L';
+type SizeCategory = 'S' | 'M' | 'L' | 'XL';
 type FemaleBodyType = 'slim' | 'athletic' | 'curvy' | 'plus-size';
 type MaleBodyType = 'slim' | 'athletic' | 'muscular' | 'dad-bod';
 type Ethnicity = 'east-asian' | 'south-asian' | 'black' | 'caucasian' | 'latina' | 'middle-eastern' | 'mixed';
@@ -212,7 +212,7 @@ function generateLocalRandomCompanion(): GeneratedCompanionData {
   const femaleBodyTypes: FemaleBodyType[] = ['slim', 'athletic', 'curvy', 'plus-size'];
   const maleBodyTypes: MaleBodyType[] = ['slim', 'athletic', 'muscular', 'dad-bod'];
   const hairColors: HairColor[] = ['black', 'brown', 'blonde', 'red', 'fantasy'];
-  const sizeCategories: SizeCategory[] = ['S', 'M', 'L'];
+  const sizeCategories: SizeCategory[] = ['S', 'M', 'L', 'XL'];
 
   const femVoices = availableVoices.filter(v => v.gender === 'feminine');
   const mascVoices = availableVoices.filter(v => v.gender === 'masculine');

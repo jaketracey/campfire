@@ -216,13 +216,41 @@ export function getPresetVoice(preset: VibePreset, pronouns: string): string {
 }
 
 /**
- * Get the appearance defaults for a preset given the user's pronoun choice.
- * "they/them" defaults to the feminine appearance.
+ * Get a randomized appearance for a preset given the user's pronoun choice.
+ * Uses the preset's defaults as a base but randomizes body type, breast size,
+ * ethnicity, and hair color for real variety in generated companions.
  */
 export function getPresetAppearance(preset: VibePreset, pronouns: string): CompanionAppearance {
   const key = pronounsToGenderKey(pronouns);
-  if (key === 'neutral') {
-    return preset.defaultAppearance.feminine;
+  const base = key === 'neutral' ? preset.defaultAppearance.feminine : preset.defaultAppearance[key];
+
+  const pick = <T>(arr: T[]): T => arr[Math.floor(Math.random() * arr.length)];
+
+  const ethnicities = ['east-asian', 'south-asian', 'black', 'caucasian', 'latina', 'middle-eastern', 'mixed'] as const;
+  const hairColors = ['black', 'brown', 'blonde', 'red'] as const;
+
+  const randomEthnicity = pick([...ethnicities]);
+  const randomHair = pick([...hairColors]);
+
+  if (base.gender === 'male') {
+    const bodyTypes = ['slim', 'athletic', 'muscular', 'dad-bod'] as const;
+    const builds = ['S', 'M', 'L'] as const;
+    return {
+      ...base,
+      ethnicity: randomEthnicity,
+      hairColor: randomHair,
+      bodyType: pick([...bodyTypes]),
+      build: pick([...builds]),
+    };
   }
-  return preset.defaultAppearance[key];
+
+  const bodyTypes = ['slim', 'athletic', 'curvy', 'plus-size'] as const;
+  const breastSizes = ['S', 'M', 'L', 'XL'] as const;
+  return {
+    ...base,
+    ethnicity: randomEthnicity,
+    hairColor: randomHair,
+    bodyType: pick([...bodyTypes]),
+    breastSize: pick([...breastSizes]),
+  };
 }
