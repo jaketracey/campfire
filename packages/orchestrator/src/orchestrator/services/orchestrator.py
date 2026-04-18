@@ -1165,11 +1165,13 @@ class ConversationOrchestrator:
 
         # Try DB routing first — respects configured model preferences
         use_case = "chat_complex" if companion_spec.allowed_tools else "chat_simple"
-        db_model = await self.model_router.route_by_use_case(
+        db_route = await self.model_router.route_by_use_case(
             use_case=use_case,
             companion_id=companion_spec.id if hasattr(companion_spec, "id") else None,
         )
-        if db_model:
+        if db_route:
+            # route_by_use_case returns UseCaseRoutingResult — unwrap to ModelSpec.
+            db_model_spec = db_route.model_spec
             # Still need intent detection for safety gating
             routing_decision = await self.model_router.route(
                 user_message=user_message,
@@ -1179,9 +1181,9 @@ class ConversationOrchestrator:
             if routing_decision and not routing_decision.content_blocked:
                 # Override the capability-selected model with the DB-routed one
                 routing_decision = RoutingDecision(
-                    model_spec=db_model,
+                    model_spec=db_model_spec,
                     intent_result=routing_decision.intent_result,
-                    routing_reason=f"DB routing: {use_case} → {db_model.model_id}",
+                    routing_reason=f"DB routing: {use_case} → {db_model_spec.model_id}",
                     fallback_used=False,
                     content_blocked=False,
                 )
