@@ -177,29 +177,32 @@ jobs:
           echo 'Environment secrets updated'
           "
 
-      - name: Pull images and deploy
+      - name: Write remote deploy script
         run: |
-          ssh -i ~/.ssh/deploy_key ${{ env.DEPLOY_USER }}@${{ env.DEPLOY_HOST }} << 'ENDSSH'
-          set -e
+          # We write the deploy body to a local file then scp it, instead of
+          # inlining it in an ssh heredoc. The heredoc form was dropping the
+          # ssh session mid-execution (likely an OOM or idle policy on the
+          # t4g.small), making the workflow report success while most of the
+          # restart steps never ran.
+          cat > /tmp/remote-deploy.sh <<'REMOTE'
+          #!/bin/bash
+          set -euo pipefail
           cd /opt/campfire/infra/docker
-
-          # Source env file so all variables (ECR_REGISTRY, CAMPFIRE_IMAGE_TAG, etc.)
-          # are available to docker compose and subsequent commands
           set -a && source /opt/campfire/.env.stealth && set +a
 
           echo "=== Logging into ECR ==="
-          aws ecr get-login-password --region us-east-1 | docker login --username AWS --password-stdin 932630290000.dkr.ecr.us-east-1.amazonaws.com
+          aws ecr get-login-password --region us-east-1 \
+            | docker login --username AWS --password-stdin 932630290000.dkr.ecr.us-east-1.amazonaws.com
 
           # Server has only 50GB disk — prune BEFORE pulling to avoid "no space left on device"
           echo "=== Pruning old images to free disk space ==="
-          docker image prune -af --filter "until=24h"
-          # Also remove dangling build cache
+          docker image prune -af --filter "until=24h" || true
           docker builder prune -f --keep-storage=2GB 2>/dev/null || true
           df -h / | tail -1
 
+          DC="docker compose -f docker-compose.stealth.yml --env-file /opt/campfire/.env.stealth"
+
           echo "=== Pulling latest images ==="
-          ENV="--env-file /opt/campfire/.env.stealth"
-          DC="docker compose -f docker-compose.stealth.yml $ENV"
           $DC pull gateway web workers orchestrator nginx
 
           echo "=== Ensuring infra is up ==="
@@ -247,13 +250,60 @@ jobs:
           $DC stop nginx && $DC rm -f nginx && $DC up -d nginx
           sleep 5
 
-          # Clean up images that are no longer referenced by any container
           echo "=== Post-deploy cleanup ==="
           docker image prune -f
 
           echo "=== Deployment complete ==="
           $DC ps
-          ENDSSH
+          REMOTE
+          chmod +x /tmp/remote-deploy.sh
+
+      - name: Upload and run deploy script (detached)
+        run: |
+          # Copy the script and then run it detached from the ssh session so an
+          # ssh drop can't abort the deploy. Log goes to a file we tail back.
+          scp -i ~/.ssh/deploy_key -o StrictHostKeyChecking=accept-new \
+            /tmp/remote-deploy.sh \
+            ${{ env.DEPLOY_USER }}@${{ env.DEPLOY_HOST }}:/tmp/remote-deploy.sh
+
+          ssh -i ~/.ssh/deploy_key ${{ env.DEPLOY_USER }}@${{ env.DEPLOY_HOST }} '
+            set -e
+            chmod +x /tmp/remote-deploy.sh
+            rm -f /tmp/remote-deploy.log /tmp/remote-deploy.exit
+            nohup bash -c "
+              /tmp/remote-deploy.sh; echo \$? > /tmp/remote-deploy.exit
+            " > /tmp/remote-deploy.log 2>&1 &
+            disown
+            echo "deploy started pid=$!"
+          '
+
+      - name: Wait for deploy to finish and stream log
+        run: |
+          # Poll the remote exit file. Stream new log lines between polls so the
+          # GH Actions log mirrors the remote run. Bail out with the remote
+          # script's exit code.
+          ssh -i ~/.ssh/deploy_key ${{ env.DEPLOY_USER }}@${{ env.DEPLOY_HOST }} '
+            last=0
+            # Max 25 minutes of waiting; typical deploys are 3-5 min.
+            for attempt in $(seq 1 150); do
+              if [ -f /tmp/remote-deploy.log ]; then
+                total=$(wc -l < /tmp/remote-deploy.log)
+                if [ "$total" -gt "$last" ]; then
+                  tail -n +$((last + 1)) /tmp/remote-deploy.log
+                  last=$total
+                fi
+              fi
+              if [ -f /tmp/remote-deploy.exit ]; then
+                code=$(cat /tmp/remote-deploy.exit)
+                echo "--- remote deploy finished with exit $code ---"
+                exit "$code"
+              fi
+              sleep 10
+            done
+            echo "::error::Deploy did not finish within 25 minutes"
+            tail -n 200 /tmp/remote-deploy.log || true
+            exit 1
+          '
 
       - name: Health check
         run: |

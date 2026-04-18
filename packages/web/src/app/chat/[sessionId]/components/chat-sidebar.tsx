@@ -587,7 +587,7 @@ function CompanionMenu({
         aria-haspopup="menu"
         aria-expanded={isOpen}
         whileTap={{ scale: 0.97 }}
-        className={`relative w-full flex items-center justify-center gap-3 px-5 py-4 rounded-md border text-base font-medium
+        className={`relative w-full flex items-center justify-center gap-3 px-5 py-4 rounded-xl border text-base font-medium
           transition-all duration-300 overflow-hidden
           ${isOpen
             ? 'border-white/20 bg-background text-foreground shadow-[0_0_30px_-10px_rgba(255,255,255,0.35)]'
@@ -597,7 +597,7 @@ function CompanionMenu({
         {/* Soft multi-color aura — hints at the colorful items inside */}
         <span
           aria-hidden
-          className={`pointer-events-none absolute inset-0 rounded-md bg-[linear-gradient(90deg,rgba(245,158,11,0.22),rgba(6,182,212,0.22),rgba(244,63,94,0.22),rgba(168,85,247,0.22))] transition-opacity duration-500 ${
+          className={`pointer-events-none absolute inset-0 rounded-xl bg-[linear-gradient(90deg,rgba(245,158,11,0.22),rgba(6,182,212,0.22),rgba(244,63,94,0.22),rgba(168,85,247,0.22))] transition-opacity duration-500 ${
             isOpen ? 'opacity-0' : 'opacity-[0.18]'
           }`}
         />
