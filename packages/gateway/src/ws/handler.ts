@@ -40,6 +40,14 @@ import {
 import { downloadImage, saveImageMetadata, S3_MEDIA_BUCKET, uploadToS3 } from '../routes/imagegen-helpers.js';
 
 import { uploadWebcamFrame } from '../utils/webcam-storage.js';
+import { gameService } from '../games/service.js';
+import {
+  createWSGameBroadcaster,
+  sendMoveRejected,
+  emitCompanionThinking,
+} from '../games/broadcaster.js';
+import { GameError } from '../games/errors.js';
+import type { GameType } from '@campfire/shared';
 
 // Anonymous user ID prefix - actual ID is generated per-session for tracking
 const ANONYMOUS_USER_ID_PREFIX = 'anon-';
@@ -100,11 +108,19 @@ const WebcamFramePayloadSchema = z.object({
 });
 
 const StartGamePayloadSchema = z.object({
-  gameType: z.string().min(1).max(50),
+  gameType: z.enum(['tic_tac_toe', 'chess', 'connect_four']),
+  companionPlaysFirst: z.boolean().optional(),
+  difficulty: z.enum(['easy', 'medium', 'hard']).optional(),
 });
 
 const UserGameMovePayloadSchema = z.object({
-  move: z.string().min(1).max(100),
+  move: z.string().min(1).max(32),
+  gameId: z.string().uuid().optional(),
+  clientVersion: z.number().int().nonnegative().optional(),
+});
+
+const ResignGamePayloadSchema = z.object({
+  gameId: z.string().uuid().optional(),
 });
 
 const LikeMessagePayloadSchema = z.object({
@@ -518,6 +534,9 @@ export type WSMessageType =
   | 'webcam_enabled'
   | 'webcam_frame'
   | 'game_update'
+  | 'game_move_rejected'
+  | 'game_companion_thinking'
+  | 'game_over'
   | 'user_game_move'
   | 'start_game'
   | 'resign_game'
@@ -635,9 +654,65 @@ const RATE_LIMIT_MAX_MESSAGES = 20; // max 20 messages per second
 const RATE_LIMIT_MAX_BURST = 50; // allow burst up to 50 messages
 
 /**
+ * Return all live WebSocket sockets attached to a given chat session. Used by
+ * the games broadcaster to fan out `game_update` / `game_over` events.
+ */
+function getSocketsForChatSession(chatSessionId: string): WebSocket[] {
+  const out: WebSocket[] = [];
+  for (const c of clients.values()) {
+    if (c.sessionId === chatSessionId && c.ws.readyState === c.ws.OPEN) {
+      out.push(c.ws);
+    }
+  }
+  return out;
+}
+
+/**
+ * Notify the orchestrator that it's the companion's turn in a game. Fire-and-
+ * forget: the orchestrator will apply its move via the internal games API,
+ * which in turn broadcasts a fresh `game_update`. If the orchestrator is
+ * unreachable the failure is logged and the user's own move still stands.
+ */
+async function triggerCompanionTurn(
+  sessionId: string,
+  gameId: string,
+  userId: string,
+  companionId: string,
+): Promise<void> {
+  const url = `${ORCHESTRATOR_URL}/internal/companion-turn`;
+  const body = JSON.stringify({ sessionId, gameId, userId, companionId });
+  try {
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Internal-Service-Key': env.INTERNAL_SERVICE_KEY ?? '',
+      },
+      body,
+    });
+    if (!res.ok) {
+      logger.warn(
+        { sessionId, gameId, status: res.status },
+        'Orchestrator rejected companion-turn trigger',
+      );
+    }
+  } catch (err) {
+    logger.warn(
+      { sessionId, gameId, err: err instanceof Error ? err.message : String(err) },
+      'Failed to trigger companion turn',
+    );
+  }
+}
+
+/**
  * Register WebSocket handler
  */
 export async function registerWebSocketHandler(app: FastifyInstance): Promise<void> {
+  // Wire the games broadcaster to the connected-clients registry. This lets
+  // the gateway's game engine + internal routes (orchestrator moves) emit
+  // `game_update` / `game_over` events without reaching into the socket map.
+  gameService.setBroadcaster(createWSGameBroadcaster(getSocketsForChatSession));
+
   // Start heartbeat checker
   const heartbeatInterval = setInterval(checkHeartbeats, HEARTBEAT_INTERVAL);
 
@@ -882,9 +957,11 @@ async function handleMessage(client: ConnectedClient, message: WSMessage): Promi
       break;
     }
 
-    case 'resign_game':
-      await handleResignGame(client);
+    case 'resign_game': {
+      const payload = validatePayload(ResignGamePayloadSchema, message.payload ?? {}, 'resign_game', client);
+      if (payload) await handleResignGame(client, payload);
       break;
+    }
 
     case 'like_message': {
       const payload = validatePayload(LikeMessagePayloadSchema, message.payload, 'like_message', client);
@@ -2958,82 +3035,164 @@ async function handleVideoCallEnd(client: ConnectedClient): Promise<void> {
 }
 
 /**
- * Handle start game request
- * Creates a game by sending a message to the companion
+ * Start a new game. Server-authoritative: the gateway creates the game and
+ * broadcasts the initial state. If the companion plays first, the gateway
+ * pokes the orchestrator to produce a move.
  */
 async function handleStartGame(
   client: ConnectedClient,
-  payload: { gameType: string }
+  payload: { gameType: GameType; companionPlaysFirst?: boolean; difficulty?: 'easy' | 'medium' | 'hard' },
 ): Promise<void> {
   if (!client.authenticated || !client.user) {
     sendError(client, 'Authentication required');
     return;
   }
-
   if (!client.sessionId || !client.companionId) {
     sendError(client, 'No active session');
     return;
   }
 
-  logger.info(
-    { clientId: client.id, sessionId: client.sessionId, gameType: payload.gameType },
-    'Starting game via user message'
-  );
+  try {
+    const result = await gameService.startGame({
+      chatSessionId: client.sessionId,
+      userId: client.user.userId,
+      companionId: client.companionId,
+      gameType: payload.gameType,
+      companionPlaysFirst: payload.companionPlaysFirst ?? false,
+      difficulty: payload.difficulty,
+    });
 
-  // Send as a user message which will trigger the companion to use game_start tool
-  const gameRequest = `Let's play ${payload.gameType.replace('_', ' ')}! You can go first.`;
-  await handleUserMessage(client, { content: gameRequest });
+    logger.info(
+      {
+        clientId: client.id,
+        sessionId: client.sessionId,
+        gameId: result.game.id,
+        gameType: payload.gameType,
+        companionPlaysFirst: payload.companionPlaysFirst ?? false,
+      },
+      'Game started',
+    );
+
+    if (result.game.currentPlayer === 'companion' && result.game.id) {
+      emitCompanionThinking(getSocketsForChatSession(client.sessionId), result.game.id, true);
+      void triggerCompanionTurn(
+        client.sessionId,
+        result.game.id,
+        client.user.userId,
+        client.companionId,
+      );
+    }
+  } catch (err) {
+    if (err instanceof GameError) {
+      sendMoveRejected(client.ws, { gameId: null, code: err.code, reason: err.message });
+      return;
+    }
+    logger.error({ err, clientId: client.id }, 'Failed to start game');
+    sendError(client, 'Failed to start game');
+  }
 }
 
 /**
- * Handle user game move
- * Sends the move as a user message for the companion to process
+ * Apply a user move. The gateway owns the game engine; the orchestrator is
+ * only poked after a successful move to produce the companion's response.
  */
 async function handleUserGameMove(
   client: ConnectedClient,
-  payload: { move: string }
+  payload: { move: string; gameId?: string; clientVersion?: number },
 ): Promise<void> {
   if (!client.authenticated || !client.user) {
     sendError(client, 'Authentication required');
     return;
   }
-
   if (!client.sessionId || !client.companionId) {
     sendError(client, 'No active session');
     return;
   }
 
-  logger.debug(
-    { clientId: client.id, sessionId: client.sessionId, move: payload.move },
-    'User game move'
-  );
+  // Resolve the target game: prefer the explicit gameId (new clients) but
+  // fall back to the active game for the chat session (legacy clients).
+  let gameId = payload.gameId ?? null;
+  if (!gameId) {
+    const active = await gameService.getActiveGame(client.sessionId);
+    if (!active?.game.id) {
+      sendMoveRejected(client.ws, { gameId: null, code: 'NO_ACTIVE_GAME', reason: 'No active game.' });
+      return;
+    }
+    gameId = active.game.id;
+  }
 
-  // Send as a user message - the orchestrator will process this as a game move
-  const moveMessage = `[Game move: ${payload.move}]`;
-  await handleUserMessage(client, { content: moveMessage });
+  try {
+    const result = await gameService.applyMove({
+      gameSessionId: gameId,
+      player: 'user',
+      move: payload.move,
+      clientVersion: payload.clientVersion,
+    });
+
+    logger.debug(
+      { clientId: client.id, sessionId: client.sessionId, gameId, move: payload.move },
+      'User move applied',
+    );
+
+    if (!result.gameOver && result.game.currentPlayer === 'companion') {
+      emitCompanionThinking(getSocketsForChatSession(client.sessionId), gameId, true);
+      void triggerCompanionTurn(
+        client.sessionId,
+        gameId,
+        client.user.userId,
+        client.companionId,
+      );
+    }
+  } catch (err) {
+    if (err instanceof GameError) {
+      sendMoveRejected(client.ws, { gameId, code: err.code, reason: err.message });
+      return;
+    }
+    logger.error({ err, clientId: client.id }, 'Failed to apply user move');
+    sendError(client, 'Failed to apply move');
+  }
 }
 
 /**
- * Handle resign game request
+ * Resign the active (or specified) game. Broadcasts `game_over`.
  */
-async function handleResignGame(client: ConnectedClient): Promise<void> {
+async function handleResignGame(
+  client: ConnectedClient,
+  payload: { gameId?: string },
+): Promise<void> {
   if (!client.authenticated || !client.user) {
     sendError(client, 'Authentication required');
     return;
   }
-
-  if (!client.sessionId || !client.companionId) {
+  if (!client.sessionId) {
     sendError(client, 'No active session');
     return;
   }
 
-  logger.info(
-    { clientId: client.id, sessionId: client.sessionId },
-    'User resigning game'
-  );
+  let gameId = payload.gameId ?? null;
+  if (!gameId) {
+    const active = await gameService.getActiveGame(client.sessionId);
+    if (!active?.game.id) {
+      sendMoveRejected(client.ws, { gameId: null, code: 'NO_ACTIVE_GAME', reason: 'No active game.' });
+      return;
+    }
+    gameId = active.game.id;
+  }
 
-  // Send as a user message
-  await handleUserMessage(client, { content: 'I resign from the game.' });
+  try {
+    await gameService.resign({ gameSessionId: gameId, player: 'user' });
+    logger.info(
+      { clientId: client.id, sessionId: client.sessionId, gameId },
+      'User resigned game',
+    );
+  } catch (err) {
+    if (err instanceof GameError) {
+      sendMoveRejected(client.ws, { gameId, code: err.code, reason: err.message });
+      return;
+    }
+    logger.error({ err, clientId: client.id }, 'Failed to resign game');
+    sendError(client, 'Failed to resign');
+  }
 }
 
 /**
