@@ -59,6 +59,7 @@
     "archiver": "^7.0.1",
     "bcrypt": "^6.0.0",
     "bullmq": "^5.30.0",
+    "chess.js": "^1.0.0",
     "dockerode": "^4.0.9",
     "fastify": "^5.1.0",
     "grammy": "^1.41.1",

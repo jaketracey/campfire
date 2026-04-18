@@ -6,9 +6,11 @@ import type { GameType } from '@campfire/shared';
 import type { GameEngine } from './engine.js';
 import { UnknownGameTypeError } from './errors.js';
 import { ticTacToeEngine } from './engines/tic-tac-toe.js';
+import { chessEngine } from './engines/chess.js';
 
 const ENGINES: ReadonlyMap<GameType, GameEngine> = new Map<GameType, GameEngine>([
   ['tic_tac_toe', ticTacToeEngine],
+  ['chess', chessEngine],
 ]);
 
 /**

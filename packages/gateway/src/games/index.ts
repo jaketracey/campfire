@@ -26,3 +26,5 @@ export type { GameSessionRow, CreateGameSessionInput } from './repository.js';
 export { getEngine, hasEngine, listGameTypes } from './registry.js';
 export { ticTacToeEngine, TicTacToeEngine } from './engines/tic-tac-toe.js';
 export type { TicTacToeState } from './engines/tic-tac-toe.js';
+export { chessEngine, ChessEngine } from './engines/chess.js';
+export type { ChessState } from './engines/chess.js';
