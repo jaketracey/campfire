@@ -5,6 +5,17 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [v0.14.1] - 2026-04-18
+
+## What's Changed
+
+### Bug Fixes
+- fix(deploy): decouple stealth deploy from ssh session; ui: match menu radius (70cc5b0)
+
+### Contributors
+- @Jake Tracey
+
+
 ## [v0.14.0] - 2026-04-18
 
 ## What's Changed
