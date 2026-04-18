@@ -66,6 +66,7 @@ import { outreachRoutes, outreachConfigRoutes } from './outreach.js';
 import { telegramWebhookRoutes, messagingRoutes, companionTelegramRoutes } from './telegram.js';
 import { emotionalStateRoutes } from './emotional-state.js';
 import { lipSyncRoutes } from './lip-sync.js';
+import { gamesInternalRoutes } from './games-internal.js';
 import { logger } from '../observability/logger.js';
 
 /**
@@ -233,6 +234,9 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
 
       // Lip-sync video generation routes (ElevenLabs TTS + FAL live-avatar)
       await api.register(lipSyncRoutes, { prefix: '/lip-sync' });
+
+      // Games framework internal routes (orchestrator → gateway)
+      await api.register(gamesInternalRoutes);
 
       // Public SEO routes (for SSR/sitemap)
       await api.register(seoPublicRoutes, { prefix: '/public' });
