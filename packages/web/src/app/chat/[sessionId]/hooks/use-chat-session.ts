@@ -59,6 +59,13 @@ export function useChatSession({
   const [streamingContent, setStreamingContent] = useState('');
   const [showTypingBetweenMessages, setShowTypingBetweenMessages] = useState(false);
 
+  // Typewriter pacing — the streaming UI reveals characters at a fixed cadence
+  // rather than flashing the full LLM buffer. This buys visual time for scene
+  // image generation so the sidebar image arrives roughly as text finishes.
+  const [revealedChars, setRevealedChars] = useState(0);
+  const pendingFinalMessageRef = useRef<Message | null>(null);
+  const pendingPostFinalizeRef = useRef<(() => void) | null>(null);
+
   // Voice state
   const [voiceModeEnabled, setVoiceModeEnabled] = useState(false);
   const [liveTranscription, setLiveTranscription] = useState('');
@@ -418,6 +425,42 @@ TOOLS:
     scrollToBottom();
   }, [messages, streamingContent, scrollToBottom]);
 
+  // Typewriter ticker — advances revealedChars toward streamingContent.length
+  // at a constant cadence. When it catches up and a finalization is pending,
+  // it pushes the pending message into `messages`, clears streaming state,
+  // and runs any queued post-finalize side effect (e.g. emotional state,
+  // image-gen trigger). This stretches out perceived response time so scene
+  // images arrive roughly as the text finishes writing.
+  useEffect(() => {
+    // Nothing to advance — check if we should finalize (stream may have
+    // ended with zero-length text, in which case we'd be stuck).
+    if (revealedChars >= streamingContent.length) {
+      if (pendingFinalMessageRef.current) {
+        const msg = pendingFinalMessageRef.current;
+        const after = pendingPostFinalizeRef.current;
+        pendingFinalMessageRef.current = null;
+        pendingPostFinalizeRef.current = null;
+        setMessages((prev) => [...prev, msg]);
+        setStreamingContent('');
+        setRevealedChars(0);
+        after?.();
+      }
+      return;
+    }
+
+    const CHARS_PER_SEC = 35;
+    const CHARS_PER_TICK = 2;
+    const MS_PER_TICK = (CHARS_PER_TICK / CHARS_PER_SEC) * 1000;
+
+    const timeout = setTimeout(() => {
+      setRevealedChars((prev) =>
+        Math.min(streamingContent.length, prev + CHARS_PER_TICK)
+      );
+    }, MS_PER_TICK);
+
+    return () => clearTimeout(timeout);
+  }, [streamingContent, revealedChars]);
+
   // Handle iOS keyboard
   useEffect(() => {
     let rafId: number;
@@ -773,6 +816,19 @@ TOOLS:
     });
 
     const unsubChunk = ws.onAgentChunk((chunk) => {
+      // If a previous sequence is still in typewriter-catch-up, snap it to
+      // done before accepting the next sequence's chunks — otherwise the two
+      // sequences' text would pile into a single buffer.
+      if (pendingFinalMessageRef.current) {
+        const msg = pendingFinalMessageRef.current;
+        const after = pendingPostFinalizeRef.current;
+        pendingFinalMessageRef.current = null;
+        pendingPostFinalizeRef.current = null;
+        setMessages((prev) => [...prev, msg]);
+        setStreamingContent('');
+        setRevealedChars(0);
+        after?.();
+      }
       setStreamingContent((prev) => prev + chunk);
     });
 
@@ -786,60 +842,58 @@ TOOLS:
         messageId = crypto.randomUUID();
       }
 
-      setMessages((prev) => [
-        ...prev,
-        {
-          id: messageId,
-          role: 'assistant',
-          content,
-          timestamp: new Date(),
-          emotionalState,
-          isNew: true,
-        },
-      ]);
+      const pendingMessage: Message = {
+        id: messageId,
+        role: 'assistant',
+        content,
+        timestamp: new Date(),
+        emotionalState,
+        isNew: true,
+      };
 
-      setStreamingContent('');
+      // Make sure streamingContent contains the full content so the typewriter
+      // has the whole target to reveal. If any chunks were dropped, we fill in
+      // the rest here; if everything arrived already this is a no-op.
+      setStreamingContent((prev) => (prev.length >= content.length ? prev : content));
 
-      if (sequence && !sequence.isLast) {
-        setShowTypingBetweenMessages(true);
-        return;
-      }
+      // Defer the rest of finalization until the typewriter catches up. The
+      // ticker effect sees pendingFinalMessageRef and, on reaching the end,
+      // pushes the message and runs this callback.
+      const postFinalize = () => {
+        if (sequence && !sequence.isLast) {
+          setShowTypingBetweenMessages(true);
+          return;
+        }
 
-      setShowTypingBetweenMessages(false);
-      setIsLoading(false);
-      setCurrentEmotionalState(emotionalState);
+        setShowTypingBetweenMessages(false);
+        setIsLoading(false);
+        setCurrentEmotionalState(emotionalState);
 
-      // Trigger pulse animation on input when companion message is received
-      setMessageReceivedPulseTrigger(prev => prev + 1);
+        // Trigger pulse animation on input when companion message is received
+        setMessageReceivedPulseTrigger((prev) => prev + 1);
 
-      if (generatedImageUrl) {
-        setCurrentAvatarUrl(generatedImageUrl);
-        setImageTurnId(turnId);
-        // Add generated image as a separate chat bubble
-        setMessages((prev) => [
-          ...prev,
-          {
-            id: `${messageId}-image`,
-            role: 'assistant',
-            content: '',
-            imageUrl: generatedImageUrl,
-            timestamp: new Date(),
-            isNew: true,
-          },
-        ]);
-      } else {
-        const shouldTriggerImage = Boolean(shouldGenerateImage)
-          && (imageIntentConfidence ?? 0) >= IMAGE_INTENT_THRESHOLD;
-        if (shouldTriggerImage) {
-          const scene = imagePrompt || extractSceneDescription(content);
-          if (scene) {
-            setSceneDescription(scene);
-            setImageTurnId(turnId);
-            setImageGenTrigger((prev) => prev + 1);
+        if (generatedImageUrl) {
+          // Image is already generated — put it in the sidebar avatar. No
+          // inline chat bubble: the scene image IS the avatar now.
+          setCurrentAvatarUrl(generatedImageUrl);
+          setImageTurnId(turnId);
+        } else {
+          const shouldTriggerImage = Boolean(shouldGenerateImage)
+            && (imageIntentConfidence ?? 0) >= IMAGE_INTENT_THRESHOLD;
+          if (shouldTriggerImage) {
+            const scene = imagePrompt || extractSceneDescription(content);
+            if (scene) {
+              setSceneDescription(scene);
+              setImageTurnId(turnId);
+              setImageGenTrigger((prev) => prev + 1);
+            }
           }
         }
-      }
-      setDebugRefreshTrigger((prev) => prev + 1);
+        setDebugRefreshTrigger((prev) => prev + 1);
+      };
+
+      pendingFinalMessageRef.current = pendingMessage;
+      pendingPostFinalizeRef.current = postFinalize;
     });
 
     const unsubError = ws.onError((message, code) => {
@@ -1407,6 +1461,7 @@ TOOLS:
     setInput,
     isLoading,
     streamingContent,
+    revealedChars,
     showTypingBetweenMessages,
     handleSend,
 

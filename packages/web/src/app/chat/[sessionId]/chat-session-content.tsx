@@ -178,6 +178,7 @@ export function ChatSessionContent({
         <ChatMessages
           messages={chat.messages}
           streamingContent={chat.streamingContent}
+          revealedChars={chat.revealedChars}
           isLoading={chat.isLoading}
           showTypingBetweenMessages={chat.showTypingBetweenMessages}
           messagesEndRef={chat.messagesEndRef}

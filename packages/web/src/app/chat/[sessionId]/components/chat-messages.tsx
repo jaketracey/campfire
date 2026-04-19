@@ -13,6 +13,7 @@ import { GiftMessage } from './gift-message';
 interface ChatMessagesProps {
   messages: Message[];
   streamingContent: string;
+  revealedChars: number;
   isLoading: boolean;
   showTypingBetweenMessages: boolean;
   messagesEndRef: React.RefObject<HTMLDivElement | null>;
@@ -45,6 +46,7 @@ interface ChatMessagesProps {
 export function ChatMessages({
   messages,
   streamingContent,
+  revealedChars,
   isLoading,
   showTypingBetweenMessages,
   messagesEndRef,
@@ -240,17 +242,24 @@ export function ChatMessages({
         );
       })}
 
-      {/* Streaming message */}
-      {streamingContent && (
-        <div className="flex justify-start relative z-10" data-testid="streaming-message">
-          <Card className="bg-muted p-3 max-w-[80%] lg:max-w-xl">
-            <p className="text-base lg:text-sm whitespace-pre-wrap break-words">
-              {stripMessageTags(streamingContent)}
-              <span className="inline-block w-0.5 h-4 bg-foreground/70 animate-pulse ml-0.5 align-text-bottom" />
-            </p>
-          </Card>
-        </div>
-      )}
+      {/* Streaming message — paced by `revealedChars` for a typewriter effect */}
+      {streamingContent && (() => {
+        const revealedRaw = streamingContent.slice(0, revealedChars);
+        const revealed = stripMessageTags(revealedRaw);
+        const isTyping = revealedChars < streamingContent.length;
+        return (
+          <div className="flex justify-start relative z-10" data-testid="streaming-message">
+            <Card className="bg-muted p-3 max-w-[80%] lg:max-w-xl">
+              <p className="text-base lg:text-sm whitespace-pre-wrap break-words">
+                {revealed}
+                {isTyping && (
+                  <span className="inline-block w-0.5 h-4 bg-foreground/70 animate-pulse ml-0.5 align-text-bottom" />
+                )}
+              </p>
+            </Card>
+          </div>
+        );
+      })()}
 
       {/* Loading indicator / typing indicator between multi-messages */}
       {(isLoading && !streamingContent) || showTypingBetweenMessages ? (

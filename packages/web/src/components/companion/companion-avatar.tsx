@@ -183,19 +183,50 @@ export function CompanionAvatar({
     img.src = url;
   }, [galleryCycleIndex, galleryUrls, currentImageUrl]);
 
-  // Sync anchor image when prop changes (e.g., when companion data loads)
+  // Sync anchor image when prop changes. Two cases:
+  //   1. No current image yet (initial mount) — set immediately, no transition.
+  //   2. Anchor changed to a new URL (parent swapped in a freshly-generated
+  //      scene image) — cross-fade to it. We skip the swap if we're already
+  //      showing that URL, already transitioning to it, or currently running a
+  //      local generation (lastGenerationTriggerRef > 0) which has its own
+  //      transition path.
   useEffect(() => {
-    if (optimalAnchorUrl) {
-      // Only set if we don't have a current image yet (avoid overwriting generated images)
-      if (!currentImageUrl) {
-        setCurrentImageUrl(optimalAnchorUrl);
+    if (!optimalAnchorUrl) {
+      if (anchorImageUrl && !identityAnchorUrl) {
+        setIdentityAnchorUrl(anchorImageUrl);
       }
+      return;
     }
-    // Always update identity anchor for IP-Adapter reference (use original URL for best quality)
+
+    if (!currentImageUrl) {
+      setCurrentImageUrl(optimalAnchorUrl);
+    } else if (
+      optimalAnchorUrl !== currentImageUrl
+      && optimalAnchorUrl !== nextImageUrl
+      && !isTransitioning
+    ) {
+      // Preload then cross-fade to avoid flash
+      const img = new Image();
+      img.onload = () => {
+        setNextImageUrl(optimalAnchorUrl);
+        setIsTransitioning(true);
+        if (transitionTimeoutRef.current) {
+          clearTimeout(transitionTimeoutRef.current);
+        }
+        transitionTimeoutRef.current = setTimeout(() => {
+          setCurrentImageUrl(optimalAnchorUrl);
+          setNextImageUrl(null);
+          setIsTransitioning(false);
+          transitionTimeoutRef.current = null;
+        }, 1100);
+      };
+      img.src = optimalAnchorUrl;
+    }
+
     if (anchorImageUrl && !identityAnchorUrl) {
       setIdentityAnchorUrl(anchorImageUrl);
     }
-  }, [optimalAnchorUrl, anchorImageUrl, currentImageUrl, identityAnchorUrl]);
+  }, [optimalAnchorUrl, anchorImageUrl, currentImageUrl, nextImageUrl, isTransitioning, identityAnchorUrl]);
 
   const generateImage = useCallback(async () => {
     const generationId = generationSequenceRef.current + 1;
