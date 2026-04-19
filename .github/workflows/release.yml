@@ -356,12 +356,14 @@ jobs:
           VERSION="${{ needs.analyze.outputs.version }}"
 
           git add CHANGELOG.md package.json packages/*/package.json
+          # Intentionally no [skip ci] — we want Build Images to run so the
+          # release commit has a matching image tag in ECR. Without this, a
+          # manually-triggered Deploy on main after a release would try to
+          # pull an image for the release SHA and fail with "manifest unknown".
           git commit -m "chore(release): ${VERSION}
 
           - Update CHANGELOG.md
-          - Bump package versions
-
-          [skip ci]"
+          - Bump package versions"
 
       - name: Create and push tag
         run: |

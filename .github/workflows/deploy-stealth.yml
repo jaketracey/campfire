@@ -9,6 +9,11 @@ name: Deploy to Stealth
 
 on:
   workflow_dispatch:
+    inputs:
+      image_tag:
+        description: "Optional: explicit image tag (commit SHA) to deploy. Defaults to current main HEAD — useful when that SHA has no ECR image (e.g. a release commit with [skip ci])."
+        required: false
+        type: string
   workflow_run:
     workflows: ["Build Images"]
     types:
@@ -43,12 +48,15 @@ jobs:
       - name: Resolve image tag
         id: image-tag
         run: |
-          if [[ "${{ github.event_name }}" == "workflow_run" ]]; then
+          if [[ -n "${{ github.event.inputs.image_tag }}" ]]; then
+            IMAGE_TAG="${{ github.event.inputs.image_tag }}"
+          elif [[ "${{ github.event_name }}" == "workflow_run" ]]; then
             IMAGE_TAG="${{ github.event.workflow_run.head_sha }}"
           else
             IMAGE_TAG="${{ github.sha }}"
           fi
 
+          echo "Resolved image tag: ${IMAGE_TAG}"
           echo "image_tag=${IMAGE_TAG}" >> "$GITHUB_OUTPUT"
 
       - name: Validate required secrets
@@ -235,8 +243,11 @@ jobs:
 
           echo "=== Waiting for health checks ==="
           for i in {1..45}; do
-            if $DC exec -T gateway sh -lc "wget -q --tries=1 --timeout=5 --spider http://localhost:4000/health" >/dev/null 2>&1 \
-              && $DC exec -T orchestrator sh -lc "wget -q --tries=1 --timeout=5 --spider http://localhost:5000/health" >/dev/null 2>&1; then
+            # Use GET (-O /dev/null), not --spider, because orchestrator's
+            # /health is GET-only and returns 405 on HEAD. This mirrors the
+            # per-container docker healthcheck.
+            if $DC exec -T gateway sh -lc "wget -q --tries=1 --timeout=5 -O /dev/null http://localhost:4000/health" >/dev/null 2>&1 \
+              && $DC exec -T orchestrator sh -lc "wget -q --tries=1 --timeout=5 -O /dev/null http://localhost:5000/health" >/dev/null 2>&1; then
               echo "Core services healthy."
               break
             fi
