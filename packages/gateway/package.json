@@ -53,7 +53,7 @@
     "@opentelemetry/resources": "^1.29.0",
     "@opentelemetry/sdk-node": "^0.56.0",
     "@opentelemetry/sdk-trace-node": "^1.29.0",
-    "@opentelemetry/semantic-conventions": "^1.28.0",
+    "@opentelemetry/semantic-conventions": "^1.39.0",
     "@sentry/node": "^10.35.0",
     "@types/archiver": "^7.0.0",
     "archiver": "^7.0.1",
